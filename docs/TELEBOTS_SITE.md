@@ -118,6 +118,25 @@ curl -s -o /dev/null -w "%{http_code}" https://elfduck-crm.telebots.site/
 CRM: `/crm/orders` без авторизації → **401**.  
 Mini App: відкрити з Telegram, оформити тестовий запит.
 
+### 9. Кнопки менеджера в боті: «Заказ не найден»
+
+Inline-кнопки (**Ожидаю**, **Отклонить**, **Изменить статус** тощо) обробляє **той самий процес**, що й API (`docker compose` сервіс `api`), через long polling `TELEGRAM_BOT_TOKEN`.
+
+Якщо замовлення в чаті з’являється, а кнопки відповідають «Заказ не найден» (інколи **двічі** — два процеси ловлять один callback):
+
+1. **Зупини старий хост** (Railway, PM2 на іншому сервері, локальний `node server.js`) з **тим самим** `TELEGRAM_BOT_TOKEN`. Має лишитися **один** `api` на VPS.
+2. Після деплою в логах має бути рядок на кшталт:  
+   `[bot] Launching polling as @elfduck_shop_bot ... db=elfduck`  
+   Якщо `db=mongo` або інша база — перевір `MONGODB_URI` у кореневому `.env` на VPS (Atlas `/elfduck`, не локальний `mongo`, якщо дані в Atlas).
+3. При промаху в логах з’явиться `[manager-bot] order not found for callback` з `orderId`, `dbName`, `callbackData` — зніми шматок логу для діагностики.
+
+Перезапуск після оновлення коду:
+
+```bash
+docker compose pull && docker compose up -d --build api
+docker compose logs -f api --tail=100
+```
+
 ---
 
 ## Локальна розробка

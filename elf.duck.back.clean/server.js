@@ -583,7 +583,9 @@ mongoose
     autoIndex: process.env.NODE_ENV !== "production",
   })
   .then(async () => {
-    console.log("✅ MongoDB connected");
+    const dbName =
+      mongoose.connection?.db?.databaseName || "unknown";
+    console.log(`✅ MongoDB connected (database: ${dbName})`);
 
     await ensurePromoCodeIndexes();
 
@@ -15675,6 +15677,49 @@ app.post("/admin/broadcast/templates/:id/default", async (req, res) => {
 
 // ==== Telegram бот ====
 
+function normalizeManagerCallbackOrderId(raw) {
+  const trimmed = String(raw || "").trim();
+  if (!trimmed) return "";
+  if (mongoose.isValidObjectId(trimmed)) {
+    return String(trimmed);
+  }
+  const hexPrefix = trimmed.match(/^([a-f0-9]{24})/i);
+  return hexPrefix ? hexPrefix[1] : trimmed;
+}
+
+async function findOrderForManagerCallback(orderIdRaw, ctx) {
+  const orderId = normalizeManagerCallbackOrderId(orderIdRaw);
+  if (!orderId) {
+    await ctx.answerCbQuery("Заказ не найден").catch(() => {});
+    return null;
+  }
+
+  let order = null;
+  if (mongoose.isValidObjectId(orderId)) {
+    order = await Order.findById(orderId);
+  }
+  if (!order && /^ED[-\d]/i.test(orderId)) {
+    order = await Order.findOne({
+      orderNo: orderId.toUpperCase(),
+    });
+  }
+
+  if (!order) {
+    console.error("[manager-bot] order not found for callback", {
+      orderId,
+      orderIdLength: orderId.length,
+      dbName: mongoose.connection?.db?.databaseName || "",
+      mongoReadyState: mongoose.connection?.readyState,
+      from: ctx?.from?.id,
+      callbackData: ctx?.callbackQuery?.data,
+    });
+    await ctx.answerCbQuery("Заказ не найден").catch(() => {});
+    return null;
+  }
+
+  return order;
+}
+
 const TG_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const WEBAPP_URL = process.env.WEBAPP_URL || "";
 const START_BANNER_URL = String(process.env.START_BANNER_URL || "").trim();
@@ -17104,11 +17149,11 @@ if (photoFileId) {
 
   bot.action(/mgr_pay_paid:(.+)/, async (ctx) => {
     try {
-      const orderId = String(ctx.match?.[1] || "").trim();
-      if (!orderId) return ctx.answerCbQuery("Order not found");
-
-      const order = await Order.findById(orderId);
-      if (!order) return ctx.answerCbQuery("Заказ не найден");
+      const order = await findOrderForManagerCallback(
+        ctx.match?.[1],
+        ctx
+      );
+      if (!order) return;
 
       const previousPaymentStatus =
       String(
@@ -17362,11 +17407,11 @@ if (photoFileId) {
 
   bot.action(/mgr_pay_unpaid:(.+)/, async (ctx) => {
     try {
-      const orderId = String(ctx.match?.[1] || "").trim();
-      if (!orderId) return ctx.answerCbQuery("Order not found");
-
-      const order = await Order.findById(orderId);
-      if (!order) return ctx.answerCbQuery("Заказ не найден");
+      const order = await findOrderForManagerCallback(
+        ctx.match?.[1],
+        ctx
+      );
+      if (!order) return;
 
       // снимаем резерв только один раз
       if (!order.stockReleasedAt) {
@@ -18483,17 +18528,11 @@ if (
 
   bot.action(/mgr_order_delivered:(.+)/, async (ctx) => {
     try {
-      const orderId = String(ctx.match?.[1] || "").trim();
-      if (!orderId) {
-        await ctx.answerCbQuery("Заказ не найден");
-        return;
-      }
-
-      const order = await Order.findById(orderId);
-      if (!order) {
-        await ctx.answerCbQuery("Заказ не найден");
-        return;
-      }
+      const order = await findOrderForManagerCallback(
+        ctx.match?.[1],
+        ctx
+      );
+      if (!order) return;
 
       if (String(order.status || "") === "completed") {
         await ctx.answerCbQuery("Заказ уже доставлен");
@@ -18648,18 +18687,12 @@ if (
 
   bot.action(/mgr_change_status:(.+)/, async (ctx) => {
       try {
-        const orderId = String(
-          ctx.match?.[1] || ""
-        ).trim();
-
-        const order =
-          await Order.findById(orderId);
+        const order = await findOrderForManagerCallback(
+          ctx.match?.[1],
+          ctx
+        );
 
         if (!order) {
-          await ctx.answerCbQuery(
-            "Заказ не найден"
-          );
-
           return;
         }
 
@@ -18866,17 +18899,11 @@ if (
 
   bot.action(/mgr_order_completed:(.+)/, async (ctx) => {
     try {
-      const orderId = String(ctx.match?.[1] || "").trim();
-      if (!orderId) {
-        await ctx.answerCbQuery("Заказ не найден");
-        return;
-      }
-
-      const order = await Order.findById(orderId);
-      if (!order) {
-        await ctx.answerCbQuery("Заказ не найден");
-        return;
-      }
+      const order = await findOrderForManagerCallback(
+        ctx.match?.[1],
+        ctx
+      );
+      if (!order) return;
 
       if (String(order.status || "") === "completed") {
         await ctx.answerCbQuery("Заказ уже выполнен");
@@ -18931,52 +18958,21 @@ if (
     } catch {}
   });
 
-  bot.launch()
-    .then(() => {
-      console.log("✅ User bot launched");
-    })
-    .catch((e) => {
-      console.error("❌ bot.launch error:", e);
-    });
-    
-  process.once("SIGINT", () => {
+  bot.action(/^manager_message_client:(.+)$/, async (ctx) => {
     try {
-      bot?.stop("SIGINT");
-    } catch {}
-  });
+      const orderDoc = await findOrderForManagerCallback(
+        ctx.match?.[1],
+        ctx
+      );
 
-  process.once("SIGTERM", () => {
-    try {
-      bot?.stop("SIGTERM");
-    } catch {}
-  });
+      if (!orderDoc) {
+        return;
+      }
 
-} else {
-  console.warn("⚠️ TELEGRAM_BOT_TOKEN not set — bot disabled");
-}
-
-bot.action(/^manager_message_client:(.+)$/, async (ctx) => {
-    try {
       await ctx.answerCbQuery();
 
-      const orderId = String(
-        ctx.match?.[1] || ""
-      ).trim();
-
-      if (!orderId) {
-        return ctx.reply(
-          "❌ Не удалось определить заказ."
-        );
-      }
-
       const order =
-        await Order.findById(orderId).lean();
-
-      if (!order) {
-        return ctx.reply(
-          "❌ Заказ не найден."
-        );
-      }
+        orderDoc?.toObject ? orderDoc.toObject() : orderDoc;
 
       const clientTelegramId = String(
         order?.userTelegramId || ""
@@ -18999,7 +18995,7 @@ bot.action(/^manager_message_client:(.+)$/, async (ctx) => {
       console.log(
         "[MANAGER CLIENT MESSAGE][OPEN]",
         {
-          orderId,
+          orderId: String(order?._id || ""),
           orderNo: String(
             order?.orderNo || ""
           ),
@@ -19108,6 +19104,50 @@ return instructionMessage;
     }
   }
 );
+
+  async function launchUserBotPolling() {
+    try {
+      const webhookInfo = await bot.telegram.getWebhookInfo();
+      if (String(webhookInfo?.url || "").trim()) {
+        console.warn(
+          `[bot] Webhook was set (${webhookInfo.url}) — clearing for long polling`
+        );
+        await bot.telegram.deleteWebhook({
+          drop_pending_updates: false,
+        });
+      }
+
+      const me = await bot.telegram.getMe();
+      const dbName =
+        mongoose.connection?.db?.databaseName || "unknown";
+      console.log(
+        `[bot] Launching polling as @${me.username} (id ${me.id}), pid=${process.pid}, db=${dbName}`
+      );
+
+      await bot.launch();
+      console.log("✅ User bot launched");
+    } catch (e) {
+      console.error("❌ bot.launch error:", e);
+    }
+  }
+
+  launchUserBotPolling();
+
+  process.once("SIGINT", () => {
+    try {
+      bot?.stop("SIGINT");
+    } catch {}
+  });
+
+  process.once("SIGTERM", () => {
+    try {
+      bot?.stop("SIGTERM");
+    } catch {}
+  });
+
+} else {
+  console.warn("⚠️ TELEGRAM_BOT_TOKEN not set — bot disabled");
+}
 
 // старт сервера
 const PORT = process.env.PORT || 3000;
