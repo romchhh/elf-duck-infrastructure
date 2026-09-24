@@ -60,8 +60,12 @@ useEffect(() => {
     ref: tg?.initDataUnsafe?.start_param || null,
   };
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
+
   fetch(import.meta.env.VITE_API_URL + "/register-user", {
     method: "POST",
+    signal: controller.signal,
     headers: {
       "Content-Type": "application/json",
       "x-telegram-init-data": tg?.initData || "",
@@ -70,11 +74,35 @@ useEffect(() => {
   })
     .then((r) => r.json())
     .then((data) => {
-      if (data?.ok) setUser(data.user);
-      else console.error("register-user failed", data);
+      if (data?.ok && data.user) {
+        setUser(data.user);
+        return;
+      }
+      console.error("register-user failed", data);
+      setUser({
+        telegramId: body.telegramId,
+        username: body.username,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        photoUrl: body.photoUrl,
+        cashbackBalance: 0,
+      });
     })
-    .catch((e) => console.error("register-user error", e))
-    .finally(() => setUserLoading(false));
+    .catch((e) => {
+      console.error("register-user error", e);
+      setUser({
+        telegramId: body.telegramId,
+        username: body.username,
+        firstName: body.firstName,
+        lastName: body.lastName,
+        photoUrl: body.photoUrl,
+        cashbackBalance: 0,
+      });
+    })
+    .finally(() => {
+      clearTimeout(timeoutId);
+      setUserLoading(false);
+    });
 }, []);
 
   const initials = useMemo(() => {

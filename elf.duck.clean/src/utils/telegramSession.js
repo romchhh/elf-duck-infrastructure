@@ -21,9 +21,15 @@ export function isInsideTelegramMiniApp() {
   }
 }
 
-/** Telegram user id for personalized API (registered user or dev override). */
+/** Telegram user id for personalized API (registered user, TG WebApp, or dev override). */
 export function getPersonalizedTelegramId(user) {
   if (user?.telegramId) return String(user.telegramId).trim();
+  try {
+    const tgId = window?.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    if (tgId) return String(tgId).trim();
+  } catch {
+    /* ignore */
+  }
   return getDevTelegramIdFromBrowser();
 }
 

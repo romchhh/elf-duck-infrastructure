@@ -157,7 +157,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 const MainPage = () => {
   console.count("[PERF][MainPage] render");
 
-  const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
+  const { user, userLoading, isGuestBrowser, telegramId, initials, displayName, displayUsername } = useUser();
 
   const preloadProductVisuals = useCallback((product) => {
     if (!product) return;
@@ -169,7 +169,7 @@ const MainPage = () => {
     ]);
   }, []);
 
-  const getEffectiveTelegramId = () => getPersonalizedTelegramId(user);
+  const getEffectiveTelegramId = () => telegramId || getPersonalizedTelegramId(user);
 
   const isFavoriteProduct = (product) => {
     const key = String(product?.productKey || "").trim();

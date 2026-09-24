@@ -132,7 +132,7 @@ const CartPage = () => {
     return out;
   };
 
-  const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
+  const { user, userLoading, isGuestBrowser, telegramId: sessionTelegramId, initials, displayName, displayUsername } = useUser();
 
   const [avatarLoaded, setAvatarLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -1514,7 +1514,7 @@ useEffect(() => {
     if (userLoading) return;
 
     (async () => {
-      const telegramId = String(user?.telegramId || "");
+      const telegramId = String(sessionTelegramId || "");
       if (!telegramId) return;
 
       // If we arrived here right after "add to cart" on MainPage, a merged
@@ -1621,7 +1621,7 @@ useEffect(() => {
         setCartHydrated(true);
       }
     })();
-  }, [user?.telegramId, userLoading, isGuestBrowser, isOrderDetailsMode]);
+  }, [sessionTelegramId, userLoading, isGuestBrowser, isOrderDetailsMode]);
 
   useEffect(() => {
     const telegramId = String(user?.telegramId || "");
@@ -3997,7 +3997,7 @@ if (pointBlob.includes("srodmiescie")) {
                 </div>
               ) : null}
 
-              {!isOrderDetailsMode && !cartHydrated && renderItems.length === 0 ? (
+              {!isOrderDetailsMode && !cartHydrated && !isGuestBrowser && renderItems.length === 0 ? (
                 <div className="loadingSpinner">
                   <div className="loadingRing" />
                 </div>

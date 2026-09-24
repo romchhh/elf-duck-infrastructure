@@ -50,7 +50,11 @@ export default function CrmAuthGate({ children }) {
         setLoginError(
           result?.error === 'INVALID_CRM_PASSWORD'
             ? 'Неверный пароль'
-            : result?.error || 'Ошибка входа'
+            : result?.error === 'CRM_ADMIN_PASSWORD_NOT_CONFIGURED'
+              ? 'На сервере не задан CRM_ADMIN_PASSWORD'
+              : result?.error === 'CRM_SESSION_SECRET_NOT_CONFIGURED'
+                ? 'На сервере не задан CRM_SESSION_SECRET'
+                : result?.error || 'Ошибка входа'
         );
         return;
       }

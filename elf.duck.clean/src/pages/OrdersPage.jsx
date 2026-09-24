@@ -64,12 +64,12 @@ import cashIcon from "../assets/cashIcon.webp";
 
 const OrdersPage = () => {
 
-    const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
+    const { user, userLoading, isGuestBrowser, telegramId: sessionTelegramId, initials, displayName, displayUsername } = useUser();
     const navigate = useNavigate();
 
     const location = useLocation();
     const debugTgid = new URLSearchParams(location.search).get("tgid");
-    const telegramId = user?.telegramId || debugTgid;
+    const telegramId = sessionTelegramId || debugTgid;
 
 const [pickupPoints, setPickupPoints] = useState([]);
 

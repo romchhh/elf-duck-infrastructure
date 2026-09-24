@@ -26,6 +26,7 @@ import MetricGrid from '@/components/shared/MetricGrid';
 import { usePeriod } from '@/lib/PeriodContext';
 import { cn } from '@/lib/utils';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
+import { setCrmSessionToken } from '@/lib/crmSession';
 
 const statusFilters = [
   { key: 'all', label: 'Все' },
@@ -297,11 +298,6 @@ const favoriteMutation =
       telegramId,
       isFavorite,
     }) => {
-      const sessionToken =
-        sessionStorage.getItem(
-          'elfduck_crm_session'
-        ) || '';
-
       const response =
         await crmFetch(
           `/crm/customers/${encodeURIComponent(
@@ -309,20 +305,6 @@ const favoriteMutation =
           )}/favorite`,
           {
             method: 'PATCH',
-            credentials: 'include',
-
-            headers: {
-              'Content-Type':
-                'application/json',
-
-              ...(sessionToken
-                ? {
-                    'x-crm-session':
-                      sessionToken,
-                  }
-                : {}),
-            },
-
             body: JSON.stringify({
               isFavorite,
             }),
@@ -442,13 +424,8 @@ const submitCrmAuth =
         );
       }
 
-      if (
-        result?.sessionToken
-      ) {
-        sessionStorage.setItem(
-          'elfduck_crm_session',
-          result.sessionToken
-        );
+      if (result?.sessionToken) {
+        setCrmSessionToken(result.sessionToken);
       }
 
       const row =

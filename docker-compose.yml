@@ -41,6 +41,7 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
+        required: false
 
   shop:
     build:
