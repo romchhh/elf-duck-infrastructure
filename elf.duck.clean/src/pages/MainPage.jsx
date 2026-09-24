@@ -11,6 +11,7 @@ import { writeProductVisualCache } from "../utils/visualCache";
 import { flushSync } from "react-dom";
 
 import { getCart, saveCart } from "../cartApi";
+import { getPersonalizedTelegramId } from "../utils/telegramSession";
 import { setPendingCart } from "../pendingCart";
 
 import menuIcon from "../assets/menuIcon.webp";
@@ -156,6 +157,8 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 const MainPage = () => {
   console.count("[PERF][MainPage] render");
 
+  const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
+
   const preloadProductVisuals = useCallback((product) => {
     if (!product) return;
 
@@ -166,15 +169,7 @@ const MainPage = () => {
     ]);
   }, []);
 
-  const getEffectiveTelegramId = () => {
-    if (user?.telegramId) return String(user.telegramId);
-
-    // dev only (браузер)
-    const urlTid = new URLSearchParams(window.location.search).get("tid");
-    if (urlTid) return String(urlTid);
-
-    return "";
-  };
+  const getEffectiveTelegramId = () => getPersonalizedTelegramId(user);
 
   const isFavoriteProduct = (product) => {
     const key = String(product?.productKey || "").trim();
@@ -323,7 +318,6 @@ const MainPage = () => {
     import.meta.env.VITE_API_URL ||
     "https://elfduck-api.telebots.site";
 
-  const { user, userLoading, initials, displayName, displayUsername } = useUser();
   const [avatarLoaded, setAvatarLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
   const lang = getCurrentLanguage();
@@ -876,6 +870,14 @@ const MainPage = () => {
   useEffect(() => {
     let cancelled = false;
 
+    if (userLoading) return;
+
+    if (isGuestBrowser) {
+      setActiveOrder(null);
+      setActiveOrderLoading(false);
+      return;
+    }
+
     const loadActiveOrder = async () => {
       try {
         const response = await fetch(
@@ -926,6 +928,7 @@ const MainPage = () => {
       }
     };
 
+    setActiveOrderLoading(true);
     loadActiveOrder();
 
     const intervalId = setInterval(
@@ -937,7 +940,7 @@ const MainPage = () => {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, []);
+  }, [userLoading, isGuestBrowser]);
 
 
 
@@ -1283,7 +1286,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
   useEffect(() => {
     if (!isCheckoutOpen) return;
 
-    const tgId = String(window.Telegram?.WebApp?.initDataUnsafe?.user?.id || "").trim();
+    const tgId = getEffectiveTelegramId();
     if (!tgId) {
       setBaseCartTotalForCashback(0);
       setBaseCartLiquidQtyForSmartPrice(0);
@@ -1413,13 +1416,19 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
   }, [isCheckoutOpen]);
 
   useEffect(() => {
+    if (userLoading) return;
+    if (isGuestBrowser) {
+      setFavoriteProductKeys([]);
+      return;
+    }
+
     const t = setTimeout(() => {
       loadFavorites();
     }, 250);
 
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.telegramId]);
+  }, [user?.telegramId, userLoading, isGuestBrowser]);
 
   /* ================= BANNER DOTS SECTION ================= */
 

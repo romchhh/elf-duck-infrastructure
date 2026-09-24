@@ -132,7 +132,7 @@ const CartPage = () => {
     return out;
   };
 
-  const { user, initials, displayName, displayUsername } = useUser();
+  const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
 
   const [avatarLoaded, setAvatarLoaded] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -1502,6 +1502,17 @@ useEffect(() => {
 
   useEffect(() => {
     if (isOrderDetailsMode) return;
+
+    if (isGuestBrowser) {
+      clearPendingCart();
+      cartHydratedRef.current = true;
+      setCartHydrated(true);
+      setCartItems([]);
+      return;
+    }
+
+    if (userLoading) return;
+
     (async () => {
       const telegramId = String(user?.telegramId || "");
       if (!telegramId) return;
@@ -1610,7 +1621,7 @@ useEffect(() => {
         setCartHydrated(true);
       }
     })();
-  }, [user?.telegramId, isOrderDetailsMode]);
+  }, [user?.telegramId, userLoading, isGuestBrowser, isOrderDetailsMode]);
 
   useEffect(() => {
     const telegramId = String(user?.telegramId || "");

@@ -64,7 +64,7 @@ import cashIcon from "../assets/cashIcon.webp";
 
 const OrdersPage = () => {
 
-    const { user, userLoading, initials, displayName, displayUsername } = useUser();
+    const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
     const navigate = useNavigate();
 
     const location = useLocation();
@@ -1354,7 +1354,16 @@ useEffect(() => {
     }, []);
 
     useEffect(() => {
-        if (!telegramId) return;
+        if (isGuestBrowser && !debugTgid) {
+            setOrders([]);
+            setOrdersLoading(false);
+            return;
+        }
+
+        if (!telegramId) {
+            if (!userLoading) setOrdersLoading(false);
+            return;
+        }
 
         let cancelled = false;
 
@@ -1421,7 +1430,7 @@ useEffect(() => {
             window.removeEventListener("focus", handleFocusRefresh);
             document.removeEventListener("visibilitychange", handleFocusRefresh);
         };
-    }, [telegramId]);
+    }, [telegramId, userLoading, isGuestBrowser, debugTgid]);
 
     useEffect(() => {
         try {

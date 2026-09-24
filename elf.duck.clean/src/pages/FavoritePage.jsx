@@ -46,7 +46,7 @@ import savedDuckIMG from "../assets/savedDuckIMG.webp";
 
 const FavoritePage = () => {
 
-    const { user, displayName, displayUsername } = useUser();
+    const { user, userLoading, isGuestBrowser, displayName, displayUsername } = useUser();
     const navigate = useNavigate();
 
     const location = useLocation();
@@ -249,8 +249,14 @@ const FavoritePage = () => {
     }, [API_URL]);
 
     useEffect(() => {
+        if (userLoading) return;
+        if (isGuestBrowser && !debugTgid) {
+            setFavoriteProductKeys([]);
+            setFavoritesLoading(false);
+            return;
+        }
         loadFavorites();
-    }, [user?.telegramId, debugTgid]);
+    }, [user?.telegramId, debugTgid, userLoading, isGuestBrowser]);
 
     const favoriteProducts = products.filter((product) =>
         favoriteProductKeys.includes(String(product?.productKey || "").trim())

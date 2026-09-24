@@ -6,6 +6,10 @@ import React, {
   useMemo,
   useState,
 } from "react";
+import {
+  getDevTelegramIdFromBrowser,
+  getPersonalizedTelegramId,
+} from "./utils/telegramSession";
 
 const UserContext = createContext(null);
 
@@ -21,10 +25,7 @@ useEffect(() => {
   // Можно задать:
   // 1) URL: ?tgid=123456789
   // 2) localStorage: localStorage.setItem('DEV_TG_ID','123456789')
-  const params = new URLSearchParams(window.location.search);
-  const devIdFromQuery = params.get("tgid");
-  const devIdFromLs = window.localStorage.getItem("DEV_TG_ID");
-  const devTelegramId = String(devIdFromQuery || devIdFromLs || "").trim();
+  const devTelegramId = getDevTelegramIdFromBrowser();
 
   // если мини-апп открыт НЕ из телеги — используем DEV id, если он есть
   if (!tgUser) {
@@ -89,6 +90,13 @@ useEffect(() => {
   const displayName = user?.firstName || user?.username || "Гость";
   const displayUsername = user?.username ? "@" + user.username : "";
 
+  const telegramId = useMemo(
+    () => getPersonalizedTelegramId(user),
+    [user]
+  );
+
+  const isGuestBrowser = !userLoading && !telegramId;
+
   return (
     <UserContext.Provider
 
@@ -99,6 +107,10 @@ useEffect(() => {
         setUser,
 
         userLoading,
+
+        telegramId,
+
+        isGuestBrowser,
 
         initials,
 

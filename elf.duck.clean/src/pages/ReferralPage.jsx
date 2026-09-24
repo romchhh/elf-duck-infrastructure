@@ -37,9 +37,7 @@ const ReferralPage = () => {
     /* ================= GENERAL ================= */
 
     const navigate = useNavigate();
-    const { userLoading } = useUser();
-
-    const { user, initials, displayName, displayUsername } = useUser();
+    const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
     const [avatarLoaded, setAvatarLoaded] = useState(false);
     const [mounted, setMounted] = useState(false);
     const lang = getCurrentLanguage();
@@ -54,6 +52,14 @@ const ReferralPage = () => {
     }, []);
 
     useEffect(() => {
+        if (userLoading) return;
+
+        if (isGuestBrowser) {
+            setReferralStatus(null);
+            setReferralLoading(false);
+            return;
+        }
+
         const telegramId = String(user?.telegramId || "").trim();
         if (!telegramId) return;
 
@@ -80,7 +86,7 @@ const ReferralPage = () => {
         return () => {
             cancelled = true;
         };
-    }, [user?.telegramId]);
+    }, [user?.telegramId, userLoading, isGuestBrowser]);
 
     /* ================= SIDE MENU STATE ================= */
   
