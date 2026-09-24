@@ -1,0 +1,341 @@
+@import "./MainPage.css";
+@import "./CartPage.css";
+
+.ManagersApp {
+  margin: 0;
+  width: 100%;
+  min-height: 100dvh;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background-color: #000;
+  color: white;
+}
+
+.Managers_Window {
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.Managers_Window .mainHomePageContainer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.managersTabs {
+  width: 100%;
+  margin: 6px auto 0px;
+}
+
+.managersTabs .checkoutTab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 42%;
+}
+
+.managersTabs .checkoutTab img {
+  width: 20px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.managersList {
+  width: 100%;
+  flex: 1 0 auto;
+  padding: 20px 28px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.managersPointTitle {
+  margin: 6px 0 8px;
+}
+
+.managerCard {
+  width: 87%;
+  align-self: center;
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.managerCardButtons {
+  width: fit-content;
+  max-width: 75%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.managerActionBtn {
+  width: fit-content;
+  max-width: 100%;
+  height: 32px;
+  border-radius: 14px;
+  border: none;
+  background: rgba(217, 217, 217, 0.55);
+  color: rgba(255,255,255,0.95);
+  font-family: Unbounded-Regular;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 0 14px;
+  white-space: nowrap;
+  text-transform: none;
+}
+
+.managerActionBtn img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.managerActionBtn:active {
+  transform: scale(0.97);
+}
+
+.managerActionEmoji {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.managerScheduleRow {
+  margin-left: 0;
+  gap: 10px;
+}
+
+.managerScheduleBtn {
+  min-width: 118px;
+  background: rgba(217,217,217,0.5);
+  font-size: 11px;
+}
+
+.managerCardDuck {
+  max-height: 175px;
+}
+
+
+.pickupCheckoutReadonly,
+.managerCheckoutMokotow,
+.managerCheckoutWola,
+.managerCheckoutSrodmiescie,
+.managerCheckoutCourier,
+.managerCheckoutInPost,
+.managerCheckoutPraga {
+  position: relative;
+  overflow: hidden;
+  width: 87%;
+  border-radius: 25px;
+  padding: 22px 25px;
+  isolation: isolate;
+  background: rgba(217,217,217,0.2);
+  border: 1px solid rgba(206,206,206,1);
+  align-self: center;
+}
+
+.pickupCheckoutReadonly::before,
+.managerCheckoutMokotow::before,
+.managerCheckoutWola::before,
+.managerCheckoutCourier::before,
+.managerCheckoutInPost::before,
+.managerCheckoutSrodmiescie::before,
+.managerCheckoutPraga::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.6;
+  z-index: 0;
+  pointer-events:none;
+}
+
+.managerCheckoutSrodmiescie::before {
+  background-image: url("../assets/srodmiescieManagerBG.webp");
+}
+
+.managerCheckoutMokotow::before {
+  background-image: url("../assets/mokotowManagerBG.webp");
+}
+
+.managerCheckoutWola::before {
+  background-image: url("../assets/wolaManagerBG.webp");
+}
+
+.managerCheckoutPraga::before {
+  background-image: url("../assets/pragaManagerBG.webp");
+}
+
+.managerCheckoutCourier::before {
+  background-image: url("../assets/courierManagerBG.webp");
+}
+
+.managerCheckoutInPost::before {
+  background-image: url("../assets/inpostManagerBG.webp");
+}
+
+.ManagersApp {
+  margin: 0;
+  width: 100%;
+  min-height: 100dvh;
+  position: relative;
+  display: flex;
+  text-align: center;
+  flex-direction: column;
+
+  /* background:
+    linear-gradient(
+      66deg,
+      rgba(85, 61, 158, 0.85) 0%,
+      rgba(85, 61, 158, 0.55) 18%,
+      rgba(85, 61, 158, 0.25) 30%,
+      rgba(0, 0, 0, 0.9) 55%,
+      #000 100%
+    ); */
+
+  background-color: #000;
+  background-blend-mode: screen;
+  min-height: 0;
+
+  color: white;
+  font-family: Muller;
+  font-size: 2.2vh;
+}
+
+.ManagersApp::before {
+  content: "";
+  position: absolute;
+  inset: -30%; 
+  z-index: 0;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      90deg, /* теперь можно оставить 90deg */
+      rgba(85, 61, 158, 0.85) 0%,
+      rgba(85, 61, 158, 0.55) 18%,
+      rgba(85, 61, 158, 0.25) 30%,
+      rgba(0, 0, 0, 0.9) 55%,
+      #000 100%
+    );
+
+  -webkit-mask-image:
+    radial-gradient(
+      35% 70% at 15% 40%,
+      black 0%,
+      black 30%,
+      transparent 65%
+    );
+  mask-image:
+    radial-gradient(
+      20% 70% at 15% 45%,
+      black 20%,
+      black 30%,
+      transparent 65%
+    );
+
+  /* 🔥 ВОТ ОН — НАКЛОН КАК В FIGMA */
+  transform: rotate(-32deg);
+  transform-origin: left center;
+
+  opacity: 0.8;
+  animation: gradientReveal 1.1s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.ManagersApp::after {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  z-index: 0;
+  pointer-events: none;
+
+  /*
+    Premium "переливание":
+    - base local purple glow (radial)
+    - a soft shimmer band (linear) that slowly moves across
+    Both are blurred to ~20px to keep the glow volume tight.
+  */
+  background:
+    radial-gradient(
+      45% 65% at 18% 45%,
+      rgba(138, 97, 255, 0.45) 0%,
+      rgba(138, 97, 255, 0.18) 40%,
+      transparent 72%
+    ),
+    linear-gradient(
+      120deg,
+      transparent 35%,
+      rgba(190, 165, 255, 0.22) 50%,
+      transparent 65%
+    );
+
+  /* Keep it local and "volumetric" */
+  filter: blur(20px);
+  opacity: 0.65;
+
+  /* Move shimmer gently without pulsing the whole screen */
+  background-size: 100% 100%, 220% 220%;
+  background-position: 0 0, -40% -30%;
+
+  /* Optional: makes shimmer feel like light, not paint */
+  mix-blend-mode: screen;
+
+  animation: glowShimmer 8.5s ease-in-out infinite;
+  will-change: background-position, opacity, transform;
+}
+
+.ManagersApp p {
+  margin: 0;
+}
+
+.managersFooter {
+  width: 86%;
+  /* margin: auto auto 18px; */
+  padding: 10px 24px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.62);
+  font-family: Unbounded-Regular;
+  font-size: 11px;
+  flex-shrink: 0;
+
+  align-self: center;
+}
+
+.managersFooterLeft,
+.managersFooterRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.managersFooterBrand,
+.managersFooterSupport {
+  line-height: 1;
+}
+
+.managersFooterIcon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  opacity: 0.8;
+}
+
+.managersFooterIconMuted {
+  opacity: 0.55;
+}

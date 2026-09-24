@@ -1,0 +1,19140 @@
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+dotenv.config({
+  path: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../.env"
+  ),
+});
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import compression from "compression";
+import { Telegraf, Markup } from "telegraf";
+import crypto from "crypto";
+
+import User from "./models/User.js";
+import Category from "./models/Category.js";
+import Product from "./models/Product.js";
+import PickupPoint from "./models/PickupPoint.js"; 
+import Cart from "./models/Cart.js";
+import Order from "./models/Order.js";
+import BroadcastCampaign from "./models/BroadcastCampaign.js";
+import crmRouter from "./routes/crm.js";
+
+const APP_URL = String(
+  process.env.APP_URL ||
+    process.env.WEBAPP_URL ||
+    "https://elfduck.telebots.site"
+).trim();
+// const GOOGLE_STATS_WEBHOOK_URL = String(process.env.GOOGLE_STATS_WEBHOOK_URL || "").trim();
+
+const GOOGLE_STATS_WEBHOOK_URL_PRAGA = String(
+
+  process.env.GOOGLE_STATS_WEBHOOK_URL_PRAGA ||  ""
+
+).trim();
+
+const GOOGLE_STATS_WEBHOOK_URL_MOKOTOW = String(
+
+  process.env.GOOGLE_STATS_WEBHOOK_URL_MOKOTOW || ""
+
+).trim();
+
+const GOOGLE_STATS_WEBHOOK_URL_WOLA = String(
+
+  process.env.GOOGLE_STATS_WEBHOOK_URL_WOLA || ""
+
+).trim();
+
+const GOOGLE_STATS_WEBHOOK_URL_SRODMIESCIE = String(
+
+  process.env.GOOGLE_STATS_WEBHOOK_URL_SRODMIESCIE || ""
+
+).trim();
+
+const GOOGLE_STATS_WEBHOOK_URL_COURIER = String(
+
+  process.env.GOOGLE_STATS_WEBHOOK_URL_COURIER || ""
+
+).trim();
+
+const GOOGLE_STATS_WEBHOOK_URL_INPOST = String(
+
+  process.env.GOOGLE_STATS_WEBHOOK_URL_INPOST || ""
+
+).trim();
+
+const CART_AUTO_CLEAR_AFTER_MINUTES = Number(process.env.CART_AUTO_CLEAR_AFTER_MINUTES || 10);
+const CART_AUTO_CLEAR_INTERVAL_MS = Number(process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000);
+
+let bot = null;
+
+const inpostTrackingInputState = new Map();
+
+const managerClientMessageState = new Map();
+
+const managerClientMessageStateByChat =
+  new Map();
+
+const handleManagerClientMessageText =
+  async (ctx, next) => {
+const incomingMessage =
+  ctx?.message ||
+  ctx?.channelPost ||
+  ctx?.update?.message ||
+  ctx?.update?.channel_post ||
+  null;
+
+const incomingText = String(
+  incomingMessage?.text || ""
+).trim();
+
+if (!incomingText) {
+  return next();
+}
+
+if (incomingText.startsWith("/")) {
+  return next();
+}
+
+const managerTelegramId = String(
+
+  ctx?.from?.id ||
+
+  incomingMessage?.from?.id ||
+
+  ""
+
+).trim();
+
+const currentChatId = String(
+
+  ctx?.chat?.id ||
+
+  incomingMessage?.chat?.id ||
+
+  ""
+
+).trim();
+
+    const stateByManager =
+      managerTelegramId
+        ? managerClientMessageState.get(
+            managerTelegramId
+          )
+        : null;
+
+    const stateByChat =
+      currentChatId
+        ? managerClientMessageStateByChat.get(
+            currentChatId
+          )
+        : null;
+
+const clientMessageState =
+
+  stateByChat || stateByManager;
+
+const resolvedByManager =
+
+  Boolean(
+
+    stateByManager &&
+
+    !stateByChat
+
+  );
+
+    if (!clientMessageState) {
+      return next();
+    }
+
+    const expectedChatId = String(
+      clientMessageState
+        ?.managerChatId || ""
+    );
+
+    const expectedManagerTelegramId =
+      String(
+        clientMessageState
+          ?.managerTelegramId || ""
+      ).trim();
+
+    if (
+
+      resolvedByManager &&
+
+      expectedManagerTelegramId &&
+
+      managerTelegramId &&
+
+      managerTelegramId !==
+
+        expectedManagerTelegramId
+
+    ) {
+
+      console.log(
+
+        "[MANAGER CLIENT MESSAGE][SKIP MANAGER MISMATCH]",
+
+        {
+
+          expectedManagerTelegramId,
+
+          managerTelegramId,
+
+          currentChatId,
+
+        }
+
+      );
+
+      return next();
+
+    }
+
+    if (
+      expectedChatId &&
+      currentChatId !== expectedChatId
+    ) {
+      return next();
+    }
+
+    const messageText =
+
+      incomingText;
+
+    console.log(
+      "[MANAGER CLIENT MESSAGE][RECEIVED]",
+      {
+        orderId: String(
+          clientMessageState
+            ?.orderId || ""
+        ),
+
+        orderNo: String(
+          clientMessageState
+            ?.orderNo || ""
+        ),
+
+        managerTelegramId,
+
+        clientTelegramId: String(
+          clientMessageState
+            ?.clientTelegramId || ""
+        ),
+
+        currentChatId,
+
+        resolvedByManager,
+
+        messageText,
+      }
+    );
+
+    try {
+      await bot.telegram.sendMessage(
+        String(
+          clientMessageState
+            .clientTelegramId
+        ),
+        [
+          "💬 <b>Сообщение от менеджера</b>",
+          "",
+          `Заказ: <b>#${escapeHtml(
+            clientMessageState
+              .orderNo || "—"
+          )}</b>`,
+          "",
+          escapeHtml(messageText),
+        ].join("\n"),
+        {
+          parse_mode: "HTML",
+        }
+      );
+
+      const managerMessageId = Number(
+        incomingMessage?.message_id || 0
+      );
+
+      if (
+        currentChatId &&
+        managerMessageId
+      ) {
+        try {
+          await bot.telegram.deleteMessage(
+            currentChatId,
+            managerMessageId
+          );
+
+          console.log(
+            "[MANAGER CLIENT MESSAGE][MANAGER MESSAGE DELETED]",
+            {
+              currentChatId,
+              managerMessageId,
+            }
+          );
+        } catch (deleteError) {
+          console.error(
+            "[MANAGER CLIENT MESSAGE][MANAGER MESSAGE DELETE FAILED]",
+            {
+              currentChatId,
+              managerMessageId,
+              error:
+                deleteError?.response?.description ||
+                deleteError?.message ||
+                deleteError,
+            }
+          );
+        }
+      }
+
+      if (expectedManagerTelegramId) {
+
+        managerClientMessageState.delete(
+
+          expectedManagerTelegramId
+
+        );
+
+      }
+
+      if (currentChatId) {
+
+        managerClientMessageStateByChat.delete(
+
+          currentChatId
+
+        );
+
+      }
+
+      const successMessage =
+        await ctx.reply(
+          "✅ Сообщение отправлено клиенту."
+        );
+
+      const cleanupMessageIds = [
+        Number(
+          clientMessageState
+            ?.instructionMessageId || 0
+        ),
+
+        Number(
+          successMessage?.message_id || 0
+        ),
+      ].filter(Boolean);
+
+      setTimeout(async () => {
+        for (
+          const messageId of
+          cleanupMessageIds
+        ) {
+          try {
+            await bot.telegram
+              .deleteMessage(
+                currentChatId,
+                messageId
+              );
+          } catch (deleteError) {
+            const description =
+              String(
+                deleteError?.response
+                  ?.description ||
+                  deleteError?.message ||
+                  ""
+              ).toLowerCase();
+
+            if (
+              !description.includes(
+                "message to delete not found"
+              ) &&
+              !description.includes(
+                "message can't be deleted"
+              )
+            ) {
+              console.error(
+                "manager client message cleanup error:",
+                deleteError
+              );
+            }
+          }
+        }
+      }, 1200);
+
+      return;
+    } catch (error) {
+      console.error(
+        "manager client message send error:",
+        {
+          error:
+            error?.response
+              ?.description ||
+            error?.message ||
+            error,
+
+          managerTelegramId,
+
+          clientTelegramId:
+            clientMessageState
+              ?.clientTelegramId,
+
+          orderNo:
+            clientMessageState
+              ?.orderNo,
+        }
+      );
+
+      await ctx.reply(
+        [
+          "❌ Не удалось отправить сообщение клиенту.",
+          "",
+          "Возможно, клиент заблокировал бота или ни разу его не запускал.",
+        ].join("\n")
+      );
+
+      return;
+    }
+  };
+
+const broadcastJobs = new Map();
+
+const PROMO_CODES_COLLECTION = "promo_codes";
+
+const BROADCAST_TEMPLATES_COLLECTION = "broadcast_templates";
+
+function normalizePromoCode(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9_-]/g, "")
+    .slice(0, 32);
+}
+
+async function ensurePromoCodeIndexes() {
+  try {
+    const collection =
+      mongoose.connection.collection(
+        PROMO_CODES_COLLECTION
+      );
+
+    await Promise.all([
+
+      collection.createIndex(
+
+        { code: 1 },
+
+        { unique: true }
+
+      ),
+
+      collection.createIndex({
+
+        isActive: 1,
+
+        createdAt: -1,
+
+      }),
+
+      collection.createIndex({
+
+        expiresAt: 1,
+
+      }),
+
+    ]);
+  } catch (error) {
+    console.error(
+      "Promo code index sync failed:",
+      error?.message || error
+    );
+  }
+}
+
+async function ensureBroadcastTemplateIndexes() {
+  try {
+    const collection = mongoose.connection.collection(
+      BROADCAST_TEMPLATES_COLLECTION
+    );
+
+    await collection.createIndex(
+      { title: 1 },
+      { unique: true }
+    );
+
+    await collection.createIndex({
+      isDefault: 1,
+      createdAt: -1,
+    });
+  } catch (error) {
+    console.error(
+      "Broadcast template index sync failed:",
+      error?.message || error
+    );
+  }
+}
+
+const app = express();
+
+// CORS
+const CRM_ALLOWED_ORIGINS = new Set(
+  String(
+    process.env.CRM_ALLOWED_ORIGINS ||
+      "https://elfduck-crm.telebots.site"
+  )
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+);
+
+const corsOptions = {
+  origin(origin, cb) {
+    if (!origin) {
+      return cb(null, true);
+    }
+
+    if (origin === APP_URL) {
+      return cb(null, true);
+    }
+
+    if (CRM_ALLOWED_ORIGINS.has(origin)) {
+      return cb(null, true);
+    }
+
+    try {
+      const url = new URL(origin);
+
+      const isTelebotsSite =
+        url.protocol === "https:" &&
+        (url.hostname === "telebots.site" ||
+          url.hostname.endsWith(".telebots.site"));
+
+      if (isTelebotsSite) {
+        return cb(null, true);
+      }
+    } catch {}
+
+    console.warn("[CORS DENIED]", {
+      origin,
+      appUrl: APP_URL,
+      allowedOrigins: Array.from(
+        CRM_ALLOWED_ORIGINS
+      ),
+    });
+
+    return cb(
+      new Error(
+        "CORS_ORIGIN_DENIED"
+      )
+    );
+  },
+
+  credentials: true,
+
+  methods: [
+    "GET",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+  ],
+
+allowedHeaders: [
+
+  "Content-Type",
+
+  "x-admin-token",
+
+  "x-telegram-init-data",
+
+  "x-crm-session",
+
+],
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
+
+app.use(compression());
+
+app.use(
+  "/crm/push/upload-media",
+  express.json({
+    limit: "14mb",
+  })
+);
+
+app.use(express.json());
+app.use("/crm", crmRouter);
+
+// MongoDB — explicit pool size + no autoIndex so cold boot isn't stalled by
+// Mongoose rebuilding indexes on the Order collection on every restart.
+mongoose
+  .connect(process.env.MONGODB_URI, {
+    maxPoolSize: 20,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
+    autoIndex: process.env.NODE_ENV !== "production",
+  })
+  .then(async () => {
+    console.log("✅ MongoDB connected");
+
+    await ensurePromoCodeIndexes();
+
+    await ensureBroadcastTemplateIndexes();
+
+    if (
+
+      String(
+
+        process.env.CLEAR_ALL_RESERVED_QTY_ON_STARTUP || ""
+
+      ).trim() === "1"
+
+    ) {
+
+      try {
+
+        const result = await Product.updateMany(
+
+          {},
+
+          [
+
+            {
+
+              $set: {
+
+                flavors: {
+
+                  $map: {
+
+                    input: { $ifNull: ["$flavors", []] },
+
+                    as: "flavor",
+
+                    in: {
+
+                      $mergeObjects: [
+
+                        "$$flavor",
+
+                        {
+
+                          stockByPickupPoint: {
+
+                            $map: {
+
+                              input: {
+
+                                $ifNull: [
+
+                                  "$$flavor.stockByPickupPoint",
+
+                                  [],
+
+                                ],
+
+                              },
+
+                              as: "stock",
+
+                              in: {
+
+                                $mergeObjects: [
+
+                                  "$$stock",
+
+                                  {
+
+                                    reservedQty: 0,
+
+                                  },
+
+                                ],
+
+                              },
+
+                            },
+
+                          },
+
+                        },
+
+                      ],
+
+                    },
+
+                  },
+
+                },
+
+              },
+
+            },
+
+          ]
+
+        );
+
+        console.log(
+
+          "[MAINTENANCE][CLEAR ALL RESERVES] completed",
+
+          {
+
+            matchedCount: Number(
+
+              result?.matchedCount || 0
+
+            ),
+
+            modifiedCount: Number(
+
+              result?.modifiedCount || 0
+
+            ),
+
+          }
+
+        );
+
+      } catch (error) {
+
+        console.error(
+
+          "[MAINTENANCE][CLEAR ALL RESERVES] failed",
+
+          error
+
+        );
+
+      }
+
+    }
+
+    if (process.env.SKIP_INDEX_SYNC !== "1") {
+      setImmediate(async () => {
+        try {
+          await Promise.all([
+            Product.syncIndexes(),
+            Order.syncIndexes(),
+            Cart.syncIndexes(),
+            User.syncIndexes(),
+            PickupPoint.syncIndexes(),
+            Category.syncIndexes(),
+            BroadcastCampaign.syncIndexes(),
+          ]);
+          await resumeCrmBroadcastCampaigns();
+          console.log("✅ MongoDB indexes synced");
+        } catch (err) {
+          console.error("⚠️  Index sync failed:", err?.message || err);
+        }
+      });
+    }
+  })
+  .catch((err) => console.error("❌ MongoDB error:", err));
+
+// In-memory cache for hot read endpoints (pickup-points, categories, products).
+const _cache = new Map();
+function cacheGet(key) {
+  const hit = _cache.get(key);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) { _cache.delete(key); return null; }
+  return hit.value;
+}
+function cacheSet(key, value, ttlMs) {
+  _cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+function cacheInvalidate(prefix) {
+  for (const k of _cache.keys()) {
+    if (typeof k === "string" && k.startsWith(prefix)) _cache.delete(k);
+  }
+}
+
+let _warehouseIdsCache = null;
+
+async function getWarehouseIds() {
+  if (_warehouseIdsCache) return _warehouseIdsCache;
+  const [courierPP, inpostPP] = await Promise.all([
+    PickupPoint.findOne({ key: { $in: ["delivery", "delivery,"] } }, { _id: 1, key: 1 }).lean(),
+    PickupPoint.findOne({ key: { $in: ["delivery-2", "delivery-2,"] } }, { _id: 1, key: 1 }).lean(),
+  ]);
+  _warehouseIdsCache = {
+    courierWarehouseId: courierPP?._id || null,
+    inpostWarehouseId: inpostPP?._id || null,
+  };
+  return _warehouseIdsCache;
+}
+
+// ==== helper’ы рефераки ===
+
+function genRefCode() {
+  return Math.random().toString(36).slice(2, 8); // 6 симолов
+}
+
+function ensureReferralGroupsArray(user) {
+  if (!user.referral) user.referral = {};
+  user.referral.rewardGroups = Array.isArray(user.referral.rewardGroups)
+    ? user.referral.rewardGroups
+    : [];
+  return user.referral.rewardGroups;
+}
+
+function attachReferralToRewardGroup(ownerUser, referredTelegramId) {
+  const referralId = String(referredTelegramId || "").trim();
+  if (!ownerUser || !referralId) return false;
+
+  const groups = ensureReferralGroupsArray(ownerUser);
+
+  const alreadyAdded = groups.some((group) =>
+    Array.isArray(group?.memberTelegramIds) &&
+    group.memberTelegramIds.map((x) => String(x)).includes(referralId)
+  );
+  if (alreadyAdded) return false;
+
+  let targetGroup = groups.find(
+    (group) =>
+      group?.rewardClaimed !== true &&
+      Array.isArray(group?.memberTelegramIds) &&
+      group.memberTelegramIds.length < 2
+  );
+
+  if (!targetGroup) {
+    groups.push({
+      pairIndex: groups.length + 1,
+      memberTelegramIds: [referralId],
+      rewardClaimed: false,
+      rewardClaimedAt: null,
+      rewardAmountZl: 25,
+    });
+
+    if (typeof ownerUser.markModified === "function") {
+      ownerUser.markModified("referral.rewardGroups");
+    }
+
+    return true;
+  }
+
+  const currentIds = Array.isArray(targetGroup.memberTelegramIds)
+    ? targetGroup.memberTelegramIds.map((x) => String(x)).filter(Boolean)
+    : [];
+
+  if (!currentIds.includes(referralId)) {
+    currentIds.push(referralId);
+  }
+
+  targetGroup.memberTelegramIds = currentIds;
+
+  if (typeof ownerUser.markModified === "function") {
+    ownerUser.markModified("referral.rewardGroups");
+  }
+
+  return true;
+}
+
+function getReferralDisplayName(user) {
+  if (!user) return "Пользователь";
+  if (user.username) return `@${String(user.username).trim()}`;
+  if (user.firstName) return String(user.firstName).trim();
+  return String(user.telegramId || "Пользователь");
+}
+
+async function markReferralFirstOrderDoneIfNeeded(telegramId) {
+  const safeTelegramId = String(telegramId || "").trim();
+  if (!safeTelegramId) return false;
+
+  const referredUser = await User.findOne({ telegramId: safeTelegramId });
+  if (!referredUser) return false;
+
+  if (referredUser?.referral?.firstOrderDoneAt) return false;
+
+  const inviterCode = String(referredUser?.referral?.usedCode || "").trim();
+  if (!inviterCode) return false;
+
+  referredUser.referral = referredUser.referral || {};
+  referredUser.referral.firstOrderDoneAt = new Date();
+  await referredUser.save();
+
+  return true;
+}
+
+async function buildReferralStatusForUser(ownerUser) {
+  if (!ownerUser) {
+    return {
+      code: "",
+      totalReferrals: 0,
+      referralsCount: 0,
+      availableClaims: 0,
+      groups: [],
+    };
+  }
+
+  const groups = ensureReferralGroupsArray(ownerUser);
+
+  const memberIds = groups.flatMap((group) =>
+    Array.isArray(group?.memberTelegramIds)
+      ? group.memberTelegramIds.map((x) => String(x)).filter(Boolean)
+      : []
+  );
+
+  const referredUsers = memberIds.length
+    ? await User.find(
+        { telegramId: { $in: memberIds } },
+        { telegramId: 1, username: 1, firstName: 1, photoUrl: 1, createdAt: 1, referral: 1 }
+      ).lean()
+    : [];
+
+  const referredById = new Map(
+    referredUsers.map((row) => [String(row.telegramId || ""), row])
+  );
+
+  const paidOrderTelegramIds = memberIds.length
+    ? await Order.distinct("userTelegramId", {
+        userTelegramId: { $in: memberIds },
+        $or: [
+          { "payment.status": "paid" },
+          { status: { $in: ["processing", "done"] } },
+        ],
+      })
+    : [];
+
+  const paidSet = new Set((paidOrderTelegramIds || []).map((x) => String(x || "")));
+
+  const mappedGroups = groups.map((group) => {
+    const members = (Array.isArray(group?.memberTelegramIds) ? group.memberTelegramIds : []).map((tgId) => {
+      const safeTgId = String(tgId || "");
+      const refUser = referredById.get(safeTgId);
+      const hasConfirmedFirstPurchase =
+        Boolean(refUser?.referral?.firstOrderDoneAt) || paidSet.has(safeTgId);
+
+      return {
+        telegramId: safeTgId,
+        invitedAt: refUser?.createdAt || null,
+        username: String(refUser?.username || ""),
+        firstName: String(refUser?.firstName || ""),
+        photoUrl: String(refUser?.photoUrl || ""),
+        displayName: getReferralDisplayName(refUser || { telegramId: safeTgId }),
+        firstOrderDoneAt: refUser?.referral?.firstOrderDoneAt || null,
+        completed: hasConfirmedFirstPurchase,
+      };
+    });
+
+    const completedCount = members.filter((m) => m.completed === true).length;
+    const isComplete = members.length === 2;
+    const isClaimed = group?.rewardClaimed === true;
+    const readyToClaim = isComplete && completedCount === 2 && !isClaimed;
+
+    return {
+      id: String(group?._id || ""),
+      pairIndex: Number(group?.pairIndex || 0),
+      rewardAmountZl: Number(group?.rewardAmountZl || 25),
+      rewardZl: Number(group?.rewardAmountZl || 25),
+      rewardClaimed: isClaimed,
+      rewardClaimedAt: group?.rewardClaimedAt || null,
+      claimedAt: group?.rewardClaimedAt || null,
+      completedCount,
+      isComplete,
+      isClaimed,
+      isClaimable: readyToClaim,
+      readyToClaim,
+      members,
+    };
+  });
+
+  return {
+    code: String(ownerUser?.referral?.code || ""),
+    totalReferrals: referredUsers.length,
+    referralsCount: referredUsers.length,
+    availableClaims: mappedGroups.filter((g) => g.isClaimable).length, //d
+    groups: mappedGroups,
+  };
+}
+
+function genOrderNo() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "ED-";
+  for (let i = 0; i < 6; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return out;
+}
+
+function verifyTelegramWebAppInitData(initDataRaw) {
+  const initData = String(initDataRaw || "").trim();
+  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "").trim();
+
+  if (!initData || !botToken) return null;
+
+  const params = new URLSearchParams(initData);
+  const hash = String(params.get("hash") || "").trim();
+  if (!hash) return null;
+
+  params.delete("hash");
+
+  const dataCheckString = Array.from(params.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
+
+  const secretKey = crypto
+    .createHmac("sha256", "WebAppData")
+    .update(botToken)
+    .digest();
+
+  const calculatedHash = crypto
+    .createHmac("sha256", secretKey)
+    .update(dataCheckString)
+    .digest("hex");
+
+  try {
+    const a = Buffer.from(calculatedHash, "hex");
+    const b = Buffer.from(hash, "hex");
+
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const user = JSON.parse(params.get("user") || "{}");
+    const telegramId = String(user?.id || "").trim();
+    if (!telegramId) return null;
+    return { telegramId, user };
+  } catch {
+    return null;
+  }
+}
+
+function getTrustedTelegramIdFromRequest(req) {
+  const verified = verifyTelegramWebAppInitData(req.headers?.["x-telegram-init-data"]);
+  return String(verified?.telegramId || "").trim();
+}
+
+function requireTrustedTelegramId(req, res) {
+  const telegramId = getTrustedTelegramIdFromRequest(req);
+
+  if (!telegramId) {
+    res.status(401).json({
+      ok: false,
+      error: "INVALID_TELEGRAM_INIT_DATA",
+    });
+    return "";
+  }
+
+  return telegramId;
+}
+
+async function getPromoCodeByCode(code) {
+  const safeCode = normalizePromoCode(code);
+
+  if (!safeCode) {
+    return null;
+  }
+
+  return mongoose.connection
+    .collection(PROMO_CODES_COLLECTION)
+    .findOne({
+      code: safeCode,
+    });
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function normalizeInpostTrackingNumber(value) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, "")
+    .replace(/[^A-Z0-9-]/g, "")
+    .slice(0, 64);
+}
+
+function getInpostTrackingUrl(trackingNumber) {
+  const safeTrackingNumber =
+    normalizeInpostTrackingNumber(trackingNumber);
+
+  if (!safeTrackingNumber) return "";
+
+  return `https://inpost.pl/sledzenie-przesylek?number=${encodeURIComponent(
+    safeTrackingNumber
+  )}`;
+}
+
+async function notifyClientAboutInpostPaymentConfirmed(
+  order
+) {
+  if (!bot || !order) {
+    return false;
+  }
+
+  const deliveryType = String(
+    order?.deliveryType || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const deliveryMethod = String(
+    order?.deliveryMethod || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  /*
+   * Уведомление только для InPost.
+   */
+  if (
+    deliveryType !== "delivery" ||
+    deliveryMethod !== "inpost"
+  ) {
+    return false;
+  }
+
+  /*
+   * Защита от повторной отправки.
+   */
+  if (
+    order
+      ?.inpostPaymentConfirmedNotifiedAt
+  ) {
+    return false;
+  }
+
+  const clientTelegramId = String(
+    order?.userTelegramId || ""
+  ).trim();
+
+  if (!clientTelegramId) {
+    return false;
+  }
+
+  const text = [
+    "✅ <b>МЕНЕДЖЕР ПОДТВЕРДИЛ ВАШУ ТРАНЗАКЦИЮ!</b>",
+    "",
+    `Заказ <b>#${escapeHtml(
+      order?.orderNo || "—"
+    )}</b> оплачен.`,
+    "",
+    "Мы уже собираем ваш заказ и отправим его до конца рабочего дня.",
+    "",
+    "Ожидайте дальнейших сообщений.",
+  ].join("\n");
+
+  await bot.telegram.sendMessage(
+    clientTelegramId,
+    text,
+    {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text:
+                "💬 Связаться с менеджером",
+
+              url:
+                "https://t.me/elfduck_inpost",
+            },
+          ],
+        ],
+      },
+    }
+  );
+
+  /*
+   * Отмечаем только после успешной отправки.
+   */
+  order
+    .inpostPaymentConfirmedNotifiedAt =
+      new Date();
+
+  await order.save();
+
+  return true;
+}
+
+async function notifyClientAboutInpostShipment(order) {
+  if (!bot || !order) return false;
+
+  const deliveryType = String(order?.deliveryType || "")
+    .trim()
+    .toLowerCase();
+
+  const deliveryMethod = String(order?.deliveryMethod || "")
+    .trim()
+    .toLowerCase();
+
+  if (
+    deliveryType !== "delivery" ||
+    deliveryMethod !== "inpost"
+  ) {
+    return false;
+  }
+
+  const clientTelegramId = String(
+    order?.userTelegramId || ""
+  ).trim();
+
+  const trackingNumber =
+    normalizeInpostTrackingNumber(
+      order?.inpostTrackingNumber || ""
+    );
+
+  if (!clientTelegramId || !trackingNumber) {
+    return false;
+  }
+
+  const trackingUrl =
+    getInpostTrackingUrl(trackingNumber);
+
+  const lockerAddress = String(
+    order?.inpostData?.lockerAddress ||
+      order?.inpostLockerAddress ||
+      order?.deliveryAddress ||
+      ""
+  ).trim();
+
+  const lines = [
+    "📦 <b>ВАШ ЗАКАЗ ОТПРАВЛЕН!</b>",
+    "",
+    `Заказ <b>#${escapeHtml(
+      order?.orderNo || "—"
+    )}</b> передан в InPost.`,
+    "",
+    `Трекинг-номер: <code>${escapeHtml(
+      trackingNumber
+    )}</code>`,
+  ];
+
+  if (lockerAddress) {
+    lines.push("");
+    lines.push(
+      `Пачкомат: <b>${escapeHtml(
+        lockerAddress
+      )}</b>`
+    );
+  }
+
+  lines.push("");
+  lines.push("Спасибо за покупку ❤️");
+
+  await bot.telegram.sendMessage(
+    clientTelegramId,
+    lines.join("\n"),
+    {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "📦 Отследить посылку",
+              url: trackingUrl,
+            },
+          ],
+        ],
+      },
+    }
+  );
+
+  return true;
+}
+
+async function completeInpostShipment(
+  order,
+  managerTelegramId
+) {
+  if (!order) {
+    throw new Error("ORDER_NOT_FOUND");
+  }
+
+  const deliveryType = String(
+    order?.deliveryType || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const deliveryMethod = String(
+    order?.deliveryMethod || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    deliveryType !== "delivery" ||
+    deliveryMethod !== "inpost"
+  ) {
+    throw new Error(
+      "ORDER_IS_NOT_INPOST"
+    );
+  }
+
+  const trackingNumber =
+    normalizeInpostTrackingNumber(
+      order?.inpostTrackingNumber || ""
+    );
+
+  if (!trackingNumber) {
+    throw new Error(
+      "INPOST_TRACKING_REQUIRED"
+    );
+  }
+
+  /*
+   * Если заказ уже был отправлен,
+   * повторно склад и кэшбек не трогаем.
+   */
+  const wasAlreadyShipped =
+    String(order?.status || "")
+      .trim()
+      .toLowerCase() === "shipped";
+
+  if (!wasAlreadyShipped) {
+    /*
+     * Окончательно списываем
+     * зарезервированный товар.
+     */
+    if (!order?.stockCommittedAt) {
+      await commitOrderStock(order);
+
+      order.stockCommittedAt =
+        new Date();
+    }
+
+    order.status = "shipped";
+    order.shippedAt =
+      order?.shippedAt || new Date();
+  }
+
+  order.inpostTrackingNumber =
+    trackingNumber;
+
+  order.inpostTrackingAddedAt =
+    order?.inpostTrackingAddedAt ||
+    new Date();
+
+  order.inpostTrackingAddedByTelegramId =
+    String(
+      order
+        ?.inpostTrackingAddedByTelegramId ||
+        managerTelegramId ||
+        ""
+    ).trim();
+
+  await order.save();
+
+  /*
+   * Начисляем кэшбек только после того,
+   * как посылка реально отправлена.
+   *
+   * Внутри applyOrderCashback должна быть
+   * собственная защита от повторного начисления.
+   */
+  if (!wasAlreadyShipped) {
+    await applyOrderCashback(order);
+  }
+
+  let clientNotified = Boolean(
+    order?.inpostShippedNotifiedAt
+  );
+
+  /*
+  * Уведомляем клиента только один раз.
+  * Ошибка Telegram не должна ломать
+  * отправку заказа.
+  */
+  if (!clientNotified) {
+    try {
+      const notified =
+        await notifyClientAboutInpostShipment(
+          order
+        );
+
+      if (notified) {
+        order.inpostShippedNotifiedAt =
+          new Date();
+
+        await order.save();
+
+        clientNotified = true;
+      }
+    } catch (notifyError) {
+      console.error(
+        "[INPOST SHIPMENT][CLIENT NOTIFY FAILED]",
+        {
+          orderId: String(
+            order?._id || ""
+          ),
+
+          orderNo: String(
+            order?.orderNo || ""
+          ),
+
+          clientTelegramId: String(
+            order?.userTelegramId || ""
+          ),
+
+          error:
+            notifyError?.response
+              ?.description ||
+            notifyError?.message ||
+            notifyError,
+        }
+      );
+    }
+  }
+
+  /*
+  * Обновляем сообщение «ЗАКАЗ ГОТОВ К ОТПРАВКЕ»
+  * в финальное состояние и убираем кнопку.
+  */
+  const deliveryMessageIds =
+    Array.isArray(
+      order?.managerDeliveryMessageIds
+    )
+      ? order.managerDeliveryMessageIds
+          .map((value) =>
+            Number(value || 0)
+          )
+          .filter(Boolean)
+      : [];
+
+  const deliveryChatId = String(
+    order?.payment
+      ?.managerMessageChatId || ""
+  ).trim();
+
+  const shippedManagerText = [
+    "✅ <b>Заказ отмечен как отправленный</b>",
+    "",
+    `Трекинг-номер: <code>${escapeHtml(
+      trackingNumber
+    )}</code>`,
+    "",
+    clientNotified
+      ? "Клиент получил уведомление со ссылкой на отслеживание."
+      : "⚠️ Не удалось отправить уведомление клиенту.",
+  ].join("\n");
+
+  for (
+    const messageId of deliveryMessageIds
+  ) {
+    try {
+      if (
+        deliveryChatId &&
+        messageId
+      ) {
+        await bot.telegram.editMessageText(
+          deliveryChatId,
+          messageId,
+          undefined,
+          shippedManagerText,
+          {
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+
+            reply_markup: {
+              inline_keyboard: [],
+            },
+          }
+        );
+      }
+    } catch (editError) {
+      const description = String(
+        editError?.response
+          ?.description ||
+          editError?.message ||
+          ""
+      ).toLowerCase();
+
+      if (
+        !description.includes(
+          "message is not modified"
+        ) &&
+        !description.includes(
+          "message to edit not found"
+        )
+      ) {
+        console.error(
+          "completeInpostShipment edit message error:",
+          editError
+        );
+      }
+    }
+  }
+
+  if (deliveryMessageIds.length) {
+    order.managerDeliveryMessageIds =
+      [];
+
+    await order.save();
+  }
+
+  const freshOrder =
+    await Order.findById(order._id);
+
+  if (!freshOrder) {
+    throw new Error(
+      "ORDER_NOT_FOUND_AFTER_INPOST_SHIPMENT"
+    );
+  }
+
+  await refreshManagerOrderMessage(
+    freshOrder
+  );
+
+  return freshOrder;
+}
+
+function formatOrderDate(dt) {
+  try {
+    return new Date(dt).toLocaleString("ru-RU", {
+      timeZone: "Europe/Warsaw",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return String(dt || "—");
+  }
+}
+
+function buildOrderPointSearchBlob(order, pickupPoint) {
+  const rawParts = [
+    pickupPoint?.key,
+    pickupPoint?.title,
+    pickupPoint?.address,
+    pickupPoint?.name,
+    pickupPoint?.label,
+    pickupPoint?.district,
+    pickupPoint?.city,
+    order?.pickupPointId,
+    order?.pickupPointKey,
+    order?.pickupPointTitle,
+    order?.pickupPointAddress,
+    order?.pickupPointLabel,
+    order?.pickupPoint?.key,
+    order?.pickupPoint?.title,
+    order?.pickupPoint?.address,
+    order?.paymentPoint?.key,
+    order?.paymentPoint?.title,
+    order?.paymentPoint?.address,
+    order?.methodLabel,
+    order?.deliveryMethod,
+    order?.deliveryType,
+  ];
+
+  return rawParts
+    .map((v) => String(v || "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function normalizePhotoLookupText(input) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ł/g, "l")
+    .replace(/ś/g, "s")
+    .replace(/ż/g, "z")
+    .replace(/ź/g, "z")
+    .replace(/ć/g, "c")
+    .replace(/ń/g, "n")
+    .replace(/ó/g, "o")
+    .replace(/ą/g, "a")
+    .replace(/ę/g, "e")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\br dmie cie\b/g, "srodmiescie")
+    .replace(/\bsr dmie cie\b/g, "srodmiescie")
+    .replace(/\bsrod miescie\b/g, "srodmiescie")
+    .replace(/\bsrodmiescie\b/g, "srodmiescie");
+}
+
+async function getOrderManagerTelegramUrl(order) {
+  const managerLinks = {
+    praga: "https://t.me/elfduck_praga",
+    mokotow: "https://t.me/elfduck_mokotow",
+    wola: "https://t.me/elfduck_wola",
+    srodmiescie:
+      "https://t.me/elfduck_srodmiescie",
+    delivery:
+      "https://t.me/elfduck_dostawa",
+    inpost:
+      "https://t.me/elfduck_inpost",
+  };
+
+  let point = null;
+
+  try {
+    point =
+      await resolveOrderNotificationPoint(
+        order
+      );
+  } catch (error) {
+    console.error(
+      "getOrderManagerTelegramUrl resolve point error:",
+      error
+    );
+  }
+
+  const deliveryType =
+    normalizePhotoLookupText(
+      order?.deliveryType
+    );
+
+  const deliveryMethod =
+    normalizePhotoLookupText(
+      order?.deliveryMethod
+    );
+
+  /*
+   * Доставка курьером / InPost.
+   */
+  if (deliveryType === "delivery") {
+    if (
+      deliveryMethod.includes(
+        "inpost"
+      )
+    ) {
+      return managerLinks.inpost;
+    }
+
+    return managerLinks.delivery;
+  }
+
+  /*
+   * Самовывоз.
+   */
+  const searchText =
+    normalizePhotoLookupText(
+      [
+        point?.key,
+        point?.title,
+        point?.address,
+
+        order?.pickupPointKey,
+        order?.pickupPointTitle,
+        order?.pickupPointAddress,
+
+        order?.pickupPoint?.key,
+        order?.pickupPoint?.title,
+        order?.pickupPoint?.address,
+
+        order?.methodLabel,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+
+  if (
+    searchText.includes("praga")
+  ) {
+    return managerLinks.praga;
+  }
+
+  if (
+    searchText.includes("mokotow")
+  ) {
+    return managerLinks.mokotow;
+  }
+
+  if (
+    searchText.includes("wola")
+  ) {
+    return managerLinks.wola;
+  }
+
+  if (
+    searchText.includes(
+      "srodmiescie"
+    )
+  ) {
+    return managerLinks.srodmiescie;
+  }
+
+  console.warn(
+    "[MANAGER LINK] pickup point unresolved",
+    {
+      orderId: String(
+        order?._id || ""
+      ),
+
+      orderNo: String(
+        order?.orderNo || ""
+      ),
+
+      pickupPointId: String(
+        order?.pickupPointId || ""
+      ),
+
+      pointKey: String(
+        point?.key || ""
+      ),
+
+      pointTitle: String(
+        point?.title || ""
+      ),
+
+      searchText,
+    }
+  );
+
+  return "";
+}
+
+function isSrodmiesciePoint(searchText) {
+  const normalized = normalizePhotoLookupText(searchText);
+
+  return normalized.includes("srodmiescie");
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    const str = String(value || "").trim();
+    if (str) return str;
+  }
+  return "";
+}
+
+function getManagerOrderPhotoByPickupPoint(order, pickupPoint) {
+  const deliveryType = normalizePhotoLookupText(order?.deliveryType);
+  const deliveryMethod = normalizePhotoLookupText(order?.deliveryMethod);
+
+  if (deliveryType === "delivery" && deliveryMethod.includes("courier")) {
+    return firstNonEmptyString(
+      process.env.TG_ORDER_PHOTO_COURIER,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (deliveryType === "delivery" && deliveryMethod.includes("inpost")) {
+    return firstNonEmptyString(
+      process.env.TG_ORDER_PHOTO_INPOST,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  const pointKey = normalizePhotoLookupText(buildOrderPointSearchBlob(order, pickupPoint));
+
+  if (pointKey.includes("praga")) {
+    return firstNonEmptyString(
+      process.env.TG_ORDER_PHOTO_PRAGA,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (pointKey.includes("mokotow")) {
+    return firstNonEmptyString(
+      process.env.TG_ORDER_PHOTO_MOKOTOW,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (pointKey.includes("wola")) {
+    return firstNonEmptyString(
+      process.env.TG_ORDER_PHOTO_WOLA,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (isSrodmiesciePoint(buildOrderPointSearchBlob(order, pickupPoint))) {
+    return firstNonEmptyString(
+      process.env.TG_ORDER_PHOTO_SRODMIESCIE,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  return firstNonEmptyString(process.env.TG_ORDER_PHOTO_DEFAULT);
+}
+
+function getCustomerOrderPhotoByPickupPoint(order, pickupPoint) {
+  const deliveryType = normalizePhotoLookupText(order?.deliveryType);
+  const deliveryMethod = normalizePhotoLookupText(order?.deliveryMethod);
+
+  if (deliveryType === "delivery" && deliveryMethod.includes("courier")) {
+    return firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_COURIER,
+      process.env.TG_ORDER_PHOTO_COURIER,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (deliveryType === "delivery" && deliveryMethod.includes("inpost")) {
+    return firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_INPOST,
+      process.env.TG_ORDER_PHOTO_INPOST,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  const pointKey = normalizePhotoLookupText(buildOrderPointSearchBlob(order, pickupPoint));
+
+  if (pointKey.includes("praga")) {
+    return firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_PRAGA,
+      process.env.TG_ORDER_PHOTO_PRAGA,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (pointKey.includes("mokotow")) {
+    return firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_MOKOTOW,
+      process.env.TG_ORDER_PHOTO_MOKOTOW,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (pointKey.includes("wola")) {
+    return firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_WOLA,
+      process.env.TG_ORDER_PHOTO_WOLA,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  if (isSrodmiesciePoint(buildOrderPointSearchBlob(order, pickupPoint))) {
+    return firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_SRODMIESCIE,
+      process.env.TG_ORDER_PHOTO_SRODMIESCIE,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+  }
+
+  return firstNonEmptyString(
+    process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+    process.env.TG_ORDER_PHOTO_DEFAULT
+  );
+}
+
+const WARSAW_DELIVERY_DISTRICT_PRICES = new Map([
+  ["srodmiescie", { label: "Śródmieście", price: 20 }],
+  ["wola", { label: "Wola", price: 20 }],
+  ["ochota", { label: "Ochota", price: 20 }],
+  ["zoliborz", { label: "Żoliborz", price: 20 }],
+  ["praga-polnoc", { label: "Praga Północ", price: 20 }],
+
+  ["mokotow", { label: "Mokotów", price: 20 }],
+  ["praga-poludnie", { label: "Praga Południe", price: 20 }],
+  ["bialoleka", { label: "Białołęka", price: 20 }],
+  ["targowek", { label: "Targówek", price: 20 }],
+  ["bielany", { label: "Bielany", price: 20 }],
+  ["bemowo", { label: "Bemowo", price: 20 }],
+  ["ursus", { label: "Ursus", price: 20 }],
+  ["wlochy", { label: "Włochy", price: 20 }],
+  ["ursynow", { label: "Ursynów", price: 20 }],
+  ["wilanow", { label: "Wilanów", price: 20 }],
+
+  ["wawer", { label: "Wawer", price: 25 }],
+  ["rembertow", { label: "Rembertów", price: 25 }],
+  ["wesola", { label: "Wesoła", price: 25 }],
+  // --- Warsaw suburb localities (25 PLN) ---
+  ["zabki", { label: "Ząbki", price: 25 }],
+  ["marki", { label: "Marki", price: 25 }],
+  ["zielonka", { label: "Zielonka", price: 25 }],
+  ["sulejowek", { label: "Sulejówek", price: 25 }],
+  ["lomianki", { label: "Łomianki", price: 25 }],
+  ["stare-babice", { label: "Stare Babice", price: 25 }],
+  ["babice", { label: "Babice", price: 25 }],
+  ["izabelin", { label: "Izabelin", price: 25 }],
+  ["raszyn", { label: "Raszyn", price: 25 }],
+  ["janki", { label: "Janki", price: 25 }],
+  ["falenty", { label: "Falenty", price: 25 }],
+  ["lazy", { label: "Łazy", price: 25 }],
+  ["magdalenka", { label: "Magdalenka", price: 25 }],
+  ["michalowice", { label: "Michałowice", price: 25 }],
+  ["reguly", { label: "Reguły", price: 25 }],
+  ["opacz-kolonia", { label: "Opacz-Kolonia", price: 25 }],
+  ["piastow", { label: "Piastów", price: 25 }],
+  ["pruszkow", { label: "Pruszków", price: 25 }],
+  ["ozarow-mazowiecki", { label: "Ożarów Mazowiecki", price: 25 }],
+  ["piaseczno", { label: "Piaseczno", price: 25 }],
+  ["jozefoslaw", { label: "Józefosław", price: 25 }],
+  ["mysiadlo", { label: "Mysiadło", price: 25 }],
+  ["konstancin-jeziorna", { label: "Konstancin-Jeziorna", price: 25 }],
+  ["bielawa", { label: "Bielawa", price: 25 }],
+  ["klaudyn", { label: "Klaudyn", price: 25 }],
+  ["latchorzew", { label: "Latchorzew", price: 25 }],
+]);
+
+const FREE_COURIER_DELIVERY_THRESHOLD_ZL = Number(
+  process.env.FREE_COURIER_DELIVERY_THRESHOLD_ZL || 200
+);
+
+const COURIER_MIN_ORDER_TOTAL_ZL = Number(
+  process.env.COURIER_MIN_ORDER_TOTAL_ZL || 80
+);
+
+const SYNCED_PICKUP_POINT_KEY_GROUPS = [
+  new Set(["wola", "delivery-2"]),
+];
+
+function normalizePickupPointKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+}
+
+function getSyncedPickupPointKeysByKey(pointKey) {
+  const safeKey = normalizePickupPointKey(pointKey);
+  if (!safeKey) return [safeKey].filter(Boolean);
+
+  for (const group of SYNCED_PICKUP_POINT_KEY_GROUPS) {
+    if (group.has(safeKey)) {
+      return Array.from(group.values());
+    }
+  }
+
+  return [safeKey];
+}
+
+async function getSyncedPickupPointIdsByAnyPoint(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return [];
+
+  const byId = mongoose.isValidObjectId(raw)
+    ? await PickupPoint.findById(raw, { _id: 1, key: 1 }).lean()
+    : null;
+
+  const point =
+    byId ||
+    (await PickupPoint.findOne(
+      { key: { $in: [raw, `${raw},`, normalizePickupPointKey(raw)] } },
+      { _id: 1, key: 1 }
+    ).lean());
+
+  if (!point?._id) return [];
+
+  const syncedKeys = getSyncedPickupPointKeysByKey(point.key || raw);
+
+  const syncedPoints = await PickupPoint.find(
+    { key: { $in: syncedKeys.flatMap((key) => [key, `${key},`]) } },
+    { _id: 1, key: 1 }
+  ).lean();
+
+  const ids = syncedPoints
+    .map((row) => String(row?._id || "").trim())
+    .filter(Boolean);
+
+  return ids.length ? Array.from(new Set(ids)) : [String(point._id)];
+}
+
+function stripPolishStreetPrefix(input) {
+  return String(input || "")
+    .trim()
+    .replace(/^\s*(?:ulica|ul\.?)\s+/i, "")
+    .trim();
+}
+
+function normalizeDistrictChunk(input) {
+  return stripPolishStreetPrefix(input)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ł/g, "l")
+    .replace(/ś/g, "s")
+    .replace(/ż/g, "z")
+    .replace(/ź/g, "z")
+    .replace(/ć/g, "c")
+    .replace(/ń/g, "n")
+    .replace(/ó/g, "o")
+    .replace(/ą/g, "a")
+    .replace(/ę/g, "e")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function getProductCategoryKey(product) {
+  return String(product?.categoryKey || "").trim().toLowerCase();
+}
+
+function getInpostEquivalentUnitsFromCartItems(items = [], products = []) {
+  const productByKey = new Map(
+    (Array.isArray(products) ? products : []).map((p) => [String(p?.productKey || "").trim(), p])
+  );
+
+  const totals = (Array.isArray(items) ? items : []).reduce(
+    (acc, item) => {
+      const qty = Math.max(0, Number(item?.qty || 0));
+      const product = productByKey.get(String(item?.productKey || "").trim());
+      const categoryKey = getProductCategoryKey(product);
+
+      if (categoryKey === "liquids") {
+        acc.liquids += qty;
+      } else if (categoryKey === "disposables" || categoryKey === "pods") {
+        acc.devices += qty;
+      } else if (categoryKey === "cartridges") {
+        acc.cartridges += qty;
+      }
+
+      return acc;
+    },
+    { liquids: 0, devices: 0, cartridges: 0 }
+  );
+
+  const liquidsUnits = totals.liquids * (7 / 20); // 20 жиж = 7 единиц
+  const devicesUnits = totals.devices;            // 1 курилка / 1 под = 1 единица
+  const cartridgesUnits = totals.cartridges / 4;  // 4 картриджа = 1 единица
+
+  const packageUnits = Number((liquidsUnits + devicesUnits + cartridgesUnits).toFixed(4));
+  return packageUnits;
+}
+
+function resolveInpostDeliveryPricing(
+  items = [],
+  products = [],
+  itemsSubtotalZl = 0
+) {
+  const packageUnits = getInpostEquivalentUnitsFromCartItems(
+    items,
+    products
+  );
+
+  const isFreeDelivery = Number(itemsSubtotalZl || 0) >= 200;
+
+  const deliveryFeeZl = isFreeDelivery
+    ? 0
+    : packageUnits > 7
+    ? 17
+    : 12;
+
+  return {
+    packageUnits,
+    deliveryFeeZl,
+    isFreeDelivery,
+  };
+}
+
+const _nominatimCache = new Map();
+const NOMINATIM_CACHE_TTL = 60 * 60 * 1000; // 1 hour
+
+async function resolveWarsawDeliveryPricing(address, itemsSubtotalZl = 0) {
+  const rawAddress = stripPolishStreetPrefix(address);
+    if (!rawAddress) {
+      return {
+        districtKey: "",
+        districtLabel: null,
+        deliveryFeeZl: 0,
+        matched: false,
+      };
+    }
+
+  const cacheKey = rawAddress.toLowerCase();
+  const cached = _nominatimCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < NOMINATIM_CACHE_TTL) {
+    const subtotal = Number(itemsSubtotalZl || 0);
+    const isFree = subtotal >= FREE_COURIER_DELIVERY_THRESHOLD_ZL;
+    return {
+      ...cached.result,
+      deliveryFeeZl: cached.result.matched && isFree ? 0 : cached.result.deliveryFeeZl,
+    };
+  }
+
+  const normalizeLooseText = (input) =>
+    stripPolishStreetPrefix(input)
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/ł/g, "l")
+      .replace(/ś/g, "s")
+      .replace(/ż/g, "z")
+      .replace(/ź/g, "z")
+      .replace(/ć/g, "c")
+      .replace(/ń/g, "n")
+      .replace(/ó/g, "o")
+      .replace(/ą/g, "a")
+      .replace(/ę/g, "e")
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const matchDistrictFromText = (input) => {
+    const normalizedAddress = normalizeDistrictChunk(input);
+
+    for (const [key, meta] of WARSAW_DELIVERY_DISTRICT_PRICES.entries()) {
+      if (normalizedAddress.includes(key)) {
+        const subtotal = Number(itemsSubtotalZl || 0);
+        const isFreeDelivery = subtotal >= FREE_COURIER_DELIVERY_THRESHOLD_ZL;
+
+        return {
+          districtKey: key,
+          districtLabel: meta.label,
+          deliveryFeeZl: isFreeDelivery ? 0 : Number(meta.price || 0),
+          matched: true,
+        };
+      }
+    }
+
+    return {
+      districtKey: "",
+      districtLabel: null,
+      deliveryFeeZl: 0,
+      matched: false,
+    };
+  };
+
+  const normalizedRaw = normalizeLooseText(rawAddress);
+  const inputTokens = normalizedRaw
+    .split(" ")
+    .filter(
+      (token) =>
+        token.length >= 3 &&
+        token !== "warszawa" &&
+        token !== "warsaw" &&
+        token !== "poland" &&
+        token !== "polska"
+    );
+
+  const inputNumberTokens = normalizedRaw.match(/\b\d+[a-z]?\b/g) || [];
+
+  // const looksLikeDistrictOnly =
+  //   inputTokens.length <= 2 && inputNumberTokens.length === 0;
+
+  // if (looksLikeDistrictOnly) {
+  //   const directMatch = matchDistrictFromText(rawAddress);
+  //   if (directMatch.matched) {
+  //     return directMatch;
+  //   }
+  // }
+
+  const directMatch = matchDistrictFromText(rawAddress);
+if (directMatch.matched) {
+  return directMatch;
+}
+
+  try {
+    const query = encodeURIComponent(`${rawAddress}, Warszawa, Poland`);
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5&q=${query}`;
+
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "ELF-DUCK/1.0 (delivery district lookup)",
+      },
+    });
+
+    const data = await response.json().catch(() => []);
+    const rows = Array.isArray(data) ? data : [];
+
+    for (const row of rows) {
+      const addr = row?.address || {};
+
+      const cityBlob = normalizeLooseText(
+        [
+          addr.city,
+          addr.town,
+          addr.village,
+          addr.municipality,
+          addr.state,
+
+          addr.suburb,
+
+          addr.city_district,
+
+          addr.neighbourhood,
+
+          addr.district,
+
+          addr.borough,
+
+          addr.quarter,
+
+          row?.display_name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      if (!cityBlob.includes("warszawa") && !cityBlob.includes("warsaw")) {
+        continue;
+      }
+
+      const locationBlob = normalizeLooseText(
+        [
+          addr.road,
+          addr.pedestrian,
+          addr.footway,
+          addr.path,
+          addr.cycleway,
+          addr.house_number,
+          addr.house,
+          addr.building,
+
+          addr.suburb,
+
+          addr.city_district,
+
+          addr.neighbourhood,
+
+          addr.district,
+
+          addr.borough,
+
+          addr.quarter,
+
+          row?.display_name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+
+      const houseNumber = normalizeLooseText(addr.house_number || "");
+
+      const hasMeaningfulAddress = Boolean(
+        (addr.road || addr.pedestrian || addr.footway || addr.path || addr.cycleway) &&
+          (addr.house_number || addr.house || addr.building)
+      );
+
+      // if (!hasMeaningfulAddress) {
+      //   continue;
+      // }
+
+      const matchedWordTokens = inputTokens.filter((token) =>
+        locationBlob.includes(token)
+      );
+
+      const requiredMatches = inputTokens.length <= 1 ? 1 : Math.min(2, inputTokens.length);
+
+      if (matchedWordTokens.length < requiredMatches) {
+        continue;
+      }
+
+      if (inputNumberTokens.length > 0 && houseNumber) {
+        const numberMatched = inputNumberTokens.some(
+          (token) =>
+            houseNumber === token ||
+            locationBlob.includes(` ${token} `) ||
+            locationBlob.endsWith(` ${token}`)
+        );
+
+        if (!numberMatched) {
+          continue;
+        }
+      }
+
+      const districtCandidates = [
+        addr.city_district,
+        addr.suburb,
+        addr.borough,
+        addr.quarter,
+        addr.neighbourhood,
+        addr.district,
+        row?.display_name,
+      ].filter(Boolean);
+
+      for (const candidate of districtCandidates) {
+        const districtMatch = matchDistrictFromText(candidate);
+        if (districtMatch.matched) {
+          return districtMatch;
+        }
+      }
+
+      if (!hasMeaningfulAddress) {
+        continue;
+      }
+    }
+  } catch (e) {
+    console.error("resolveWarsawDeliveryPricing geocode error:", e);
+  }
+
+  const fallback = {
+    districtKey: "",
+    districtLabel: null,
+    deliveryFeeZl: 0,
+    matched: false,
+  };
+  _nominatimCache.set(cacheKey, { ts: Date.now(), result: fallback });
+  return fallback;
+}
+
+function getWarsawDateKey() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Warsaw",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function getWarsawNowMinutes() {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Warsaw",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const hh = Number(parts.find((p) => p.type === "hour")?.value || 0);
+  const mm = Number(parts.find((p) => p.type === "minute")?.value || 0);
+
+  return hh * 60 + mm;
+}
+
+function timeToMinutes(hhmm) {
+  const [h, m] = String(hhmm || "0:0").split(":").map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTime(totalMinutes) {
+  const safeMinutes = Math.max(0, Number(totalMinutes || 0));
+  const hh = String(Math.floor(safeMinutes / 60)).padStart(2, "0");
+  const mm = String(safeMinutes % 60).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function getTodayScheduleForPickupPoint(point) {
+  const dateKey = getWarsawDateKey();
+  return point?.scheduleByDate?.[dateKey] || null;
+}
+
+function getPointOpenStateNow(point) {
+  const schedule = getTodayScheduleForPickupPoint(point);
+
+  if (!schedule) {
+    return {
+      isOpen: false,
+      reason: "NO_SCHEDULE",
+      openFrom: "",
+      openTo: "",
+    };
+  }
+
+  if (schedule?.isOpen === false || schedule?.closed === true || schedule?.isActive === false) {
+    return {
+      isOpen: false,
+      reason: "CLOSED_TODAY",
+      openFrom: "",
+      openTo: "",
+    };
+  }
+
+  const normalizePeriod = (raw) => {
+    if (!raw || typeof raw !== "object") return null;
+
+    const from = String(
+      raw?.openFrom ?? raw?.from ?? raw?.start ?? raw?.startTime ?? raw?.timeFrom ?? ""
+    ).trim();
+
+    const to = String(
+      raw?.openTo ?? raw?.to ?? raw?.end ?? raw?.endTime ?? raw?.timeTo ?? ""
+    ).trim();
+
+    if (!from || !to) return null;
+
+    return { openFrom: from, openTo: to };
+  };
+
+  const periodsRaw =
+    (Array.isArray(schedule?.periods) && schedule.periods) ||
+    (Array.isArray(schedule?.timePeriods) && schedule.timePeriods) ||
+    (Array.isArray(schedule?.ranges) && schedule.ranges) ||
+    (Array.isArray(schedule?.slots) && schedule.slots) ||
+    [];
+
+  const normalizedPeriods = periodsRaw
+    .map(normalizePeriod)
+    .filter(Boolean)
+    .sort((a, b) => timeToMinutes(a.openFrom) - timeToMinutes(b.openFrom));
+
+  const fallbackOpenFrom = String(schedule?.openFrom || schedule?.from || "").trim();
+  const fallbackOpenTo = String(schedule?.openTo || schedule?.to || "").trim();
+
+  if (!normalizedPeriods.length && fallbackOpenFrom && fallbackOpenTo) {
+    normalizedPeriods.push({
+      openFrom: fallbackOpenFrom,
+      openTo: fallbackOpenTo,
+    });
+  }
+
+  if (!normalizedPeriods.length) {
+    return {
+      isOpen: false,
+      reason: "NO_HOURS",
+      openFrom: "",
+      openTo: "",
+    };
+  }
+
+  const nowMinutes = getWarsawNowMinutes();
+
+  const activePeriod = normalizedPeriods.find((period) => {
+    const fromMinutes = timeToMinutes(period.openFrom);
+    const toMinutes = timeToMinutes(period.openTo);
+    return nowMinutes >= fromMinutes && nowMinutes <= toMinutes;
+  });
+
+  if (activePeriod) {
+    return {
+      isOpen: true,
+      reason: "OPEN",
+      openFrom: activePeriod.openFrom,
+      openTo: activePeriod.openTo,
+      periods: normalizedPeriods,
+    };
+  }
+
+  return {
+    isOpen: false,
+    reason: "OUTSIDE_HOURS",
+    openFrom: normalizedPeriods[0]?.openFrom || "",
+    openTo: normalizedPeriods[normalizedPeriods.length - 1]?.openTo || "",
+    periods: normalizedPeriods,
+  };
+}
+
+function isTimeWindowInsidePointSchedule(point, timeWindow) {
+  const schedule = getTodayScheduleForPickupPoint(point);
+  const rawWindow = String(timeWindow || "").trim();
+
+  if (!schedule || !rawWindow) return false;
+  if (schedule?.isOpen === false || schedule?.closed === true || schedule?.isActive === false) {
+    return false;
+  }
+
+  const match = rawWindow.match(/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/);
+  if (!match) return false;
+
+  const windowFrom = timeToMinutes(match[1]);
+  const windowTo = timeToMinutes(match[2]);
+  if (windowTo <= windowFrom) return false;
+
+  const periodsRaw =
+    (Array.isArray(schedule?.periods) && schedule.periods) ||
+    (Array.isArray(schedule?.timePeriods) && schedule.timePeriods) ||
+    (Array.isArray(schedule?.ranges) && schedule.ranges) ||
+    (Array.isArray(schedule?.slots) && schedule.slots) ||
+    [];
+
+  const normalizedPeriods = periodsRaw
+    .map((raw) => {
+      const from = String(
+        raw?.openFrom ?? raw?.from ?? raw?.start ?? raw?.startTime ?? raw?.timeFrom ?? ""
+      ).trim();
+
+      const to = String(
+        raw?.openTo ?? raw?.to ?? raw?.end ?? raw?.endTime ?? raw?.timeTo ?? ""
+      ).trim();
+
+      if (!from || !to) return null;
+      return { openFrom: from, openTo: to };
+    })
+    .filter(Boolean)
+    .sort((a, b) => timeToMinutes(a.openFrom) - timeToMinutes(b.openFrom));
+
+  const fallbackOpenFrom = String(schedule?.openFrom || schedule?.from || "").trim();
+  const fallbackOpenTo = String(schedule?.openTo || schedule?.to || "").trim();
+
+  if (!normalizedPeriods.length && fallbackOpenFrom && fallbackOpenTo) {
+    normalizedPeriods.push({
+      openFrom: fallbackOpenFrom,
+      openTo: fallbackOpenTo,
+    });
+  }
+
+  if (!normalizedPeriods.length) return false;
+
+  return normalizedPeriods.some((period) => {
+    const periodFrom = timeToMinutes(period.openFrom);
+    const periodTo = timeToMinutes(period.openTo);
+
+    return windowFrom >= periodFrom && windowTo <= periodTo;
+  });
+}
+
+const LIQUIDS_CATEGORY_KEYS = new Set(["liquids"]);
+const DISPOSABLES_CATEGORY_KEYS = new Set(["disposables"]);
+const CARTRIDGES_CATEGORY_KEYS = new Set(["cartridges"]);
+
+const DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS = new Set([
+  "elf-duck-1500",
+  "elf-duck-1500-2",
+]);
+
+function getSmartDiscountPerItem(unitsQty) {
+  const qty = Math.max(0, Number(unitsQty || 0));
+  if (qty >= 5) return 15;
+  if (qty >= 3) return 10;
+  if (qty >= 2) return 5;
+  return 0;
+}
+
+function getCartridgeSmartUnitPrice(unitsQty) {
+  const qty = Math.max(0, Number(unitsQty || 0));
+  if (qty >= 5) return 20;
+  if (qty >= 3) return 23;
+  if (qty >= 2) return 25;
+  return 30;
+}
+
+function isLiquidSmartPriceProduct(product) {
+  const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
+  return LIQUIDS_CATEGORY_KEYS.has(categoryKey);
+}
+
+function isDisposableSmartPriceProduct(product) {
+  const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
+  const productKey = String(product?.productKey || "").trim().toLowerCase();
+
+  return (
+    DISPOSABLES_CATEGORY_KEYS.has(categoryKey) &&
+    !DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS.has(productKey)
+  );
+}
+
+function isCartridgeSmartPriceProduct(product) {
+  const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
+  return CARTRIDGES_CATEGORY_KEYS.has(categoryKey);
+}
+
+function repriceCartItemsWithSmartPricing(items, products) {
+  const prodByKey = new Map(
+    (products || []).map((p) => [String(p?.productKey || "").trim(), p])
+  );
+
+  const liquidUnitsQty = (items || []).reduce((sum, it) => {
+    const product = prodByKey.get(String(it?.productKey || "").trim());
+    if (!isLiquidSmartPriceProduct(product)) return sum;
+    return sum + Math.max(1, Number(it?.qty || 1));
+  }, 0);
+
+  const disposableUnitsQty = (items || []).reduce((sum, it) => {
+    const product = prodByKey.get(String(it?.productKey || "").trim());
+    if (!isDisposableSmartPriceProduct(product)) return sum;
+    return sum + Math.max(1, Number(it?.qty || 1));
+  }, 0);
+
+  const cartridgeUnitsQty = (items || []).reduce((sum, it) => {
+    const product = prodByKey.get(String(it?.productKey || "").trim());
+    if (!isCartridgeSmartPriceProduct(product)) return sum;
+    return sum + Math.max(1, Number(it?.qty || 1));
+  }, 0);
+
+  const liquidDiscountPerItem = getSmartDiscountPerItem(liquidUnitsQty);
+  const disposableDiscountPerItem = getSmartDiscountPerItem(disposableUnitsQty);
+  const cartridgeUnitPrice = getCartridgeSmartUnitPrice(cartridgeUnitsQty);
+
+  const repricedItems = (items || []).map((it) => {
+    const product = prodByKey.get(String(it?.productKey || "").trim());
+    const fallbackBasePrice = Number(product?.price || it?.unitPrice || 0);
+
+    if (isLiquidSmartPriceProduct(product)) {
+      return {
+        ...it,
+        baseUnitPrice: Number(fallbackBasePrice.toFixed(2)),
+        unitPrice: Number(
+          Math.max(0, fallbackBasePrice - liquidDiscountPerItem).toFixed(2)
+        ),
+      };
+    }
+
+    if (isDisposableSmartPriceProduct(product)) {
+      return {
+        ...it,
+        baseUnitPrice: Number(fallbackBasePrice.toFixed(2)),
+        unitPrice: Number(
+          Math.max(0, fallbackBasePrice - disposableDiscountPerItem).toFixed(2)
+        ),
+      };
+    }
+
+    if (isCartridgeSmartPriceProduct(product)) {
+      return {
+        ...it,
+        baseUnitPrice: Number(fallbackBasePrice.toFixed(2)),
+        unitPrice: Number(cartridgeUnitPrice.toFixed(2)),
+      };
+    }
+
+    return {
+      ...it,
+      baseUnitPrice: Number(fallbackBasePrice.toFixed(2)),
+      unitPrice: Number(fallbackBasePrice.toFixed(2)),
+    };
+  });
+
+  return {
+    repricedItems,
+    smartPricingMeta: {
+      liquidUnitsQty,
+      liquidDiscountPerItem,
+      disposableUnitsQty,
+      disposableDiscountPerItem,
+      cartridgeUnitsQty,
+      cartridgeUnitPrice,
+    },
+  };
+}
+
+function getCashbackPercentByTotal(totalZl) {
+  const total = Number(totalZl || 0);
+
+  if (total >= 501) return 10;
+  if (total >= 301) return 9;
+  if (total >= 101) return 7;
+  return 4;
+}
+
+async function getIsReferralFirstOrderDiscountEligible(telegramId, cartItems = []) {
+  const safeTelegramId = String(telegramId || "").trim();
+  if (!safeTelegramId) {
+    return {
+      eligible: false,
+      applied: false,
+      usedCode: "",
+      percent: 0,
+      totalBeforeDiscount: 0,
+      reason: "NO_TELEGRAM_ID",
+    };
+  }
+
+  const totalBeforeDiscount = Number(
+    (Array.isArray(cartItems) ? cartItems : []).reduce((sum, it) => {
+      const qty = Math.max(1, Number(it?.qty || 1));
+      const baseUnitPrice = Number(it?.baseUnitPrice || it?.unitPrice || 0);
+      return sum + qty * baseUnitPrice;
+    }, 0).toFixed(2)
+  );
+
+  const user = await User.findOne(
+    { telegramId: safeTelegramId },
+    { telegramId: 1, referral: 1 }
+  ).lean();
+
+  const usedCode = String(user?.referral?.usedCode || "").trim();
+  if (!usedCode) {
+    return {
+      eligible: false,
+      applied: false,
+      usedCode,
+      percent: 0,
+      totalBeforeDiscount,
+      reason: "NO_USED_REFERRAL_CODE",
+    };
+  }
+
+  if (user?.referral?.firstOrderDoneAt) {
+    return {
+      eligible: false,
+      applied: false,
+      usedCode,
+      percent: 0,
+      totalBeforeDiscount,
+      reason: "FIRST_ORDER_ALREADY_DONE",
+    };
+  }
+
+  const hasPaidOrders = await Order.exists({
+    userTelegramId: safeTelegramId,
+    $or: [
+      { "payment.status": "paid" },
+      { status: { $in: ["processing", "done", "completed"] } },
+    ],
+  });
+
+  if (hasPaidOrders) {
+    return {
+      eligible: false,
+      applied: false,
+      usedCode,
+      percent: 0,
+      totalBeforeDiscount,
+      reason: "PAID_ORDER_ALREADY_EXISTS",
+    };
+  }
+
+  if (totalBeforeDiscount < 65) {
+    return {
+      eligible: false,
+      applied: false,
+      usedCode,
+      percent: 0,
+      totalBeforeDiscount,
+      reason: "TOTAL_BELOW_65",
+    };
+  }
+
+  return {
+    eligible: true,
+    applied: true,
+    usedCode,
+    percent: 10,
+    totalBeforeDiscount,
+    reason: "OK",
+  };
+}
+
+function applyReferralFirstOrderDiscountToCartItems(items = [], percent = 0) {
+  const safePercent = Math.max(0, Number(percent || 0));
+  if (!safePercent) {
+    return {
+      items: (Array.isArray(items) ? items : []).map((it) => ({
+        ...it,
+        referralFirstOrderDiscountPercent: 0,
+        referralFirstOrderDiscountPerItem: 0,
+        referralFirstOrderDiscountTotalZl: 0,
+      })),
+      meta: {
+        applied: false,
+        percent: 0,
+        totalBeforeDiscount: Number(
+          (Array.isArray(items) ? items : []).reduce((sum, it) => {
+            const qty = Math.max(1, Number(it?.qty || 1));
+            const unitPrice = Number(it?.unitPrice || 0);
+            return sum + qty * unitPrice;
+          }, 0).toFixed(2)
+        ),
+        totalDiscountZl: 0,
+      },
+    };
+  }
+
+  const factor = (100 - safePercent) / 100;
+
+  const nextItems = (Array.isArray(items) ? items : []).map((it) => {
+    const oldUnitPrice = Number(it?.unitPrice || 0);
+    const newUnitPrice = Number((oldUnitPrice * factor).toFixed(2));
+    const qty = Math.max(1, Number(it?.qty || 1));
+
+  return {
+    ...it,
+    baseUnitPrice: Number(it?.baseUnitPrice || oldUnitPrice || 0),
+    unitPrice: newUnitPrice,
+    referralFirstOrderDiscountPercent: safePercent,
+    referralFirstOrderDiscountPerItem: Number((oldUnitPrice - newUnitPrice).toFixed(2)),
+    referralFirstOrderDiscountTotalZl: Number(((oldUnitPrice - newUnitPrice) * qty).toFixed(2)),
+  };
+  });
+
+  const totalBeforeDiscount = Number(
+    (Array.isArray(items) ? items : []).reduce((sum, it) => {
+      const qty = Math.max(1, Number(it?.qty || 1));
+      const unitPrice = Number(it?.unitPrice || 0);
+      return sum + qty * unitPrice;
+    }, 0).toFixed(2)
+  );
+
+  const totalAfterDiscount = Number(
+    nextItems.reduce((sum, it) => {
+      const qty = Math.max(1, Number(it?.qty || 1));
+      const unitPrice = Number(it?.unitPrice || 0);
+      return sum + qty * unitPrice;
+    }, 0).toFixed(2)
+  );
+
+  return {
+    items: nextItems,
+    meta: {
+      applied: true,
+      percent: safePercent,
+      totalBeforeDiscount,
+      totalAfterDiscount,
+      totalDiscountZl: Number((totalBeforeDiscount - totalAfterDiscount).toFixed(2)),
+    },
+  };
+}
+
+function getOrderReferralFirstOrderDiscountPercent(order) {
+  const fromPayment = Number(order?.payment?.referralFirstOrderDiscountPercent || 0);
+  if (fromPayment > 0) return fromPayment;
+
+  const fromItem = (Array.isArray(order?.items) ? order.items : []).find(
+    (item) => Number(item?.referralFirstOrderDiscountPercent || 0) > 0
+  );
+
+  return Number(fromItem?.referralFirstOrderDiscountPercent || 0);
+}
+
+function getOrderReferralFirstOrderDiscountTotalZl(order) {
+  const fromPayment = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
+  if (fromPayment > 0) return Number(fromPayment.toFixed(2));
+
+  const fromItems = Number(
+    (Array.isArray(order?.items) ? order.items : []).reduce((sum, item) => {
+      return sum + Number(item?.referralFirstOrderDiscountTotalZl || 0);
+    }, 0).toFixed(2)
+  );
+  if (fromItems > 0) return fromItems;
+
+  const referralPercent = getOrderReferralFirstOrderDiscountPercent(order);
+  if (referralPercent > 0) {
+    const itemsTotalBeforeDiscount = Number(
+      (Array.isArray(order?.items) ? order.items : []).reduce((sum, item) => {
+        const qty = Math.max(1, Number(item?.qty || 1));
+        const unitPrice = Number(item?.unitPrice || 0);
+        const itemDiscountPerItem = Number(item?.referralFirstOrderDiscountPerItem || 0);
+        return sum + qty * (unitPrice + itemDiscountPerItem);
+      }, 0).toFixed(2)
+    );
+
+    const discountedItemsTotal = Number(
+      (Array.isArray(order?.items) ? order.items : []).reduce((sum, item) => {
+        const qty = Math.max(1, Number(item?.qty || 1));
+        const unitPrice = Number(item?.unitPrice || 0);
+        return sum + qty * unitPrice;
+      }, 0).toFixed(2)
+    );
+
+    const diffFromItems = Number((itemsTotalBeforeDiscount - discountedItemsTotal).toFixed(2));
+    if (diffFromItems > 0) return diffFromItems;
+
+    const subtotalBeforeDiscount = Number(
+      order?.payment?.itemsSubtotalBeforeReferralDiscountZl ||
+      order?.payment?.subtotalBeforeReferralDiscountZl ||
+      order?.payment?.subtotalBeforeDiscountZl ||
+      order?.pricing?.itemsSubtotalBeforeReferralDiscountZl ||
+      order?.pricing?.subtotalBeforeReferralDiscountZl ||
+      order?.pricing?.subtotalBeforeDiscountZl ||
+      0
+    );
+
+    if (subtotalBeforeDiscount > 0) {
+      return Number(((subtotalBeforeDiscount * referralPercent) / 100).toFixed(2));
+    }
+
+    const totalBeforeDiscount = Number(
+      order?.payment?.totalBeforeReferralDiscountZl ||
+      order?.payment?.totalBeforeDiscountZl ||
+      order?.pricing?.totalBeforeReferralDiscountZl ||
+      order?.pricing?.totalBeforeDiscountZl ||
+      0
+    );
+
+    const totalAfterDiscount = Number(
+      order?.payment?.totalAmount ||
+      order?.payment?.amount ||
+      order?.totalAmount ||
+      order?.amount ||
+      0
+    );
+
+    if (totalBeforeDiscount > 0 && totalAfterDiscount > 0 && totalBeforeDiscount > totalAfterDiscount) {
+      return Number((totalBeforeDiscount - totalAfterDiscount).toFixed(2));
+    }
+  }
+
+  return 0;
+}
+
+function hasOrderReferralFirstOrderDiscount(order) {
+  if (Number(getOrderReferralFirstOrderDiscountTotalZl(order) || 0) > 0) return true;
+  if (Number(getOrderReferralFirstOrderDiscountPercent(order) || 0) > 0) return true;
+
+  if (order?.payment?.referralFirstOrderDiscountApplied === true) return true;
+  if (order?.pricing?.referralFirstOrderDiscountApplied === true) return true;
+
+  const usedCode = String(
+    order?.referral?.usedCode ||
+    order?.payment?.referralUsedCode ||
+    order?.payment?.usedReferralCode ||
+    order?.usedReferralCode ||
+    ""
+  ).trim();
+
+  const subtotalBeforeReferralDiscount = Number(
+    order?.payment?.itemsSubtotalBeforeReferralDiscountZl ||
+    order?.payment?.subtotalBeforeReferralDiscountZl ||
+    order?.payment?.subtotalBeforeDiscountZl ||
+    order?.pricing?.itemsSubtotalBeforeReferralDiscountZl ||
+    order?.pricing?.subtotalBeforeReferralDiscountZl ||
+    order?.pricing?.subtotalBeforeDiscountZl ||
+    0
+  );
+
+  const totalAmount = Number(
+    order?.payment?.totalAmount ||
+    order?.payment?.amount ||
+    order?.totalAmount ||
+    order?.amount ||
+    0
+  );
+
+  if (usedCode && (subtotalBeforeReferralDiscount >= 65 || totalAmount >= 65)) {
+    return true;
+  }
+
+  if (String(order?.payment?.smartDiscountType || "").trim() === "referral_first_order") return true;
+  if (String(order?.payment?.discountType || "").trim() === "referral_first_order") return true;
+  if (String(order?.pricing?.discountType || "").trim() === "referral_first_order") return true;
+
+  return (Array.isArray(order?.items) ? order.items : []).some((item) => {
+    return (
+      Number(item?.referralFirstOrderDiscountTotalZl || 0) > 0 ||
+      Number(item?.referralFirstOrderDiscountPercent || 0) > 0 ||
+      Number(item?.referralFirstOrderDiscountPerItem || 0) > 0
+    );
+  });
+}
+
+function addDays(dateLike, days) {
+  const dt = new Date(dateLike || Date.now());
+  dt.setDate(dt.getDate() + Number(days || 0));
+  return dt;
+}
+
+function daysUntilDate(dateLike) {
+  const now = new Date();
+  const target = new Date(dateLike);
+  const ms = target.getTime() - now.getTime();
+  return Math.ceil(ms / (24 * 60 * 60 * 1000));
+}
+
+function recalcUserCashbackBalanceFromLedger(user) {
+  const ledger = Array.isArray(user?.cashbackLedger) ? user.cashbackLedger : [];
+  const total = ledger.reduce((sum, row) => {
+    if (row?.expiredAt) return sum;
+    return sum + Math.max(0, Number(row?.remainingZl || 0));
+  }, 0);
+
+  user.cashbackBalance = Number(total.toFixed(2));
+  return user.cashbackBalance;
+}
+
+async function grantManualCashbackToUser(user, amountZl, meta = {}) {
+  if (!user) throw new Error("USER_NOT_FOUND");
+
+  const safeAmount = Number(amountZl || 0);
+  if (!(safeAmount > 0)) {
+    throw new Error("INVALID_CASHBACK_AMOUNT");
+  }
+
+  user.cashbackLedger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
+
+  const now = new Date();
+  const expiresAt = addDays(now, 30);
+
+  user.cashbackLedger.push({
+    source: "manual_admin_grant",
+    amountZl: Number(safeAmount.toFixed(2)),
+    remainingZl: Number(safeAmount.toFixed(2)),
+    earnedAt: now,
+    expiresAt,
+    orderId: null,
+    // note: String(meta?.note || "").trim(),
+    grantedByTelegramId: String(meta?.grantedByTelegramId || "").trim(),
+    grantedByUsername: String(meta?.grantedByUsername || "").trim(),
+    warnedAt: null,
+    expiredAt: null,
+    expiredAmountZl: 0,
+  });
+
+  recalcUserCashbackBalanceFromLedger(user);
+  await user.save();
+
+  return {
+    cashbackBalance: Number(user.cashbackBalance || 0),
+    grantedAmountZl: Number(safeAmount.toFixed(2)),
+    expiresAt,
+  };
+}
+
+async function sendCashbackExpiringSoonNotification(user, expiringRows) {
+  try {
+    if (!bot || !user?.telegramId || !Array.isArray(expiringRows) || !expiringRows.length) return;
+
+    const sorted = [...expiringRows].sort(
+      (a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime()
+    );
+
+    const first = sorted[0];
+    const firstAmount = Number(first?.remainingZl || 0).toFixed(2);
+    const firstDays = Math.max(0, daysUntilDate(first?.expiresAt));
+    const firstExpireText = formatCashbackExpireDate(first?.expiresAt);
+
+    const otherActiveRows = (Array.isArray(user?.cashbackLedger) ? user.cashbackLedger : [])
+      .filter((row) => !row?.expiredAt && Number(row?.remainingZl || 0) > 0)
+      .filter((row) => String(row?._id || "") !== String(first?._id || ""))
+      .sort((a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime());
+
+    const remainingAfterFirst = Number(
+      otherActiveRows.reduce((sum, row) => sum + Number(row?.remainingZl || 0), 0).toFixed(2)
+    );
+
+    const nextRowsText = otherActiveRows.length
+      ? `\n\nОстаток после сгорания этой части: <b>${remainingAfterFirst.toFixed(2)} zł</b>\n\nДругие части кэшбека:\n${otherActiveRows
+          .map((row) => {
+            const expireText = formatCashbackExpireDate(row?.expiresAt);
+            return `• ${Number(row?.remainingZl || 0).toFixed(2)} zł — ${expireText}`;
+          })
+          .join("\n")}`
+      : `\n\nПосле сгорания этой части активного кэшбека не останется.`;
+
+    const text = [
+      `💰 <b>КЭШБЕК СКОРО СГОРИТ</b>`,
+      ``,
+      `Твой кэшбек <b>${firstAmount} zł</b> сгорит:`,
+      `<b>${firstExpireText}</b>`,
+      `(через <b>${firstDays}</b> дн.)`,
+      ``,
+      `Успей использовать!`,
+      nextRowsText,
+    ].join("\n");
+
+    await bot.telegram.sendMessage(String(user.telegramId), text, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+
+    return {
+  ok: true,
+  skipped: false,
+};
+} catch (e) {
+  const errorCode = Number(
+    e?.response?.error_code || 0
+  );
+
+  const description = String(
+    e?.response?.description ||
+      e?.description ||
+      e?.message ||
+      ""
+  );
+
+  const isUnavailableChat =
+    (
+      errorCode === 400 &&
+      /chat not found/i.test(description)
+    ) ||
+    (
+      errorCode === 403 &&
+      /bot was blocked by the user/i.test(
+        description
+      )
+    ) ||
+    (
+      errorCode === 403 &&
+      /user is deactivated/i.test(
+        description
+      )
+    );
+
+  if (isUnavailableChat) {
+    console.warn(
+      "sendCashbackExpiringSoonNotification skipped: user chat unavailable",
+      {
+        telegramId: String(
+          user?.telegramId || ""
+        ),
+        errorCode,
+        description,
+      }
+    );
+
+    return {
+      ok: false,
+      skipped: true,
+      reason: "USER_CHAT_UNAVAILABLE",
+    };
+  }
+
+  console.error(
+    "sendCashbackExpiringSoonNotification error:",
+    e
+  );
+
+  return {
+    ok: false,
+    skipped: false,
+    reason: "SEND_FAILED",
+  };
+}
+}
+
+function formatCashbackExpireDate(date) {
+  const d = new Date(date);
+
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+
+  const hours = String(d.getHours()).padStart(2, "0");
+  const minutes = String(d.getMinutes()).padStart(2, "0");
+
+  return `${day}.${month}.${year} в ${hours}:${minutes}`;
+}
+
+async function sendCashbackExpiredNotification(user, expiredRows) {
+  try {
+    if (!bot || !user?.telegramId || !Array.isArray(expiredRows) || !expiredRows.length) return;
+
+    const sortedExpired = [...expiredRows].sort(
+      (a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime()
+    );
+
+    const expiredSum = Number(
+      sortedExpired.reduce((sum, row) => sum + Number(row?.expiredAmountZl || 0), 0).toFixed(2)
+    );
+
+    const activeRows = (Array.isArray(user?.cashbackLedger) ? user.cashbackLedger : [])
+      .filter((row) => !row?.expiredAt && Number(row?.remainingZl || 0) > 0)
+      .sort((a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime());
+
+    const activeBalance = Number(
+      activeRows.reduce((sum, row) => sum + Number(row?.remainingZl || 0), 0).toFixed(2)
+    );
+
+    const expiredRowsText = sortedExpired
+      .map((row) => {
+        const expireText = formatCashbackExpireDate(row?.expiresAt);
+        return `• ${Number(row?.expiredAmountZl || 0).toFixed(2)} zł — сгорело ${expireText}`;
+      })
+      .join("\n");
+
+    const activeRowsText = activeRows.length
+      ? `\n\nОставшиеся части кэшбека:\n${activeRows
+          .map((row) => {
+            const expireText = formatCashbackExpireDate(row?.expiresAt);
+            return `• ${Number(row?.remainingZl || 0).toFixed(2)} zł — ${expireText}`;
+          })
+          .join("\n")}`
+      : `\n\nАктивного кэшбека больше не осталось.`;
+
+    const text = [
+      `🔥 <b>ЧАСТЬ КЭШБЕКА СГОРЕЛА</b>`,
+      ``,
+      `Сгорело: <b>${expiredSum.toFixed(2)} zł</b>`,
+      expiredRowsText,
+      ``,
+      `Текущий активный остаток: <b>${activeBalance.toFixed(2)} zł</b>`,
+      activeRowsText,
+    ].join("\n");
+
+    await bot.telegram.sendMessage(String(user.telegramId), text, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+    return {
+      ok: true,
+      skipped: false,
+    };
+} catch (e) {
+  const errorCode = Number(
+    e?.response?.error_code || 0
+  );
+
+  const description = String(
+    e?.response?.description ||
+      e?.description ||
+      e?.message ||
+      ""
+  );
+
+  const isUnavailableChat =
+    (
+      errorCode === 400 &&
+      /chat not found/i.test(description)
+    ) ||
+    (
+      errorCode === 403 &&
+      /bot was blocked by the user/i.test(
+        description
+      )
+    ) ||
+    (
+      errorCode === 403 &&
+      /user is deactivated/i.test(
+        description
+      )
+    );
+
+  if (isUnavailableChat) {
+    console.warn(
+      "sendCashbackExpiredNotification skipped: user chat unavailable",
+      {
+        telegramId: String(
+          user?.telegramId || ""
+        ),
+        errorCode,
+        description,
+      }
+    );
+
+    return {
+      ok: false,
+      skipped: true,
+      reason: "USER_CHAT_UNAVAILABLE",
+    };
+  }
+
+  console.error(
+    "sendCashbackExpiredNotification error:",
+    e
+  );
+
+  return {
+    ok: false,
+    skipped: false,
+    reason: "SEND_FAILED",
+  };
+}
+}
+
+async function processCashbackLedgerExpirations() {
+  try {
+    const now = new Date();
+
+    const users = await User.find({
+      cashbackLedger: { $exists: true, $ne: [] },
+    });
+
+    for (const user of users) {
+      let changed = false;
+      const ledger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
+      const rowsToWarn = [];
+      const rowsJustExpired = [];
+
+      for (const row of ledger) {
+        if (!row || row.expiredAt) continue;
+
+        const remaining = Math.max(0, Number(row.remainingZl || 0));
+        if (remaining <= 0) continue;
+
+        const expiresAt = row.expiresAt ? new Date(row.expiresAt) : null;
+        if (!expiresAt) continue;
+
+        if (expiresAt.getTime() <= now.getTime()) {
+          const expiredAmount = Math.max(0, Number(row.remainingZl || 0));
+
+          row.expiredAt = now;
+          row.remainingZl = 0;
+          changed = true;
+
+          if (expiredAmount > 0) {
+            rowsJustExpired.push({
+              _id: row._id,
+              expiredAmountZl: expiredAmount,
+              expiresAt: expiresAt,
+            });
+          }
+
+          continue;
+        }
+
+        const daysLeft = daysUntilDate(expiresAt);
+        if ((daysLeft === 3 || daysLeft === 4 || daysLeft === 5) && !row.warnedAt) {
+          rowsToWarn.push(row);
+          row.warnedAt = now;
+          changed = true;
+        }
+      }
+
+      recalcUserCashbackBalanceFromLedger(user);
+
+      if (changed) {
+        await user.save();
+      }
+
+      if (rowsToWarn.length) {
+        await sendCashbackExpiringSoonNotification(user, rowsToWarn);
+      }
+
+      if (rowsJustExpired.length) {
+        await sendCashbackExpiredNotification(user, rowsJustExpired);
+      }
+    }
+  } catch (e) {
+    console.error("processCashbackLedgerExpirations error:", e);
+  }
+}
+
+async function applyOrderCashback(order) {
+  if (!order) return { applied: false, cashbackZl: 0, percent: 0 };
+
+  const orderId = String(order._id || "").trim();
+  if (!orderId) return { applied: false, cashbackZl: 0, percent: 0 };
+
+  const freshOrder = await Order.findById(orderId, {
+    _id: 1,
+    totalZl: 1,
+    cashbackAppliedAt: 1,
+    cashbackZl: 1,
+    userTelegramId: 1,
+  });
+
+  if (!freshOrder) return { applied: false, cashbackZl: 0, percent: 0 };
+  await markReferralFirstOrderDoneIfNeeded(freshOrder.userTelegramId);
+
+  // защита от повторного начисления
+  if (freshOrder.cashbackAppliedAt) {
+    return {
+      applied: false,
+      cashbackZl: Number(freshOrder.cashbackZl || 0),
+      percent: getCashbackPercentByTotal(freshOrder.totalZl),
+    };
+  }
+
+  const percent = getCashbackPercentByTotal(freshOrder.totalZl);
+  const cashbackZl = Number(((Number(freshOrder.totalZl || 0) * percent) / 100).toFixed(2));
+
+  const user = await User.findOne({ telegramId: String(freshOrder.userTelegramId || "") });
+  if (!user) return { applied: false, cashbackZl: 0, percent };
+
+  user.cashbackLedger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
+
+  user.cashbackLedger.push({
+    sourceOrderId: freshOrder._id,
+    source: "order_earned_cashback",
+    amountZl: cashbackZl,
+    remainingZl: cashbackZl,
+    earnedAt: new Date(),
+    expiresAt: addDays(new Date(), 40),
+    warnedAt: null,
+    expiredAt: null,
+  });
+
+  recalcUserCashbackBalanceFromLedger(user);
+
+  await user.save();
+
+  await Order.updateOne(
+
+    {
+
+      _id: freshOrder._id,
+
+      $or: [
+
+        { cashbackAppliedAt: null },
+
+        { cashbackAppliedAt: { $exists: false } },
+
+      ],
+
+    },
+
+    {
+
+      $set: {
+
+        cashbackPercent: percent,
+
+        cashbackZl,
+
+        cashbackAppliedAt: new Date(),
+
+      },
+
+    }
+
+  );
+
+  return { applied: true, cashbackZl, percent };
+}
+
+async function refundOrderCashback(order) {
+  if (!order?._id) {
+    return {
+      refunded: false,
+      amount: 0,
+    };
+  }
+
+  const freshOrder =
+    await Order.findById(
+      String(order._id || "")
+    );
+
+  if (!freshOrder) {
+    return {
+      refunded: false,
+      amount: 0,
+    };
+  }
+
+  const payment =
+    freshOrder.payment?.toObject
+      ? freshOrder.payment.toObject()
+      : freshOrder.payment || {};
+
+  const originalAppliedZl = Number(
+    payment?.cashbackOriginalAppliedZl ||
+      payment?.cashbackAppliedZl ||
+      0
+  );
+
+  if (!(originalAppliedZl > 0)) {
+    return {
+      refunded: false,
+      amount: 0,
+    };
+  }
+
+  /*
+   * Повторную отмену не обрабатываем.
+   */
+  if (payment?.cashbackRefundedAt) {
+    return {
+      refunded: false,
+      amount: originalAppliedZl,
+    };
+  }
+
+  const user = await User.findOne({
+    telegramId: String(
+      freshOrder.userTelegramId || ""
+    ),
+  });
+
+  if (!user) {
+    return {
+      refunded: false,
+      amount: 0,
+    };
+  }
+
+  user.cashbackLedger = Array.isArray(
+    user.cashbackLedger
+  )
+    ? user.cashbackLedger
+    : [];
+
+  user.cashbackLedger.push({
+    sourceOrderId:
+      freshOrder._id,
+
+    source:
+      "order_payment_refund",
+
+    amountZl: Number(
+      originalAppliedZl.toFixed(2)
+    ),
+
+    remainingZl: Number(
+      originalAppliedZl.toFixed(2)
+    ),
+
+    earnedAt: new Date(),
+
+    expiresAt: addDays(
+      new Date(),
+      40
+    ),
+
+    warnedAt: null,
+
+    expiredAt: null,
+  });
+
+  recalcUserCashbackBalanceFromLedger(
+    user
+  );
+
+  user.markModified?.(
+    "cashbackLedger"
+  );
+
+  await user.save();
+
+  freshOrder.payment = {
+    ...payment,
+
+    /*
+     * Сохраняем первоначальную сумму,
+     * даже после обнуления cashbackAppliedZl.
+     */
+    cashbackOriginalAppliedZl:
+      Number(
+        originalAppliedZl.toFixed(2)
+      ),
+
+    cashbackRefundedAmountZl:
+      Number(
+        originalAppliedZl.toFixed(2)
+      ),
+
+    cashbackRefundedAt:
+      new Date(),
+
+    cashbackAppliedZl: 0,
+
+    cashbackRemainingToPayZl:
+      Number(
+        freshOrder.totalZl || 0
+      ),
+
+    cashbackFullyPaid: false,
+
+    cashbackAppliedAt: null,
+
+    method:
+      payment?.method === "cashback"
+        ? null
+        : payment?.method || null,
+  };
+
+  await freshOrder.save();
+
+  return {
+    refunded: true,
+    amount: originalAppliedZl,
+  };
+}
+
+async function deductRefundedOrderCashback(order) {
+  if (!order?._id) {
+    return {
+      deducted: false,
+      amount: 0,
+    };
+  }
+
+  const freshOrder = await Order.findById(
+    String(order._id || "")
+  );
+
+  if (!freshOrder) {
+    return {
+      deducted: false,
+      amount: 0,
+    };
+  }
+
+  const payment =
+    freshOrder.payment?.toObject
+      ? freshOrder.payment.toObject()
+      : freshOrder.payment || {};
+
+  /*
+   * Если возврата не было — повторно
+   * снимать ничего не нужно.
+   */
+  if (!payment?.cashbackRefundedAt) {
+    return {
+      deducted: false,
+      amount: 0,
+    };
+  }
+
+  const user = await User.findOne({
+    telegramId: String(
+      freshOrder.userTelegramId || ""
+    ),
+  });
+
+  if (!user) {
+    throw new Error(
+      "USER_NOT_FOUND_FOR_CASHBACK_REDEDUCT"
+    );
+  }
+
+  user.cashbackLedger = Array.isArray(
+    user.cashbackLedger
+  )
+    ? user.cashbackLedger
+    : [];
+
+  const orderId = String(
+    freshOrder._id || ""
+  );
+
+  const refundRows =
+    user.cashbackLedger
+      .filter(
+        (row) =>
+          String(
+            row?.sourceOrderId || ""
+          ) === orderId &&
+
+          String(
+            row?.source || ""
+          ) ===
+            "order_payment_refund" &&
+
+          !row?.expiredAt &&
+
+          Number(
+            row?.remainingZl || 0
+          ) > 0
+      )
+      .sort(
+        (a, b) =>
+          new Date(
+            b?.earnedAt || 0
+          ).getTime() -
+          new Date(
+            a?.earnedAt || 0
+          ).getTime()
+      );
+
+  const amountFromLedger = Number(
+    refundRows
+      .reduce(
+        (sum, row) =>
+          sum +
+          Math.max(
+            0,
+            Number(
+              row?.remainingZl || 0
+            )
+          ),
+        0
+      )
+      .toFixed(2)
+  );
+
+  const amountFromPayment = Number(
+    Math.max(
+      0,
+      Number(
+        payment?.cashbackRefundedAmountZl ||
+          payment?.cashbackOriginalAppliedZl ||
+          0
+      )
+    ).toFixed(2)
+  );
+
+  const amount = Number(
+    Math.max(
+      amountFromLedger,
+      amountFromPayment
+    ).toFixed(2)
+  );
+
+  if (!(amount > 0)) {
+    throw new Error(
+      "CASHBACK_REFUND_AMOUNT_NOT_FOUND"
+    );
+  }
+
+  let leftToDeduct = amount;
+
+  for (const row of refundRows) {
+    if (leftToDeduct <= 0) break;
+
+    const available = Math.max(
+      0,
+      Number(row?.remainingZl || 0)
+    );
+
+    const used = Math.min(
+      available,
+      leftToDeduct
+    );
+
+    row.remainingZl = Number(
+      (available - used).toFixed(2)
+    );
+
+    leftToDeduct = Number(
+      (leftToDeduct - used).toFixed(2)
+    );
+  }
+
+  if (leftToDeduct > 0) {
+    const otherActiveRows =
+      user.cashbackLedger
+        .filter(
+          (row) =>
+            !row?.expiredAt &&
+            Number(
+              row?.remainingZl || 0
+            ) > 0 &&
+            !refundRows.includes(row)
+        )
+        .sort(
+          (a, b) =>
+            new Date(
+              a?.expiresAt || 0
+            ).getTime() -
+            new Date(
+              b?.expiresAt || 0
+            ).getTime()
+        );
+
+    for (
+      const row of otherActiveRows
+    ) {
+      if (leftToDeduct <= 0) break;
+
+      const available = Math.max(
+        0,
+        Number(row?.remainingZl || 0)
+      );
+
+      const used = Math.min(
+        available,
+        leftToDeduct
+      );
+
+      row.remainingZl = Number(
+        (available - used).toFixed(2)
+      );
+
+      leftToDeduct = Number(
+        (leftToDeduct - used).toFixed(2)
+      );
+    }
+  }
+
+  if (leftToDeduct > 0) {
+    throw new Error(
+      "INSUFFICIENT_CASHBACK_BALANCE_FOR_STATUS_CHANGE"
+    );
+  }
+
+  recalcUserCashbackBalanceFromLedger(
+    user
+  );
+
+  user.markModified?.(
+    "cashbackLedger"
+  );
+
+  await user.save();
+
+  freshOrder.payment = {
+    ...payment,
+
+    cashbackAppliedZl: amount,
+
+    cashbackOriginalAppliedZl:
+      amount,
+
+    cashbackRemainingToPayZl:
+      Number(
+        Math.max(
+          0,
+          Number(
+            freshOrder.totalZl || 0
+          ) - amount
+        ).toFixed(2)
+      ),
+
+    cashbackFullyPaid:
+      Number(
+        freshOrder.totalZl || 0
+      ) -
+        amount <=
+      0,
+
+    cashbackAppliedAt:
+      new Date(),
+
+    /*
+     * Критическое исправление:
+     * после повторного выполнения
+     * возврат больше не активен.
+     */
+    cashbackRefundedAt: null,
+
+    cashbackRefundedAmountZl: 0,
+
+    method:
+      Number(
+        freshOrder.totalZl || 0
+      ) -
+          amount <=
+        0
+        ? "cashback"
+        : payment?.method || null,
+  };
+
+  await freshOrder.save();
+
+  return {
+    deducted: true,
+    amount,
+  };
+}
+
+async function rollbackEarnedOrderCashback(order) {
+  if (!order?._id) {
+    return {
+      rolledBack: false,
+      amount: 0,
+    };
+  }
+
+  const freshOrder = await Order.findById(
+    String(order._id || "")
+  );
+
+  if (!freshOrder) {
+    return {
+      rolledBack: false,
+      amount: 0,
+    };
+  }
+
+  /*
+   * Единственный источник суммы текущего
+   * начисления — поле самого заказа.
+   *
+   * После успешного отката оно становится 0,
+   * поэтому повторная отмена ничего не снимает.
+   */
+  const earnedCashbackZl = Number(
+    Math.max(
+      0,
+      Number(freshOrder.cashbackZl || 0)
+    ).toFixed(2)
+  );
+
+  if (!(earnedCashbackZl > 0)) {
+    return {
+      rolledBack: false,
+      amount: 0,
+    };
+  }
+
+  const user = await User.findOne({
+    telegramId: String(
+      freshOrder.userTelegramId || ""
+    ),
+  });
+
+  if (!user) {
+    throw new Error(
+      "USER_NOT_FOUND_FOR_EARNED_CASHBACK_ROLLBACK"
+    );
+  }
+
+  user.cashbackLedger = Array.isArray(
+    user.cashbackLedger
+  )
+    ? user.cashbackLedger
+    : [];
+
+  const orderId = String(
+    freshOrder._id || ""
+  );
+
+  let leftToDeduct =
+    earnedCashbackZl;
+
+  /*
+   * Берём только активные начисления
+   * за покупку. Возврат оплаты исключаем.
+   *
+   * Новейшие строки идут первыми — это важно
+   * после повторного выполнен → отменён.
+   */
+  const activeEarnedRows =
+    user.cashbackLedger
+      .filter(
+        (row) =>
+          String(
+            row?.sourceOrderId || ""
+          ) === orderId &&
+
+          String(
+            row?.source || ""
+          ) !==
+            "order_payment_refund" &&
+
+          !row?.expiredAt &&
+
+          Number(
+            row?.remainingZl || 0
+          ) > 0
+      )
+      .sort(
+        (a, b) =>
+          new Date(
+            b?.earnedAt || 0
+          ).getTime() -
+          new Date(
+            a?.earnedAt || 0
+          ).getTime()
+      );
+
+  for (
+    const row of activeEarnedRows
+  ) {
+    if (leftToDeduct <= 0) break;
+
+    const available = Math.max(
+      0,
+      Number(row?.remainingZl || 0)
+    );
+
+    const used = Math.min(
+      available,
+      leftToDeduct
+    );
+
+    row.remainingZl = Number(
+      (available - used).toFixed(2)
+    );
+
+    leftToDeduct = Number(
+      (leftToDeduct - used).toFixed(2)
+    );
+  }
+
+  /*
+   * Если клиент потратил часть начисления,
+   * добираем из другого активного баланса.
+   */
+  if (leftToDeduct > 0) {
+    const otherActiveRows =
+      user.cashbackLedger
+        .filter(
+          (row) =>
+            !row?.expiredAt &&
+            Number(
+              row?.remainingZl || 0
+            ) > 0 &&
+            !activeEarnedRows.includes(row)
+        )
+        .sort(
+          (a, b) =>
+            new Date(
+              a?.expiresAt || 0
+            ).getTime() -
+            new Date(
+              b?.expiresAt || 0
+            ).getTime()
+        );
+
+    for (
+      const row of otherActiveRows
+    ) {
+      if (leftToDeduct <= 0) break;
+
+      const available = Math.max(
+        0,
+        Number(row?.remainingZl || 0)
+      );
+
+      const used = Math.min(
+        available,
+        leftToDeduct
+      );
+
+      row.remainingZl = Number(
+        (available - used).toFixed(2)
+      );
+
+      leftToDeduct = Number(
+        (leftToDeduct - used).toFixed(2)
+      );
+    }
+  }
+
+  if (leftToDeduct > 0) {
+    throw new Error(
+      "INSUFFICIENT_CASHBACK_BALANCE_FOR_ORDER_CANCELLATION"
+    );
+  }
+
+  recalcUserCashbackBalanceFromLedger(
+    user
+  );
+
+  user.markModified?.(
+    "cashbackLedger"
+  );
+
+  await user.save();
+
+  await Order.updateOne(
+    {
+      _id: freshOrder._id,
+    },
+    {
+      $set: {
+        cashbackAppliedAt: null,
+        cashbackPercent: 0,
+        cashbackZl: 0,
+      },
+    }
+  );
+
+  return {
+    rolledBack: true,
+    amount: earnedCashbackZl,
+  };
+}
+
+async function restoreCommittedOrderStock(
+  order
+) {
+  if (!order || !order?.stockCommittedAt) {
+    return false;
+  }
+
+  const pickupPointIds =
+    await resolveOrderReservePickupPointIds(
+      order
+    );
+
+  if (!pickupPointIds.length) {
+    return false;
+  }
+
+  const pointObjIds =
+    pickupPointIds.map(
+      (pickupPointId) =>
+        pickupPointId instanceof
+        mongoose.Types.ObjectId
+          ? pickupPointId
+          : new mongoose.Types.ObjectId(
+              String(pickupPointId)
+            )
+    );
+
+  const normFlavorKey = (value) =>
+    String(value || "")
+      .trim()
+      .replace(/,+$/, "");
+
+  for (const item of order.items || []) {
+    const productKey = String(
+      item?.productKey || ""
+    ).trim();
+
+    if (!productKey) continue;
+
+    for (
+      const flavor of item?.flavors || []
+    ) {
+      const qty = Math.max(
+        0,
+        Number(flavor?.qty || 0)
+      );
+
+      if (!qty) continue;
+
+      const normalizedFlavorKey =
+        normFlavorKey(
+          flavor?.flavorKey
+        );
+
+      const flavorKeyCandidates =
+        Array.from(
+          new Set(
+            [
+              String(
+                flavor?.flavorKey || ""
+              ).trim(),
+
+              normalizedFlavorKey,
+
+              `${normalizedFlavorKey},`,
+            ].filter(Boolean)
+          )
+        );
+
+      for (
+        const pointObjId of pointObjIds
+      ) {
+        await Product.updateOne(
+          {
+            productKey,
+
+            "flavors.flavorKey": {
+              $in: flavorKeyCandidates,
+            },
+
+            "flavors.stockByPickupPoint.pickupPointId":
+              pointObjId,
+          },
+          {
+            $inc: {
+              "flavors.$[f].stockByPickupPoint.$[s].totalQty":
+                qty,
+            },
+          },
+          {
+            arrayFilters: [
+              {
+                "f.flavorKey": {
+                  $in: flavorKeyCandidates,
+                },
+              },
+              {
+                "s.pickupPointId":
+                  pointObjId,
+              },
+            ],
+          }
+        );
+      }
+    }
+  }
+
+  cacheInvalidate("products:");
+
+  return true;
+}
+
+async function changePickupOrderStatusByManager(
+  order,
+  nextStatus,
+  managerTelegramId
+) {
+  if (!order) {
+    throw new Error(
+      "ORDER_NOT_FOUND"
+    );
+  }
+
+  const deliveryType = String(
+    order?.deliveryType || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const deliveryMethod = String(
+    order?.deliveryMethod || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const canManagerChangeStatus =
+    deliveryType === "pickup" ||
+    (
+      deliveryType === "delivery" &&
+      ["inpost", "courier"].includes(
+        deliveryMethod
+      )
+    );
+
+  if (!canManagerChangeStatus) {
+    throw new Error(
+      "ORDER_STATUS_CHANGE_NOT_ALLOWED"
+    );
+  }
+
+  const target = String(
+    nextStatus || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (
+    ![
+      "completed",
+      "canceled",
+    ].includes(target)
+  ) {
+    throw new Error(
+      "INVALID_ORDER_STATUS"
+    );
+  }
+
+  const current = String(
+    order?.status || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  if (current === target) {
+    return order;
+  }
+
+  /*
+   * ПЕРЕХОД В ОТМЕНЁННЫЙ
+   */
+  if (target === "canceled") {
+    if (order?.stockCommittedAt) {
+      await restoreCommittedOrderStock(
+        order
+      );
+    } else if (!order?.stockReleasedAt) {
+      await releaseOrderReservedStock(
+        order
+      );
+    }
+
+    await rollbackEarnedOrderCashback(
+      order
+    );
+
+    await refundOrderCashback(order);
+
+    const fresh =
+      await Order.findById(
+        order._id
+      );
+
+    if (!fresh) {
+      throw new Error(
+        "ORDER_NOT_FOUND_AFTER_CANCEL"
+      );
+    }
+
+    fresh.status = "canceled";
+
+    fresh.completedAt = null;
+
+    fresh.shippedAt = null;
+
+    fresh.canceledAt = new Date();
+
+    fresh.canceledByTelegramId =
+      String(
+        managerTelegramId || ""
+      );
+
+    fresh.stockCommittedAt = null;
+
+    fresh.stockReleasedAt =
+      new Date();
+
+    fresh.managerEditedAt =
+      new Date();
+
+    fresh.managerEditedByTelegramId =
+      String(
+        managerTelegramId || ""
+      );
+
+    fresh.payment = {
+      ...(fresh.payment?.toObject
+        ? fresh.payment.toObject()
+        : fresh.payment || {}),
+
+      status: "unpaid",
+
+      paidAt: null,
+
+      checkedAt: new Date(),
+
+      checkedByTelegramId:
+        String(
+          managerTelegramId || ""
+        ),
+    };
+
+    await fresh.save();
+
+    return fresh;
+  }
+
+  /*
+   * ПЕРЕХОД В ВЫПОЛНЕННЫЙ
+   */
+
+  await deductRefundedOrderCashback(
+    order
+  );
+
+  const fresh =
+    await Order.findById(
+      order._id
+    );
+
+  if (!fresh) {
+    throw new Error(
+      "ORDER_NOT_FOUND_BEFORE_COMPLETE"
+    );
+  }
+
+  /*
+   * Списываем товар только если он
+   * ещё не был окончательно списан.
+   *
+   * Для InPost после статуса shipped
+   * stockCommittedAt уже будет заполнен,
+   * поэтому повторного списания не произойдёт.
+   */
+  if (!fresh?.stockCommittedAt) {
+    await commitOrderStock(fresh);
+
+    fresh.stockCommittedAt =
+      new Date();
+  }
+
+  fresh.stockReleasedAt = null;
+
+  fresh.status = "completed";
+
+  fresh.completedAt = new Date();
+
+  fresh.shippedAt = null;
+
+  fresh.canceledAt = null;
+
+  fresh.canceledByTelegramId = "";
+
+  fresh.managerEditedAt =
+    new Date();
+
+  fresh.managerEditedByTelegramId =
+    String(
+      managerTelegramId || ""
+    );
+
+  fresh.payment = {
+    ...(fresh.payment?.toObject
+      ? fresh.payment.toObject()
+      : fresh.payment || {}),
+
+    status: "paid",
+
+    paidAt: new Date(),
+
+    checkedAt: new Date(),
+
+    checkedByTelegramId:
+      String(
+        managerTelegramId || ""
+      ),
+  };
+
+  await fresh.save();
+
+  await applyOrderCashback(fresh);
+
+  return await Order.findById(
+    fresh._id
+  );
+}
+
+async function resolveOrderNotificationPoint(order) {
+  if (!order) return null;
+
+  if (order.deliveryType === "pickup" && order.pickupPointId) {
+    return await PickupPoint.findById(order.pickupPointId).lean();
+  }
+
+  if (order.deliveryType === "delivery") {
+    const deliveryKey = order.deliveryMethod === "inpost" ? "delivery-2" : "delivery";
+    return await PickupPoint.findOne({
+      key: { $in: [deliveryKey, `${deliveryKey},`] }
+    }).lean();
+  }
+
+  return null;
+}
+
+async function notifyManagerClientArrived(order) {
+  try {
+    if (!bot || !order) return { ok: false, reason: "NO_BOT_OR_ORDER" };
+
+    const point = await resolveOrderNotificationPoint(order);
+    const chatId = String(
+      order?.payment?.managerMessageChatId || point?.notificationChatId || ""
+    ).trim();
+
+    const replyToMessageId = Number(order?.payment?.managerMessageId || 0);
+
+    if (!chatId || !replyToMessageId) {
+      return { ok: false, reason: "NO_MANAGER_MESSAGE" };
+    }
+
+    const user = await User.findOne(
+      { telegramId: String(order.userTelegramId || "") },
+      { telegramId: 1, username: 1, firstName: 1 }
+    ).lean();
+
+    const customerName =
+      (user?.username ? `@${user.username}` : "") ||
+      String(user?.firstName || "").trim() ||
+      "—";
+
+    const text = [
+      `📍 <b>КЛИЕНТ ПРИБЫЛ НА ТОЧКУ САМОВЫВОЗА</b>`,
+      ``,
+      `🔢 <b>Номер заказа:</b> #${escapeHtml(order.orderNo)}`,
+      `👤 <b>Клиент:</b> ${escapeHtml(customerName)}`,
+    ].join("\n");
+
+    const sent = await bot.telegram.sendMessage(chatId, text, {
+      parse_mode: "HTML",
+      reply_to_message_id: replyToMessageId,
+      allow_sending_without_reply: true,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "✅ Заказ выполнен", callback_data: `mgr_order_completed:${order._id}` }],
+        ],
+      },
+    });
+
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $push: {
+          managerArrivalMessageIds: String(sent?.message_id || ""),
+        },
+      }
+    );
+
+    return { ok: true };
+  } catch (e) {
+    console.error("notifyManagerClientArrived error:", e);
+    return { ok: false, reason: "SEND_ERROR" };
+  }
+}
+
+async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
+  try {
+    if (!order) return { ok: false, reason: "NO_ORDER" };
+
+    const reason = String(options?.reason || "NO_PAYMENT_CONFIRM").trim() || "NO_PAYMENT_CONFIRM";
+
+    const freshOrder = await Order.findById(String(order._id || ""));
+    if (!freshOrder) return { ok: false, reason: "NOT_FOUND" };
+
+    const currentStatus = String(freshOrder.status || "").toLowerCase();
+    const paymentStatus = String(freshOrder?.payment?.status || "").toLowerCase();
+
+    if (["completed", "done", "shipped", "canceled", "annulled"].includes(currentStatus)) {
+      return { ok: false, reason: "ALREADY_FINAL" };
+    }
+
+    if (paymentStatus === "paid" || paymentStatus === "checking") {
+      return { ok: false, reason: "PAYMENT_ALREADY_IN_PROGRESS" };
+    }
+
+    if (!freshOrder.stockCommittedAt && !freshOrder.stockReleasedAt) {
+      try {
+        await releaseOrderReservedStock(freshOrder);
+        freshOrder.stockReleasedAt = new Date();
+      } catch (releaseErr) {
+        console.error("annulOrderBecauseNoPaymentConfirm releaseOrderReservedStock error:", releaseErr);
+      }
+    }
+
+    freshOrder.status = "annulled";
+    freshOrder.annulledAt = new Date();
+    freshOrder.annulledReason = reason;
+    await freshOrder.save();
+
+    await refreshManagerOrderMessage(freshOrder);
+
+    try {
+      if (bot && freshOrder?.userTelegramId) {
+        const orderNo = escapeHtml(freshOrder?.orderNo || "—");
+
+        await bot.telegram.sendMessage(
+          String(freshOrder.userTelegramId),
+          [
+            `⌛️ <b>ЗАКАЗ АННУЛИРОВАН</b>`,
+            ``,
+            `Твой заказ <b>#${orderNo}</b> аннулирован из-за отсутствия подтверждения оплаты.`,
+          ].join("\n"),
+          {
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+          }
+        );
+      }
+    } catch (notifyErr) {
+      console.error("annulOrderBecauseNoPaymentConfirm notify client error:", notifyErr);
+    }
+
+    return { ok: true, order: freshOrder };
+  } catch (e) {
+    console.error("annulOrderBecauseNoPaymentConfirm error:", e);
+    return { ok: false, reason: "INTERNAL_ERROR" };
+  }
+}
+
+function getCartStockContextId(cart) {
+  const checkout = cart?.checkout || {};
+  const items = Array.isArray(cart?.items) ? cart.items : [];
+  const firstItem = items.length ? items[0] : {};
+
+  const directContextId = String(
+    cart?.stockContextId ||
+      cart?.reservedContextId ||
+      cart?.contextId ||
+      cart?.pickupPointId ||
+      cart?.checkoutPickupPointId ||
+      checkout?.stockContextId ||
+      checkout?.reservedContextId ||
+      checkout?.contextId ||
+      checkout?.pickupPointId ||
+      firstItem?.stockContextId ||
+      firstItem?.reservedContextId ||
+      firstItem?.contextId ||
+      firstItem?.pickupPointId ||
+      firstItem?.reservedPickupPointId ||
+      ""
+  ).trim();
+
+  if (directContextId) return directContextId;
+
+  const deliveryType = String(
+    cart?.checkoutDeliveryType ||
+      cart?.deliveryType ||
+      checkout?.deliveryType ||
+      checkout?.type ||
+      firstItem?.deliveryType ||
+      ""
+  ).trim();
+
+  const deliveryMethod = String(
+    cart?.checkoutDeliveryMethod ||
+      cart?.deliveryMethod ||
+      checkout?.deliveryMethod ||
+      checkout?.method ||
+      firstItem?.deliveryMethod ||
+      ""
+  ).trim();
+
+  if (deliveryType === "pickup") {
+    return String(
+      cart?.checkoutPickupPointId ||
+        cart?.pickupPointId ||
+        checkout?.pickupPointId ||
+        firstItem?.pickupPointId ||
+        ""
+    ).trim();
+  }
+
+  if (deliveryType === "delivery" && deliveryMethod === "inpost") {
+    return "delivery-2";
+  }
+
+  if (deliveryType === "delivery") {
+    return "delivery";
+  }
+
+  return "";
+}
+
+function getCartItemFlavorRows(item = {}) {
+  const flavors = Array.isArray(item?.flavors) ? item.flavors : [];
+
+  if (flavors.length) {
+    return flavors
+      .map((flavor) => ({
+        flavorKey: String(
+          flavor?.flavorKey ||
+            flavor?.key ||
+            flavor?.id ||
+            flavor?.flavorId ||
+            ""
+        ).trim(),
+        qty: Math.max(0, Number(flavor?.qty || flavor?.quantity || 0)),
+      }))
+      .filter((row) => row.flavorKey && row.qty > 0);
+  }
+
+  const fallbackFlavorKey = String(
+    item?.flavorKey ||
+      item?.key ||
+      item?.flavorId ||
+      ""
+  ).trim();
+
+  const fallbackQty = Math.max(0, Number(item?.qty || item?.quantity || 0));
+
+  return fallbackFlavorKey && fallbackQty > 0
+    ? [{ flavorKey: fallbackFlavorKey, qty: fallbackQty }]
+    : [];
+}
+
+async function releaseReservedStockForCart(cart) {
+  if (!cart || !Array.isArray(cart?.items) || !cart.items.length) {
+    return { ok: true, released: 0 };
+  }
+
+  const contextId = getCartStockContextId(cart);
+
+  if (!contextId) {
+    return { ok: false, reason: "NO_CONTEXT_ID", released: 0 };
+  }
+
+  const pickupPointIds = await getSyncedPickupPointIdsByAnyPoint(contextId);
+
+  if (!pickupPointIds.length) {
+    return { ok: false, reason: "NO_PICKUP_POINT_IDS", released: 0 };
+  }
+
+  let released = 0;
+
+  for (const item of cart.items) {
+    const productKey = String(item?.productKey || "").trim();
+    if (!productKey) continue;
+
+    const flavorRows = getCartItemFlavorRows(item);
+    if (!flavorRows.length) continue;
+
+    const product = await Product.findOne({ productKey });
+    if (!product) continue;
+
+    let changed = false;
+    const productFlavors = Array.isArray(product?.flavors) ? product.flavors : [];
+
+    for (const cartFlavor of flavorRows) {
+      const flavorKey = String(cartFlavor?.flavorKey || "").trim();
+      const qty = Math.max(0, Number(cartFlavor?.qty || 0));
+
+      if (!flavorKey || qty <= 0) continue;
+
+      const productFlavor = productFlavors.find((flavor) => {
+        return String(
+          flavor?.flavorKey ||
+            flavor?.key ||
+            flavor?._id ||
+            ""
+        ).trim() === flavorKey;
+      });
+
+      if (!productFlavor) continue;
+
+      productFlavor.stockByPickupPoint = Array.isArray(productFlavor?.stockByPickupPoint)
+        ? productFlavor.stockByPickupPoint
+        : [];
+
+      for (const pickupPointId of pickupPointIds) {
+        const stockRow = productFlavor.stockByPickupPoint.find((row) => {
+          return String(row?.pickupPointId || "").trim() === String(pickupPointId || "").trim();
+        });
+
+        if (!stockRow) continue;
+
+        const currentReserved = Math.max(0, Number(stockRow?.reservedQty || 0));
+        const nextReserved = Math.max(0, currentReserved - qty);
+        const diff = currentReserved - nextReserved;
+
+        if (diff > 0) {
+          stockRow.reservedQty = nextReserved;
+          released += diff;
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      product.markModified("flavors");
+      await product.save();
+      cacheInvalidate("products:");
+    }
+  }
+
+  return { ok: true, released };
+}
+
+async function processStaleCarts() {
+  try {
+    const timeoutMinutes = Math.max(1, Number(CART_AUTO_CLEAR_AFTER_MINUTES || 10));
+    const cutoff = new Date(Date.now() - timeoutMinutes * 60 * 1000);
+
+    const now = new Date();
+
+    const staleCarts = await Cart.find({
+      items: { $exists: true, $ne: [] },
+      $or: [
+        { cartAutoClearAt: { $lte: now } },
+        {
+          cartAutoClearAt: { $exists: false },
+          updatedAt: { $lte: cutoff },
+        },
+        {
+          cartAutoClearAt: null,
+          updatedAt: { $lte: cutoff },
+        },
+      ],
+    });
+
+    for (const cart of staleCarts) {
+      try {
+        const releaseResult = await releaseReservedStockForCart(cart);
+
+        console.log("[CART AUTO CLEAR] release result", {
+          cartId: String(cart?._id || ""),
+          ok: releaseResult?.ok,
+          reason: releaseResult?.reason || "",
+          released: Number(releaseResult?.released || 0),
+          checkout: cart?.checkout || {},
+          firstItem: Array.isArray(cart?.items) && cart.items.length ? cart.items[0] : null,
+        });
+
+        if (releaseResult?.ok === false) {
+          continue;
+        }
+
+        cart.items = [];
+
+        cart.checkout = {};
+
+        cart.stockContextId = "";
+
+        cart.reservedContextId = "";
+
+        cart.cartAutoClearAt = null;
+
+        cart.staleClearedAt = new Date();
+
+        await cart.save();
+      } catch (cartErr) {
+        console.error("processStaleCarts cart error:", cartErr);
+      }
+    }
+
+    if (staleCarts.length > 0) {
+      console.log(`[CART AUTO CLEAR] cleared stale carts: ${staleCarts.length}`);
+    }
+  } catch (e) {
+    console.error("processStaleCarts error:", e);
+  }
+}
+
+async function processOrdersWithoutPaymentConfirm() {
+  try {
+    const timeoutMinutes = Number(
+      process.env.ORDER_PAYMENT_CONFIRM_TIMEOUT_MINUTES || 10
+    );
+
+    const now = Date.now();
+
+    const timeoutMs =
+      timeoutMinutes * 60 * 1000;
+
+    const fiveMinutesMs =
+      5 * 60 * 1000;
+
+    const nineMinutesMs =
+      9 * 60 * 1000;
+
+    /*
+     * Берём только заказы старше 5 минут.
+     * Более свежие пока не требуют ни напоминания,
+     * ни аннуляции.
+     */
+    const pendingOrders = await Order.find({
+      status: {
+        $in: ["created", "processing"],
+      },
+
+      "payment.status": "unpaid",
+
+      createdAt: {
+        $lte: new Date(
+          now - fiveMinutesMs
+        ),
+      },
+    });
+
+    for (const order of pendingOrders) {
+      try {
+        const createdAtMs =
+          new Date(
+            order?.createdAt
+          ).getTime();
+
+        if (!Number.isFinite(createdAtMs)) {
+          console.warn(
+            "processOrdersWithoutPaymentConfirm invalid createdAt:",
+            {
+              orderId: String(
+                order?._id || ""
+              ),
+
+              orderNo: String(
+                order?.orderNo || ""
+              ),
+
+              createdAt:
+                order?.createdAt,
+            }
+          );
+
+          continue;
+        }
+
+        const orderAgeMs =
+          now - createdAtMs;
+
+        /*
+         * Сначала проверяем аннуляцию.
+         *
+         * Если заказу уже 10 минут
+         * или значение из env,
+         * старое поведение сохраняется.
+         */
+        if (orderAgeMs >= timeoutMs) {
+          await annulOrderBecauseNoPaymentConfirm(
+            order,
+            {
+              reason:
+                "NO_PAYMENT_CONFIRM_TIMEOUT",
+            }
+          );
+
+          continue;
+        }
+
+        const payment =
+          order?.payment?.toObject?.() ||
+          order?.payment ||
+          {};
+
+        /*
+         * Первое напоминание:
+         * после 5 минут,
+         * но до 9 минут.
+         */
+        const shouldSendFiveMinuteReminder =
+          orderAgeMs >= fiveMinutesMs &&
+          orderAgeMs < nineMinutesMs &&
+          !payment
+            ?.paymentReminder5SentAt;
+
+        /*
+         * Второе напоминание:
+         * после 9 минут,
+         * но до аннуляции.
+         */
+        const shouldSendNineMinuteReminder =
+          orderAgeMs >= nineMinutesMs &&
+          orderAgeMs < timeoutMs &&
+          !payment
+            ?.paymentReminder9SentAt;
+
+        if (
+          !shouldSendFiveMinuteReminder &&
+          !shouldSendNineMinuteReminder
+        ) {
+          continue;
+        }
+
+        const freshOrder = await Order.findById(
+          order._id
+        );
+
+        if (!freshOrder) {
+          continue;
+        }
+
+        const freshOrderStatus = String(
+          freshOrder?.status || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const freshPaymentStatus = String(
+          freshOrder?.payment?.status || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const canSendPaymentReminder =
+          ["created", "processing"].includes(
+            freshOrderStatus
+          ) &&
+          freshPaymentStatus === "unpaid";
+
+        if (!canSendPaymentReminder) {
+          continue;
+        }
+
+        if (
+          !bot ||
+          !freshOrder?.userTelegramId
+        ) {
+          console.warn(
+            "processOrdersWithoutPaymentConfirm reminder skipped:",
+            {
+              orderId: String(
+                freshOrder?._id || ""
+              ),
+
+              orderNo: String(
+                freshOrder?.orderNo || ""
+              ),
+
+              reason:
+                "NO_BOT_OR_TELEGRAM_ID",
+            }
+          );
+
+          continue;
+        }
+
+        const orderNo =
+          escapeHtml(
+            freshOrder?.orderNo || "—"
+          );
+
+        const reminderText =
+          shouldSendNineMinuteReminder
+            ? [
+                "⚠️ <b>ПОСЛЕДНЕЕ НАПОМИНАНИЕ ОБ ОПЛАТЕ</b>",
+                "",
+                `Заказ <b>#${orderNo}</b> всё ещё не оплачен.`,
+                "",
+                "Заказ будет автоматически аннулирован примерно через 1 минуту.",
+              ].join("\n")
+            : [
+                "⏳ <b>НАПОМИНАНИЕ ОБ ОПЛАТЕ</b>",
+                "",
+                `Заказ <b>#${orderNo}</b> ещё не оплачен.`,
+                "",
+                "Пожалуйста, завершите оплату.",
+              ].join("\n");
+
+        /*
+         * Сначала отправляем.
+         * Только после успешной отправки
+         * сохраняем отметку.
+         */
+
+        const stillUnpaidOrder =
+          await Order.findOne({
+            _id: freshOrder._id,
+
+            status: {
+              $in: ["created", "processing"],
+            },
+
+            "payment.status": "unpaid",
+          });
+
+        if (!stillUnpaidOrder) {
+          continue;
+        }
+
+        await bot.telegram.sendMessage(
+          String(
+            stillUnpaidOrder.userTelegramId
+          ),
+          reminderText,
+          {
+            parse_mode: "HTML",
+
+            disable_web_page_preview:
+              true,
+          }
+        );
+
+        const freshPayment =
+          stillUnpaidOrder?.payment
+            ?.toObject?.() ||
+          stillUnpaidOrder?.payment ||
+          {};
+
+        if (
+          shouldSendNineMinuteReminder
+        ) {
+          stillUnpaidOrder.payment = {
+            ...freshPayment,
+
+            paymentReminder9SentAt:
+              new Date(),
+          };
+        } else {
+          stillUnpaidOrder.payment = {
+            ...freshPayment,
+
+            paymentReminder5SentAt:
+              new Date(),
+          };
+        }
+
+        stillUnpaidOrder.markModified?.(
+          "payment"
+        );
+
+        await stillUnpaidOrder.save();
+
+        console.log(
+          "[PAYMENT REMINDER SENT]",
+          {
+            orderId: String(
+              stillUnpaidOrder?._id || ""
+            ),
+
+            orderNo: String(
+              stillUnpaidOrder?.orderNo || ""
+            ),
+
+            reminderMinute:
+              shouldSendNineMinuteReminder
+                ? 9
+                : 5,
+
+            userTelegramId: String(
+              stillUnpaidOrder?.userTelegramId || ""
+            ),
+          }
+        );
+      } catch (orderError) {
+        console.error(
+          "processOrdersWithoutPaymentConfirm order error:",
+          {
+            orderId: String(
+              stillUnpaidOrder?._id || ""
+            ),
+
+            orderNo: String(
+              stillUnpaidOrder?.orderNo || ""
+            ),
+
+            error:
+              orderError?.response
+                ?.description ||
+              orderError?.message ||
+              orderError,
+          }
+        );
+      }
+    }
+  } catch (e) {
+    console.error(
+      "processOrdersWithoutPaymentConfirm error:",
+      e
+    );
+  }
+}
+
+// async function updateManagerOrderChannelMessage(order, options = {}) {
+//   try {
+//     if (!bot || !order) return false;
+
+//     const messageChatId = String(
+//       order?.payment?.managerMessageChatId ||
+//       order?.managerMessageChatId ||
+//       order?.managerChannelChatId ||
+//       order?.notificationChatId ||
+//       order?.managerNotificationChatId ||
+//       order?.managerChatId ||
+//       ""
+//     ).trim();
+
+//     const messageId = Number(
+//       order?.payment?.managerMessageId ||
+//       order?.managerMessageId ||
+//       order?.managerChannelMessageId ||
+//       order?.notificationMessageId ||
+//       order?.managerNotificationMessageId ||
+//       order?.managerMsgId ||
+//       0
+//     );
+
+//     console.log("[MANAGER MSG UPDATE]", {
+//       orderId: String(order?._id || ""),
+//       messageChatId,
+//       messageId,
+//       paymentManagerMessageChatId: order?.payment?.managerMessageChatId,
+//       paymentManagerMessageId: order?.payment?.managerMessageId,
+//       managerMessageChatId: order?.managerMessageChatId,
+//       managerMessageId: order?.managerMessageId,
+//     });
+
+//     if (!messageChatId || !messageId) return false;
+
+//     const cancelSource = String(options?.cancelSource || "").trim().toLowerCase();
+
+//     const statusLabel =
+//       cancelSource === "client"
+//         ? "❌ Отменен клиентом"
+//         : cancelSource === "manager"
+//         ? "❌ Отменен менеджером"
+//         : "❌ Отменен";
+
+//     const dateText = formatOrderDate(order?.createdAt || new Date());
+//     const orderNo = escapeHtml(order?.orderNo || order?._id || "Заказ");
+//     const totalText = Number(order?.totalZl || 0).toFixed(2);
+
+//     const deliveryType = String(order?.deliveryType || "").trim();
+//     const deliveryMethod = String(order?.deliveryMethod || "").trim();
+
+//     const pickupTitle = escapeHtml(
+//       order?.pickupPointTitle || order?.pickupPointAddress || ""
+//     );
+//     const courierAddress = escapeHtml(order?.courierAddress || "");
+//     const arrivalTime = escapeHtml(order?.arrivalTime || "");
+//     const inpostData = order?.inpostData || {};
+
+//     const userName = escapeHtml(
+//       order?.userSnapshot?.displayName ||
+//       order?.userSnapshot?.firstName ||
+//       order?.userFirstName ||
+//       order?.userName ||
+//       "Клиент"
+//     );
+
+//     const userTelegramId = escapeHtml(order?.userTelegramId || "");
+
+//     const lines = [];
+//     lines.push(`🧾 <b>Заказ ${orderNo}</b>`);
+//     lines.push(`Статус: <b>${statusLabel}</b>`);
+//     lines.push(`Создан: <b>${dateText}</b>`);
+//     lines.push(
+//       `Клиент: <b>${userName}</b>${userTelegramId ? ` (${userTelegramId})` : ""}`
+//     );
+//     lines.push(`Сумма: <b>${totalText} zł</b>`);
+
+//     if (deliveryType === "pickup") {
+//       lines.push(`Получение: <b>Самовывоз</b>${pickupTitle ? ` — ${pickupTitle}` : ""}`);
+//       if (arrivalTime) lines.push(`Время прибытия: <b>${arrivalTime}</b>`);
+//     } else if (deliveryType === "delivery") {
+//       if (deliveryMethod === "inpost") {
+//         lines.push(`Получение: <b>Доставка · InPost</b>`);
+
+//         const fullName = escapeHtml(inpostData?.fullName || "");
+//         const phone = escapeHtml(inpostData?.phone || "");
+//         const email = escapeHtml(inpostData?.email || "");
+//         const city = escapeHtml(inpostData?.city || "");
+//         const lockerAddress = escapeHtml(inpostData?.lockerAddress || "");
+
+//         if (fullName) lines.push(`Имя: <b>${fullName}</b>`);
+//         if (phone) lines.push(`Телефон: <b>${phone}</b>`);
+//         if (email) lines.push(`Email: <b>${email}</b>`);
+//         if (city) lines.push(`Город: <b>${city}</b>`);
+//         if (lockerAddress) lines.push(`Пачкомат: <b>${lockerAddress}</b>`);
+//       } else {
+//         lines.push(`Получение: <b>Доставка · Курьер</b>`);
+//         if (courierAddress) lines.push(`Адрес: <b>${courierAddress}</b>`);
+//       }
+//     }
+
+//     const items = Array.isArray(order?.items) ? order.items : [];
+//     if (items.length) {
+//       lines.push("");
+//       lines.push("<b>Позиции:</b>");
+
+//       for (const item of items) {
+//         const productTitle = escapeHtml(
+//           item?.productTitle1 ||
+//           item?.productTitle ||
+//           item?.title ||
+//           item?.productKey ||
+//           "Товар"
+//         );
+
+//         const flavorRows = Array.isArray(item?.flavors) ? item.flavors : [];
+
+//         if (flavorRows.length) {
+//           for (const fl of flavorRows) {
+//             const flavorLabel = escapeHtml(
+//               fl?.flavorLabel || fl?.label || fl?.flavorKey || "Вкус"
+//             );
+//             const qty = Math.max(1, Number(fl?.qty || 1));
+//             const unitPrice = Number(fl?.unitPrice || item?.unitPrice || 0).toFixed(2);
+
+//             lines.push(`• ${productTitle} — ${flavorLabel} × ${qty} (${unitPrice} zł)`);
+//           }
+//         } else {
+//           const flavorLabel = escapeHtml(item?.flavorLabel || item?.flavorKey || "");
+//           const qty = Math.max(1, Number(item?.qty || 1));
+//           const unitPrice = Number(item?.unitPrice || 0).toFixed(2);
+
+//           lines.push(
+//             `• ${productTitle}${flavorLabel ? ` — ${flavorLabel}` : ""} × ${qty} (${unitPrice} zł)`
+//           );
+//         }
+//       }
+//     }
+
+//   const nextText = lines.join("\n");
+
+//   try {
+//     await bot.telegram.editMessageText(
+//       messageChatId,
+//       messageId,
+//       undefined,
+//       nextText,
+//       {
+//         parse_mode: "HTML",
+//         disable_web_page_preview: true,
+//         reply_markup: { inline_keyboard: [] },
+//       }
+//     );
+//   } catch (editTextErr) {
+//     console.error("updateManagerOrderChannelMessage editMessageText error:", editTextErr);
+
+//     try {
+//       await bot.telegram.editMessageReplyMarkup(messageChatId, messageId, undefined, {
+//         inline_keyboard: [],
+//       });
+//     } catch (editMarkupErr) {
+//       console.error("updateManagerOrderChannelMessage editMessageReplyMarkup error:", editMarkupErr);
+//     }
+
+//     try {
+//       await bot.telegram.sendMessage(messageChatId, nextText, {
+//         parse_mode: "HTML",
+//         disable_web_page_preview: true,
+//       });
+//     } catch (sendFallbackErr) {
+//       console.error("updateManagerOrderChannelMessage fallback sendMessage error:", sendFallbackErr);
+//     }
+//   }
+
+//     return true;
+//   } catch (e) {
+//     console.error("updateManagerOrderChannelMessage error:", e);
+//     return false;
+//   }
+// }
+
+const DAILY_STATS_RUNTIME_SENT = new Set();
+
+let DAILY_STATS_PROCESS_RUNNING = false;
+
+function getPointStatsChatId(point) {
+  return String(point?.statsChatId || "").trim();
+}
+
+function getWarsawDayKey(dateLike = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Warsaw",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(dateLike));
+
+  const year = parts.find((p) => p.type === "year")?.value || "0000";
+  const month = parts.find((p) => p.type === "month")?.value || "00";
+  const day = parts.find((p) => p.type === "day")?.value || "00";
+
+  return `${year}-${month}-${day}`;
+}
+
+function getWarsawTimeHHMM(dateLike = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Warsaw",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(dateLike));
+
+  const hour = parts.find((p) => p.type === "hour")?.value || "00";
+  const minute = parts.find((p) => p.type === "minute")?.value || "00";
+
+  return `${hour}:${minute}`;
+}
+
+function getPointStatsSendTime(point, dateLike = new Date()) {
+  const todayKey = getWarsawDayKey(dateLike);
+
+  const rawSchedule =
+    point?.scheduleByDate?.[todayKey] ||
+    point?.scheduleByDate?.get?.(todayKey) ||
+    null;
+
+  if (rawSchedule?.isOpen === false) {
+    return null;
+  }
+
+  const raw = String(
+    rawSchedule?.to ||
+      point?.statsSendTime ||
+      point?.workEnd ||
+      point?.closeTime ||
+      point?.workingHours?.to ||
+      point?.schedule?.endTime ||
+      "23:59"
+  ).trim();
+
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(raw) ? raw : "23:59";
+}
+
+function getOrderPointMatch(point) {
+  const pointKey = String(point?.key || "").trim().replace(/,+$/, "");
+
+  if (pointKey === "delivery") {
+    return { deliveryType: "delivery", deliveryMethod: "courier" };
+  }
+
+  if (pointKey === "delivery-2") {
+    return { deliveryType: "delivery", deliveryMethod: "inpost" };
+  }
+
+  return {
+    deliveryType: "pickup",
+    pickupPointId: point?._id,
+  };
+}
+
+function shouldCountOrderInDailyStats(order) {
+  if (!order) return false;
+
+  const status = String(order?.status || "").trim().toLowerCase();
+  const paymentStatus = String(order?.payment?.status || "").trim().toLowerCase();
+
+  if (["canceled", "annulled"].includes(status)) return false;
+  if (order?.payment?.cashbackFullyPaid === true) return true;
+  if (["paid", "refunded"].includes(paymentStatus)) return true;
+  if (["processing", "done", "completed", "shipped", "assembled"].includes(status)) return true;
+
+  return false;
+}
+
+function allocateCashbackBySubtotal(orderTotal, orderCashback, itemSubtotal) {
+  const total = Number(orderTotal || 0);
+  const cashback = Number(orderCashback || 0);
+  const subtotal = Number(itemSubtotal || 0);
+
+  if (total <= 0 || cashback <= 0 || subtotal <= 0) return 0;
+  return Number(((cashback * subtotal) / total).toFixed(2));
+}
+
+function normalizeStatsSheetModelName(input) {
+  return String(input || "")
+    .trim()
+    .toUpperCase()
+    .replace(/🦆/g, "")
+    .replace(/\bELF\s+DUCK\s+D3\b/g, "ELF D3")
+    .replace(/\bELF\s+DUCK\s+1500\b/g, "1500")
+    .replace(/\bELF\s+DUCK\s+2000\b/g, "2000")
+    .replace(/\bELF\s+DUCK\s+3000\s+RI\b/g, "3000 RI")
+    .replace(/\bELF\s+DUCK\s+3000\b/g, "3000 RI")
+    .replace(/\bELF\s+3000\b/g, "3000 RI")
+    .replace(/\bCHASER\s+BLACK\b/g, "BLACK")
+    .replace(/\bCHASER\s+FOR\s+PODS\b/g, "FOR PODS")
+    .replace(/\b30\s*ML\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getStatsSheetProductQty(row = {}) {
+  const flavors = Array.isArray(row?.flavors) ? row.flavors : [];
+
+  const flavorsQty = flavors.reduce((sum, fl) => {
+    return sum + Math.max(0, Number(fl?.qty || fl?.quantity || 0));
+  }, 0);
+
+  if (flavorsQty > 0) return flavorsQty;
+
+  return Math.max(0, Number(row?.qty || row?.quantity || 0));
+}
+
+function getStatsSheetProductTitle(row = {}) {
+  return (
+    [row?.productTitle1, row?.productTitle2].filter(Boolean).join(" ").trim() ||
+    String(row?.productTitle || row?.title || row?.productKey || "Товар").trim()
+  );
+}
+
+function normalizeStatsSheetProductTitle(row = {}) {
+  return getStatsSheetProductTitle(row)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function getStatsSheetProductCategory(row = {}) {
+  return String(
+    row?.categoryKey ||
+      row?.productCategoryKey ||
+      row?.category ||
+      row?.snapshot?.categoryKey ||
+      row?.product?.categoryKey ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function isStatsSheetLiquid(row = {}) {
+  return /\b30\s*ml\b/i.test(normalizeStatsSheetProductTitle(row));
+}
+
+function isStatsSheetExcludedDisposable(row = {}) {
+  const title = normalizeStatsSheetProductTitle(row);
+
+  return (
+    /(^|\s)(1500|1\s*5\s*k|1\.5\s*k)(\s|$)/i.test(title) ||
+    /(^|\s)(2000|2\s*k)(\s|$)/i.test(title)
+  );
+}
+
+function isStatsSheetPod(row = {}) {
+  if (isStatsSheetLiquid(row)) return false;
+
+  const title = normalizeStatsSheetProductTitle(row);
+  if (title.includes("cartridge") || title.includes("catridge")) return false;
+
+  const categoryKey = getStatsSheetProductCategory(row);
+  if (categoryKey === "pods" || categoryKey === "pod") return true;
+
+  return title.includes("pod");
+}
+
+function isStatsSheetDisposable(row = {}) {
+  if (isStatsSheetLiquid(row)) return false;
+  if (isStatsSheetPod(row)) return false;
+  if (isStatsSheetExcludedDisposable(row)) return false;
+
+  const categoryKey = getStatsSheetProductCategory(row);
+  if (categoryKey === "disposables" || categoryKey === "disposable") return true;
+
+  const title = normalizeStatsSheetProductTitle(row);
+  if (title.includes("cartridge") || title.includes("catridge")) return false;
+
+  return /\b(25k|30k|40k|20k|3000|15000|20000|25000|30000|40000)\b/i.test(title);
+}
+
+function getStatsSheetOrderLiquidQty(order) {
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
+    if (!isStatsSheetLiquid(row)) return sum;
+    return sum + getStatsSheetProductQty(row);
+  }, 0);
+}
+
+function getStatsSheetOrderPodQty(order) {
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
+    if (!isStatsSheetPod(row)) return sum;
+    return sum + getStatsSheetProductQty(row);
+  }, 0);
+}
+
+function getStatsSheetOrderDisposableQty(order) {
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
+    if (!isStatsSheetDisposable(row)) return sum;
+    return sum + getStatsSheetProductQty(row);
+  }, 0);
+}
+
+function getStatsSheetTierQty(order, row) {
+  if (isStatsSheetLiquid(row)) return getStatsSheetOrderLiquidQty(order);
+  if (isStatsSheetPod(row)) return getStatsSheetOrderPodQty(order);
+  if (isStatsSheetDisposable(row)) return getStatsSheetOrderDisposableQty(order);
+
+  return getStatsSheetProductQty(row);
+}
+
+function getStatsSheetTierKeyFromQty(qty) {
+  const n = Math.max(0, Number(qty || 0));
+
+  if (n >= 5) return "tier5";
+  if (n >= 3) return "tier34";
+  if (n >= 2) return "tier2";
+
+  return "tier1";
+}
+
+async function sendDailyPointStatsToGoogleSheet(point, orders, dayKey) {
+  const pointSearchText = normalizePhotoLookupText(
+    [point?.key, point?.title, point?.address, point?.name, point?.label]
+      .filter(Boolean)
+      .join(" | ")
+  );
+
+  const pointKey = String(point?.key || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+
+  const googleStatsWebhookUrlByPointKey = {
+
+    praga: GOOGLE_STATS_WEBHOOK_URL_PRAGA,
+
+    "mokot-w": GOOGLE_STATS_WEBHOOK_URL_MOKOTOW,
+
+    wola: GOOGLE_STATS_WEBHOOK_URL_WOLA,
+
+    "wola-inpost": GOOGLE_STATS_WEBHOOK_URL_WOLA,
+
+    "r-dmie-cie": GOOGLE_STATS_WEBHOOK_URL_SRODMIESCIE,
+
+    delivery: GOOGLE_STATS_WEBHOOK_URL_COURIER,
+
+    "delivery-2": GOOGLE_STATS_WEBHOOK_URL_INPOST,
+
+  };
+
+  const googleStatsWebhookUrl =
+    googleStatsWebhookUrlByPointKey[pointKey] || "";
+
+  if (
+    !Object.prototype.hasOwnProperty.call(
+      googleStatsWebhookUrlByPointKey,
+      pointKey
+    )
+  ) {
+    return {
+      ok: false,
+      reason: "SKIP_NO_GOOGLE_SHEET_FOR_POINT",
+      pointKey,
+      pointSearchText,
+    };
+  }
+
+  if (!googleStatsWebhookUrl) {
+    return {
+      ok: false,
+      reason: "NO_GOOGLE_STATS_WEBHOOK_URL",
+      pointKey,
+      pointSearchText,
+    };
+  }
+
+  const productMap = new Map();
+  const assortmentItems = [];
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    for (const row of Array.isArray(order?.items) ? order.items : []) {
+      const model =
+        [row?.productTitle1, row?.productTitle2]
+          .filter(Boolean)
+          .join(" ")
+          .trim() ||
+        String(
+          row?.productTitle ||
+            row?.title ||
+            row?.productKey ||
+            "Товар"
+        );
+
+      const flavorRows = Array.isArray(row?.flavors)
+        ? row.flavors
+        : [];
+
+      for (const flavor of flavorRows) {
+        const flavorQty = Math.max(
+          0,
+          Number(flavor?.qty || flavor?.quantity || 0)
+        );
+
+        if (flavorQty <= 0) continue;
+
+        assortmentItems.push({
+          model,
+          productKey: String(row?.productKey || "").trim(),
+          flavorKey: String(
+            flavor?.flavorKey || flavor?.key || ""
+          ).trim(),
+          flavorLabel: String(
+            flavor?.flavorLabel ||
+              flavor?.label ||
+              flavor?.name ||
+              flavor?.flavorKey ||
+              ""
+          ).trim(),
+          qty: flavorQty,
+        });
+      }
+
+      const modelKey = normalizeStatsSheetModelName(model);
+      if (!modelKey) continue;
+
+      if (!productMap.has(modelKey)) {
+        productMap.set(modelKey, {
+          model: modelKey,
+          tier1: 0,
+          tier2: 0,
+          tier34: 0,
+          tier5: 0,
+        });
+      }
+
+      const item = productMap.get(modelKey);
+
+      const soldQty = getStatsSheetProductQty(row);
+      const tierQty = getStatsSheetTierQty(order, row);
+      const tierKey = getStatsSheetTierKeyFromQty(tierQty);
+
+      item[tierKey] =
+        Number(item[tierKey] || 0) + soldQty;
+    }
+  }
+
+  const discounts = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce((sum, order) => {
+        return (
+          sum +
+          Number(order?.payment?.cashbackAppliedZl || 0) +
+          Number(
+            order?.payment
+              ?.referralFirstOrderDiscountTotalZl || 0
+          )
+        );
+      }, 0)
+      .toFixed(2)
+  );
+
+  // const clientsCount = new Set(
+  //   (Array.isArray(orders) ? orders : [])
+  //     .filter((order) =>
+  //       shouldCountOrderInDailyStats(order)
+  //     )
+  //     .map((order) =>
+  //       String(
+  //         order?.userTelegramId ||
+  //           order?.telegramId ||
+  //           order?.user?.telegramId ||
+  //           order?.userSnapshot?.telegramId ||
+  //           order?.customerTelegramId ||
+  //           order?._id ||
+  //           ""
+  //       ).trim()
+  //     )
+  //     .filter(Boolean)
+  // ).size;
+
+  const payload = {
+    date: String(dayKey || ""),
+    point: String(
+      point?.title ||
+        point?.address ||
+        point?.key ||
+        ""
+    ),
+    products: Array.from(productMap.values()),
+    assortmentItems,
+    totals: {
+      discounts,
+      // clients: clientsCount,
+      // clientsCount,
+    },
+  };
+
+  try {
+    const r = await fetch(googleStatsWebhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await r.json().catch(() => ({}));
+
+    console.log(
+      "[GOOGLE SHEET][STATS RESPONSE]",
+      JSON.stringify(
+        {
+          httpOk: r.ok,
+          status: r.status,
+          pointKey,
+          point: String(
+            point?.title ||
+              point?.address ||
+              point?.key ||
+              ""
+          ),
+          dayKey: String(dayKey || ""),
+          productsCount: Array.isArray(payload?.products)
+            ? payload.products.length
+            : 0,
+          assortmentItemsCount: Array.isArray(
+            payload?.assortmentItems
+          )
+            ? payload.assortmentItems.length
+            : 0,
+          totals: payload?.totals || {},
+          response: data,
+        },
+        null,
+        2
+      )
+    );
+
+    if (!r.ok || data?.ok === false) {
+      console.error(
+        "sendDailyPointStatsToGoogleSheet failed",
+        data
+      );
+
+      return {
+        ok: false,
+        response: data,
+      };
+    }
+
+    return {
+      ok: true,
+      response: data,
+    };
+  } catch (e) {
+    console.error(
+      "sendDailyPointStatsToGoogleSheet error:",
+      e
+    );
+
+    return {
+      ok: false,
+      error: String(e?.message || e),
+    };
+  }
+}
+
+function formatPaymentMethodLabel(method) {
+  const key = String(method || "").trim().toLowerCase();
+
+  if (key === "cash") return "Наличные";
+  if (key === "blik") return "BLIK";
+  if (key === "crypto") return "Крипта";
+  if (key === "ua_card") return "Укр. карта";
+  if (key === "cashback") return "Кэшбек";
+
+  return key || "Не указан";
+}
+
+function getOrderDisplayedPaymentMethod(order) {
+  const paymentMethod = String(order?.payment?.method || "").trim();
+
+  if (paymentMethod) return paymentMethod;
+  if (order?.payment?.cashbackFullyPaid === true) return "cashback";
+
+  return "unknown";
+}
+
+function getOrderRowUnitBasePrice(row, productBasePriceMap) {
+  const flavors = Array.isArray(row?.flavors) ? row.flavors : [];
+
+  const savedBasePrice = flavors.length
+    ? Math.max(...flavors.map((f) => Number(f?.baseUnitPrice || 0)))
+    : 0;
+
+  if (savedBasePrice > 0) return savedBasePrice;
+
+  const productKey = String(row?.productKey || "").trim();
+  const basePrice = Number(productBasePriceMap.get(productKey) || 0);
+
+  if (basePrice > 0) return basePrice;
+
+  const fallback = flavors.length
+    ? Math.max(...flavors.map((f) => Number(f?.unitPrice || 0)))
+    : 0;
+
+  return Number(fallback || 0);
+}
+
+function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
+  const productBasePriceMap =
+    extra?.productBasePriceMap instanceof Map ? extra.productBasePriceMap : new Map();
+
+  const referredFirstOrderUsers =
+    extra?.referredFirstOrderUsers instanceof Set ? extra.referredFirstOrderUsers : new Set();
+
+  const userDisplayMap =
+    extra?.userDisplayMap instanceof Map ? extra.userDisplayMap : new Map();
+
+  function getProductBucketLabelByQty(qty) {
+    const n = Math.max(0, Number(qty || 0));
+    if (n >= 5) return "5шт.";
+    if (n >= 3) return "3-4шт.";
+    if (n >= 2) return "2шт.";
+    return "1шт.";
+  }
+
+  function getProductDisplayTitleForStats(productRow = {}) {
+    const t1 = String(productRow?.productTitle1 || "").trim();
+    const t2 = String(productRow?.productTitle2 || "").trim();
+    return [t1, t2].filter(Boolean).join(" ").trim() || "Товар";
+  }
+
+  function getProductRowStatsQty(productRow = {}) {
+  return (Array.isArray(productRow?.flavors) ? productRow.flavors : []).reduce((sum, flavor) => {
+    return sum + Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
+  }, 0);
+}
+
+function getProductRowStatsCategory(productRow = {}) {
+  return String(
+    productRow?.categoryKey ||
+      productRow?.productCategoryKey ||
+      productRow?.category ||
+      productRow?.snapshot?.categoryKey ||
+      productRow?.product?.categoryKey ||
+      ""
+  )
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeStatsProductTitle(productRow = {}) {
+  return getProductDisplayTitleForStats(productRow)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isLiquidSmartPriceProduct(productRow = {}) {
+  const title = normalizeStatsProductTitle(productRow);
+  return /\b30\s*ml\b/i.test(title);
+}
+
+function isExcludedDisposableSmartPriceProduct(productRow = {}) {
+  const title = normalizeStatsProductTitle(productRow);
+
+  return (
+    /(^|\s)(1500|1\s*5\s*k|1\.5\s*k)(\s|$)/i.test(title) ||
+    /(^|\s)(2000|2\s*k)(\s|$)/i.test(title)
+  );
+}
+
+function isCartridgeSmartPriceProduct(productRow = {}) {
+  const title = normalizeStatsProductTitle(productRow);
+  const categoryKey = getProductRowStatsCategory(productRow);
+
+  if (categoryKey === "cartridges" || categoryKey === "cartridge") {
+    return true;
+  }
+
+  return title.includes("cartridge") || title.includes("catridge");
+}
+
+function isPodSmartPriceProduct(productRow = {}) {
+  if (isLiquidSmartPriceProduct(productRow)) return false;
+
+  if (isCartridgeSmartPriceProduct(productRow)) return false;
+
+  const title = normalizeStatsProductTitle(productRow);
+
+  const categoryKey = getProductRowStatsCategory(productRow);
+
+  if (categoryKey === "pods" || categoryKey === "pod") {
+    return true;
+  }
+
+  return title.includes("pod");
+}
+
+function isDisposableSmartPriceProduct(productRow = {}) {
+  if (isLiquidSmartPriceProduct(productRow)) return false;
+  if (isPodSmartPriceProduct(productRow)) return false;
+  if (isExcludedDisposableSmartPriceProduct(productRow)) return false;
+
+  const categoryKey = getProductRowStatsCategory(productRow);
+
+  if (categoryKey === "disposables" || categoryKey === "disposable") {
+    return true;
+  }
+
+  if (isCartridgeSmartPriceProduct(productRow)) return false;
+
+  const title = normalizeStatsProductTitle(productRow);
+
+  return /\b(25k|30k|40k|20k|3000|15000|20000|25000|30000|40000)\b/i.test(title);
+}
+
+function getOrderLiquidSmartQty(order) {
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
+    if (!isLiquidSmartPriceProduct(productRow)) return sum;
+    return sum + getProductRowStatsQty(productRow);
+  }, 0);
+}
+
+function getOrderPodSmartQty(order) {
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
+    if (!isPodSmartPriceProduct(productRow)) return sum;
+    return sum + getProductRowStatsQty(productRow);
+  }, 0);
+}
+
+function getOrderDisposableSmartQty(order) {
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
+    if (!isDisposableSmartPriceProduct(productRow)) return sum;
+    return sum + getProductRowStatsQty(productRow);
+  }, 0);
+}
+
+function getOrderCartridgeSmartQty(order) {
+
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
+
+    if (!isCartridgeSmartPriceProduct(productRow)) return sum;
+
+    return sum + getProductRowStatsQty(productRow);
+
+  }, 0);
+
+}
+
+function getStatsTierQtyForProductRow(order, productRow) {
+  if (isLiquidSmartPriceProduct(productRow)) {
+    return getOrderLiquidSmartQty(order);
+  }
+
+  if (isCartridgeSmartPriceProduct(productRow)) {
+    return getOrderCartridgeSmartQty(order);
+  }
+
+  if (isPodSmartPriceProduct(productRow)) {
+    return getOrderPodSmartQty(order);
+  }
+
+  if (isDisposableSmartPriceProduct(productRow)) {
+    return getOrderDisposableSmartQty(order);
+  }
+
+  return getProductRowStatsQty(productRow);
+}
+
+  // function getOrderOriginalItemsTotalZl(order) {
+  //   const items = Array.isArray(order?.items) ? order.items : [];
+
+  //   const itemsTotal = items.reduce((sum, productRow) => {
+  //     const flavors = Array.isArray(productRow?.flavors) ? productRow.flavors : [];
+  //     const productQty = flavors.reduce(
+  //       (acc, flavor) => acc + Math.max(1, Number(flavor?.qty || 1)),
+  //       0
+  //     );
+
+  //     const productKey = String(productRow?.productKey || "").trim();
+
+  //     let productBasePrice = Number(
+  //       productRow?.productBasePrice ||
+  //         productRow?.basePrice ||
+  //         productBasePriceMap.get(productKey) ||
+  //         productRow?.price ||
+  //         0
+  //     );
+
+  //     if (!productBasePrice && flavors.length) {
+  //       const flavorBasePrices = flavors
+  //         .map((flavor) =>
+  //           Number(
+  //             flavor?.basePrice ||
+  //               flavor?.baseUnitPrice ||
+  //               flavor?.originalUnitPrice ||
+  //               0
+  //           )
+  //         )
+  //         .filter((value) => value > 0);
+
+  //       if (flavorBasePrices.length) {
+  //         productBasePrice = Math.max(...flavorBasePrices);
+  //       }
+  //     }
+
+  //     if (!productBasePrice && flavors.length) {
+  //       const flavorUnitPrices = flavors
+  //         .map((flavor) => Number(flavor?.unitPrice || 0))
+  //         .filter((value) => value > 0);
+
+  //       if (flavorUnitPrices.length) {
+  //         productBasePrice = Math.max(...flavorUnitPrices);
+  //       }
+  //     }
+
+  //     return sum + productQty * productBasePrice;
+  //   }, 0);
+
+  //   return Number(itemsTotal.toFixed(2));
+  // }
+
+  function getOrderSmartDiscountTotalZl(order) {
+    return Number(
+      (Array.isArray(order?.items) ? order.items : []).reduce((orderSum, item) => {
+        const flavors = Array.isArray(item?.flavors) ? item.flavors : [];
+
+        return (
+          orderSum +
+          flavors.reduce((flavorSum, flavor) => {
+            const explicitSmartDiscount = Number(flavor?.smartDiscountTotalZl || 0);
+            if (explicitSmartDiscount > 0) {
+              return flavorSum + explicitSmartDiscount;
+            }
+
+            const qty = Math.max(1, Number(flavor?.qty || 1));
+            const originalBasePrice = Number(flavor?.baseUnitPrice || 0);
+            const finalUnitPrice = Number(flavor?.unitPrice || 0);
+            const referralDiscountTotal = Number(flavor?.referralFirstOrderDiscountTotalZl || 0);
+
+            if (originalBasePrice <= 0 || finalUnitPrice <= 0) {
+              return flavorSum;
+            } 
+            
+
+            const totalPriceDelta = Math.max(0, (originalBasePrice - finalUnitPrice) * qty);
+            const smartOnlyDiscount = Math.max(0, totalPriceDelta - referralDiscountTotal);
+
+            return flavorSum + smartOnlyDiscount;
+          }, 0)
+        );
+      }, 0).toFixed(2)
+    );
+  }
+
+  function getOrderCashbackDiscountTotalZl(order) {
+    return Number(order?.payment?.cashbackAppliedZl || 0);
+  }
+
+  const orderBlocks = [];
+  let soldPositionsQty = 0;
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const orderCashbackSpent = getOrderCashbackDiscountTotalZl(order);
+    const orderSmartDiscountZl = getOrderSmartDiscountTotalZl(order);
+    const paymentMethod = getOrderDisplayedPaymentMethod(order);
+    const paymentMethodLabel = formatPaymentMethodLabel(paymentMethod);
+
+    const orderClientName =
+      userDisplayMap.get(String(order?.userTelegramId || "").trim()) ||
+      String(order?.userTelegramId || "Клиент");
+
+    const productLines = (Array.isArray(order?.items) ? order.items : []).flatMap((productRow) => {
+      const flavors = Array.isArray(productRow?.flavors) ? productRow.flavors : [];
+      const productQty = flavors.reduce(
+        (acc, flavor) => acc + Math.max(1, Number(flavor?.qty || 1)),
+        0
+      );
+
+      if (productQty <= 0) return [];
+
+      soldPositionsQty += productQty;
+
+      const productTitle = getProductDisplayTitleForStats(productRow);
+      const bucketLabel = getProductBucketLabelByQty(productQty);
+      const flavorsLine = flavors
+        .map((flavor) => {
+          const label =
+            String(flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "").trim() ||
+            "Вкус";
+          const qty = Math.max(1, Number(flavor?.qty || 1));
+          return `${escapeHtml(label)} ×${qty}`;
+        })
+        .join(" • ");
+
+      const flavorsLineWithBullet = flavorsLine ? `• ${flavorsLine}` : "";
+
+      return [
+        `<b>${escapeHtml(productTitle)}</b> [${bucketLabel}] - ${productQty}шт.`,
+        flavorsLineWithBullet,
+      ];
+    });
+
+    orderBlocks.push({
+      orderNo: String(order?.orderNo || "—"),
+      clientName: orderClientName,
+      paymentMethodLabel,
+      smartDiscountZl: Number(orderSmartDiscountZl.toFixed(2)),
+      cashbackSpentZl: Number(orderCashbackSpent.toFixed(2)),
+      lines: productLines,
+      createdAt: order?.createdAt || null,
+    });
+  }
+
+  const uniqueCustomersCount = new Set(
+    (Array.isArray(orders) ? orders : [])
+      .map((order) => String(order?.userTelegramId || "").trim())
+      .filter(Boolean)
+  ).size;
+
+  const toPlnFromOrder = (order) => {
+    const payment = order?.payment || {};
+
+    const managerDisplayCurrency = String(payment?.managerDisplayCurrency || "PLN")
+      .trim()
+      .toUpperCase();
+
+    const managerDisplayAmount = Number(payment?.managerDisplayAmount || 0);
+    const managerDisplayRate = Number(payment?.managerDisplayRate || 0);
+    const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
+    const totalZl = Number(order?.totalZl || 0);
+
+    // 1) Если есть остаток к оплате в PLN после кэшбека — это самый надёжный вариант
+    if (cashbackRemainingToPayZl > 0) {
+      return cashbackRemainingToPayZl;
+    }
+
+    // 2) Если валюта отображения PLN
+    if (managerDisplayCurrency === "PLN") {
+      if (managerDisplayAmount > 0) return managerDisplayAmount;
+      return totalZl;
+    }
+
+    // 3) Если валюта отображения UAH
+    // managerDisplayAmount = PLN * rate
+    // значит обратно в PLN => UAH / rate
+    if (managerDisplayCurrency === "UAH") {
+      if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
+        return Number((managerDisplayAmount / managerDisplayRate).toFixed(2));
+      }
+      return totalZl;
+    }
+
+    // 4) Если валюта отображения USDT
+    // managerDisplayAmount = PLN / rate
+    // значит обратно в PLN => USDT * rate
+    if (managerDisplayCurrency === "USDT") {
+      if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
+        return Number((managerDisplayAmount * managerDisplayRate).toFixed(2));
+      }
+      return totalZl;
+    }
+
+    // 5) fallback
+    return totalZl;
+  };
+
+    const kasaTotalZl = Number(
+      (Array.isArray(orders) ? orders : [])
+        .reduce((sum, order) => {
+          return sum + toPlnFromOrder(order);
+        }, 0)
+        .toFixed(2)
+    );
+
+    const courierDeliveryFeesTotalZl = Number(
+      (Array.isArray(orders) ? orders : [])
+        .reduce((sum, order) => {
+          const isCourierDelivery =
+            String(order?.deliveryType || "").trim() === "delivery" &&
+            String(order?.deliveryMethod || "").trim() === "courier";
+
+          return sum + (isCourierDelivery ? Number(order?.deliveryFeeZl || 0) : 0);
+        }, 0)
+        .toFixed(2)
+    );
+
+    const inpostDeliveryFeesTotalZl = Number(
+      (Array.isArray(orders) ? orders : [])
+        .reduce((sum, order) => {
+          const isInpostDelivery =
+            String(order?.deliveryType || "").trim() === "delivery" &&
+            String(order?.deliveryMethod || "").trim() === "inpost";
+
+          return sum + (isInpostDelivery ? Number(order?.inpostDeliveryFeeZl || 0) : 0);
+        }, 0)
+        .toFixed(2)
+    );
+
+    const deliveryFeesTotalZl = Number(
+      (courierDeliveryFeesTotalZl + inpostDeliveryFeesTotalZl).toFixed(2)
+    );
+
+    const kasaNetTotalZl = Number(
+      Math.max(0, kasaTotalZl - deliveryFeesTotalZl).toFixed(2)
+    );
+
+    const smartDiscountTotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce((sum, order) => sum + getOrderSmartDiscountTotalZl(order), 0)
+      .toFixed(2)
+  );
+
+  const referralDiscountTotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce((sum, order) => sum + Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0), 0)
+      .toFixed(2)
+  );
+
+  const cashbackDiscountTotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce((sum, order) => sum + getOrderCashbackDiscountTotalZl(order), 0)
+      .toFixed(2)
+  );
+
+  // const courierDeliveryFeesTotalZl = Number(
+  //   (Array.isArray(orders) ? orders : [])
+  //     .reduce((sum, order) => {
+  //       const isCourierDelivery =
+  //         String(order?.deliveryType || "").trim() === "delivery" &&
+  //         String(order?.deliveryMethod || "").trim() === "courier";
+
+  //       return sum + (isCourierDelivery ? Number(order?.deliveryFeeZl || 0) : 0);
+  //     }, 0)
+  //     .toFixed(2)
+  // );
+
+  // const inpostDeliveryFeesTotalZl = Number(
+  //   (Array.isArray(orders) ? orders : [])
+  //     .reduce((sum, order) => {
+  //       const isInpostDelivery =
+  //         String(order?.deliveryType || "").trim() === "delivery" &&
+  //         String(order?.deliveryMethod || "").trim() === "inpost";
+
+  //       return sum + (isInpostDelivery ? Number(order?.inpostDeliveryFeeZl || 0) : 0);
+  //     }, 0)
+  //     .toFixed(2)
+  //
+  // );
+
+  // const discountsTotalZl = Number(
+  //   (smartDiscountTotalZl + referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
+  // );
+
+  const discountsTotalZl = Number(
+    (referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
+  );
+  
+  const salaryTotalZl = Number((((kasaTotalZl / 100) * 16)).toFixed(2));
+
+  const pointTitle = point?.title || point?.address || point?.key || "Склад";
+  const sortedOrders = [...orderBlocks].sort(
+    (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+  );
+
+  const lines = [
+    `📊 <b>СТАТИСТИКА ДНЯ</b>`,
+    `🏪 Склад: ${escapeHtml(pointTitle)}`,
+    `📅 Дата: ${escapeHtml(dayKey)}`,
+    `——————————————————`,
+    ``,
+    `🧾 <b>ЗАКАЗЫ :</b>`,
+    ``,
+  ];
+
+  const productStatsMap = new Map();
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    for (const row of Array.isArray(order?.items) ? order.items : []) {
+      const productKey = String(row?.productKey || "").trim();
+      const productTitle =
+        [row?.productTitle1, row?.productTitle2]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || productKey || "Товар";
+
+      const statsKey = productKey || productTitle;
+      if (!statsKey) continue;
+
+      let bucket = productStatsMap.get(statsKey);
+      if (!bucket) {
+        bucket = {
+          title: productTitle,
+          totalQty: 0,
+          tierBuckets: new Map(),
+          flavors: new Map(),
+        };
+        productStatsMap.set(statsKey, bucket);
+      }
+
+      const flavors = Array.isArray(row?.flavors) ? row.flavors : [];
+
+      const tierQtyForThisRow = getStatsTierQtyForProductRow(order, row);
+
+      const tierLabel = (() => {
+
+        if (tierQtyForThisRow >= 5) return "[5]";
+
+        if (tierQtyForThisRow >= 3) return "[3-4]";
+
+        if (tierQtyForThisRow >= 2) return "[2]";
+
+        return "[1]";
+
+      })();
+
+      for (const flavor of flavors) {
+        const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
+        if (!qty) continue;
+
+        bucket.totalQty += qty;
+
+        bucket.tierBuckets.set(
+          tierLabel,
+          (bucket.tierBuckets.get(tierLabel) || 0) + qty
+        );
+
+        const flavorLabel = String(
+          flavor?.flavorLabel || flavor?.flavorKey || "Вкус"
+        ).trim();
+
+        if (flavorLabel) {
+          bucket.flavors.set(
+            flavorLabel,
+            (bucket.flavors.get(flavorLabel) || 0) + qty
+          );
+        }
+      }
+    }
+  }
+
+  const tierOrder = ["[5]", "[3-4]", "[2]", "[1]"];
+
+  const aggregatedProducts = Array.from(productStatsMap.values()).sort(
+    (a, b) => b.totalQty - a.totalQty || a.title.localeCompare(b.title, "ru")
+  );
+
+  if (!aggregatedProducts.length) {
+    lines.push("—");
+    lines.push("");
+  } else {
+    for (const product of aggregatedProducts) {
+      lines.push(`——————————————————`);
+      lines.push(`🦆 <b>${escapeHtml(product.title)} — ${product.totalQty} шт.</b>`);
+      lines.push("");
+
+      const tierLine = tierOrder
+        .filter((tier) => (product.tierBuckets.get(tier) || 0) > 0)
+        .map((tier) => `${tier} ${product.tierBuckets.get(tier)}`)
+        .join(" &lt;&gt; ");
+
+      if (tierLine) {
+        lines.push(tierLine);
+      }
+
+      lines.push("");
+      // lines.push("Вкусы:");
+
+      const sortedFlavors = Array.from(product.flavors.entries()).sort(
+        (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")
+      );
+
+      for (const [flavorLabel, qty] of sortedFlavors) {
+        lines.push(`${flavorLabel} ×${qty}`);
+      }
+      lines.push(`——————————————————`);
+
+      lines.push("");
+    }
+  }
+
+  /*
+  if (!sortedOrders.length) {
+    lines.push(`Заказов за день не было.`);
+  } else {
+    sortedOrders.forEach((order, index) => {
+      lines.push(`#${escapeHtml(order.orderNo)}  [${escapeHtml(order.clientName)}]`);
+      for (const line of order.lines) {
+        lines.push(line);
+      }
+
+      if (index !== sortedOrders.length - 1) {
+        lines.push(``);
+      }
+    });
+  }
+  */
+
+  lines.push(`——————————————————`);
+  lines.push(``);
+  lines.push(`💰Касса: ${kasaNetTotalZl.toFixed(2)} PLN`);
+
+  const pointKeyNorm = String(point?.key || "").trim().toLowerCase().replace(/,+$/, "");
+  const pointTitleNorm = normalizePhotoLookupText(point?.title || "");
+  const pointAddressNorm = normalizePhotoLookupText(point?.address || "");
+
+  const isCourierStatsPoint =
+    pointKeyNorm === "delivery" ||
+    pointTitleNorm.includes("kurier") ||
+    pointTitleNorm.includes("courier") ||
+    pointAddressNorm.includes("kurier") ||
+    pointAddressNorm.includes("courier");
+
+  if (isCourierStatsPoint) {
+    lines.push(`🚚Доставка: ${courierDeliveryFeesTotalZl.toFixed(2)} PLN`);
+  }
+
+  const isInpostStatsPoint =
+    pointKeyNorm === "delivery-2" ||
+    pointTitleNorm.includes("inpost") ||
+    pointAddressNorm.includes("inpost");
+
+  if (isInpostStatsPoint) {
+    lines.push(`📦Доставка InPost: ${inpostDeliveryFeesTotalZl.toFixed(2)} PLN`);
+  }
+
+  lines.push(`🪙Скидки: ${discountsTotalZl.toFixed(2)} PLN`);
+  // lines.push(`- по ⚙️смарт-цене: ${smartDiscountTotalZl.toFixed(2)} PLN`);
+  lines.push(`- по 🎁реф. скидке: ${referralDiscountTotalZl.toFixed(2)} PLN`);
+  lines.push(`- по 🪙кэшбеку: ${cashbackDiscountTotalZl.toFixed(2)} PLN`);
+  lines.push(`👨‍💼Зарплата: ${salaryTotalZl.toFixed(2)} PLN`);
+  lines.push(`🫂Рефералов: ${referredFirstOrderUsers.size}`);
+  lines.push(`👤Кол-во клиентов: ${uniqueCustomersCount}`);
+  lines.push(`⚙️Продано штук: ${soldPositionsQty}`);
+  lines.push(``);
+  lines.push(`——————————————————`);
+  lines.push(`🦆 ELF DUCK &lt;&gt; СТАТИСТИКА`);
+
+  return lines.join("\n");
+}
+
+async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
+  try {
+    if (!bot || !point) return { ok: false, reason: "NO_BOT_OR_POINT" };
+
+    let chatId = getPointStatsChatId(point);
+    if (!chatId) return { ok: false, reason: "NO_STATS_CHAT" };
+
+    const fullText = buildDailyStatsMessage(point, orders, dayKey, extra);
+
+    const splitTelegramHtmlMessage = (text, maxLen = 3500) => {
+      const src = String(text || "");
+      if (!src) return [""];
+
+      const lines = src.split("\n");
+      const chunks = [];
+      let current = "";
+
+      const pushCurrent = () => {
+        if (current) chunks.push(current);
+        current = "";
+      };
+
+      for (const line of lines) {
+        const candidate = current ? `${current}\n${line}` : line;
+
+        if (candidate.length <= maxLen) {
+          current = candidate;
+          continue;
+        }
+
+        if (current) pushCurrent();
+
+        if (line.length <= maxLen) {
+          current = line;
+          continue;
+        }
+
+        let rest = line;
+        while (rest.length > maxLen) {
+          chunks.push(rest.slice(0, maxLen));
+          rest = rest.slice(maxLen);
+        }
+        current = rest;
+      }
+
+      pushCurrent();
+      return chunks.length ? chunks : [src.slice(0, maxLen)];
+    };
+
+    const parts = splitTelegramHtmlMessage(fullText, 3500);
+
+    const sendAllParts = async (targetChatId) => {
+      for (const part of parts) {
+        await bot.telegram.sendMessage(targetChatId, part, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        });
+      }
+    };
+
+    try {
+      await sendAllParts(chatId);
+      return { ok: true, parts: parts.length };
+    } catch (e) {
+      const migratedChatId = e?.response?.parameters?.migrate_to_chat_id;
+      if (!migratedChatId) throw e;
+
+      const nextChatId = String(migratedChatId).trim();
+
+      await PickupPoint.updateOne(
+        { _id: point._id },
+        { $set: { statsChatId: nextChatId } }
+      );
+
+      chatId = nextChatId;
+      await sendAllParts(chatId);
+
+      return {
+        ok: true,
+        migrated: true,
+        chatId,
+        parts: parts.length,
+      };
+    }
+  } catch (e) {
+    console.error("sendDailyPointStats error:", e);
+    return { ok: false, reason: "SEND_ERROR" };
+  }
+}
+
+async function processDailyPointStats() {
+  if (DAILY_STATS_PROCESS_RUNNING) {
+    console.log(
+      "[DAILY STATS][SKIP OVERLAPPING RUN]"
+    );
+
+    return;
+  }
+
+  DAILY_STATS_PROCESS_RUNNING = true;
+
+  try {
+    const now = new Date();
+    const nowHHMM = getWarsawTimeHHMM(now);
+    const dayKey = getWarsawDayKey(now);
+    const ordersSince = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    const points = await PickupPoint.find(
+      {
+        $or: [
+          { statsChatId: { $exists: true, $ne: "" } },
+          { notificationChatId: { $exists: true, $ne: "" } },
+        ],
+      },
+      {
+        _id: 1,
+        key: 1,
+        title: 1,
+        address: 1,
+        notificationChatId: 1,
+        statsChatId: 1,
+        statsSendTime: 1,
+        managerSalaryPercent: 1,
+        scheduleByDate: 1,
+        workEnd: 1,
+        closeTime: 1,
+        workingHours: 1,
+        schedule: 1,
+      }
+    ).lean();
+
+    const sharedGoogleSheetPointKeys = new Set([
+      "wola",
+      "delivery-2",
+    ]);
+
+    for (const point of points) {
+      console.log("[DAILY STATS][SEND]", {
+        pointKey: String(point?.key || ""),
+        pointTitle: String(point?.title || ""),
+        dayKey,
+        warsawToday: getWarsawDayKey(),
+        statsSendTime: getPointStatsSendTime(point),
+      });
+
+      const sendTime = getPointStatsSendTime(point, now);
+
+      if (!sendTime) continue;
+      if (nowHHMM < sendTime) continue;
+
+      const dedupeKey = `${String(point?._id || "")}:${dayKey}`;
+
+      if (DAILY_STATS_RUNTIME_SENT.has(dedupeKey)) {
+        continue;
+      }
+
+      const match = getOrderPointMatch(point);
+
+      const orders = await Order.find(
+        {
+          ...match,
+          createdAt: { $gte: ordersSince },
+          status: { $ne: "canceled" },
+        },
+        {
+          userTelegramId: 1,
+          orderNo: 1,
+          totalZl: 1,
+          status: 1,
+          payment: 1,
+          items: 1,
+          cashbackZl: 1,
+          createdAt: 1,
+          deliveryType: 1,
+          deliveryMethod: 1,
+          deliveryFeeZl: 1,
+          inpostDeliveryFeeZl: 1,
+        }
+      ).lean();
+
+      const dayOrders = orders.filter((order) => {
+        if (getWarsawDayKey(order?.createdAt) !== dayKey) {
+          return false;
+        }
+
+        return shouldCountOrderInDailyStats(order);
+      });
+
+      const needsFallbackBasePrices = dayOrders.some((order) =>
+        (Array.isArray(order?.items) ? order.items : []).some(
+          (row) => {
+            const flavors = Array.isArray(row?.flavors)
+              ? row.flavors
+              : [];
+
+            return !flavors.some(
+              (flavor) =>
+                Number(flavor?.baseUnitPrice || 0) > 0
+            );
+          }
+        )
+      );
+
+      const productKeys = needsFallbackBasePrices
+        ? Array.from(
+            new Set(
+              dayOrders.flatMap((order) =>
+                (Array.isArray(order?.items)
+                  ? order.items
+                  : []
+                )
+                  .map((row) =>
+                    String(row?.productKey || "").trim()
+                  )
+                  .filter(Boolean)
+              )
+            )
+          )
+        : [];
+
+      const products = productKeys.length
+        ? await Product.find(
+            {
+              productKey: {
+                $in: productKeys,
+              },
+            },
+            {
+              productKey: 1,
+              price: 1,
+            }
+          ).lean()
+        : [];
+
+      const productBasePriceMap = new Map(
+        products.map((product) => [
+          String(product?.productKey || "").trim(),
+          Number(product?.price || 0),
+        ])
+      );
+
+      const orderUserIds = Array.from(
+        new Set(
+          dayOrders
+            .map((order) =>
+              String(order?.userTelegramId || "").trim()
+            )
+            .filter(Boolean)
+        )
+      );
+
+      const statsUsers = orderUserIds.length
+        ? await User.find(
+            {
+              telegramId: {
+                $in: orderUserIds,
+              },
+            },
+            {
+              telegramId: 1,
+              username: 1,
+              firstName: 1,
+              referral: 1,
+            }
+          ).lean()
+        : [];
+
+      const referredFirstOrderUsers = new Set(
+        statsUsers
+          .filter(
+            (user) =>
+              String(
+                user?.referral?.usedCode || ""
+              ).trim() &&
+              user?.referral?.firstOrderDoneAt &&
+              getWarsawDayKey(
+                user?.referral?.firstOrderDoneAt
+              ) === dayKey
+          )
+          .map((user) =>
+            String(user?.telegramId || "").trim()
+          )
+          .filter(Boolean)
+      );
+
+      const userDisplayMap = new Map(
+        statsUsers.map((user) => {
+          const name = String(
+            user?.username || ""
+          ).trim()
+            ? `@${String(user.username).trim()}`
+            : String(user?.firstName || "").trim() ||
+              String(
+                user?.telegramId || "Клиент"
+              );
+
+          return [
+            String(user?.telegramId || "").trim(),
+            name,
+          ];
+        })
+      );
+
+      if (
+        DAILY_STATS_RUNTIME_SENT.has(
+          dedupeKey
+        )
+      ) {
+        console.log(
+          "[DAILY STATS][SKIP DUPLICATE BEFORE SEND]",
+          {
+            pointKey:
+              String(point?.key || ""),
+            dayKey,
+            dedupeKey,
+          }
+        );
+
+        continue;
+      }
+
+      DAILY_STATS_RUNTIME_SENT.add(
+        dedupeKey
+      );
+
+      const sent = await sendDailyPointStats(
+        point,
+        dayOrders,
+        dayKey,
+        {
+          productBasePriceMap,
+          referredFirstOrderUsers,
+          userDisplayMap,
+        }
+      );
+
+      if (!sent?.ok) {
+        DAILY_STATS_RUNTIME_SENT.delete(
+          dedupeKey
+        );
+
+        continue;
+      }
+
+      if (sent?.ok) {
+        const pointKey = String(point?.key || "")
+          .trim()
+          .toLowerCase()
+          .replace(/,+$/, "");
+
+        /*
+         * Wola и InPost не отправляем в Google
+         * по отдельности. Ниже они будут объединены.
+         */
+        if (!sharedGoogleSheetPointKeys.has(pointKey)) {
+          await sendDailyPointStatsToGoogleSheet(
+            point,
+            dayOrders,
+            dayKey
+          );
+        }
+
+        // DAILY_STATS_RUNTIME_SENT.add(dedupeKey);
+      }
+    }
+
+    /*
+     * Общая таблица и общий ассортимент:
+     * Wola + InPost.
+     */
+    const wolaPoint = points.find(
+      (point) =>
+        String(point?.key || "")
+          .trim()
+          .toLowerCase()
+          .replace(/,+$/, "") === "wola"
+    );
+
+    const inpostPoint = points.find(
+      (point) =>
+        String(point?.key || "")
+          .trim()
+          .toLowerCase()
+          .replace(/,+$/, "") === "delivery-2"
+    );
+
+    const sharedDedupeKey = `wola-inpost:${dayKey}`;
+
+    if (
+      wolaPoint &&
+      inpostPoint &&
+      !DAILY_STATS_RUNTIME_SENT.has(sharedDedupeKey)
+    ) {
+      const wolaSendTime = getPointStatsSendTime(
+        wolaPoint,
+        now
+      );
+
+      const inpostSendTime = getPointStatsSendTime(
+        inpostPoint,
+        now
+      );
+
+      const bothPointsReady =
+        wolaSendTime &&
+        inpostSendTime &&
+        nowHHMM >= wolaSendTime &&
+        nowHHMM >= inpostSendTime;
+
+      if (bothPointsReady) {
+        const combinedOrders = await Order.find(
+          {
+            $or: [
+              getOrderPointMatch(wolaPoint),
+              getOrderPointMatch(inpostPoint),
+            ],
+            createdAt: {
+              $gte: ordersSince,
+            },
+            status: {
+              $ne: "canceled",
+            },
+          },
+          {
+            userTelegramId: 1,
+            orderNo: 1,
+            totalZl: 1,
+            status: 1,
+            payment: 1,
+            items: 1,
+            cashbackZl: 1,
+            createdAt: 1,
+            deliveryType: 1,
+            deliveryMethod: 1,
+            deliveryFeeZl: 1,
+            inpostDeliveryFeeZl: 1,
+          }
+        ).lean();
+
+        const combinedDayOrders =
+          combinedOrders.filter((order) => {
+            if (
+              getWarsawDayKey(order?.createdAt) !==
+              dayKey
+            ) {
+              return false;
+            }
+
+            return shouldCountOrderInDailyStats(
+              order
+            );
+          });
+
+        const googleSheetResult =
+          await sendDailyPointStatsToGoogleSheet(
+            {
+              key: "wola-inpost",
+              title: "Wola + InPost",
+            },
+            combinedDayOrders,
+            dayKey
+          );
+
+        if (googleSheetResult?.ok) {
+          DAILY_STATS_RUNTIME_SENT.add(
+            sharedDedupeKey
+          );
+        }
+      }
+    }
+  } catch (e) {
+
+    console.error(
+
+      "processDailyPointStats error:",
+
+      e
+
+    );
+
+  } finally {
+
+    DAILY_STATS_PROCESS_RUNNING = false;
+
+  }
+}
+
+async function notifyManagerDeliveryReadyToShip(order) {
+  try {
+    if (!bot || !order) return { ok: false, reason: "NO_BOT_OR_ORDER" };
+
+    const point = await resolveOrderNotificationPoint(order);
+    const chatId = String(
+      order?.payment?.managerMessageChatId || point?.notificationChatId || ""
+    ).trim();
+
+    const replyToMessageId = Number(order?.payment?.managerMessageId || 0);
+
+    if (!chatId || !replyToMessageId) {
+      return { ok: false, reason: "NO_MANAGER_MESSAGE" };
+    }
+
+    const orderNo = escapeHtml(order?.orderNo || "—");
+    const deliveryLabel =
+      String(order?.deliveryMethod || "").trim() === "inpost"
+        ? "с помощью пачкомата"
+        : "курьеру";
+
+    const text = [
+      `📦 <b>ЗАКАЗ ГОТОВ К ОТПРАВКЕ</b>`,
+      ``,
+      `Когда вы отдадите ${deliveryLabel} этот заказ (<b>#${orderNo}</b>) нажмите кнопку ниже.`,
+    ].join("\n");
+
+    const sent = await bot.telegram.sendMessage(chatId, text, {
+      parse_mode: "HTML",
+      reply_to_message_id: replyToMessageId,
+      allow_sending_without_reply: true,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📦 ЗАКАЗ ОТПРАВЛЕН", callback_data: `mgr_order_shipped:${order._id}` }],
+        ],
+      },
+    });
+
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $push: {
+          managerDeliveryMessageIds: String(sent?.message_id || ""),
+        },
+      }
+    );
+
+    return { ok: true };
+  } catch (e) {
+    console.error("notifyManagerDeliveryReadyToShip error:", e);
+    return { ok: false, reason: "SEND_ERROR" };
+  }
+}
+
+async function resolveOrderPaymentPoint(order) {
+  if (!order) return null;
+
+  if (order.deliveryType === "pickup" && order.pickupPointId) {
+    return await PickupPoint.findById(order.pickupPointId).lean();
+  }
+
+  if (order.deliveryType === "delivery") {
+    const deliveryKey = order.deliveryMethod === "inpost" ? "delivery-2" : "delivery";
+    return await PickupPoint.findOne({
+      key: { $in: [deliveryKey, `${deliveryKey},`] }
+    }).lean();
+  }
+
+  return null;
+}
+
+function isTelegramUserButtonError(error) {
+  const description = String(
+    error?.response?.description ||
+      error?.description ||
+      error?.message ||
+      ""
+  ).toUpperCase();
+
+  return (
+    description.includes(
+      "BUTTON_USER_PRIVACY_RESTRICTED"
+    ) ||
+    description.includes(
+      "BUTTON_USER_INVALID"
+    )
+  );
+}
+
+function normalizeTelegramUsername(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^@/, "");
+}
+
+function getOrderClientUsername(
+  order,
+  user = null
+) {
+  return normalizeTelegramUsername(
+    user?.username ||
+      order?.username ||
+      order?.userUsername ||
+      order?.clientUsername ||
+      order?.customerUsername ||
+      order?.user?.username ||
+      ""
+  );
+}
+
+function removeTelegramUserContactButtons(
+  replyMarkup
+) {
+  const rows = Array.isArray(
+    replyMarkup?.inline_keyboard
+  )
+    ? replyMarkup.inline_keyboard
+    : [];
+
+  return {
+    ...(replyMarkup || {}),
+
+    inline_keyboard: rows
+      .map((row) =>
+        (Array.isArray(row) ? row : []).filter(
+          (button) => {
+            const url = String(
+              button?.url || ""
+            )
+              .trim()
+              .toLowerCase();
+
+            return !(
+              url.startsWith("tg://user?id=") ||
+              url.startsWith(
+                "tg://openmessage?user_id="
+              )
+            );
+          }
+        )
+      )
+      .filter((row) => row.length > 0),
+  };
+}
+
+function replaceTelegramUserButtonWithUsername(
+  replyMarkup,
+  username
+) {
+  const safeUsername =
+    normalizeTelegramUsername(username);
+
+  if (!safeUsername) {
+    return removeTelegramUserContactButtons(
+      replyMarkup
+    );
+  }
+
+  const rows = Array.isArray(
+    replyMarkup?.inline_keyboard
+  )
+    ? replyMarkup.inline_keyboard
+    : [];
+
+  return {
+    ...(replyMarkup || {}),
+
+    inline_keyboard: rows.map((row) =>
+      (Array.isArray(row) ? row : []).map(
+        (button) => {
+          const url = String(
+            button?.url || ""
+          )
+            .trim()
+            .toLowerCase();
+
+          if (
+            url.startsWith("tg://user?id=") ||
+            url.startsWith(
+              "tg://openmessage?user_id="
+            )
+          ) {
+            return {
+              ...button,
+              url: `https://t.me/${safeUsername}`,
+            };
+          }
+
+          return button;
+        }
+      )
+    ),
+  };
+}
+
+function appendManagerBotContactButton(
+  replyMarkup,
+  order
+) {
+  const orderId = String(
+    order?._id || ""
+  ).trim();
+
+  if (!orderId) {
+    return replyMarkup;
+  }
+
+  const rows = Array.isArray(
+    replyMarkup?.inline_keyboard
+  )
+    ? replyMarkup.inline_keyboard.map(
+        (row) => [
+          ...(Array.isArray(row) ? row : []),
+        ]
+      )
+    : [];
+
+  const callbackData =
+    `manager_message_client:${orderId}`;
+
+  const alreadyExists = rows.some((row) =>
+    row.some(
+      (button) =>
+        String(
+          button?.callback_data || ""
+        ) === callbackData
+    )
+  );
+
+  if (!alreadyExists) {
+    rows.push([
+      {
+        text: "✉️ Написать клиенту через бота",
+        callback_data: `manager_message_client:${orderId}`,
+      },
+    ]);
+  }
+
+  return {
+    ...(replyMarkup || {}),
+    inline_keyboard: rows,
+  };
+}
+
+function buildSafeFallbackManagerMarkup(
+  replyMarkup,
+  order
+) {
+  return appendManagerBotContactButton(
+    removeTelegramUserContactButtons(
+      replyMarkup
+    ),
+    order
+  );
+}
+
+async function sendOrderCreatedNotification(order, options = {}) {
+  const skipClientNotification =
+  options?.skipClientNotification === true;
+  try {
+    if (!bot || !order) return;
+
+    const point = await resolveOrderNotificationPoint(order);
+    if (!point?.notificationChatId) return;
+
+    const user = await User.findOne(
+      { telegramId: String(order.userTelegramId || "") },
+      { telegramId: 1, username: 1, firstName: 1 }
+    ).lean();
+
+    const customerName =
+      (user?.username ? `@${user.username}` : "") ||
+      String(user?.firstName || "").trim() ||
+      "—";
+
+    const managerAmountValue = Number(order?.payment?.managerDisplayAmount || 0);
+    const managerAmountCurrency = String(order?.payment?.managerDisplayCurrency || "").trim();
+
+    const managerAmountText =
+      managerAmountValue > 0 && managerAmountCurrency
+        ? `${managerAmountValue.toFixed(2)} ${escapeHtml(managerAmountCurrency)}`
+        : `${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`;
+
+    const itemsText = (order.items || [])
+      .map((it) => {
+        const productTitle =
+          [it.productTitle1, it.productTitle2].filter(Boolean).join(" ").trim() ||
+          it.productKey ||
+          "Товар";
+
+        const flavorsText = (it.flavors || [])
+          .map((f) => {
+            const flavor = f.flavorLabel || f.flavorKey || "Вкус";
+            const priceText = Number(f.unitPrice || 0) > 0
+              ? ` • ${Number(f.unitPrice || 0)} zł/шт.`
+              : "";
+            return `• ${escapeHtml(flavor)} — ${Number(f.qty || 0)} шт.${priceText}`;
+          })
+          .join("\n");
+
+        return `📦 <b>${escapeHtml(productTitle)}</b>\n${flavorsText}`;
+      })
+      .join("\n\n");
+
+    const paymentMethodLabel =
+      order?.payment?.method === "blik"
+        ? "BLIK"
+        : order?.payment?.method === "crypto"
+        ? "Криптовалюта"
+        : order?.payment?.method === "ua_card"
+        ? "Украинская карта"
+        : order?.payment?.method === "cash"
+        ? "Наличные"
+        : "—";
+
+    const referralFirstOrderDiscountAppliedZl = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
+    const referralFirstOrderDiscountPercent = Number(order?.payment?.referralFirstOrderDiscountPercent || 0);
+    const referralUsedCode = String(order?.payment?.referralUsedCode || "").trim();
+    const hasReferralFirstOrderDiscount = order?.payment?.referralFirstOrderDiscountApplied === true;
+
+    let inviterLabel = "";
+    if (referralUsedCode) {
+      const inviterUser = await User.findOne(
+        { "referral.code": referralUsedCode },
+        { username: 1, firstName: 1, telegramId: 1 }
+      ).lean();
+
+      inviterLabel = inviterUser?.username
+        ? `@${String(inviterUser.username).trim()}`
+        : String(inviterUser?.firstName || "").trim() || String(inviterUser?.telegramId || "").trim();
+    }
+
+    const lines = [
+      `🛒 <b>ОПЛАТА ОТПРАВЛЕНА НА ПРОВЕРКУ</b>`,
+      ``,
+      `🔢 <b>Номер:</b> #${escapeHtml(order.orderNo)}`,
+      ``,
+      `👤 <b>Клиент:</b> ${escapeHtml(customerName)}`,
+      `🕒 <b>Создан:</b> ${escapeHtml(formatOrderDate(order.createdAt))}`,
+      ``,
+      `📋 <b>Состав заказа:</b>`,
+      ``,
+      itemsText || "—",
+      ``,
+      `💰 <b>Сумма заказа:</b> ${managerAmountText}`,
+      `💳 <b>Способ оплаты:</b> ${
+        order?.payment?.cashbackFullyPaid
+          ? "Кэшбек"
+          : escapeHtml(paymentMethodLabel)
+      }`,
+      ``,
+      order?.payment?.cashbackAppliedZl > 0
+        ? `🪙 <b>Оплачено кэшбеком:</b> ${Number(order.payment.cashbackAppliedZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+        : null,
+      order?.payment?.cashbackAppliedZl > 0 && Number(order?.payment?.cashbackRemainingToPayZl || 0) > 0
+        ? `💸 <b>Остаток к оплате:</b> ${Number(order.payment.cashbackRemainingToPayZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+        : null,
+      hasReferralFirstOrderDiscount
+        ? `🎁 <b>Реферальная скидка:</b> ${referralFirstOrderDiscountPercent || 10}% на первый заказ${referralFirstOrderDiscountAppliedZl > 0 ? ` (${referralFirstOrderDiscountAppliedZl.toFixed(2)} PLN)` : ""}${inviterLabel ? `\n👤 <b>Пригласитель:</b> ${escapeHtml(inviterLabel)}` : ""}`
+        : null,
+      ``,
+      order?.payment?.cashbackFullyPaid
+        ? `💳 <b>Статус оплаты:</b> ✅ Полностью оплачено`
+        : `💳 <b>Статус оплаты:</b> 🟠 Оплата на проверке`,
+      ``,
+    ];
+
+    if (order.deliveryType === "pickup" && order.arrivalTime) {
+      lines.push(`🚚 <b>Клиент будет в ${escapeHtml(order.arrivalTime)}</b>`);
+      lines.push("");
+    }
+
+    if (String(order?.deliveryType || "") === "delivery" && String(order?.deliveryMethod || "") === "courier") {
+      if (order?.courierAddress) lines.push(`📍 <b>Адрес доставки:</b> ${escapeHtml(order.courierAddress)}`);
+      if (order?.courierDistrict) lines.push(`🌍 <b>Район:</b> ${escapeHtml(order.courierDistrict)}`);
+      if (Number(order?.deliveryFeeZl || 0) > 0) lines.push(`🚚 <b>Стоимость доставки:</b> ${Number(order.deliveryFeeZl || 0).toFixed(2)} PLN`);
+      if (order?.deliveryTimeWindow) lines.push(`🕒 <b>Временной промежуток:</b> ${escapeHtml(order.deliveryTimeWindow)}`);
+      lines.push("");
+    }
+
+    if (order.deliveryType === "delivery" && order.deliveryMethod === "inpost") {
+      if (order.inpostData?.fullName) lines.push(`👤 <b>Получатель:</b> ${escapeHtml(order.inpostData.fullName)}`);
+      if (order.inpostData?.phone) lines.push(`📞 <b>Телефон:</b> ${escapeHtml(order.inpostData.phone)}`);
+      if (order.inpostData?.email) lines.push(`✉️ <b>Email:</b> ${escapeHtml(order.inpostData.email)}`);
+      if (order.inpostData?.city) lines.push(`🏙 <b>Город:</b> ${escapeHtml(order.inpostData.city)}`);
+      if (order.inpostData?.lockerAddress) lines.push(`📦 <b>Пачкомат:</b> ${escapeHtml(order.inpostData.lockerAddress)}`);
+      if (
+        order.inpostData?.fullName ||
+        order.inpostData?.phone ||
+        order.inpostData?.email ||
+        order.inpostData?.city ||
+        order.inpostData?.lockerAddress
+      ) {
+        lines.push("");
+      }
+      if (Number(order.inpostDeliveryFeeZl || 0) > 0) {
+        lines.push(`🚚 <b>Стоимость доставки InPost:</b> ${Number(order.inpostDeliveryFeeZl || 0).toFixed(2)} PLN`);
+      }
+      if (Number(order.inpostPackageUnits || 0) > 0) {
+        lines.push(`📦 <b>Условные единицы:</b> ${Number(order.inpostPackageUnits || 0).toFixed(2)}`);
+      }
+    }
+
+    if (order.comment) {
+      lines.push(`💬 <b>Комментарий:</b> ${escapeHtml(order.comment)}`);
+      lines.push("");
+    }
+
+    if (order.payment?.method === "cash") {
+      if (order.payment?.cashChangeType === "need_change" && order.payment?.cashAmount) {
+        lines.push(`💵 <b>Сдача:</b> ${escapeHtml(order.payment.cashAmount)} zł`);
+        lines.push("");
+      } else if (order.payment?.cashChangeType === "no_change") {
+        lines.push(`💵 <b>Сдача:</b> без сдачи`);
+        lines.push("");
+      }
+    }
+
+    const text = lines.filter((line) => line !== null && line !== undefined).join("\n");
+
+    // const contactClientButton = {
+    //   text: "💬 Написать клиенту",
+
+    //   url: `tg://user?id=${encodeURIComponent(
+    //     String(
+    //       order?.userTelegramId || ""
+    //     )
+    //   )}`,
+    // };
+
+const isCourierOrder =
+  String(order?.deliveryType || "")
+    .trim()
+    .toLowerCase() === "delivery" &&
+  String(order?.deliveryMethod || "")
+    .trim()
+    .toLowerCase() === "courier";
+
+const isCashPayment =
+  String(order?.payment?.method || "")
+    .trim()
+    .toLowerCase() === "cash";
+
+const initialReplyMarkup =
+  String(order?.deliveryType || "") === "pickup" &&
+  String(order?.payment?.method || "") === "cash"
+    ? {
+        inline_keyboard: [
+          [
+            {
+              text: "🕒 Ожидаю",
+              callback_data:
+                `mgr_pay_paid:${order._id}`,
+            },
+            {
+              text: "❌ Отклонить",
+              callback_data:
+                `mgr_pay_unpaid:${order._id}`,
+            },
+          ],
+          [
+            {
+              text: "💬 Написать клиенту",
+              url: `tg://user?id=${encodeURIComponent(
+                String(
+                  order?.userTelegramId || ""
+                )
+              )}`,
+            },
+          ],
+          [
+
+            {
+
+              text: "✉️ Написать через бота",
+
+              callback_data:
+
+                `manager_message_client:${order._id}`,
+
+            },
+
+          ],
+          [
+            {
+              text: "🔄 Изменить статус",
+              callback_data:
+                `mgr_change_status:${order._id}`,
+            },
+          ],
+        ],
+      }
+  : {
+      inline_keyboard: [
+        [
+          {
+            text:
+              isCourierOrder && isCashPayment
+                ? "✅ Принят"
+                : "✅ Оплачено",
+
+            callback_data:
+              `mgr_pay_paid:${order._id}`,
+          },
+          {
+            text: "❌ Отклонить",
+
+            callback_data:
+              `mgr_pay_unpaid:${order._id}`,
+          },
+        ],
+        [
+          {
+            text: "💬 Написать клиенту",
+
+            url: `tg://user?id=${encodeURIComponent(
+              String(
+                order?.userTelegramId || ""
+              )
+            )}`,
+          },
+        ],
+        [
+
+          {
+
+            text: "✉️ Написать через бота",
+
+            callback_data:
+
+              `manager_message_client:${order._id}`,
+
+          },
+
+        ],
+        [
+          {
+            text: "🔄 Изменить статус",
+
+            callback_data:
+              `mgr_change_status:${order._id}`,
+          },
+        ],
+      ],
+    };
+
+const pickupPoint = order?.pickupPointId
+  ? await PickupPoint.findById(order.pickupPointId).lean().catch(() => null)
+  : null;
+
+const photoPoint = point || pickupPoint || null;
+
+const managerOrderPhotoUrl = "";
+let clientOrderPhotoUrl = firstNonEmptyString(
+  getCustomerOrderPhotoByPickupPoint(order, photoPoint),
+  getManagerOrderPhotoByPickupPoint(order, photoPoint),
+  process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+  process.env.TG_ORDER_PHOTO_DEFAULT
+);
+
+const pointKeyRaw = String(
+  photoPoint?.key ||
+  photoPoint?.title ||
+  photoPoint?.address ||
+  order?.pickupPointTitle ||
+  order?.pickupPointAddress ||
+  order?.methodLabel ||
+  ""
+).trim();
+
+const pointKeyNormalized = normalizePhotoLookupText(pointKeyRaw);
+
+let clientPhotoSource = "";
+
+if (String(order?.deliveryType || "").trim().toLowerCase() === "delivery") {
+  const deliveryMethodNorm = normalizePhotoLookupText(order?.deliveryMethod);
+
+  if (deliveryMethodNorm.includes("courier")) {
+    clientOrderPhotoUrl = firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_COURIER,
+      process.env.TG_ORDER_PHOTO_COURIER,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+    clientPhotoSource = "courier";
+  } else if (deliveryMethodNorm.includes("inpost")) {
+    clientOrderPhotoUrl = firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_INPOST,
+      process.env.TG_ORDER_PHOTO_INPOST,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+    clientPhotoSource = "inpost";
+  }
+}
+
+if (!clientOrderPhotoUrl) {
+  if (pointKeyNormalized.includes("praga")) {
+    clientOrderPhotoUrl = firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_PRAGA,
+      process.env.TG_ORDER_PHOTO_PRAGA,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+    clientPhotoSource = "praga";
+  } else if (pointKeyNormalized.includes("mokotow")) {
+    clientOrderPhotoUrl = firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_MOKOTOW,
+      process.env.TG_ORDER_PHOTO_MOKOTOW,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+    clientPhotoSource = "mokotow";
+  } else if (pointKeyNormalized.includes("wola")) {
+    clientOrderPhotoUrl = firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_WOLA,
+      process.env.TG_ORDER_PHOTO_WOLA,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+    clientPhotoSource = "wola";
+  } else if (pointKeyNormalized.includes("srodmiescie")) {
+    clientOrderPhotoUrl = firstNonEmptyString(
+      process.env.TG_CLIENT_ORDER_PHOTO_SRODMIESCIE,
+      process.env.TG_ORDER_PHOTO_SRODMIESCIE,
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+    clientPhotoSource = "srodmiescie";
+  }
+}
+
+if (!clientOrderPhotoUrl) {
+  clientOrderPhotoUrl = firstNonEmptyString(
+    process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+    process.env.TG_ORDER_PHOTO_DEFAULT,
+    managerOrderPhotoUrl
+  );
+  clientPhotoSource = clientPhotoSource || "default";
+}
+
+console.log("[order-photo-select]", {
+  orderNo: String(order?.orderNo || ""),
+  deliveryType: String(order?.deliveryType || ""),
+  deliveryMethod: String(order?.deliveryMethod || ""),
+  pickupPointId: String(order?.pickupPointId || ""),
+  pointKey: String(point?.key || ""),
+  pointTitle: String(point?.title || ""),
+  pointAddress: String(point?.address || ""),
+  pickupPointKey: String(pickupPoint?.key || ""),
+  pickupPointTitle: String(pickupPoint?.title || ""),
+  pickupPointAddress: String(pickupPoint?.address || ""),
+  pointKeyRaw,
+  pointKeyNormalized,
+  managerOrderPhotoUrl,
+  clientOrderPhotoUrl,
+  clientPhotoSource,
+});
+
+const sendManagerMessage = async (safeReplyMarkup) => {
+  return bot.telegram.sendMessage(
+    point.notificationChatId,
+    text,
+    {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: safeReplyMarkup,
+    }
+  );
+};
+
+let sent;
+
+try {
+  // Первая попытка: кнопка через Telegram ID
+  sent = await sendManagerMessage(
+    initialReplyMarkup
+  );
+} catch (error) {
+  if (!isTelegramUserButtonError(error)) {
+    throw error;
+  }
+
+  const clientUsername =
+    normalizeTelegramUsername(
+      user?.username || ""
+    );
+
+  // Вторая попытка: ссылка через username
+  if (clientUsername) {
+    try {
+      sent = await sendManagerMessage(
+        replaceTelegramUserButtonWithUsername(
+          initialReplyMarkup,
+          clientUsername
+        )
+      );
+    } catch (usernameError) {
+      if (
+        !isTelegramUserButtonError(
+          usernameError
+        )
+      ) {
+        throw usernameError;
+      }
+    }
+  }
+
+  // Третья попытка: заказ без tg:// ссылки,
+  // но с кнопкой отправки сообщения через бота
+  if (!sent) {
+    sent = await sendManagerMessage(
+      buildSafeFallbackManagerMarkup(
+        initialReplyMarkup,
+        order
+      )
+    );
+  }
+}
+
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          "payment.managerMessageChatId": String(point.notificationChatId || ""),
+          "payment.managerMessageId": String(sent?.message_id || ""),
+        },
+      }
+    );
+
+    const safeTelegramId = String(order?.userTelegramId || "").trim();
+
+    if (safeTelegramId) {
+      const clientLines = [
+        `🛒 <b>ЗАКАЗ СОЗДАН</b>`,
+        ``,
+        `🔢 <b>Номер заказа:</b> #${escapeHtml(order.orderNo)}`,
+        `💰 <b>Сумма:</b> ${managerAmountText}`,
+        ``,
+        `ℹ️ <b>Важно:</b> менеджер получит информацию о вашем заказе только после оплаты.`,
+        ``,
+        `💵 Вы также можете выбрать способ оплаты <b>Наличные</b> и оплатить заказ на месте — в этом случае менеджер тоже получит уведомление и начнёт готовить заказ.`,
+        ``,
+        `👉 Откройте страницу заказа, чтобы выбрать способ оплаты и отправить его на проверку менеджеру.`,
+      ];
+
+      const clientText = clientLines.join("\n");
+      const clientReplyMarkup = {
+        inline_keyboard: [[{ text: "💳 Перейти к оплате", web_app: { url: `${APP_URL}/cart?orderId=${encodeURIComponent(String(order?._id || ""))}` } }]],
+      };
+
+if (!skipClientNotification) {
+  if (clientOrderPhotoUrl) {
+    try {
+      await bot.telegram.sendPhoto(
+        safeTelegramId,
+        { url: clientOrderPhotoUrl },
+        {
+          caption: clientText,
+          parse_mode: "HTML",
+          reply_markup: clientReplyMarkup,
+        }
+      );
+    } catch (clientPhotoErr) {
+      console.error(
+        "sendOrderCreatedNotification client photo send failed:",
+        {
+          orderNo: String(
+            order?.orderNo || ""
+          ),
+          safeTelegramId,
+          clientOrderPhotoUrl,
+          error:
+            clientPhotoErr?.response
+              ?.description ||
+            clientPhotoErr?.message ||
+            String(clientPhotoErr),
+        }
+      );
+
+      await bot.telegram.sendMessage(
+        safeTelegramId,
+        clientText,
+        {
+          parse_mode: "HTML",
+          disable_web_page_preview:
+            true,
+          reply_markup:
+            clientReplyMarkup,
+        }
+      );
+    }
+  } else {
+    await bot.telegram.sendMessage(
+      safeTelegramId,
+      clientText,
+      {
+        parse_mode: "HTML",
+        disable_web_page_preview:
+          true,
+        reply_markup:
+          clientReplyMarkup,
+      }
+    );
+  }
+}
+    }
+  } catch (e) {
+    console.error("sendOrderCreatedNotification error:", e);
+  }
+}
+
+setInterval(() => {
+  processDailyPointStats().catch((e) => {
+    console.error("daily point stats interval error:", e);
+  });
+}, 60 * 1000);
+
+processDailyPointStats().catch((e) => {
+  console.error("daily point stats initial run error:", e);
+});
+
+async function refreshManagerOrderMessage(order) {
+  try {
+    if (!bot || !order) return { ok: false, reason: "NO_BOT_OR_ORDER" };
+    
+
+    const point = await resolveOrderNotificationPoint(order);
+    const chatId = String(order?.payment?.managerMessageChatId || point?.notificationChatId || "").trim();
+    const messageChatId = String(
+      order?.payment?.managerMessageChatId ||
+      order?.managerMessageChatId ||
+      order?.managerChannelChatId ||
+      order?.notificationChatId ||
+      order?.managerNotificationChatId ||
+      order?.managerChatId ||
+      ""
+    ).trim();
+
+    const messageId = Number(
+      order?.payment?.managerMessageId ||
+      order?.managerMessageId ||
+      order?.managerChannelMessageId ||
+      order?.notificationMessageId ||
+      order?.managerNotificationMessageId ||
+      order?.managerMsgId ||
+      0
+    );
+
+    if (!messageChatId || !messageId) {
+      return { ok: false, reason: "NO_MANAGER_MESSAGE" };
+    }
+
+    const user = await User.findOne(
+      { telegramId: String(order.userTelegramId || "") },
+      { telegramId: 1, username: 1, firstName: 1 }
+    ).lean();
+
+    const customerName =
+      (user?.username ? `@${user.username}` : "") ||
+      String(user?.firstName || "").trim() ||
+      "—";
+
+    const itemsText = (order.items || [])
+      .map((it) => {
+        const productTitle =
+          [it.productTitle1, it.productTitle2].filter(Boolean).join(" ").trim() ||
+          it.productKey ||
+          "Товар";
+
+        const flavorsText = (it.flavors || [])
+          .map((f) => {
+            const flavor = f.flavorLabel || f.flavorKey || "Вкус";
+            const priceText = Number(f.unitPrice || 0) > 0
+              ? ` • ${Number(f.unitPrice || 0)} zł/шт.`
+              : "";
+            return `• ${escapeHtml(flavor)} — ${Number(f.qty || 0)} шт.${priceText}`;
+          })
+          .join("\n");
+
+        return `📦 <b>${escapeHtml(productTitle)}</b>\n${flavorsText}`;
+      })
+      .join("\n\n");
+
+    const paymentMethodLabel =
+      order?.payment?.method === "blik"
+        ? "BLIK"
+        : order?.payment?.method === "crypto"
+        ? "Криптовалюта"
+        : order?.payment?.method === "ua_card"
+        ? "Украинская карта"
+        : order?.payment?.method === "cash"
+        ? "Наличные"
+        : "—";
+
+    const referralFirstOrderDiscountAppliedZl = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
+    const referralFirstOrderDiscountPercent = Number(order?.payment?.referralFirstOrderDiscountPercent || 0);
+    const referralUsedCode = String(order?.payment?.referralUsedCode || "").trim();
+    const hasReferralFirstOrderDiscount = order?.payment?.referralFirstOrderDiscountApplied === true;
+
+    let inviterLabel = "";
+    if (referralUsedCode) {
+      const inviterUser = await User.findOne(
+        { "referral.code": referralUsedCode },
+        { username: 1, firstName: 1, telegramId: 1 }
+      ).lean();
+
+      inviterLabel = inviterUser?.username
+        ? `@${String(inviterUser.username).trim()}`
+        : String(inviterUser?.firstName || "").trim() || String(inviterUser?.telegramId || "").trim();
+    }
+
+    const managerAmountValue = Number(order?.payment?.managerDisplayAmount || 0);
+    const managerAmountCurrency = String(order?.payment?.managerDisplayCurrency || "").trim();
+
+    const managerAmountText =
+      managerAmountValue > 0 && managerAmountCurrency
+        ? `${managerAmountValue.toFixed(2)} ${escapeHtml(managerAmountCurrency)}`
+        : `${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`;
+
+    const orderStatusKey = String(order?.status || "").trim().toLowerCase();
+    const canceledByTelegramId = String(order?.canceledByTelegramId || "").trim();
+    const userTelegramId = String(order?.userTelegramId || "").trim();
+
+    const canceledByClient =
+      orderStatusKey === "canceled" &&
+      canceledByTelegramId &&
+      canceledByTelegramId === userTelegramId;
+
+    const paymentStatusKey = String(order?.payment?.status || "").trim().toLowerCase();
+
+    const paymentStatusLabel =
+      orderStatusKey === "annulled"
+        ? "⌛️ Аннулирован из-за отсутствия подтверждения оплаты"
+        : orderStatusKey === "canceled"
+        ? canceledByClient
+          ? "❌ Отменен клиентом"
+          : "❌ Отклонен менеджером"
+          : paymentStatusKey === "paid"
+          ? "✅ Оплачено"
+          : paymentStatusKey === "awaiting"
+          ? "🕒 Ожидаю клиента"
+          : paymentStatusKey === "checking"
+          ? "🟠 Оплата на проверке"
+          : "❌ Не оплачено";
+
+    const orderStatusLabel =
+      orderStatusKey === "completed"
+        ? String(order?.deliveryType || "") === "delivery" && String(order?.deliveryMethod || "") === "courier"
+          ? "🚚 Доставлен"
+          : "✅ Выполнен"
+        : orderStatusKey === "shipped"
+        ? "📦 Отправлен"
+        : orderStatusKey === "annulled"
+        ? "⌛️ Аннулирован"
+        : orderStatusKey === "canceled"
+        ? canceledByClient
+          ? "❌ Отменен клиентом"
+          : "❌ Отклонен менеджером"
+        : orderStatusKey === "assembled"
+        ? "🟠 Заказ собран"
+        : orderStatusKey === "processing"
+        ? "🟠 В процессе"
+        : "⚪️ Создан";
+
+    const lines = [
+      `🛒 <b>ОПЛАТА ОТПРАВЛЕНА НА ПРОВЕРКУ</b>`,
+      ``,
+      `🔢 <b>Номер:</b> #${escapeHtml(order.orderNo)}`,
+      ``,
+      `👤 <b>Клиент:</b> ${escapeHtml(customerName)}`,
+      `🕒 <b>Создан:</b> ${escapeHtml(formatOrderDate(order.createdAt))}`,
+      ``,
+      `📋 <b>Состав заказа:</b>`,
+      ``,
+      itemsText || "—",
+      ``,
+      `💰 <b>Сумма заказа:</b> ${managerAmountText}`,
+      `💳 <b>Способ оплаты:</b> ${
+        order?.payment?.cashbackFullyPaid
+          ? "Кэшбек"
+          : escapeHtml(paymentMethodLabel)
+      }`,
+      ``,
+      order?.payment?.cashbackAppliedZl > 0
+        ? `🪙 <b>Оплачено кэшбеком:</b> ${Number(order.payment.cashbackAppliedZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+        : null,
+      order?.payment?.cashbackAppliedZl > 0 && Number(order?.payment?.cashbackRemainingToPayZl || 0) > 0
+        ? `💸 <b>Остаток к оплате:</b> ${Number(order.payment.cashbackRemainingToPayZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+        : null,
+      hasReferralFirstOrderDiscount
+        ? `🎁 <b>Реферальная скидка:</b> ${referralFirstOrderDiscountPercent || 10}% на первый заказ${referralFirstOrderDiscountAppliedZl > 0 ? ` (${referralFirstOrderDiscountAppliedZl.toFixed(2)} PLN)` : ""}${inviterLabel ? `\n👤 <b>Пригласитель:</b> ${escapeHtml(inviterLabel)}` : ""}`
+        : null,
+      ``,
+      orderStatusKey === "annulled"
+        ? `💳 <b>Статус оплаты:</b> ⌛️ Аннулирован из-за отсутствия подтверждения оплаты`
+        : order?.payment?.cashbackFullyPaid
+        ? `💳 <b>Статус оплаты:</b> ✅ Полностью оплачено`
+        : String(order?.payment?.status || "") === "paid"
+        ? `💳 <b>Статус оплаты:</b> ✅ Оплачено`
+        : String(order?.payment?.status || "") === "awaiting"
+        ? `💳 <b>Статус оплаты:</b> 🕒 Ожидаю клиента`
+        : String(order?.payment?.status || "") === "checking"
+        ? `💳 <b>Статус оплаты:</b> 🟠 Оплата на проверке`
+        : `💳 <b>Статус оплаты:</b> ❌ Не оплачено`,
+      `📦 <b>Статус заказа:</b> ${orderStatusLabel}`,
+      ``,
+    ];
+
+    if (order.deliveryType === "pickup" && order.arrivalTime) {
+      lines.push(`🚚 <b>Клиент будет в ${escapeHtml(order.arrivalTime)}</b>`);
+      lines.push("");
+    }
+
+    if (order.deliveryType === "delivery" && order.deliveryMethod === "courier") {
+      if (order.courierAddress) {
+        lines.push(`📍 <b>Адрес доставки:</b> ${escapeHtml(order.courierAddress)}`);
+      }
+      if (order.courierDistrict) {
+        lines.push(`🌍 <b>Район:</b> ${escapeHtml(order.courierDistrict)}`);
+      }
+      if (Number(order.deliveryFeeZl || 0) > 0) {
+        lines.push(`🚚 <b>Стоимость доставки:</b> ${Number(order.deliveryFeeZl || 0).toFixed(2)} PLN`);
+      }
+      if (order.deliveryTimeWindow) {
+        lines.push(`🕒 <b>Временной промежуток:</b> ${escapeHtml(order.deliveryTimeWindow)}`);
+      }
+      lines.push("");
+    }
+
+    if (order.deliveryType === "delivery" && order.deliveryMethod === "inpost") {
+      if (order.inpostData?.fullName) lines.push(`👤 <b>Получатель:</b> ${escapeHtml(order.inpostData.fullName)}`);
+      if (order.inpostData?.phone) lines.push(`📞 <b>Телефон:</b> ${escapeHtml(order.inpostData.phone)}`);
+      if (order.inpostData?.email) lines.push(`✉️ <b>Email:</b> ${escapeHtml(order.inpostData.email)}`);
+      if (order.inpostData?.city) lines.push(`🏙 <b>Город:</b> ${escapeHtml(order.inpostData.city)}`);
+      if (order.inpostData?.lockerAddress) lines.push(`📦 <b>Пачкомат:</b> ${escapeHtml(order.inpostData.lockerAddress)}`);
+      if (
+        order.inpostData?.fullName ||
+        order.inpostData?.phone ||
+        order.inpostData?.email ||
+        order.inpostData?.city ||
+        order.inpostData?.lockerAddress
+      ) {
+        lines.push("");
+      }
+      if (Number(order?.inpostDeliveryFeeZl || 0) > 0) {
+        lines.push(`🚚 <b>Стоимость доставки InPost:</b> ${Number(order.inpostDeliveryFeeZl || 0).toFixed(2)} PLN`);
+      }
+      if (Number(order?.inpostPackageUnits || 0) > 0) {
+        lines.push(`📦 <b>Условные единицы:</b> ${Number(order.inpostPackageUnits || 0).toFixed(2)}`);
+      }
+    }
+
+    if (order.comment) {
+      lines.push(`💬 <b>Комментарий:</b> ${escapeHtml(order.comment)}`);
+      lines.push("");
+    }
+
+    if (order.payment?.method === "cash") {
+      if (order.payment?.cashChangeType === "need_change" && order.payment?.cashAmount) {
+        lines.push(`💵 <b>Сдача:</b> ${escapeHtml(order.payment.cashAmount)} zł`);
+        lines.push("");
+      } else if (order.payment?.cashChangeType === "no_change") {
+        lines.push(`💵 <b>Сдача:</b> без сдачи`);
+        lines.push("");
+      }
+    }
+
+    const text = lines.filter((line) => line !== null && line !== undefined).join("\n");
+
+    const isCourierOrder =
+      String(order?.deliveryType || "")
+        .trim()
+        .toLowerCase() === "delivery" &&
+      String(order?.deliveryMethod || "")
+        .trim()
+        .toLowerCase() === "courier";
+
+    const isCashPayment =
+      String(order?.payment?.method || "")
+        .trim()
+        .toLowerCase() === "cash";
+
+    const permanentManagerButtons = [
+      [
+        {
+          text: "💬 Написать клиенту",
+
+          url: `tg://user?id=${encodeURIComponent(
+            String(
+              order?.userTelegramId || ""
+            )
+          )}`,
+        },
+      ],
+
+      [
+        {
+          text: "✉️ Написать через бота",
+
+          callback_data:
+            `manager_message_client:${order._id}`,
+        },
+      ],
+
+      [
+        {
+          text: "🔄 Изменить статус",
+
+          callback_data:
+            `mgr_change_status:${order._id}`,
+        },
+      ],
+    ];
+
+    const baseInlineKeyboard =
+      orderStatusKey === "completed"
+        ? [
+            [
+              {
+                text: isCourierOrder
+                  ? "🚚 Заказ доставлен"
+                  : "✅ Заказ выполнен",
+
+                callback_data:
+                  `mgr_order_completed_done:${order._id}`,
+              },
+            ],
+          ]
+
+        : orderStatusKey === "shipped"
+        ? [
+            [
+              {
+                text: "📦 Заказ отправлен",
+
+                callback_data:
+                  `mgr_order_shipped_done:${order._id}`,
+              },
+            ],
+          ]
+
+        : orderStatusKey === "annulled"
+        ? [
+            [
+              {
+                text: "⌛️ Заказ аннулирован",
+
+                callback_data:
+                  `mgr_order_annulled_done:${order._id}`,
+              },
+            ],
+          ]
+
+        : orderStatusKey === "canceled"
+        ? [
+            [
+              {
+                text: canceledByClient
+                  ? "❌ Заказ отменен клиентом"
+                  : "❌ Заказ отклонен менеджером",
+
+                callback_data:
+                  `mgr_order_canceled_done:${order._id}`,
+              },
+            ],
+          ]
+
+        /*
+        * Курьерский заказ уже принят
+        * или оплата подтверждена.
+        */
+        : isCourierOrder &&
+          ["paid", "awaiting"].includes(
+            paymentStatusKey
+          )
+        ? [
+            [
+              {
+                text:
+                  "🚗 Буду через 15 минут",
+
+                callback_data:
+                  `mgr_courier_soon:${order._id}`,
+              },
+            ],
+
+            [
+              {
+                text: "📍 Я на месте",
+
+                callback_data:
+                  `mgr_courier_arrived:${order._id}`,
+              },
+            ],
+
+            [
+              {
+                text: "✅ Заказ выполнен",
+
+                callback_data:
+                  `mgr_change_status_apply:completed:${order._id}`,
+              },
+            ],
+          ]
+
+        /*
+        * Курьер и оплата на месте.
+        */
+        : isCourierOrder &&
+          isCashPayment
+        ? [
+            [
+              {
+                text: "✅ Принят",
+
+                callback_data:
+                  `mgr_pay_paid:${order._id}`,
+              },
+
+              {
+                text: "❌ Отклонить",
+
+                callback_data:
+                  `mgr_pay_unpaid:${order._id}`,
+              },
+            ],
+          ]
+
+        /*
+        * Самовывоз с наличными.
+        */
+        : String(
+            order?.payment?.status || ""
+          ) === "awaiting"
+        ? [
+            [
+              {
+                text: "🕒 Ожидаю",
+
+                callback_data:
+                  `mgr_done:${order._id}`,
+              },
+            ],
+          ]
+
+        : String(
+            order?.deliveryType || ""
+          ) === "pickup" &&
+          isCashPayment
+        ? [
+            [
+              {
+                text: "🕒 Ожидаю",
+
+                callback_data:
+                  `mgr_pay_paid:${order._id}`,
+              },
+
+              {
+                text: "❌ Отклонить",
+
+                callback_data:
+                  `mgr_pay_unpaid:${order._id}`,
+              },
+            ],
+          ]
+
+        : String(
+            order?.payment?.status || ""
+          ) === "paid"
+        ? [
+            [
+              {
+                text:
+                isCourierOrder && isCashPayment
+                  ? "✅ Принят"
+                  : "✅ Оплачено",
+
+                callback_data:
+                  `mgr_done:${order._id}`,
+              },
+            ],
+          ]
+
+        /*
+        * BLIK / крипта / украинская карта.
+        */
+        : [
+            [
+              {
+                text: "✅ Оплатил",
+
+                callback_data:
+                  `mgr_pay_paid:${order._id}`,
+              },
+
+              {
+                text: "❌ Отклонить",
+
+                callback_data:
+                  `mgr_pay_unpaid:${order._id}`,
+              },
+            ],
+          ];
+
+    const replyMarkup = {
+      inline_keyboard: [
+        ...baseInlineKeyboard,
+        ...permanentManagerButtons,
+      ],
+    };
+
+    const clientUsername =
+  normalizeTelegramUsername(
+    user?.username || ""
+  );
+
+  const editCaptionWithContactFallback =
+    async () => {
+      const editTextFallback = async (
+        safeReplyMarkup
+      ) => {
+        return bot.telegram.editMessageText(
+          messageChatId,
+          messageId,
+          undefined,
+          text,
+          {
+            parse_mode: "HTML",
+            disable_web_page_preview: true,
+            reply_markup: safeReplyMarkup,
+          }
+        );
+      };
+
+      const tryCaptionEdit = async (
+        safeReplyMarkup
+      ) => {
+        try {
+          await bot.telegram.editMessageCaption(
+            messageChatId,
+            messageId,
+            undefined,
+            text,
+            {
+              parse_mode: "HTML",
+              reply_markup: safeReplyMarkup,
+            }
+          );
+
+          return true;
+        } catch (error) {
+          const errorMessage = String(
+            error?.response?.description ||
+              error?.message ||
+              ""
+          ).toLowerCase();
+
+          if (
+            errorMessage.includes(
+              "message is not modified"
+            ) ||
+            errorMessage.includes(
+              "message content is not modified"
+            )
+          ) {
+            await editReplyMarkupWithContactFallback();
+            return true;
+          }
+
+          /*
+          * Главное исправление:
+          * сообщение оказалось обычным текстом,
+          * а не фото с caption.
+          */
+          if (
+            errorMessage.includes(
+              "there is no caption in the message to edit"
+            )
+          ) {
+            try {
+              await editTextFallback(
+                safeReplyMarkup
+              );
+
+              return true;
+              } catch (textEditError) {
+                const textErrorMessage = String(
+                  textEditError?.response
+                    ?.description ||
+                    textEditError?.message ||
+                    ""
+                ).toLowerCase();
+
+                if (
+                  textErrorMessage.includes(
+                    "message is not modified"
+                  ) ||
+                  textErrorMessage.includes(
+                    "message content is not modified"
+                  )
+                ) {
+                  await editReplyMarkupWithContactFallback();
+                  return true;
+                }
+
+                /*
+                * Если текст обновить можно,
+                * но Telegram не принимает кнопку
+                * tg://user?id=...
+                *
+                * Возвращаем false, чтобы код ниже
+                * попробовал username, а затем
+                * safe fallback без проблемной кнопки.
+                */
+                if (
+                  isTelegramUserButtonError(
+                    textEditError
+                  )
+                ) {
+                  return false;
+                }
+
+                throw textEditError;
+              }
+          }
+
+          /*
+          * Если проблема только в кнопке
+          * tg://user?id=...
+          */
+          if (
+            !isTelegramUserButtonError(
+              error
+            )
+          ) {
+            throw error;
+          }
+
+          return false;
+        }
+      };
+
+      /*
+      * 1. Сначала обычная кнопка
+      * через Telegram ID.
+      */
+      if (
+        await tryCaptionEdit(
+          replyMarkup
+        )
+      ) {
+        return;
+      }
+
+      /*
+      * 2. Если Telegram запрещает кнопку
+      * по ID — пробуем username.
+      */
+      if (clientUsername) {
+        const usernameMarkup =
+          replaceTelegramUserButtonWithUsername(
+            replyMarkup,
+            clientUsername
+          );
+
+        if (
+          await tryCaptionEdit(
+            usernameMarkup
+          )
+        ) {
+          return;
+        }
+      }
+
+      /*
+      * 3. Последний fallback —
+      * убираем проблемную кнопку
+      * и оставляем связь через бота.
+      */
+      const fallbackMarkup =
+        buildSafeFallbackManagerMarkup(
+          replyMarkup,
+          order
+        );
+
+      if (
+        await tryCaptionEdit(
+          fallbackMarkup
+        )
+      ) {
+        return;
+      }
+
+      /*
+      * На всякий случай окончательная
+      * попытка как обычного текста.
+      */
+      await editTextFallback(
+        fallbackMarkup
+      );
+    };
+
+// const editCaptionWithContactFallback =
+//   async () => {
+//     try {
+//       // 1. Сначала кнопка по Telegram ID
+//       await bot.telegram.editMessageCaption(
+//         messageChatId,
+//         messageId,
+//         undefined,
+//         text,
+//         {
+//           parse_mode: "HTML",
+//           reply_markup: replyMarkup,
+//         }
+//       );
+
+//       return;
+//     } catch (error) {
+//       const errorMessage = String(
+//         error?.response?.description ||
+//           error?.message ||
+//           ""
+//       ).toLowerCase();
+
+//       if (
+//         errorMessage.includes(
+//           "message is not modified"
+//         ) ||
+//         errorMessage.includes(
+//           "message content is not modified"
+//         )
+//       ) {
+//         await editReplyMarkupWithContactFallback();
+//         return;
+//       }
+
+//       if (!isTelegramUserButtonError(error)) {
+//         throw error;
+//       }
+//     }
+
+//     if (clientUsername) {
+//       try {
+//         // 2. Затем ссылка по username
+//         await bot.telegram.editMessageCaption(
+//           messageChatId,
+//           messageId,
+//           undefined,
+//           text,
+//           {
+//             parse_mode: "HTML",
+//             reply_markup:
+//               replaceTelegramUserButtonWithUsername(
+//                 replyMarkup,
+//                 clientUsername
+//               ),
+//           }
+//         );
+
+//         return;
+//       } catch (error) {
+//         const errorMessage = String(
+//           error?.response?.description ||
+//             error?.message ||
+//             ""
+//         ).toLowerCase();
+
+//         if (
+//           errorMessage.includes(
+//             "message is not modified"
+//           ) ||
+//           errorMessage.includes(
+//             "message content is not modified"
+//           )
+//         ) {
+//           await editReplyMarkupWithContactFallback();
+//           return;
+//         }
+
+//         if (!isTelegramUserButtonError(error)) {
+//           throw error;
+//         }
+//       }
+//     }
+
+//     // 3. В конце — кнопка отправки через бота
+//     await bot.telegram.editMessageCaption(
+//       messageChatId,
+//       messageId,
+//       undefined,
+//       text,
+//       {
+//         parse_mode: "HTML",
+//         reply_markup:
+//           buildSafeFallbackManagerMarkup(
+//             replyMarkup,
+//             order
+//           ),
+//       }
+//     );
+//   };
+
+const editReplyMarkupWithContactFallback =
+  async () => {
+    try {
+      // 1. Сначала кнопка по Telegram ID
+      await bot.telegram.editMessageReplyMarkup(
+        messageChatId,
+        messageId,
+        undefined,
+        replyMarkup
+      );
+
+      return;
+    } catch (error) {
+      const errorMessage = String(
+        error?.response?.description ||
+          error?.message ||
+          ""
+      ).toLowerCase();
+
+      if (
+        errorMessage.includes(
+          "message is not modified"
+        )
+      ) {
+        return;
+      }
+
+      if (!isTelegramUserButtonError(error)) {
+        throw error;
+      }
+    }
+
+    if (clientUsername) {
+      try {
+        // 2. Затем ссылка по username
+        await bot.telegram.editMessageReplyMarkup(
+          messageChatId,
+          messageId,
+          undefined,
+          replaceTelegramUserButtonWithUsername(
+            replyMarkup,
+            clientUsername
+          )
+        );
+
+        return;
+      } catch (error) {
+        const errorMessage = String(
+          error?.response?.description ||
+            error?.message ||
+            ""
+        ).toLowerCase();
+
+        if (
+          errorMessage.includes(
+            "message is not modified"
+          )
+        ) {
+          return;
+        }
+
+        if (!isTelegramUserButtonError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    // 3. В конце — кнопка отправки через бота
+    await bot.telegram.editMessageReplyMarkup(
+      messageChatId,
+      messageId,
+      undefined,
+      buildSafeFallbackManagerMarkup(
+        replyMarkup,
+        order
+      )
+    );
+  };
+try {
+  const editManagerMessage = async (
+    safeReplyMarkup
+  ) => {
+    return bot.telegram.editMessageText(
+      messageChatId,
+      messageId,
+      undefined,
+      text,
+      {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: safeReplyMarkup,
+      }
+    );
+  };
+
+  try {
+    // Первая попытка:
+    // текущая кнопка через Telegram ID
+    await editManagerMessage(
+      replyMarkup
+    );
+  } catch (buttonError) {
+    if (
+      !isTelegramUserButtonError(
+        buttonError
+      )
+    ) {
+      throw buttonError;
+    }
+
+    const clientUsername =
+
+        normalizeTelegramUsername(
+
+            user?.username || ""
+
+        );
+
+    let edited = false;
+
+    // Вторая попытка:
+    // ссылка через username
+    if (clientUsername) {
+      try {
+        await editManagerMessage(
+          replaceTelegramUserButtonWithUsername(
+            replyMarkup,
+            clientUsername
+          )
+        );
+
+        edited = true;
+      } catch (usernameError) {
+        if (
+          !isTelegramUserButtonError(
+            usernameError
+          )
+        ) {
+          throw usernameError;
+        }
+      }
+    }
+
+    // Третья попытка:
+    // убираем проблемную ссылку
+    // и добавляем отправку через бота
+    if (!edited) {
+      await editManagerMessage(
+        buildSafeFallbackManagerMarkup(
+          replyMarkup,
+          order
+        )
+      );
+    }
+  }
+
+  return { ok: true };
+} catch (editErr) {
+      const editMsg = String(editErr?.response?.description || editErr?.message || "").toLowerCase();
+
+      if (editMsg.includes("message to edit not found")) {
+  console.warn(
+    "[REFRESH MANAGER ORDER MESSAGE][RECREATE]",
+    {
+      orderId: String(order?._id || ""),
+      orderNo: String(order?.orderNo || ""),
+      previousChatId: String(messageChatId || ""),
+      previousMessageId: Number(messageId || 0),
+    }
+  );
+
+  const point =
+    await resolveOrderNotificationPoint(order);
+
+  const fallbackChatId = String(
+    messageChatId ||
+    point?.notificationChatId ||
+    point?.ordersChatId ||
+    ""
+  ).trim();
+
+  if (!fallbackChatId) {
+    throw editErr;
+  }
+
+  const recreated =
+    await bot.telegram.sendMessage(
+      fallbackChatId,
+      text,
+      {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: replyMarkup,
+      }
+    );
+
+  order.managerMessageChatId = fallbackChatId;
+  order.managerMessageId = recreated.message_id;
+
+  order.payment = order.payment || {};
+  order.payment.managerMessageChatId = fallbackChatId;
+  order.payment.managerMessageId = recreated.message_id;
+
+  await order.save();
+
+  return { ok: true };
+}
+
+      if (
+        editMsg.includes("there is no text in the message to edit") ||
+        editMsg.includes("message content is not modified") ||
+        editMsg.includes("message is not modified") ||
+        editMsg.includes("message can't be edited")
+      ) {
+try {
+  await editCaptionWithContactFallback();
+
+  return { ok: true };
+} catch (captionErr) {
+  console.error(
+    "refreshManagerOrderMessage editMessageCaption error:",
+    captionErr
+  );
+}
+      } else {
+        console.error("refreshManagerOrderMessage editMessageText error:", editErr);
+      }
+
+try {
+  await editReplyMarkupWithContactFallback();
+} catch (e) {
+  const msg = String(
+    e?.response?.description ||
+      e?.message ||
+      ""
+  ).toLowerCase();
+
+  if (
+    !msg.includes(
+      "message is not modified"
+    )
+  ) {
+    console.error(
+      "refreshManagerOrderMessage editMessageReplyMarkup error:",
+      e
+    );
+  }
+}
+    }
+
+    return { ok: true };
+  } catch (e) {
+    const msg = String(e?.response?.description || e?.message || "").toLowerCase();
+
+    if (msg.includes("message is not modified")) {
+      return { ok: true };
+    }
+
+    console.error("refreshManagerOrderMessage error:", e);
+    return { ok: false, reason: "EDIT_FAILED" };
+  }
+}
+
+async function sendClientOrderCreatedInfo(order) {
+  try {
+    if (!bot || !order?.userTelegramId) return;
+
+    const webAppBaseUrl = String(process.env.WEBAPP_URL || "")
+      .trim()
+      .replace(/\/$/, "");
+
+    const orderNo = String(order.orderNo || "").trim();
+    const orderLink = webAppBaseUrl ? `${webAppBaseUrl}/orders` : null;
+
+    const point = await resolveOrderNotificationPoint(order).catch(() => null);
+    const pickupPoint = order?.pickupPointId
+      ? await PickupPoint.findById(order.pickupPointId).lean().catch(() => null)
+      : null;
+
+    const photoPoint = point || pickupPoint || null;
+
+    const photoUrl = firstNonEmptyString(
+      getCustomerOrderPhotoByPickupPoint(order, photoPoint),
+      getManagerOrderPhotoByPickupPoint(order, photoPoint),
+      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
+      process.env.TG_ORDER_PHOTO_DEFAULT
+    );
+
+    const lines = [
+      `🛒 <b>ЗАКАЗ СОЗДАН</b>`,
+      ``,
+      `🔢 <b>Номер заказа:</b> #${escapeHtml(orderNo)}`,
+      `💰 <b>Сумма:</b> ${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`,
+      ``,
+      `ℹ️ <b>Важно:</b> менеджер получит информацию о вашем заказе <b>только после оплаты</b>.`,
+      ``,
+      `💵 Вы также можете выбрать способ оплаты <b>Наличные</b> и оплатить заказ на месте — в этом случае менеджер тоже получит уведомление и начнёт готовить заказ.`,
+      ``,
+      `👉 Откройте страницу заказа, чтобы выбрать способ оплаты и отправить его на проверку менеджеру.`,
+    ];
+
+    const extra = {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    };
+
+    if (orderLink) {
+      extra.reply_markup = {
+        inline_keyboard: [
+          [{ text: "💳 Перейти к оплате", web_app: { url: orderLink } }],
+        ],
+      };
+    }
+
+    if (photoUrl) {
+      await bot.telegram.sendPhoto(
+        String(order.userTelegramId),
+        { url: photoUrl },
+        {
+          caption: lines.join("\n"),
+          ...extra,
+        }
+      );
+      return;
+    }
+
+    await bot.telegram.sendMessage(
+      String(order.userTelegramId),
+      lines.join("\n"),
+      extra
+    );
+  } catch (e) {
+    const errorCode = Number(e?.response?.error_code || 0);
+    const description = String(
+      e?.response?.description || e?.description || e?.message || ""
+    );
+
+    if (
+      (errorCode === 403 && /bot was blocked by the user/i.test(description)) ||
+      (errorCode === 400 && /chat not found/i.test(description))
+    ) {
+      console.warn("sendClientOrderCreatedInfo skipped: user chat is unavailable", {
+        orderNo: order?.orderNo,
+        telegramId: String(order?.userTelegramId || ""),
+        errorCode,
+        description,
+      });
+      return;
+    }
+
+    console.error("sendClientOrderCreatedInfo error:", e);
+  }
+}
+
+const ORDER_PAYMENT_REMINDER_START_DELAY_MS = 5 * 60 * 1000; // 5 минут
+const ORDER_PAYMENT_REMINDER_INTERVAL_MS = 35 * 1000; // 35 секунд
+
+const paymentReminderTimeouts = new Map(); // orderId -> timeoutId
+const paymentReminderIntervals = new Map(); // orderId -> intervalId
+
+function stopPaymentReminder(orderId) {
+  const key = String(orderId || "").trim();
+  if (!key) return;
+
+  const timeoutId = paymentReminderTimeouts.get(key);
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    paymentReminderTimeouts.delete(key);
+  }
+
+  const intervalId = paymentReminderIntervals.get(key);
+  if (intervalId) {
+    clearInterval(intervalId);
+    paymentReminderIntervals.delete(key);
+  }
+}
+
+async function startPaymentReminder(order) {
+
+  try {
+
+    const orderId = String(
+
+      order?._id || ""
+
+    ).trim();
+
+    if (!orderId) {
+
+      return;
+
+    }
+
+    /*
+
+     * Старая система индивидуальных таймеров отключена.
+
+     * Напоминания на 5-й и 9-й минуте отправляет
+
+     * processOrdersWithoutPaymentConfirm().
+
+     */
+
+    stopPaymentReminder(orderId);
+
+  } catch (e) {
+
+    console.error(
+
+      "startPaymentReminder disable error:",
+
+      e
+
+    );
+
+  }
+
+}
+
+async function resolveOrderReservePickupPointIds(order) {
+  if (!order) return [];
+
+  if (order.deliveryType === "pickup" && order.pickupPointId) {
+    return await getSyncedPickupPointIdsByAnyPoint(order.pickupPointId);
+  }
+
+  if (order.deliveryType === "delivery") {
+    const deliveryKey = order.deliveryMethod === "inpost" ? "delivery-2" : "delivery";
+    return await getSyncedPickupPointIdsByAnyPoint(deliveryKey);
+  }
+
+  return [];
+}
+
+async function releaseOrderReservedStock(order) {
+  if (!order || order.stockReleasedAt) return false;
+
+  const pickupPointIds = await resolveOrderReservePickupPointIds(order);
+  if (!pickupPointIds.length) return false;
+
+  const pointObjIds = pickupPointIds
+    .map((pickupPointId) =>
+      pickupPointId instanceof mongoose.Types.ObjectId
+        ? pickupPointId
+        : new mongoose.Types.ObjectId(String(pickupPointId))
+    )
+    .filter(Boolean);
+
+  const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+
+  for (const item of order.items || []) {
+    const productKey = String(item.productKey || "").trim();
+    if (!productKey) continue;
+
+    for (const fl of item.flavors || []) {
+      const qty = Math.max(0, Number(fl.qty || 0));
+      if (!qty) continue;
+
+      const fkNorm = normFlavorKey(fl.flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(fl.flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+
+      for (const pointObjId of pointObjIds) {
+
+      // 1) уменьшаем reservedQty
+      await Product.updateOne(
+        {
+          productKey,
+          "flavors.flavorKey": { $in: fkCandidates },
+          "flavors.stockByPickupPoint.pickupPointId": pointObjId,
+        },
+        {
+          $inc: {
+            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": -qty,
+          },
+        },
+        {
+          arrayFilters: [
+            { "f.flavorKey": { $in: fkCandidates } },
+            { "s.pickupPointId": pointObjId },
+          ],
+        }
+      );
+
+      // 2) clamp: reservedQty не должен быть < 0
+      await Product.updateOne(
+        { productKey },
+        [
+          {
+            $set: {
+              flavors: {
+                $map: {
+                  input: "$flavors",
+                  as: "f",
+                  in: {
+                    $cond: [
+                      { $in: ["$$f.flavorKey", fkCandidates] },
+                      {
+                        $mergeObjects: [
+                          "$$f",
+                          {
+                            stockByPickupPoint: {
+                              $map: {
+                                input: "$$f.stockByPickupPoint",
+                                as: "s",
+                                in: {
+                                  $cond: [
+                                    { $eq: ["$$s.pickupPointId", pointObjId] },
+                                    {
+                                      $mergeObjects: [
+                                        "$$s",
+                                        {
+                                          reservedQty: {
+                                            $max: [0, { $ifNull: ["$$s.reservedQty", 0] }],
+                                          },
+                                        },
+                                      ],
+                                    },
+                                    "$$s",
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                        ],
+                      },
+                      "$$f",
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        ]
+      );
+    }
+    }
+  }
+
+  return true;
+}
+
+async function commitOrderStock(order) {
+  if (!order || order.stockCommittedAt) return false;
+
+  const pickupPointIds = await resolveOrderReservePickupPointIds(order);
+  if (!pickupPointIds.length) return false;
+
+  const pointObjIds = pickupPointIds
+    .map((pickupPointId) =>
+      pickupPointId instanceof mongoose.Types.ObjectId
+        ? pickupPointId
+        : new mongoose.Types.ObjectId(String(pickupPointId))
+    )
+    .filter(Boolean);
+
+  const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+
+  for (const item of order.items || []) {
+    const productKey = String(item.productKey || "").trim();
+    if (!productKey) continue;
+
+    for (const fl of item.flavors || []) {
+      const qty = Math.max(0, Number(fl.qty || 0));
+      if (!qty) continue;
+
+      const fkNorm = normFlavorKey(fl.flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(fl.flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+    for (const pointObjId of pointObjIds) {
+
+      // 1) totalQty -= qty, reservedQty -= qty
+      await Product.updateOne(
+        {
+          productKey,
+          "flavors.flavorKey": { $in: fkCandidates },
+          "flavors.stockByPickupPoint.pickupPointId": pointObjId,
+        },
+        {
+          $inc: {
+            "flavors.$[f].stockByPickupPoint.$[s].totalQty": -qty,
+            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": -qty,
+          },
+        },
+        {
+          arrayFilters: [
+            { "f.flavorKey": { $in: fkCandidates } },
+            { "s.pickupPointId": pointObjId },
+          ],
+        }
+      );
+
+      // 2) clamp: totalQty/reservedQty не должны быть < 0,
+      //    reservedQty не должен быть > totalQty
+      await Product.updateOne(
+        { productKey },
+        [
+          {
+            $set: {
+              flavors: {
+                $map: {
+                  input: "$flavors",
+                  as: "f",
+                  in: {
+                    $cond: [
+                      { $in: ["$$f.flavorKey", fkCandidates] },
+                      {
+                        $mergeObjects: [
+                          "$$f",
+                          {
+                            stockByPickupPoint: {
+                              $map: {
+                                input: "$$f.stockByPickupPoint",
+                                as: "s",
+                                in: {
+                                  $cond: [
+                                    { $eq: ["$$s.pickupPointId", pointObjId] },
+                                    {
+                                      $let: {
+                                        vars: {
+                                          safeTotal: {
+                                            $max: [0, { $ifNull: ["$$s.totalQty", 0] }],
+                                          },
+                                          safeReservedRaw: {
+                                            $max: [0, { $ifNull: ["$$s.reservedQty", 0] }],
+                                          },
+                                        },
+                                        in: {
+                                          $mergeObjects: [
+                                            "$$s",
+                                            {
+                                              totalQty: "$$safeTotal",
+                                              reservedQty: {
+                                                $min: ["$$safeReservedRaw", "$$safeTotal"],
+                                              },
+                                            },
+                                          ],
+                                        },
+                                      },
+                                    },
+                                    "$$s",
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                        ],
+                      },
+                      "$$f",
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        ]
+      );
+    }
+    }
+  }
+
+  return true;
+}
+
+function translitRuToLat(input) {
+  const s = String(input || "").trim().toLowerCase();
+  const map = {
+    а:"a", б:"b", в:"v", г:"g", д:"d", е:"e", ё:"e", ж:"zh", з:"z", и:"i", й:"y",
+    к:"k", л:"l", м:"m", н:"n", о:"o", п:"p", р:"r", с:"s", т:"t", у:"u", ф:"f",
+    х:"h", ц:"ts", ч:"ch", ш:"sh", щ:"sch", ъ:"", ы:"y", ь:"", э:"e", ю:"yu", я:"ya",
+  };
+
+  let out = "";
+  for (const ch of s) {
+    if (map[ch] !== undefined) out += map[ch];
+    else if (/[a-z0-9]/.test(ch)) out += ch;
+    else out += "-";
+  }
+
+  out = out.replace(/-+/g, "-").replace(/^-+/, "").replace(/-+$/, "");
+  if (out.length < 2) out = "category";
+  if (out.length > 32) out = out.slice(0, 32).replace(/-+$/, "");
+  return out;
+}
+
+function slugifyFlavorLabel(input) {
+  const base = translitRuToLat(input)
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32);
+
+  return base || "flavor";
+}
+
+function ensureUniqueFlavorKeyForProduct(product, baseKey) {
+  const existingKeys = new Set(
+    (product?.flavors || [])
+      .map((f) => String(f?.flavorKey || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const cleanBase =
+    String(baseKey || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || "flavor";
+
+  if (!existingKeys.has(cleanBase)) return cleanBase;
+
+  for (let i = 2; i <= 999; i++) {
+    const suffix = `-${i}`;
+    const cut = Math.max(1, 32 - suffix.length);
+    const candidate = `${cleanBase.slice(0, cut).replace(/-+$/g, "")}${suffix}`;
+    if (!existingKeys.has(candidate)) return candidate;
+  }
+
+  return `${cleanBase.slice(0, 24).replace(/-+$/g, "")}-${Date.now().toString(36).slice(-6)}`;
+}
+
+async function ensureUniqueCategoryKey(baseKey) {
+  let key = String(baseKey || "").trim();
+  if (!key) key = "category";
+
+  const exists0 = await Category.findOne({ key }, { _id: 1 }).lean();
+  if (!exists0) return key;
+
+  for (let i = 2; i <= 50; i++) {
+    const suffix = `-${i}`;
+    const cut = Math.max(0, 32 - suffix.length);
+    const candidate = `${key.slice(0, cut).replace(/-+$/, "")}${suffix}`;
+    const exists = await Category.findOne({ key: candidate }, { _id: 1 }).lean();
+    if (!exists) return candidate;
+  }
+
+  return `${key.slice(0, 24).replace(/-+$/, "")}-${Date.now().toString(36).slice(-6)}`;
+}
+
+async function ensureUniqueProductKey(baseKey) {
+  let key = String(baseKey || "").trim();
+  if (!key) key = "product";
+
+  const exists0 = await Product.findOne({ productKey: key }, { _id: 1 }).lean();
+  if (!exists0) return key;
+
+  for (let i = 2; i <= 50; i++) {
+    const suffix = `-${i}`;
+    const cut = Math.max(0, 32 - suffix.length);
+    const candidate = `${key.slice(0, cut).replace(/-+$/, "")}${suffix}`;
+    const exists = await Product.findOne({ productKey: candidate }, { _id: 1 }).lean();
+    if (!exists) return candidate;
+  }
+
+  return `${key.slice(0, 24).replace(/-+$/, "")}-${Date.now().toString(36).slice(-6)}`;
+}
+
+async function ensureUniquePickupPointKey(baseKey) {
+  let key = String(baseKey || "").trim();
+  if (!key) key = "point";
+
+  const exists0 = await PickupPoint.findOne({ key }, { _id: 1 }).lean();
+  if (!exists0) return key;
+
+  for (let i = 2; i <= 50; i++) {
+    const suffix = `-${i}`;
+    const cut = Math.max(0, 32 - suffix.length);
+    const candidate = `${key.slice(0, cut).replace(/-+$/, "")}${suffix}`;
+    const exists = await PickupPoint.findOne({ key: candidate }, { _id: 1 }).lean();
+    if (!exists) return candidate;
+  }
+
+  return `${key.slice(0, 24).replace(/-+$/, "")}-${Date.now().toString(36).slice(-6)}`;
+}
+
+async function ensureUserRefCode(user) {
+  if (user?.referral?.code) return user.referral.code;
+  let code = genRefCode();
+  for (let i = 0; i < 5; i++) {
+    const exists = await User.findOne({ "referral.code": code }, { _id: 1 }).lean();
+    if (!exists) break;
+    code = genRefCode();
+  }
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { "referral.code": code } }
+  );
+  return code;
+}
+
+async function attachReferralIfAny(user, normalizedRef) {
+  const safeRef = String(normalizedRef || "").replace(/^ref_/, "").trim();
+  if (!user || !safeRef) return false;
+
+  user.referral = user.referral || {};
+
+  if (String(user.referral.usedCode || "").trim()) {
+    return false;
+  }
+
+  let inviter = await User.findOne({ "referral.code": safeRef });
+  if (!inviter && /^\d+$/.test(safeRef)) {
+    inviter = await User.findOne({ telegramId: safeRef });
+  }
+  if (!inviter) return false;
+
+  if (String(inviter.telegramId || "") === String(user.telegramId || "")) {
+    return false;
+  }
+
+  user.referral.usedCode = safeRef;
+  user.referral.invitedByTelegramId = String(inviter.telegramId || "");
+
+  const addedToGroup = attachReferralToRewardGroup(inviter, user.telegramId);
+  if (addedToGroup) {
+    if (typeof inviter.markModified === "function") {
+      inviter.markModified("referral.rewardGroups");
+    }
+    await inviter.save();
+  }
+
+  await user.save();
+  return true;
+}
+
+function requireAdmin(req, res, next) {
+  const token = req.header("x-admin-token") || "";
+  if (!process.env.ADMIN_API_TOKEN) {
+    return res.status(500).json({ ok: false, error: "ADMIN_API_TOKEN is not set" });
+  }
+  if (token !== process.env.ADMIN_API_TOKEN) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+  next();
+}
+
+const SERVER_SUPER_ADMIN_IDS = (process.env.SUPER_ADMIN_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+function isServerSuperAdminTelegramId(telegramId) {
+  return SERVER_SUPER_ADMIN_IDS.includes(String(telegramId || "").trim());
+}
+
+app.post("/admin/courier/customer-message", requireAdmin, async (req, res) => {
+  try {
+    const pickupPointId = String(req.body?.pickupPointId || "").trim();
+    const targetRaw = String(
+      req.body?.target || req.body?.telegramId || req.body?.username || ""
+    ).trim();
+    const textRaw = String(req.body?.text || "").trim();
+    const photoUrl = String(req.body?.photoUrl || "").trim();
+    const managerTelegramId = String(req.body?.managerTelegramId || "").trim();
+    const managerUsernameRaw = String(req.body?.managerUsername || "")
+      .trim()
+      .replace(/^@+/, "");
+
+    if (!bot) {
+      return res.status(500).json({ ok: false, error: "BOT_NOT_AVAILABLE" });
+    }
+
+    if (!pickupPointId) {
+      return res.status(400).json({ ok: false, error: "PICKUP_POINT_ID_REQUIRED" });
+    }
+
+    const normalizedTarget = targetRaw.replace(/^@+/, "").trim();
+    const isTelegramIdTarget = /^\d+$/.test(normalizedTarget);
+    const username = isTelegramIdTarget ? "" : normalizedTarget.toLowerCase();
+
+    if (!normalizedTarget) {
+      return res.status(400).json({ ok: false, error: "TARGET_REQUIRED" });
+    }
+
+    if (!isTelegramIdTarget && !/^[a-zA-Z0-9_]{5,32}$/.test(username)) {
+      return res.status(400).json({ ok: false, error: "INVALID_USERNAME_OR_TELEGRAM_ID" });
+    }
+
+    if (!textRaw) {
+      return res.status(400).json({ ok: false, error: "TEXT_REQUIRED" });
+    }
+
+    // if (!managerUsernameRaw) {
+    //   return res.status(400).json({ ok: false, error: "MANAGER_USERNAME_REQUIRED" });
+    // }
+
+    const managerUsername = managerUsernameRaw || "elfduck_shop_bot";
+
+    const pickupPoint = await PickupPoint.findById(
+      pickupPointId,
+      { _id: 1, key: 1, title: 1, allowedAdminTelegramIds: 1 }
+    ).lean();
+
+    if (!pickupPoint) {
+      return res.status(404).json({ ok: false, error: "PICKUP_POINT_NOT_FOUND" });
+    }
+
+    // const pointKey = normalizePickupPointKey(pickupPoint?.key || "");
+    // if (pointKey !== "delivery") {
+    //   return res.status(403).json({ ok: false, error: "ONLY_COURIER_POINT_ALLOWED" });
+    // }
+
+    // if (!isServerAdminTelegramId(managerTelegramId) && !isServerSuperAdminTelegramId(managerTelegramId)) {
+    //   return res.status(403).json({ ok: false, error: "FORBIDDEN_FOR_THIS_MANAGER" });
+    // }
+
+    function isServerAdminTelegramId(telegramId) {
+
+      const safeTelegramId = String(telegramId || "").trim();
+
+      if (!safeTelegramId) return false;
+
+      return String(process.env.ADMIN_IDS || "")
+
+        .split(",")
+
+        .map((x) => String(x || "").trim())
+
+        .filter(Boolean)
+
+        .includes(safeTelegramId);
+
+    }
+
+    const user = await User.findOne(
+
+      isTelegramIdTarget
+
+        ? { telegramId: normalizedTarget }
+
+        : { username },
+
+      { telegramId: 1, username: 1, firstName: 1 }
+
+    ).lean();
+
+    if (!user?.telegramId) {
+      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+    }
+
+    const buttonText = "Связаться";
+    const managerUsernameSafe = String(managerUsername || "")
+      .trim()
+      .replace(/^@+/, "");
+
+    const managerUrl = managerUsernameSafe
+      ? `https://t.me/${managerUsernameSafe}`
+      : "https://t.me/elfduck_shop_bot";
+    const safeText = escapeHtml(textRaw);
+    const replyMarkup = {
+      inline_keyboard: [[{ text: buttonText, url: managerUrl }]],
+    };
+
+    if (photoUrl) {
+      await bot.telegram.sendPhoto(
+        String(user.telegramId),
+        { url: photoUrl },
+        {
+          caption: safeText.slice(0, 1024),
+          parse_mode: "HTML",
+          reply_markup: replyMarkup,
+        }
+      );
+    } else {
+      await bot.telegram.sendMessage(
+        String(user.telegramId),
+        safeText,
+        {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+          reply_markup: replyMarkup,
+        }
+      );
+    }
+
+    return res.json({
+
+      ok: true,
+
+      sentToTelegramId: String(user.telegramId || ""),
+
+      sentToUsername: String(user.username || username || ""),
+
+      managerUsername,
+
+    });
+  } catch (e) {
+    console.error("POST /admin/courier/customer-message error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "SERVER_ERROR" });
+  }
+});
+
+// ==== API ====
+
+app.get("/ping", (_, res) => res.json({ ok: true }));
+
+// регистрируем юзера из mini-app
+app.post("/register-user", async (req, res) => {
+  try {
+    const verified = verifyTelegramWebAppInitData(req.headers?.["x-telegram-init-data"]);
+    const telegramId = String(verified?.telegramId || "").trim();
+
+    if (!telegramId) {
+      return res.status(401).json({ ok: false, error: "INVALID_TELEGRAM_INIT_DATA" });
+    }
+
+    const tgUser = verified?.user || {};
+    const username = String(tgUser?.username || "").trim() || null;
+    const firstName = String(tgUser?.first_name || "").trim() || null;
+    const lastName = String(tgUser?.last_name || "").trim() || null;
+    const photoUrl = String(tgUser?.photo_url || "").trim() || null;
+
+    const { ref } = req.body || {};
+    const normalizedRef = String(ref || "").replace(/^ref_/, "").trim();
+
+    // Single upsert instead of findOne → create/save → findById. One round-trip
+    // for the common "returning user" path.
+    const setOnInsert = { telegramId };
+    const set = {};
+    if (username !== null) set.username = username;
+    if (firstName !== null) set.firstName = firstName;
+    if (lastName !== null) set.lastName = lastName;
+    if (photoUrl !== null) set.photoUrl = photoUrl;
+
+    let user = await User.findOneAndUpdate(
+      { telegramId },
+      { $set: set, $setOnInsert: setOnInsert },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
+    let mutated = false;
+    if (!user.referral?.code) {
+      await ensureUserRefCode(user);
+      mutated = true;
+    }
+    if (normalizedRef) {
+      const before = JSON.stringify(user.referral || {});
+      await attachReferralIfAny(user, normalizedRef);
+      if (JSON.stringify(user.referral || {}) !== before) mutated = true;
+    }
+
+    if (mutated) {
+      user = await User.findById(user._id).lean();
+    } else {
+      user = user.toObject ? user.toObject() : user;
+    }
+
+    return res.json({ ok: true, user });
+  } catch (e) {
+    console.error("/register-user error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// получить юзера
+app.get("/get-user", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+
+    const user = await User.findOne({ telegramId }).lean();
+    if (!user) return res.status(404).json({ ok: false, error: "User not found" });
+
+    res.json({ ok: true, user });
+  } catch (e) {
+    console.error("/get-user error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.get("/cart/summary", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+    // if (!telegramId) {
+    //   return res.status(400).json({ ok: false, error: "telegramId is required" });
+    // }
+
+    const cart = await Cart.findOne({ telegramId }).lean();
+    const items = Array.isArray(cart?.items) ? cart.items : [];
+
+    const totalZl = Number(
+      items
+        .reduce(
+          (sum, item) =>
+            sum + Number(item?.qty || 0) * Number(item?.unitPrice || 0),
+          0
+        )
+        .toFixed(2)
+    );
+
+    return res.json({
+      ok: true,
+      totalZl,
+      itemsCount: items.length,
+    });
+  } catch (e) {
+    console.error("GET /cart/summary error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.get("/referral/status", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+    // if (!telegramId) {
+    //   return res.status(400).json({ ok: false, error: "telegramId is required" });
+    // }
+
+    const user = await User.findOne(
+      { telegramId },
+      { telegramId: 1, referral: 1 }
+    );
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "User not found" });
+    }
+
+    const referralStatus = await buildReferralStatusForUser(user);
+
+    return res.json({
+      ok: true,
+      referralStatus,
+    });
+  } catch (e) {
+    console.error("GET /referral/status error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.post("/referral/claim", async (req, res) => {
+
+  try {
+
+    console.log("[REFERRAL CLAIM] NEW ROUTE HIT", {
+
+      hasInitData: Boolean(req.headers?.["x-telegram-init-data"]),
+
+      groupId: req.body?.groupId,
+
+    });
+
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    console.log("[REFERRAL CLAIM] TRUSTED TELEGRAM ID:", telegramId);
+
+    if (!telegramId) return;
+
+    const safeGroupId = String(req.body?.groupId || "").trim();
+
+    if (!safeGroupId) {
+      return res.status(400).json({
+        ok: false,
+        error: "GROUP_ID_REQUIRED",
+      });
+    }
+
+    const user = await User.findOne({ telegramId });
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+    }
+
+    const referralStatus = await buildReferralStatusForUser(user);
+    const groups = Array.isArray(referralStatus?.groups) ? referralStatus.groups : [];
+
+    const selectedGroup = groups.find(
+      (group) => String(group?.id || "") === safeGroupId
+    );
+
+    if (!selectedGroup) {
+      return res.status(404).json({ ok: false, error: "REFERRAL_GROUP_NOT_FOUND" });
+    }
+
+    if (selectedGroup.rewardClaimed === true || selectedGroup.isClaimed === true) {
+      return res.json({ ok: false, status: "ALREADY_CLAIMED" });
+    }
+
+    const memberIds = Array.isArray(selectedGroup?.members)
+      ? selectedGroup.members.map((m) => String(m?.telegramId || "").trim()).filter(Boolean)
+      : [];
+
+    if (memberIds.length < 2) {
+      return res.json({ ok: false, status: "NOT_ENOUGH_REFERRALS" });
+    }
+
+    const referredUsers = await User.find(
+      { telegramId: { $in: memberIds } },
+      { telegramId: 1, username: 1, firstName: 1, referral: 1 }
+    ).lean();
+
+    const referredById = new Map(
+      referredUsers.map((row) => [String(row.telegramId || ""), row])
+    );
+
+    const paidOrderTelegramIds = await Order.distinct("userTelegramId", {
+      userTelegramId: { $in: memberIds },
+      $or: [
+        { "payment.status": "paid" },
+        { status: { $in: ["processing", "done"] } },
+      ],
+    });
+
+    const paidSet = new Set(
+      (paidOrderTelegramIds || []).map((x) => String(x || "").trim())
+    );
+
+    const members = memberIds.map((tgId) => {
+      const refUser = referredById.get(tgId);
+      const completed =
+        Boolean(refUser?.referral?.firstOrderDoneAt) || paidSet.has(tgId);
+
+      return {
+        telegramId: tgId,
+        displayName: getReferralDisplayName(refUser || { telegramId: tgId }),
+        completed,
+      };
+    });
+
+    const completedMembers = members.filter((m) => m?.completed === true);
+    const pendingMembers = members.filter((m) => m?.completed !== true);
+
+    if (completedMembers.length === 1 && pendingMembers.length === 1) {
+      return res.json({
+        ok: false,
+        status: "ONE_COMPLETED",
+        completed: completedMembers[0].displayName,
+        pending: pendingMembers[0].displayName,
+      });
+    }
+
+    if (completedMembers.length === 0) {
+      return res.json({
+        ok: false,
+        status: "NONE_COMPLETED",
+        users: members.map((m) => m.displayName),
+      });
+    }
+
+    if (completedMembers.length !== 2) {
+      return res.json({ ok: false, status: "GROUP_NOT_READY" });
+    }
+
+    const realGroups = ensureReferralGroupsArray(user);
+    const targetGroup = realGroups.find(
+      (group) => String(group?._id || "") === safeGroupId
+    );
+
+    if (!targetGroup) {
+      return res.status(404).json({ ok: false, error: "REFERRAL_GROUP_NOT_FOUND" });
+    }
+
+    if (targetGroup.rewardClaimed === true) {
+      return res.json({ ok: false, status: "ALREADY_CLAIMED" });
+    }
+
+    targetGroup.rewardClaimed = true;
+    targetGroup.rewardClaimedAt = new Date();
+
+    user.cashbackLedger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
+    user.cashbackLedger.push({
+      sourceOrderId: null,
+      amountZl: 25,
+      remainingZl: 25,
+      earnedAt: new Date(),
+      expiresAt: addDays(new Date(), 40),
+      warnedAt: null,
+      expiredAt: null,
+    });
+
+    if (typeof user.markModified === "function") {
+      user.markModified("referral.rewardGroups");
+      user.markModified("cashbackLedger");
+    }
+
+    recalcUserCashbackBalanceFromLedger(user);
+    await user.save();
+
+    return res.json({
+      ok: true,
+      status: "REWARD_GRANTED",
+      amount: 25,
+      groupId: safeGroupId,
+    });
+  } catch (e) {
+    console.error("POST /referral/claim error:", e);
+    res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+// ==== Public: get favorites by telegramId ====
+app.get("/favorites", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+    // if (!telegramId) {
+    //   return res.status(400).json({ ok: false, error: "telegramId is required" });
+    // }
+
+    const user = await User.findOne({ telegramId }, { favoriteProductKeys: 1 }).lean();
+
+    return res.json({
+      ok: true,
+      favoriteProductKeys: Array.isArray(user?.favoriteProductKeys)
+        ? user.favoriteProductKeys
+        : [],
+    });
+  } catch (e) {
+    console.error("GET /favorites error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Public: toggle favorite product =====
+app.post("/favorites/toggle", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+    const productKey = String(req.body?.productKey || "").trim();
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: "telegramId is required" });
+    }
+
+    if (!productKey) {
+      return res.status(400).json({ ok: false, error: "productKey is required" });
+    }
+
+    const user = await User.findOne({ telegramId });
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "User not found" });
+    }
+
+    const current = Array.isArray(user.favoriteProductKeys)
+      ? user.favoriteProductKeys.map((x) => String(x))
+      : [];
+
+    const exists = current.includes(productKey);
+
+    if (exists) {
+      user.favoriteProductKeys = current.filter((x) => x !== productKey);
+    } else {
+      user.favoriteProductKeys = [...current, productKey];
+    }
+
+    await user.save();
+
+    return res.json({
+      ok: true,
+      isFavorite: !exists,
+      favoriteProductKeys: user.favoriteProductKeys || [],
+    });
+  } catch (e) {
+    console.error("POST /favorites/toggle error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Telegram prepared share (rich preview like “via @bot”) =====
+app.post("/tg/prepared-referral-message", async (req, res) => {
+  try {
+    if (!bot) {
+      return res.status(500).json({ ok: false, error: "Bot disabled (no TELEGRAM_BOT_TOKEN)" });
+    }
+
+    const trustedTelegramId = requireTrustedTelegramId(req, res);
+    if (!trustedTelegramId) return;
+
+    const b = req.body || {};
+
+    const code = String(
+      b.refCode ||
+        b.referralCode ||
+        b.code ||
+        ""
+    ).trim();
+
+    if (!code) {
+      return res.status(400).json({
+        ok: false,
+        error: "REF_CODE_REQUIRED",
+        message: "refCode is required",
+      });
+    }
+
+    const userId = Number(trustedTelegramId);
+
+    if (!userId || Number.isNaN(userId)) {
+      return res.status(401).json({
+        ok: false,
+        error: "INVALID_TELEGRAM_INIT_DATA",
+        message: "Telegram initData is required",
+      });
+    }
+
+    // Это ссылка, которую получатель откроет
+    const startParam = `ref_${code}`;
+    const deepLink = `https://t.me/elfduck_shop_bot?startapp=${encodeURIComponent(startParam)}`;
+
+    // Твой баннер/картинка для карточки
+    const photo = "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeifdnnsv4ddcjyorb3xrf6fvzi4yyqizuhhpomv7aew4j7oodfsg3q";
+
+    const caption =
+      `🦆 ELF DUCK\n\n` +
+      `💸 Залетай по моей ссылке и получи 10% скидки на заказ!`;
+
+    // Уникальный id для inline-result (обязателен)
+    const resultId = crypto
+      .createHash("sha256")
+      .update(`${userId}|${startParam}|${photo}`)
+      .digest("hex")
+      .slice(0, 32);
+
+    // InlineQueryResultPhoto
+    const result = {
+      type: "photo",
+      id: resultId,
+      photo_url: photo,
+      thumbnail_url: photo,
+      caption,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "Получить бонус",
+              url: deepLink,
+            },
+          ],
+        ],
+      },
+    };
+
+    // Create a PreparedInlineMessage for WebApp.shareMessage()
+    const prepared = await bot.telegram.callApi("savePreparedInlineMessage", {
+      user_id: userId,
+      result,
+      // важно: нужно разрешить хотя бы один тип чатов, иначе будет ошибка
+      allow_user_chats: true,
+      allow_group_chats: true,
+      allow_channel_chats: true,
+      allow_bot_chats: true,
+    });
+
+    return res.json({ ok: true, id: prepared?.id });
+  } catch (e) {
+    console.error("/tg/prepared-referral-message error:", e);
+    const tgDesc = e?.response?.description || e?.description || e?.message;
+    return res.status(500).json({ ok: false, error: tgDesc || "Server error" });
+  }
+});
+
+// ===== Public: pickup points =====
+app.get("/pickup-points", async (req, res) => {
+  try {
+    const onlyActive = String(req.query.active || "1") === "1";
+    const cacheKey = `pickup-points:${onlyActive ? "1" : "0"}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const filter = onlyActive ? { isActive: true } : {};
+    const points = await PickupPoint.find(filter).sort({ sortOrder: 1, createdAt: -1 }).lean();
+    const payload = { ok: true, pickupPoints: points };
+    cacheSet(cacheKey, payload, 60 * 1000);
+    res.json(payload);
+  } catch (e) {
+    console.error("GET /pickup-points error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Admin: pickup points (CRUD) =====
+app.post("/admin/pickup-points", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const rawTitle = String(b.title || "").trim();
+    const rawAddress = String(b.address || "").trim();
+
+    if (!rawTitle && !rawAddress) {
+      return res.status(400).json({ ok: false, error: "title or address is required" });
+    }
+
+    const baseKey = b.key ? String(b.key) : translitRuToLat(rawTitle || rawAddress);
+    const finalKey = await ensureUniquePickupPointKey(baseKey);
+
+    const allowed = Array.isArray(b.allowedAdminTelegramIds)
+      ? b.allowedAdminTelegramIds.map((x) => String(x)).filter(Boolean)
+      : [];
+
+    const notificationChatId = String(b.notificationChatId || "").trim();
+
+    const statsChatId = String(b.statsChatId || "").trim();
+    const statsSendTime = String(b.statsSendTime || "23:59").trim();
+    const scheduleByDate =
+      b.scheduleByDate && typeof b.scheduleByDate === "object"
+        ? b.scheduleByDate
+        : {};
+
+    const created = await PickupPoint.create({
+      key: finalKey,
+      title: rawTitle,
+      address: rawAddress,
+      sortOrder: Number(b.sortOrder || 0),
+      isActive: b.isActive ?? true,
+      allowedAdminTelegramIds: allowed,
+      notificationChatId,
+      statsChatId,
+      statsSendTime,
+      scheduleByDate,
+    });
+
+    res.json({ ok: true, pickupPoint: created });
+  } catch (e) {
+    console.error("POST /admin/pickup-points error:", e);
+    if (e?.code === 11000) return res.status(409).json({ ok: false, error: "Pickup point key already exists" });
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.post("/admin/users/cashback/grant-by-username", async (req, res) => {
+  try {
+    const token = String(req.headers["x-admin-token"] || "").trim();
+    if (!token || token !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    const usernameRaw = String(req.body?.username || "").trim();
+    const username = usernameRaw.replace(/^@+/, "").trim();
+    const amountZl = Number(req.body?.amountZl || 0);
+    // const note = String(req.body?.note || "").trim();
+    const grantedByTelegramId = String(req.body?.grantedByTelegramId || "").trim();
+    const grantedByUsername = String(req.body?.grantedByUsername || "").trim();
+
+    if (!username) {
+      return res.status(400).json({ ok: false, error: "USERNAME_REQUIRED" });
+    }
+
+    if (!(amountZl > 0)) {
+      return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_AMOUNT" });
+    }
+
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+    }
+
+    const result = await grantManualCashbackToUser(user, amountZl, {
+      // note,
+      grantedByTelegramId,
+      grantedByUsername,
+    });
+
+    return res.json({
+      ok: true,
+      user: {
+        telegramId: String(user.telegramId || ""),
+        username: String(user.username || ""),
+        firstName: String(user.firstName || ""),
+      },
+      cashbackBalance: Number(result.cashbackBalance || 0),
+      grantedAmountZl: Number(result.grantedAmountZl || 0),
+      expiresAt: result.expiresAt,
+    });
+  } catch (e) {
+    console.error("POST /admin/users/cashback/grant-by-username error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "SERVER_ERROR" });
+  }
+});
+
+const buildBroadcastUserFilter = async ({
+  audienceType,
+  segmentType,
+  segmentValue,
+  username,
+}) => {
+  const userFilter = {
+    telegramId: { $exists: true, $ne: "" },
+  };
+
+  // Один пользователь по username
+  if (audienceType === "username") {
+    const safeUsername = String(username || "")
+      .trim()
+      .replace(/^@/, "");
+
+    if (!safeUsername) {
+      userFilter.telegramId = { $in: [] };
+
+      return userFilter;
+    }
+
+    const escapedUsername = safeUsername.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&"
+    );
+
+    userFilter.username = {
+      $regex: `^${escapedUsername}$`,
+      $options: "i",
+    };
+
+    return userFilter;
+  }
+
+  // Рассылка всем
+  if (audienceType !== "segment") {
+    return userFilter;
+  }
+
+  const orderFilter = {
+    status: {
+      $nin: ["canceled", "annulled"],
+    },
+  };
+
+  // Покупатели определённой категории
+  if (segmentType === "category") {
+    const productIds = await Product.distinct("_id", {
+      categoryKey: segmentValue,
+    });
+
+    if (!productIds.length) {
+      userFilter.telegramId = { $in: [] };
+
+      return userFilter;
+    }
+
+    orderFilter["items.productId"] = {
+      $in: productIds,
+    };
+  }
+
+  // Покупатели определённой точки самовывоза
+  else if (segmentType === "pickupPoint") {
+    orderFilter.deliveryType = "pickup";
+    orderFilter.pickupPointId = segmentValue;
+  }
+
+  // Покупатели по способу получения
+  else if (segmentType === "deliveryMethod") {
+    if (segmentValue === "pickup") {
+      orderFilter.deliveryType = "pickup";
+    } else if (segmentValue === "courier") {
+      orderFilter.deliveryType = "delivery";
+      orderFilter.deliveryMethod = "courier";
+    } else if (segmentValue === "inpost") {
+      orderFilter.deliveryType = "delivery";
+      orderFilter.deliveryMethod = "inpost";
+    } else {
+      userFilter.telegramId = { $in: [] };
+
+      return userFilter;
+    }
+  } else {
+    userFilter.telegramId = { $in: [] };
+
+    return userFilter;
+  }
+
+  const telegramIds = (
+    await Order.distinct(
+      "userTelegramId",
+      orderFilter
+    )
+  )
+    .map((value) =>
+      String(value || "").trim()
+    )
+    .filter(Boolean);
+
+  userFilter.telegramId = {
+    $in: telegramIds,
+  };
+
+  return userFilter;
+};
+
+app.post("/admin/users/broadcast-photo", async (req, res) => {
+  try {
+    const adminToken = String(req.headers["x-admin-token"] || "").trim();
+
+    if (!adminToken || adminToken !== String(process.env.ADMIN_API_TOKEN || "").trim()) {
+      return res.status(401).json({
+        ok: false,
+        error: "UNAUTHORIZED",
+      });
+    }
+
+    if (!bot) {
+      return res.status(500).json({
+        ok: false,
+        error: "BOT_DISABLED",
+        message: "Telegram bot is disabled. Check TELEGRAM_BOT_TOKEN.",
+      });
+    }
+
+    const dryRun = req.body?.dryRun !== false;
+    const photoUrl = String(req.body?.photoUrl || "").trim();
+    const text = String(req.body?.text || "").trim();
+    const buttonText = String(req.body?.buttonText || "").trim();
+    const buttonUrl = String(req.body?.buttonUrl || "").trim();
+    const limit = Math.max(0, Number(req.body?.limit || 0));
+
+    const audienceType = String(
+      req.body?.audienceType || "all"
+    ).trim();
+
+    const segmentType = String(
+      req.body?.segmentType || ""
+    ).trim();
+
+    const segmentValue = String(
+      req.body?.segmentValue || ""
+    ).trim();
+
+    const username = String(
+      req.body?.username || ""
+    ).trim();
+
+
+    if (!photoUrl) {
+      return res.status(400).json({
+        ok: false,
+        error: "PHOTO_REQUIRED",
+        message: "photoUrl is required",
+      });
+    }
+
+    if (!text) {
+      return res.status(400).json({
+        ok: false,
+        error: "TEXT_REQUIRED",
+        message: "text is required",
+      });
+    }
+
+    if (!buttonText) {
+      return res.status(400).json({
+        ok: false,
+        error: "BUTTON_TEXT_REQUIRED",
+        message: "buttonText is required",
+      });
+    }
+
+    if (!buttonUrl) {
+      return res.status(400).json({
+        ok: false,
+        error: "BUTTON_URL_REQUIRED",
+        message: "buttonUrl is required",
+      });
+    }
+
+    const userFilter =
+      await buildBroadcastUserFilter({
+        audienceType,
+        segmentType,
+        segmentValue,
+        username,
+      });
+
+    const users = await User.find(
+      userFilter,
+      {
+        telegramId: 1,
+        username: 1,
+        firstName: 1,
+      }
+    )
+      .sort({ createdAt: 1 })
+      .limit(limit > 0 ? limit : 0)
+      .lean();
+
+    const replyMarkup = {
+
+      inline_keyboard: [
+
+        [
+
+          {
+
+            text: buttonText,
+
+            web_app: {
+
+              url: buttonUrl,
+
+            },
+
+          },
+
+        ],
+
+      ],
+
+    };
+
+    const results = [];
+    let sent = 0;
+    let failed = 0;
+    let blocked = 0;
+
+    if (!dryRun) {
+      for (const user of users) {
+        const telegramId = String(user?.telegramId || "").trim();
+        if (!telegramId) continue;
+
+        try {
+          await bot.telegram.sendPhoto(telegramId, photoUrl, {
+            caption: text,
+            parse_mode: "HTML",
+            reply_markup: replyMarkup,
+          });
+
+          sent += 1;
+          results.push({ telegramId, ok: true });
+
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        } catch (e) {
+          failed += 1;
+
+          const description = String(e?.response?.description || e?.message || e || "");
+
+          const isBlocked =
+            description.includes("bot was blocked") ||
+            description.includes("user is deactivated") ||
+            description.includes("chat not found") ||
+            description.includes("Forbidden");
+
+          if (isBlocked) blocked += 1;
+
+          results.push({
+            telegramId,
+            ok: false,
+            error: description,
+          });
+        }
+      }
+    }
+
+    return res.json({
+      ok: true,
+      dryRun,
+      totalUsers: users.length,
+      sent,
+      failed,
+      blocked,
+      preview: {
+
+        audienceType,
+
+        segmentType,
+
+        segmentValue,
+
+        username,
+
+        photoUrl,
+
+        text,
+
+        buttonText,
+
+        buttonUrl,
+
+      },
+      results: dryRun ? [] : results.slice(0, 200),
+    });
+  } catch (e) {
+    console.error("admin photo broadcast error:", e);
+
+    return res.status(500).json({
+      ok: false,
+      error: "SERVER_ERROR",
+      message: String(e?.message || e),
+    });
+  }
+});
+
+app.post("/admin/users/broadcast-photo-async", async (req, res) => {
+  try {
+    const adminToken = String(req.headers["x-admin-token"] || "").trim();
+
+    if (!adminToken || adminToken !== String(process.env.ADMIN_API_TOKEN || "").trim()) {
+      return res.status(401).json({
+        ok: false,
+        error: "UNAUTHORIZED",
+      });
+    }
+
+    if (!bot) {
+      return res.status(500).json({
+        ok: false,
+        error: "BOT_DISABLED",
+        message: "Telegram bot is disabled. Check TELEGRAM_BOT_TOKEN.",
+      });
+    }
+
+    const photoUrl = String(req.body?.photoUrl || "").trim();
+    const text = String(req.body?.text || "").trim();
+    const buttonText = String(req.body?.buttonText || "").trim();
+    const buttonUrl = String(req.body?.buttonUrl || "").trim();
+    const limit = Math.max(0, Number(req.body?.limit || 0));
+
+    const audienceType = String(
+      req.body?.audienceType || "all"
+    ).trim();
+
+    const segmentType = String(
+      req.body?.segmentType || ""
+    ).trim();
+
+    const segmentValue = String(
+      req.body?.segmentValue || ""
+    ).trim();
+
+    const username = String(
+      req.body?.username || ""
+    ).trim();
+
+    if (!photoUrl) {
+      return res.status(400).json({ ok: false, error: "PHOTO_REQUIRED" });
+    }
+
+    if (!text) {
+      return res.status(400).json({ ok: false, error: "TEXT_REQUIRED" });
+    }
+
+    if (!buttonText) {
+      return res.status(400).json({ ok: false, error: "BUTTON_TEXT_REQUIRED" });
+    }
+
+    if (!buttonUrl) {
+      return res.status(400).json({ ok: false, error: "BUTTON_URL_REQUIRED" });
+    }
+
+    const filter = {
+      telegramId: { $exists: true, $ne: "" },
+    };
+
+    if (audienceType === "username") {
+      filter.username = username;
+    }
+
+    if (audienceType === "segment") {
+      switch (segmentType) {
+        case "category":
+          filter.lastOrderCategoryKey = segmentValue;
+          break;
+
+        case "pickupPoint":
+          filter.lastPickupPointId = segmentValue;
+          break;
+
+        case "deliveryMethod":
+          filter.lastDeliveryMethod = segmentValue;
+          break;
+      }
+    }
+
+    const userFilter =
+      await buildBroadcastUserFilter({
+        audienceType,
+        segmentType,
+        segmentValue,
+        username,
+      });
+
+    const users = await User.find(
+      userFilter,
+      {
+        telegramId: 1,
+        username: 1,
+        firstName: 1,
+      }
+    )
+      .sort({ createdAt: 1 })
+      .limit(limit > 0 ? limit : 0)
+      .lean();
+
+    const jobId = crypto.randomBytes(8).toString("hex");
+
+    broadcastJobs.set(jobId, {
+      jobId,
+      status: "running",
+      totalUsers: users.length,
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      blocked: 0,
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      lastErrors: [],
+    });
+
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          {
+            text: buttonText,
+            web_app: {
+              url: buttonUrl,
+            },
+          },
+        ],
+      ],
+    };
+
+    // сразу отвечаем admin-bot, чтобы он не падал по timeout
+    res.json({
+      ok: true,
+      accepted: true,
+      async: true,
+      jobId,
+      totalUsers: users.length,
+      preview: {
+
+        audienceType,
+
+        segmentType,
+
+        segmentValue,
+
+        username,
+
+        photoUrl,
+
+        text,
+
+        buttonText,
+
+        buttonUrl,
+
+      },
+    });
+
+    // дальше отправляем в фоне
+    setImmediate(async () => {
+      let sent = 0;
+      let failed = 0;
+      let blocked = 0;
+
+      const updateJob = (patch = {}) => {
+
+        const prev = broadcastJobs.get(jobId) || {};
+
+        broadcastJobs.set(jobId, {
+
+          ...prev,
+
+          ...patch,
+
+          updatedAt: new Date().toISOString(),
+
+        });
+
+      };
+
+      console.log("[BROADCAST PHOTO ASYNC][START]", {
+        jobId,
+        totalUsers: users.length,
+        buttonText,
+        buttonUrl,
+      });
+
+      for (const user of users) {
+        const telegramId = String(user?.telegramId || "").trim();
+        if (!telegramId) continue;
+
+        try {
+          await bot.telegram.sendPhoto(telegramId, photoUrl, {
+            caption: text,
+            parse_mode: "HTML",
+            reply_markup: replyMarkup,
+          });
+
+          sent += 1;
+        } catch (e) {
+          failed += 1;
+
+          const description = String(e?.response?.description || e?.message || e || "");
+
+          const isBlocked =
+            description.includes("bot was blocked") ||
+            description.includes("user is deactivated") ||
+            description.includes("chat not found") ||
+            description.includes("Forbidden");
+
+          if (isBlocked) blocked += 1;
+
+          const prevJob = broadcastJobs.get(jobId) || {};
+
+          const prevErrors = Array.isArray(prevJob.lastErrors) ? prevJob.lastErrors : [];
+
+          updateJob({
+
+            lastErrors: [
+
+              ...prevErrors,
+
+              {
+
+                telegramId,
+
+                error: description.slice(0, 300),
+
+              },
+
+            ].slice(-10),
+
+          });
+
+          if (failed <= 20) {
+            console.warn("[BROADCAST PHOTO ASYNC][SEND FAILED]", {
+              jobId,
+              telegramId,
+              error: description,
+            });
+          }
+        }
+
+        if ((sent + failed) % 100 === 0) {
+          console.log("[BROADCAST PHOTO ASYNC][PROGRESS]", {
+            jobId,
+            processed: sent + failed,
+            totalUsers: users.length,
+            sent,
+            failed,
+            blocked,
+          });
+        }
+
+        if ((sent + failed) % 25 === 0 || sent + failed === users.length) {
+
+          updateJob({
+
+            status: "running",
+
+            processed: sent + failed,
+
+            totalUsers: users.length,
+
+            sent,
+
+            failed,
+
+            blocked,
+
+          });
+
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+
+      updateJob({
+
+        status: "done",
+
+        processed: sent + failed,
+
+        totalUsers: users.length,
+
+        sent,
+
+        failed,
+
+        blocked,
+
+        finishedAt: new Date().toISOString(),
+
+      });
+
+      console.log("[BROADCAST PHOTO ASYNC][DONE]", {
+
+        jobId,
+
+        totalUsers: users.length,
+
+        sent,
+
+        failed,
+
+        blocked,
+
+      });
+    });
+  } catch (e) {
+    console.error("admin async photo broadcast error:", e);
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        ok: false,
+        error: "SERVER_ERROR",
+        message: String(e?.message || e),
+      });
+    }
+  }
+});
+
+app.get("/admin/promo-codes", requireAdmin, async (req, res) => {
+  try {
+    const promoCodes = await mongoose.connection
+      .collection(PROMO_CODES_COLLECTION)
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .toArray();
+
+    return res.json({
+      ok: true,
+      promoCodes,
+    });
+  } catch (error) {
+    console.error(
+      "GET /admin/promo-codes error:",
+      error
+    );
+
+    return res.status(500).json({
+      ok: false,
+      error: "PROMO_CODES_LIST_FAILED",
+    });
+  }
+});
+
+app.post("/admin/promo-codes", requireAdmin, async (req, res) => {
+  try {
+    const code = normalizePromoCode(
+      req.body?.code
+    );
+
+    const amountZl = Number(
+      req.body?.amountZl || 0
+    );
+
+    const expiresAtRaw =
+      req.body?.expiresAt;
+
+    let expiresAt = null;
+
+    if (
+      expiresAtRaw !== null &&
+      expiresAtRaw !== undefined &&
+      String(expiresAtRaw).trim() !== ""
+    ) {
+      expiresAt = new Date(
+        expiresAtRaw
+      );
+
+      if (
+        !Number.isFinite(
+          expiresAt.getTime()
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "INVALID_PROMO_CODE_EXPIRES_AT",
+        });
+      }
+
+      if (
+        expiresAt.getTime() <=
+        Date.now()
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "PROMO_CODE_EXPIRATION_MUST_BE_IN_FUTURE",
+        });
+      }
+    }
+
+    if (!code || code.length < 3) {
+      return res.status(400).json({
+        ok: false,
+        error: "INVALID_PROMO_CODE",
+      });
+    }
+
+    if (
+      !Number.isFinite(amountZl) ||
+      amountZl <= 0 ||
+      amountZl > 100000
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "INVALID_PROMO_AMOUNT",
+      });
+    }
+
+    const now = new Date();
+
+    const result = await mongoose.connection
+      .collection(PROMO_CODES_COLLECTION)
+      .findOneAndUpdate(
+        { code },
+
+        {
+          $set: {
+            code,
+
+            amountZl: Number(
+              amountZl.toFixed(2)
+            ),
+
+            isActive: true,
+
+            expiresAt,
+
+            updatedAt: now,
+          },
+
+          $setOnInsert: {
+            createdAt: now,
+
+            createdByTelegramId: String(
+              req.adminTelegramId || ""
+            ),
+
+            activationsCount: 0,
+          },
+        },
+
+        {
+          upsert: true,
+          returnDocument: "after",
+        }
+      );
+
+    const promoCode =
+      result?.value || result;
+
+    return res.json({
+      ok: true,
+      promoCode,
+    });
+  } catch (error) {
+    console.error(
+      "POST /admin/promo-codes error:",
+      error
+    );
+
+    if (
+      String(error?.code || "") === "11000"
+    ) {
+      return res.status(409).json({
+        ok: false,
+        error: "PROMO_CODE_ALREADY_EXISTS",
+      });
+    }
+
+    return res.status(500).json({
+      ok: false,
+      error: "PROMO_CODE_SAVE_FAILED",
+    });
+  }
+});
+
+app.patch(
+  "/admin/promo-codes/:code/toggle",
+  requireAdmin,
+
+  async (req, res) => {
+    try {
+      const code = normalizePromoCode(
+        req.params?.code
+      );
+
+      const existing =
+        await getPromoCodeByCode(code);
+
+      if (!existing) {
+        return res.status(404).json({
+          ok: false,
+          error: "PROMO_NOT_FOUND",
+        });
+      }
+
+      const isActive =
+        existing?.isActive !== true;
+
+      await mongoose.connection
+        .collection(PROMO_CODES_COLLECTION)
+        .updateOne(
+          { code },
+
+          {
+            $set: {
+              isActive,
+              updatedAt: new Date(),
+            },
+          }
+        );
+
+      return res.json({
+        ok: true,
+        code,
+        isActive,
+      });
+    } catch (error) {
+      console.error(
+        "PATCH /admin/promo-codes/:code/toggle error:",
+        error
+      );
+
+      return res.status(500).json({
+        ok: false,
+        error: "PROMO_CODE_TOGGLE_FAILED",
+      });
+    }
+  }
+);
+
+app.get("/admin/users/broadcast-jobs/:jobId", async (req, res) => {
+  try {
+    const adminToken = String(req.headers["x-admin-token"] || "").trim();
+
+    if (!adminToken || adminToken !== String(process.env.ADMIN_API_TOKEN || "").trim()) {
+      return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+    }
+
+    const jobId = String(req.params?.jobId || "").trim();
+    const job = broadcastJobs.get(jobId);
+
+    console.log("[BROADCAST JOB GET]", {
+      jobId,
+      exists: !!job,
+      status: job?.status,
+      processed: job?.processed,
+      totalUsers: job?.totalUsers,
+      sent: job?.sent,
+    });
+
+    if (!job) {
+      return res.status(404).json({
+        ok: false,
+        error: "BROADCAST_JOB_NOT_FOUND",
+        jobId,
+      });
+    }
+
+    return res.json({ ok: true, job });
+  } catch (e) {
+    console.error("broadcast job status error:", e);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+app.patch("/admin/pickup-points/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const b = req.body || {};
+
+    const allow = [
+      "key",
+      "title",
+      "address",
+      "sortOrder",
+      "isActive",
+      "allowedAdminTelegramIds",
+      "notificationChatId",
+      "statsChatId",
+      "statsSendTime",
+      "paymentConfig",
+      "scheduleByDatePatch",
+      "scheduleByDate",
+    ];
+    
+    const update = {};
+    for (const k of allow) if (b[k] !== undefined) update[k] = b[k];
+
+    if (update.key !== undefined) update.key = String(update.key);
+    if (update.title !== undefined) update.title = String(update.title);
+    if (update.address !== undefined) update.address = String(update.address);
+    if (update.sortOrder !== undefined) update.sortOrder = Number(update.sortOrder || 0);
+    if (update.isActive !== undefined) update.isActive = !!update.isActive;
+
+    if (update.allowedAdminTelegramIds !== undefined) {
+      update.allowedAdminTelegramIds = Array.isArray(update.allowedAdminTelegramIds)
+        ? update.allowedAdminTelegramIds.map((x) => String(x)).filter(Boolean)
+        : [];
+    }
+
+    if (update.notificationChatId !== undefined) {
+      update.notificationChatId = String(update.notificationChatId || "").trim();
+    }
+
+    if (update.statsChatId !== undefined) {
+      update.statsChatId = String(update.statsChatId || "").trim();
+    }
+
+    if (update.statsSendTime !== undefined) {
+      update.statsSendTime = String(update.statsSendTime || "23:59").trim();
+    }
+
+    if (update.scheduleByDate !== undefined) {
+      update.scheduleByDate =
+        update.scheduleByDate && typeof update.scheduleByDate === "object"
+          ? update.scheduleByDate
+          : {};
+    }
+
+    if (update.paymentConfig !== undefined) {
+      const rawMethods = Array.isArray(update.paymentConfig?.methods)
+        ? update.paymentConfig.methods
+        : [];
+
+      update.paymentConfig = {
+        methods: rawMethods
+          .map((m) => ({
+            key: String(m?.key || "").trim(),
+            label: String(m?.label || "").trim(),
+            detailsValue: String(m?.detailsValue || "").trim(),
+            badge: String(m?.badge || "").trim(),
+            isActive: m?.isActive !== false,
+          }))
+          .filter((m) => m.key),
+      };
+    }
+
+    if (
+      update.scheduleByDatePatch !==
+      undefined
+    ) {
+      const patch =
+        update.scheduleByDatePatch &&
+        typeof update.scheduleByDatePatch ===
+          "object" &&
+        !Array.isArray(
+          update.scheduleByDatePatch
+        )
+          ? update.scheduleByDatePatch
+          : {};
+
+      const existingPoint =
+        await PickupPoint.findById(
+          id
+        ).lean();
+
+      if (!existingPoint) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Pickup point not found",
+        });
+      }
+
+      const currentSchedule =
+        existingPoint.scheduleByDate &&
+        typeof existingPoint
+          .scheduleByDate === "object"
+          ? {
+              ...existingPoint
+                .scheduleByDate,
+            }
+          : {};
+
+      const datePattern =
+        /^\d{4}-\d{2}-\d{2}$/;
+
+      const timePattern =
+        /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+      const timeToMinutes = (
+        value
+      ) => {
+        const [hours, minutes] =
+          String(value)
+            .split(":")
+            .map(Number);
+
+        return (
+          hours * 60 + minutes
+        );
+      };
+
+      for (
+        const [dateKey, value] of
+          Object.entries(patch)
+      ) {
+        /*
+        * Проверка формата даты.
+        */
+        if (
+          !datePattern.test(dateKey)
+        ) {
+          return res
+            .status(400)
+            .json({
+              ok: false,
+              error:
+                "INVALID_SCHEDULE_DATE_KEY",
+              dateKey,
+            });
+        }
+
+        /*
+        * Проверка существования даты.
+        */
+        const [
+          year,
+          month,
+          day,
+        ] = dateKey
+          .split("-")
+          .map(Number);
+
+        const parsedDate =
+          new Date(
+            Date.UTC(
+              year,
+              month - 1,
+              day
+            )
+          );
+
+        const isRealDate =
+          parsedDate.getUTCFullYear() ===
+            year &&
+          parsedDate.getUTCMonth() ===
+            month - 1 &&
+          parsedDate.getUTCDate() ===
+            day;
+
+        if (!isRealDate) {
+          return res
+            .status(400)
+            .json({
+              ok: false,
+              error:
+                "INVALID_SCHEDULE_DATE",
+              dateKey,
+            });
+        }
+
+        const isOpen =
+          value?.isOpen === true;
+
+        /*
+        * Закрытый день.
+        */
+        if (!isOpen) {
+          currentSchedule[dateKey] = {
+            isOpen: false,
+
+            from: "",
+            to: "",
+
+            openFrom: "",
+            openTo: "",
+
+            periods: [],
+
+            note: String(
+              value?.note ||
+                "закрыто"
+            ).trim(),
+          };
+
+          continue;
+        }
+
+        /*
+        * Рабочий день.
+        */
+        const sourcePeriods =
+          Array.isArray(
+            value?.periods
+          )
+            ? value.periods
+            : [];
+
+        if (
+          !sourcePeriods.length
+        ) {
+          return res
+            .status(400)
+            .json({
+              ok: false,
+              error:
+                "SCHEDULE_PERIODS_REQUIRED",
+              dateKey,
+            });
+        }
+
+        if (
+          sourcePeriods.length > 8
+        ) {
+          return res
+            .status(400)
+            .json({
+              ok: false,
+              error:
+                "TOO_MANY_SCHEDULE_PERIODS",
+              dateKey,
+            });
+        }
+
+        const periods = [];
+
+        for (
+          const sourcePeriod of
+            sourcePeriods
+        ) {
+          const from = String(
+            sourcePeriod?.from ||
+              sourcePeriod?.openFrom ||
+              ""
+          ).trim();
+
+          const to = String(
+            sourcePeriod?.to ||
+              sourcePeriod?.openTo ||
+              ""
+          ).trim();
+
+          if (
+            !timePattern.test(from) ||
+            !timePattern.test(to)
+          ) {
+            return res
+              .status(400)
+              .json({
+                ok: false,
+                error:
+                  "INVALID_SCHEDULE_TIME",
+                dateKey,
+                period:
+                  sourcePeriod,
+              });
+          }
+
+          const fromMinutes =
+            timeToMinutes(from);
+
+          const toMinutes =
+            timeToMinutes(to);
+
+          if (
+            toMinutes <=
+            fromMinutes
+          ) {
+            return res
+              .status(400)
+              .json({
+                ok: false,
+                error:
+                  "INVALID_SCHEDULE_PERIOD",
+                dateKey,
+                period:
+                  sourcePeriod,
+              });
+          }
+
+          periods.push({
+            openFrom: from,
+            openTo: to,
+
+            from,
+            to,
+
+            fromMinutes,
+            toMinutes,
+          });
+        }
+
+        /*
+        * Сортируем периоды.
+        */
+        periods.sort(
+          (a, b) =>
+            a.fromMinutes -
+            b.fromMinutes
+        );
+
+        /*
+        * Проверяем пересечения.
+        */
+        for (
+          let index = 1;
+          index < periods.length;
+          index += 1
+        ) {
+          if (
+            periods[index]
+              .fromMinutes <
+            periods[index - 1]
+              .toMinutes
+          ) {
+            return res
+              .status(400)
+              .json({
+                ok: false,
+                error:
+                  "SCHEDULE_PERIODS_OVERLAP",
+                dateKey,
+              });
+          }
+        }
+
+        const normalizedPeriods =
+          periods.map(
+            ({
+              openFrom,
+              openTo,
+              from,
+              to,
+            }) => ({
+              openFrom,
+              openTo,
+              from,
+              to,
+            })
+          );
+
+        currentSchedule[
+          dateKey
+        ] = {
+          isOpen: true,
+
+          from:
+            normalizedPeriods[0]
+              .from,
+
+          to:
+            normalizedPeriods[
+              normalizedPeriods.length -
+                1
+            ].to,
+
+          openFrom:
+            normalizedPeriods[0]
+              .openFrom,
+
+          openTo:
+            normalizedPeriods[
+              normalizedPeriods.length -
+                1
+            ].openTo,
+
+          periods:
+            normalizedPeriods,
+
+          note: String(
+            value?.note ||
+              normalizedPeriods
+                .map(
+                  (period) =>
+                    `${period.from}-${period.to}`
+                )
+                .join(", ")
+          ).trim(),
+        };
+      }
+
+      update.scheduleByDate =
+        currentSchedule;
+
+      delete update
+        .scheduleByDatePatch;
+    }
+
+    const updated = await PickupPoint.findByIdAndUpdate(id, update, { new: true });
+    cacheInvalidate("pickup-points");
+    if (!updated) return res.status(404).json({ ok: false, error: "Pickup point not found" });
+
+    res.json({ ok: true, pickupPoint: updated });
+  } catch (e) {
+    console.error("PATCH /admin/pickup-points/:id error:", e);
+    if (e?.code === 11000) return res.status(409).json({ ok: false, error: "Pickup point key already exists" });
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.delete("/admin/pickup-points/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deleted = await PickupPoint.findByIdAndDelete(id);
+    if (!deleted) return res.status(404).json({ ok: false, error: "Pickup point not found" });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("DELETE /admin/pickup-points/:id error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Public: categories =====
+
+app.get("/categories", async (req, res) => {
+  try {
+    const onlyActive = String(req.query.active || "1") === "1";
+    const cacheKey = `categories:${onlyActive ? "1" : "0"}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const filter = onlyActive ? { isActive: true } : {};
+    const categories = await Category.find(filter).sort({ sortOrder: 1, createdAt: -1 }).lean();
+    const payload = { ok: true, categories };
+    cacheSet(cacheKey, payload, 60 * 1000);
+    res.json(payload);
+  } catch (e) {
+    console.error("GET /categories error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Admin: создать категорию =====
+app.post("/admin/categories", requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    if (!b.title) {
+      return res.status(400).json({ ok: false, error: "title is required" });
+    }
+
+    // auto key if omitted
+    const rawTitle = String(b.title || "");
+    const baseKey = b.key ? String(b.key) : translitRuToLat(rawTitle);
+    const finalKey = await ensureUniqueCategoryKey(baseKey);
+
+    const created = await Category.create({
+      key: finalKey,
+      title: String(b.title),
+      isActive: b.isActive ?? true,
+
+      cardBgUrl: b.cardBgUrl || "",
+      cardDuckUrl: b.cardDuckUrl || "",
+      classCardDuck: b.classCardDuck || "",
+      titleClass: b.titleClass || "cardTitle",
+      showOverlay: !!b.showOverlay,
+      badgeText: b.badgeText || "",
+      badgeSide: (b.badgeSide === "right" ? "right" : "left"),
+      sortOrder: Number(b.sortOrder || 0),
+    });
+
+    return res.json({ ok: true, category: created });
+  } catch (e) {
+    console.error("POST /admin/categories error:", e);
+    // duplicate key
+    if (e?.code === 11000) {
+      return res.status(409).json({ ok: false, error: "Category key already exists" });
+    }
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Admin: обновить категорию =====
+app.patch("/admin/categories/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const b = req.body || {};
+
+    const update = {};
+    const allow = [
+      "key",
+      "title",
+      "isActive",
+      "cardBgUrl",
+      "cardDuckUrl",
+      "classCardDuck",
+      "titleClass",
+      "showOverlay",
+      "badgeText",
+      "badgeSide",
+      "sortOrder",
+    ];
+
+    for (const k of allow) {
+      if (b[k] !== undefined) update[k] = b[k];
+    }
+
+    if (update.key !== undefined) update.key = String(update.key);
+    if (update.title !== undefined) update.title = String(update.title);
+    if (update.sortOrder !== undefined) update.sortOrder = Number(update.sortOrder || 0);
+    if (update.showOverlay !== undefined) update.showOverlay = !!update.showOverlay;
+    if (update.badgeSide !== undefined) {
+      update.badgeSide = (update.badgeSide === "right" ? "right" : "left");
+    }
+
+    const cat = await Category.findByIdAndUpdate(id, update, { new: true });
+    if (!cat) return res.status(404).json({ ok: false, error: "Category not found" });
+
+    return res.json({ ok: true, category: cat });
+  } catch (e) {
+    console.error("PATCH /admin/categories/:id error:", e);
+    if (e?.code === 11000) {
+      return res.status(409).json({ ok: false, error: "Category key already exists" });
+    }
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Public: получить товары (с фильтром по categoryKey) =====
+
+app.get("/products", async (req, res) => {
+  try {
+    const onlyActive = String(req.query.active || "1") === "1";
+    const categoryKey = req.query.categoryKey ? String(req.query.categoryKey) : "";
+    const cacheKey = `products:${onlyActive ? "1" : "0"}:${categoryKey}`;
+    const cached = cacheGet(cacheKey);
+    if (cached) return res.json(cached);
+
+    const filter = onlyActive ? { isActive: true } : {};
+    if (categoryKey) filter.categoryKey = categoryKey;
+
+    const products = await Product.find(filter).sort({ sortOrder: 1, createdAt: -1 }).lean();
+
+    // totalsByManager (общее количество по товару для каждого менеджера)
+    const withTotals = products.map((p) => {
+      const map = new Map(); // managerTelegramId -> { totalQty, availableFlavorsCount }
+
+      for (const fl of p.flavors || []) {
+        if (fl.isActive === false) continue;
+
+        for (const s of fl.stockByPickupPoint || []) {
+          const mid = String(s.pickupPointId || "");
+          if (!mid) continue;
+
+          const qty = Number(s.totalQty || 0);
+          const cur = map.get(mid) || { pickupPointId: mid, totalQty: 0, availableFlavorsCount: 0 };
+          cur.totalQty += qty;
+          if (qty > 0) cur.availableFlavorsCount += 1;
+
+          map.set(mid, cur);
+        }
+      }
+
+      return { ...p, totalsByPickupPoint: Array.from(map.values()) };
+    });
+
+    const payload = { ok: true, products: withTotals };
+    cacheSet(cacheKey, payload, 30 * 1000);
+    res.json(payload);
+  } catch (e) {
+    console.error("GET /products error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Public: get cart by telegramId =====
+app.get("/cart", async (req, res) => {
+  try {
+    // const telegramId = String(req.query.telegramId || "").trim();
+    // if (!telegramId) {
+    //   return res.status(400).json({ ok: false, error: "telegramId is required" });
+    // }
+
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+
+    const cart = await Cart.findOne({ telegramId }).lean();
+
+    const safeCart =
+      cart || {
+        telegramId,
+        items: [],
+        checkoutDeliveryType: null,
+        checkoutDeliveryMethod: null,
+        checkoutPickupPointId: null,
+        arrivalTime: null,
+      };
+
+    const safeItems = Array.isArray(safeCart.items) ? safeCart.items : [];
+
+    const applied = safeItems.some(
+      (it) => Number(it?.referralFirstOrderDiscountPercent || 0) > 0
+    );
+
+    const percent = applied
+      ? Math.max(
+          0,
+          ...safeItems.map((it) => Number(it?.referralFirstOrderDiscountPercent || 0))
+        )
+      : 0;
+
+    const totalDiscountZl = Number(
+      safeItems
+        .reduce(
+          (sum, it) => sum + Number(it?.referralFirstOrderDiscountTotalZl || 0),
+          0
+        )
+        .toFixed(2)
+    );
+
+    const totalBeforeDiscount = Number(
+      safeItems
+        .reduce((sum, it) => {
+          const qty = Math.max(1, Number(it?.qty || 1));
+          const unitPrice = Number(it?.unitPrice || 0);
+          const discountPerItem = Number(it?.referralFirstOrderDiscountPerItem || 0);
+          return sum + qty * (unitPrice + discountPerItem);
+        }, 0)
+        .toFixed(2)
+    );
+
+    let reason = null;
+
+    if (!applied) {
+      const eligibility = await getIsReferralFirstOrderDiscountEligible(telegramId, safeItems);
+      reason = eligibility?.reason || null;
+    }
+
+    return res.json({
+      ok: true,
+      cart: safeCart,
+      referralFirstOrderDiscount: {
+        eligible: applied
+          ? true
+          : ![
+              "NO_USED_REFERRAL_CODE",
+              "INVITER_NOT_FOUND",
+              "FIRST_ORDER_ALREADY_DONE",
+              "PAID_ORDER_ALREADY_EXISTS",
+            ].includes(reason),
+        applied,
+        percent,
+        totalBeforeDiscount,
+        totalDiscountZl,
+        reason,
+      },
+    });
+  } catch (e) {
+    console.error("GET /cart error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.delete("/cart/item", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+    const itemKey = String(req.body?.itemKey || "").trim();
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: "telegramId is required" });
+    }
+
+    if (!itemKey) {
+      return res.status(400).json({ ok: false, error: "itemKey is required" });
+    }
+
+    const [productKeyRaw, flavorKeyRaw] = itemKey.split("__");
+    const productKey = String(productKeyRaw || "").trim();
+    const flavorKey = String(flavorKeyRaw || "").trim();
+
+    if (!productKey || !flavorKey) {
+      return res.status(400).json({ ok: false, error: "itemKey is invalid" });
+    }
+
+    const cart = await Cart.findOne({ telegramId });
+    if (!cart) {
+      return res.json({ ok: true, cart: { telegramId, items: [] } });
+    }
+
+    const existingItems = Array.isArray(cart.items) ? cart.items : [];
+
+    const itemToRemove = existingItems.find(
+      (it) =>
+        String(it?.productKey || "").trim() === productKey &&
+        String(it?.flavorKey || "").trim() === flavorKey
+    );
+
+    if (!itemToRemove) {
+      return res.json({ ok: true, cart });
+    }
+
+    const removeQty = Math.max(1, Number(itemToRemove?.qty || 1));
+
+    const normId = (v) => String(v || "").trim().replace(/,+$/, "");
+    const toObjId = (v) => {
+      const s = normId(v);
+      return mongoose.isValidObjectId(s) ? new mongoose.Types.ObjectId(s) : null;
+    };
+
+    const [courierPP, inpostPP] = await Promise.all([
+      PickupPoint.findOne({ key: { $in: ["delivery", "delivery,"] } }, { _id: 1, key: 1 }).lean(),
+      PickupPoint.findOne({ key: { $in: ["delivery-2", "delivery-2,"] } }, { _id: 1, key: 1 }).lean(),
+    ]);
+
+    const courierWarehouseId = courierPP?._id || null;
+    const inpostWarehouseId = inpostPP?._id || null;
+
+    const stockContextIdFor = ({ type, method, pickupPointId }) => {
+      if (type === "pickup") return toObjId(pickupPointId);
+      if (type === "delivery") {
+        if (method === "inpost") return inpostWarehouseId;
+        return courierWarehouseId;
+      }
+      return null;
+    };
+
+    const contextId = stockContextIdFor({
+      type: cart.checkoutDeliveryType,
+      method: cart.checkoutDeliveryMethod,
+      pickupPointId: cart.checkoutPickupPointId,
+    });
+
+    const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+
+    if (contextId) {
+      const fkNorm = normFlavorKey(flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+
+      const ppCandidates = [contextId, String(contextId)].filter(Boolean);
+
+      await Product.updateOne(
+        {
+          productKey,
+          "flavors.flavorKey": { $in: fkCandidates },
+          "flavors.stockByPickupPoint.pickupPointId": { $in: ppCandidates },
+        },
+        {
+          $inc: {
+            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": -removeQty,
+          },
+        },
+        {
+          arrayFilters: [
+            { "f.flavorKey": { $in: fkCandidates } },
+            { "s.pickupPointId": { $in: ppCandidates } },
+          ],
+        }
+      );
+
+      await Product.updateOne(
+        {
+          productKey,
+          "flavors.flavorKey": { $in: fkCandidates },
+          "flavors.stockByPickupPoint.pickupPointId": { $in: ppCandidates },
+        },
+        {
+          $max: {
+            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": 0,
+          },
+        },
+        {
+          arrayFilters: [
+            { "f.flavorKey": { $in: fkCandidates } },
+            { "s.pickupPointId": { $in: ppCandidates } },
+          ],
+        }
+      );
+    }
+
+    cart.items = existingItems.filter(
+      (it) =>
+        !(
+          String(it?.productKey || "").trim() === productKey &&
+          String(it?.flavorKey || "").trim() === flavorKey
+        )
+    );
+
+    await cart.save();
+
+    return res.json({ ok: true, cart });
+  } catch (e) {
+    console.error("DELETE /cart/item error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Public: replace cart (save full state) =====
+app.put("/cart", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+
+    const items = Array.isArray(b.items) ? b.items : [];
+
+    const checkoutPickupPointId = b.checkoutPickupPointId || null;
+
+    const checkoutDeliveryType =
+      b.checkoutDeliveryType === "pickup" || b.checkoutDeliveryType === "delivery"
+        ? b.checkoutDeliveryType
+        : null;
+
+    const checkoutDeliveryMethod =
+      b.checkoutDeliveryMethod === "courier" || b.checkoutDeliveryMethod === "inpost"
+        ? b.checkoutDeliveryMethod
+        : null;
+
+      const courierAddress =
+        b.courierAddress === null || b.courierAddress === undefined
+          ? null
+          : String(b.courierAddress || "").trim();
+
+      const arrivalTime =
+        b.arrivalTime === null || b.arrivalTime === undefined
+          ? null
+          : String(b.arrivalTime || "").trim();
+
+      const deliveryPricing = await resolveWarsawDeliveryPricing(courierAddress);
+      const courierDistrict = deliveryPricing.districtLabel || null;
+      const deliveryFeeZl = deliveryPricing.matched ? Number(deliveryPricing.deliveryFeeZl || 0) : 0;
+
+      const deliveryTimeWindow =
+        b.deliveryTimeWindow === null || b.deliveryTimeWindow === undefined
+          ? null
+          : String(b.deliveryTimeWindow || "").trim();
+
+      const inpostDataRaw = b.inpostData && typeof b.inpostData === "object" ? b.inpostData : {};
+
+      const inpostData = {
+        fullName:
+          inpostDataRaw.fullName === null || inpostDataRaw.fullName === undefined
+            ? null
+            : String(inpostDataRaw.fullName || "").trim(),
+        phone:
+          inpostDataRaw.phone === null || inpostDataRaw.phone === undefined
+            ? null
+            : String(inpostDataRaw.phone || "").trim(),
+        email:
+          inpostDataRaw.email === null || inpostDataRaw.email === undefined
+            ? null
+            : String(inpostDataRaw.email || "").trim(),
+        city:
+          inpostDataRaw.city === null || inpostDataRaw.city === undefined
+            ? null
+            : String(inpostDataRaw.city || "").trim(),
+        lockerAddress:
+          inpostDataRaw.lockerAddress === null || inpostDataRaw.lockerAddress === undefined
+            ? null
+            : String(inpostDataRaw.lockerAddress || "").trim(),
+      };
+
+
+    const comment =
+      b.comment === null || b.comment === undefined
+        ? null
+        : String(b.comment || "").trim().slice(0, 500) || null;
+
+    const forceCheckoutSelection = !!b.forceCheckoutSelection;
+
+    // минимальная нормализация
+    const cleanItemsBase = items
+      .map((it) => ({
+        productKey: String(it.productKey || "").trim(),
+        flavorKey: String(it.flavorKey || "").trim(),
+        qty: Math.max(1, Number(it.qty || 1)),
+
+        // цена будет пересчитана ниже по smart-price логике
+        unitPrice: Number(it.unitPrice || 0),
+        baseUnitPrice: Number(it.baseUnitPrice || it.unitPrice || 0),
+        referralFirstOrderDiscountPercent: Number(it.referralFirstOrderDiscountPercent || 0),
+        referralFirstOrderDiscountPerItem: Number(it.referralFirstOrderDiscountPerItem || 0),
+        referralFirstOrderDiscountTotalZl: Number(it.referralFirstOrderDiscountTotalZl || 0),
+
+        // для UI вкуса
+        flavorLabel: String(it.flavorLabel || ""),
+        gradient: Array.isArray(it.gradient) ? it.gradient.slice(0, 2) : [],
+      }))
+      .filter((it) => it.productKey && it.flavorKey);
+
+    const pricingProductKeys = Array.from(
+      new Set(cleanItemsBase.map((it) => String(it.productKey || "").trim()).filter(Boolean))
+    );
+
+    const pricingProducts = pricingProductKeys.length
+      ? await Product.find(
+          { productKey: { $in: pricingProductKeys } },
+          { productKey: 1, categoryKey: 1, price: 1, title1: 1, title2: 1 }
+        ).lean()
+      : [];
+
+  const { repricedItems: smartPricedItems, smartPricingMeta } =
+    repriceCartItemsWithSmartPricing(cleanItemsBase, pricingProducts);
+
+  const referralFirstOrderDiscountEligibility =
+    await getIsReferralFirstOrderDiscountEligible(telegramId, smartPricedItems);
+
+  const {
+    items: cleanItems,
+    meta: referralFirstOrderDiscountMeta,
+  } = referralFirstOrderDiscountEligibility.eligible
+    ? applyReferralFirstOrderDiscountToCartItems(
+        smartPricedItems,
+        referralFirstOrderDiscountEligibility.percent
+      )
+    : {
+        items: smartPricedItems.map((it) => ({
+          ...it,
+          referralFirstOrderDiscountPercent: 0,
+          referralFirstOrderDiscountPerItem: 0,
+          referralFirstOrderDiscountTotalZl: 0,
+        })),
+        meta: {
+          applied: false,
+          usedCode: String(referralFirstOrderDiscountEligibility.usedCode || "").trim(),
+          percent: 0,
+          totalBeforeDiscount: referralFirstOrderDiscountEligibility.totalBeforeDiscount,
+          totalDiscountZl: 0,
+          reason: referralFirstOrderDiscountEligibility.reason,
+        },
+      };
+
+    const existing = await Cart.findOne({ telegramId }).lean();
+
+    const prevType = existing?.checkoutDeliveryType ?? null;
+    const prevMethod = existing?.checkoutDeliveryMethod ?? null;
+    const prevPickup = existing?.checkoutPickupPointId ?? null;
+
+    const existingItemsCount = Array.isArray(existing?.items) ? existing.items.length : 0;
+    const nextItemsCount = Array.isArray(cleanItems) ? cleanItems.length : 0;
+
+    const isStartingNewCart = existingItemsCount === 0 && nextItemsCount > 0;
+    const isClearingCart = nextItemsCount === 0;
+
+    const finalCheckoutDeliveryType = isClearingCart
+      ? null
+      : isStartingNewCart && checkoutDeliveryType
+      ? checkoutDeliveryType
+      : forceCheckoutSelection && checkoutDeliveryType
+      ? checkoutDeliveryType
+      : String(existing?.checkoutDeliveryType || checkoutDeliveryType || "pickup");
+
+    const finalCheckoutDeliveryMethod =
+      finalCheckoutDeliveryType === "delivery"
+        ? (isStartingNewCart && checkoutDeliveryMethod
+            ? checkoutDeliveryMethod
+            : forceCheckoutSelection && checkoutDeliveryMethod
+            ? checkoutDeliveryMethod
+            : String(existing?.checkoutDeliveryMethod || checkoutDeliveryMethod || "courier"))
+        : "courier";
+
+    const products = await Product.find(
+      {
+        productKey: {
+          $in: [...new Set(cleanItems.map((it) => String(it?.productKey || "").trim()).filter(Boolean))],
+        },
+      },
+      {
+        productKey: 1,
+        price: 1,
+        categoryKey: 1,
+      }
+    ).lean();
+
+
+const inpostPricing =
+  finalCheckoutDeliveryType === "delivery" && finalCheckoutDeliveryMethod === "inpost"
+    ? resolveInpostDeliveryPricing(cleanItems, products)
+    : { packageUnits: 0, deliveryFeeZl: 0 };
+
+    const finalCheckoutPickupPointId = isClearingCart
+      ? null
+      : finalCheckoutDeliveryType !== "pickup"
+      ? null
+      : isStartingNewCart
+      ? checkoutPickupPointId
+      : forceCheckoutSelection
+      ? checkoutPickupPointId
+      : (prevPickup ?? checkoutPickupPointId ?? null);
+
+    // ✅ Guard: pickup requires a pickup point when cart has items
+    if (finalCheckoutDeliveryType === "pickup" && !finalCheckoutPickupPointId && cleanItems.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        error: "pickupPointId is required for pickup when cart has items",
+      });
+    }
+
+    // if (
+    //   forceCheckoutSelection &&
+    //   finalCheckoutDeliveryType === "delivery" &&
+    //   finalCheckoutDeliveryMethod === "courier" &&
+    //   cleanItems.length > 0
+    // ) {
+    //   if (!String(courierAddress || "").trim()) {
+    //     return res.status(400).json({
+    //       ok: false,
+    //       field: "courierAddress",
+    //       error: "Для доставки курьером нужно заполнить адрес доставки.",
+    //     });
+    //   }
+
+    //   if (!String(deliveryTimeWindow || "").trim()) {
+    //     return res.status(400).json({
+    //       ok: false,
+    //       field: "deliveryTimeWindow",
+    //       error: "Для доставки курьером нужно выбрать временной промежуток",
+    //     });
+    //   }
+    // }
+
+    // ================= STOCK RESERVATION (reservedQty) =================
+    // Goal: when items are in the cart, we reserve their qty on the selected stock context
+    // (pickup point OR delivery warehouse), so other users can't over-buy.
+
+    const normPPKey = (v) => String(v || "").trim().toLowerCase().replace(/,+$/, "");
+
+    // Delivery warehouses are stored as PickupPoints with key "delivery" and "delivery-2"
+    const [courierPP, inpostPP] = await Promise.all([
+      PickupPoint.findOne({ key: { $in: ["delivery", "delivery,"] } }, { _id: 1, key: 1 }).lean(),
+      PickupPoint.findOne({ key: { $in: ["delivery-2", "delivery-2,"] } }, { _id: 1, key: 1 }).lean(),
+    ]);
+
+    const courierWarehouseId = courierPP?._id || null;
+    const inpostWarehouseId = inpostPP?._id || null;
+
+    const normId = (v) => String(v || "").trim().replace(/,+$/, "");
+    const toObjId = (v) => {
+      const s = normId(v);
+      return mongoose.isValidObjectId(s) ? new mongoose.Types.ObjectId(s) : null;
+    };
+
+    const stockContextIdFor = ({ type, method, pickupPointId }) => {
+      if (type === "pickup") return toObjId(pickupPointId);
+      if (type === "delivery") {
+        if (method === "inpost") return inpostWarehouseId;
+        return courierWarehouseId;
+      }
+      return null;
+    };
+
+    const getLinkedContextIds = async (contextId) => {
+      if (!contextId) return [];
+      const ids = await getSyncedPickupPointIdsByAnyPoint(contextId);
+      return ids.map((id) => toObjId(id)).filter(Boolean);
+    };
+
+    const prevContextId = stockContextIdFor({
+      type: prevType,
+      method: prevMethod,
+      pickupPointId: prevPickup,
+    });
+
+    const nextContextId = stockContextIdFor({
+      type: finalCheckoutDeliveryType,
+      method: finalCheckoutDeliveryMethod,
+      pickupPointId: finalCheckoutPickupPointId,
+    });
+
+    const nextStockContextId = nextContextId ? String(nextContextId) : "";
+
+    const existingCartAutoClearAt = existing?.cartAutoClearAt
+      ? new Date(existing.cartAutoClearAt)
+      : null;
+
+    const cleanItemsWithReserveContext = cleanItems.map((item) => ({
+      ...item,
+      stockContextId: nextStockContextId,
+      reservedContextId: nextStockContextId,
+    }));
+
+    // ===== DEBUG: stock context mismatch catcher =====
+    const dbg = {
+      telegramId,
+      prev: {
+        type: prevType,
+        method: prevMethod,
+        pickupPointId: prevPickup,
+        contextId: prevContextId ? String(prevContextId) : null,
+      },
+      next: {
+        type: finalCheckoutDeliveryType,
+        method: finalCheckoutDeliveryMethod,
+        pickupPointId: finalCheckoutPickupPointId,
+        contextId: nextContextId ? String(nextContextId) : null,
+      },
+      deliveryWarehouses: {
+        courierWarehouseId: courierWarehouseId ? String(courierWarehouseId) : null,
+        inpostWarehouseId: inpostWarehouseId ? String(inpostWarehouseId) : null,
+      },
+      cartCounts: {
+        prevItems: Array.isArray(existing?.items) ? existing.items.length : 0,
+        nextItems: Array.isArray(cleanItems) ? cleanItems.length : 0,
+      },
+    };
+
+    console.log("[CART][CTX]", JSON.stringify(dbg));
+
+    if (cleanItems.length && !nextContextId) {
+      console.warn("[CART][CTX][WARN] Items present but nextContextId is null — reservation will NOT be applied", JSON.stringify(dbg));
+    }
+
+    if (prevContextId && nextContextId && String(prevContextId) !== String(nextContextId)) {
+      console.warn("[CART][CTX][WARN] Context changed — will release prev and reserve next", JSON.stringify(dbg));
+    }
+    // ===== /DEBUG =====
+
+    const sumItems = (itemsArr) => {
+      const map = new Map();
+      for (const it of Array.isArray(itemsArr) ? itemsArr : []) {
+        const pk = String(it.productKey || "").trim();
+        const fk = String(it.flavorKey || "").trim();
+        if (!pk || !fk) continue;
+        const key = `${pk}__${fk}`;
+        const qty = Math.max(1, Number(it.qty || 1));
+        map.set(key, (map.get(key) || 0) + qty);
+      }
+      return map;
+    };
+
+    const prevSum = sumItems(existing?.items);
+    const nextSum = sumItems(cleanItemsWithReserveContext);
+
+    const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+
+    const checkReserveAvailable = async ({ productKey, flavorKey, pickupPointId, delta }) => {
+        const normId = (v) => String(v || "").trim().replace(/,+$/, "");
+        const toObjId = (v) => {
+          if (v instanceof mongoose.Types.ObjectId) return v;
+          if (v && typeof v === "object" && mongoose.isValidObjectId(String(v))) {
+            return new mongoose.Types.ObjectId(String(v));
+          }
+          const s = normId(v);
+          return mongoose.isValidObjectId(s) ? new mongoose.Types.ObjectId(s) : null;
+        };
+
+      const ppObj = toObjId(pickupPointId);
+      if (!ppObj) return;
+
+      if (!Number.isFinite(delta) || delta <= 0) return;
+
+      const linkedPointIds = await getLinkedContextIds(ppObj);
+      const pointIdsToCheck = linkedPointIds.length ? linkedPointIds : [ppObj];
+
+      const fkNorm = normFlavorKey(flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+
+      const prod = await Product.findOne(
+        { productKey, "flavors.flavorKey": { $in: fkCandidates } },
+        { flavors: 1 }
+      ).lean();
+
+      const fl = (prod?.flavors || []).find((f) =>
+        fkCandidates.includes(String(f?.flavorKey || "").trim())
+      );
+
+      if (!fl) {
+        const err = new Error("RESERVE_CONFLICT");
+        err.meta = {
+          productKey,
+          flavorKey: fkCandidates[0],
+          pickupPointId: String(ppObj),
+          total: 0,
+          reserved: 0,
+          delta,
+          reason: "FLAVOR_NOT_FOUND",
+        };
+        throw err;
+      }
+
+      const stockRows = (fl.stockByPickupPoint || []).filter((s) =>
+        pointIdsToCheck.some((pointId) => String(s?.pickupPointId) === String(pointId))
+      );
+
+      const total = stockRows.length
+        ? Math.min(...stockRows.map((row) => Number(row?.totalQty || 0)))
+        : 0;
+
+      const reserved = stockRows.length
+        ? Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)))
+        : 0;
+
+      const available = Math.max(0, total - reserved);
+
+      if (available < delta) {
+        const err = new Error("RESERVE_CONFLICT");
+        err.meta = {
+          productKey,
+          flavorKey: fkCandidates[0],
+          pickupPointId: String(ppObj),
+          total,
+          reserved,
+          delta,
+          reason: "NOT_ENOUGH_AVAILABLE",
+        };
+        throw err;
+      }
+    };
+
+    const applyReservedDelta = async ({ productKey, flavorKey, pickupPointId, delta }) => {
+      const normId = (v) => String(v || "").trim().replace(/,+$/, "");
+      const toObjId = (v) => {
+        if (v instanceof mongoose.Types.ObjectId) return v;
+        if (v && typeof v === "object" && mongoose.isValidObjectId(String(v))) {
+          return new mongoose.Types.ObjectId(String(v));
+        }
+        const s = normId(v);
+        return mongoose.isValidObjectId(s) ? new mongoose.Types.ObjectId(s) : null;
+      };
+
+      const ppObj = toObjId(pickupPointId);
+      if (!ppObj) return;
+      if (!Number.isFinite(delta) || delta === 0) return;
+
+      const linkedPointIds = await getLinkedContextIds(ppObj);
+      const pointIdsToApply = linkedPointIds.length ? linkedPointIds : [ppObj];
+
+      const fkNorm = normFlavorKey(flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+
+      console.log("[CART][RESERVE][DELTA]", {
+        telegramId,
+        productKey,
+        flavorKey,
+        pickupPointIds: pointIdsToApply.map((id) => String(id)),
+        delta,
+        fkCandidates,
+      });
+      const session = await mongoose.startSession();
+      const MAX_RETRIES = 3;
+
+      try {
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            await session.withTransaction(async () => {
+              // 1) читаем нужные данные (внутри транзакции)
+              const prod = await Product.findOne(
+                { productKey, "flavors.flavorKey": { $in: fkCandidates } },
+                { flavors: 1 }
+              ).session(session).lean();
+
+              const fl = (prod?.flavors || []).find((f) =>
+                fkCandidates.includes(String(f?.flavorKey || "").trim())
+              );
+
+              if (!fl) return;
+
+              const rowsByPointId = new Map(
+                (fl.stockByPickupPoint || []).map((row) => [String(row?.pickupPointId || ""), row])
+              );
+
+              // 2) если строки склада нет — создаём для всех синхронизированных точек
+              for (const pointId of pointIdsToApply) {
+                if (rowsByPointId.has(String(pointId))) continue;
+
+                await Product.updateOne(
+                  { productKey, "flavors.flavorKey": { $in: fkCandidates } },
+                  {
+                    $push: {
+                      "flavors.$[f].stockByPickupPoint": {
+                        pickupPointId: pointId,
+                        totalQty: 0,
+                        reservedQty: 0,
+                      },
+                    },
+                  },
+                  {
+                    session,
+                    arrayFilters: [{ "f.flavorKey": { $in: fkCandidates } }],
+                  }
+                );
+              }
+
+              const prod2 = await Product.findOne(
+                { productKey, "flavors.flavorKey": { $in: fkCandidates } },
+                { flavors: 1 }
+              ).session(session).lean();
+
+              const fl2 = (prod2?.flavors || []).find((f) =>
+                fkCandidates.includes(String(f?.flavorKey || "").trim())
+              );
+
+              const linkedRows = (fl2?.stockByPickupPoint || []).filter((row) =>
+                pointIdsToApply.some((pointId) => String(row?.pickupPointId) === String(pointId))
+              );
+
+              const total = linkedRows.length
+                ? Math.min(...linkedRows.map((row) => Number(row?.totalQty || 0)))
+                : 0;
+
+              const reserved = linkedRows.length
+                ? Math.max(...linkedRows.map((row) => Number(row?.reservedQty || 0)))
+                : 0;
+
+              // 3) ГАРД: не даём зарезервировать больше доступного
+              if (delta > 0) {
+                const available = Math.max(0, total - reserved);
+                if (available < delta) {
+                  const err = new Error("RESERVE_CONFLICT");
+                  err.meta = {
+                    productKey,
+                    flavorKey: fkCandidates[0],
+                    pickupPointIds: pointIdsToApply.map((pointId) => String(pointId)),
+                    total,
+                    reserved,
+                    delta,
+                  };
+                  throw err;
+                }
+              }
+
+            // 4) инкремент резерва на всех синхронизированных точках
+            for (const pointId of pointIdsToApply) {
+              await Product.updateOne(
+                {
+                  productKey,
+                  "flavors.flavorKey": { $in: fkCandidates },
+                  "flavors.stockByPickupPoint.pickupPointId": pointId,
+                },
+                {
+                  $inc: {
+                    "flavors.$[f].stockByPickupPoint.$[s].reservedQty": delta,
+                  },
+                },
+                {
+                  session,
+                  arrayFilters: [
+                    { "f.flavorKey": { $in: fkCandidates } },
+                    { "s.pickupPointId": pointId },
+                  ],
+                }
+              );
+            }
+
+            // 5) защита от отрицательного резерва / синхронизация reserve <= total
+            for (const pointId of pointIdsToApply) {
+              await Product.updateOne(
+                { productKey },
+                [
+                  {
+                    $set: {
+                      flavors: {
+                        $map: {
+                          input: "$flavors",
+                          as: "f",
+                          in: {
+                            $cond: [
+                              { $in: ["$$f.flavorKey", fkCandidates] },
+                              {
+                                $mergeObjects: [
+                                  "$$f",
+                                  {
+                                    stockByPickupPoint: {
+                                      $map: {
+                                        input: "$$f.stockByPickupPoint",
+                                        as: "s",
+                                        in: {
+                                          $cond: [
+                                            { $eq: ["$$s.pickupPointId", pointId] },
+                                            {
+                                              $let: {
+                                                vars: {
+                                                  safeTotal: {
+                                                    $max: [0, { $ifNull: ["$$s.totalQty", 0] }],
+                                                  },
+                                                  safeReservedRaw: {
+                                                    $max: [0, { $ifNull: ["$$s.reservedQty", 0] }],
+                                                  },
+                                                },
+                                                in: {
+                                                  $mergeObjects: [
+                                                    "$$s",
+                                                    {
+                                                      totalQty: "$$safeTotal",
+                                                      reservedQty: {
+                                                        $min: ["$$safeReservedRaw", "$$safeTotal"],
+                                                      },
+                                                    },
+                                                  ],
+                                                },
+                                              },
+                                            },
+                                            "$$s",
+                                          ],
+                                        },
+                                      },
+                                    },
+                                  },
+                                ],
+                              },
+                              "$$f",
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  },
+                ],
+                { session }
+              );
+            }
+          });
+
+            // успех — выходим из retry loop
+            return;
+          } catch (e) {
+            if (e && String(e.message) === "RESERVE_CONFLICT") throw e;
+
+            const msg = String(e?.message || "");
+            const isTransient =
+              msg.includes("WriteConflict") ||
+              msg.includes("TransientTransactionError") ||
+              msg.includes("write conflict");
+
+            if (isTransient && attempt < MAX_RETRIES) continue;
+
+            throw e;
+          }
+        }
+      } finally {
+        try { session.endSession(); } catch {}
+      }
+    };
+
+    // Build reservation deltas
+    const deltas = [];
+
+    if (prevContextId && nextContextId && String(prevContextId) === String(nextContextId)) {
+      // same context: apply only diffs
+      const allKeys = new Set([...prevSum.keys(), ...nextSum.keys()]);
+      for (const k of allKeys) {
+        const [productKey, flavorKey] = k.split("__");
+        const before = prevSum.get(k) || 0;
+        const after = nextSum.get(k) || 0;
+        const delta = after - before;
+        if (delta !== 0) deltas.push({ productKey, flavorKey, pickupPointId: nextContextId, delta });
+      }
+    } else {
+      // context changed (or one is missing): release prev, reserve next
+      if (prevContextId) {
+        for (const [k, qty] of prevSum.entries()) {
+          const [productKey, flavorKey] = k.split("__");
+          deltas.push({ productKey, flavorKey, pickupPointId: prevContextId, delta: -qty });
+        }
+      }
+      if (nextContextId) {
+        for (const [k, qty] of nextSum.entries()) {
+          const [productKey, flavorKey] = k.split("__");
+          deltas.push({ productKey, flavorKey, pickupPointId: nextContextId, delta: qty });
+        }
+      }
+    }
+
+    // Apply deltas sequentially (simple + safe). If you ever need speed, we can batch later.
+for (const d of deltas) {
+  if (Number(d.delta) <= 0) continue;
+
+  try {
+    await checkReserveAvailable(d);
+  } catch (e) {
+    if (e?.message === "RESERVE_CONFLICT") {
+      return res.status(409).json({
+        ok: false,
+        error: "OUT_OF_STOCK",
+        message: "Not enough stock to reserve items",
+        meta: e.meta || null,
+      });
+    }
+
+    return res.status(500).json({
+      ok: false,
+      error: "RESERVE_CHECK_FAILED",
+      message: "Failed to check item reserve",
+    });
+  }
+}
+
+for (const d of deltas) {
+  try {
+    await applyReservedDelta(d);
+  } catch (e) {
+    if (e?.message === "RESERVE_CONFLICT") {
+      return res.status(409).json({
+        ok: false,
+        error: "OUT_OF_STOCK",
+        message: "Not enough stock to reserve items",
+        meta: e.meta || null,
+      });
+    }
+
+    console.error("reservedQty update failed", d, e);
+    return res.status(500).json({
+      ok: false,
+      error: "RESERVE_UPDATE_FAILED",
+      message: "Failed to update item reserve",
+    });
+  }
+}
+
+    const hasCartItems = cleanItemsWithReserveContext.length > 0;
+    const hasReserveDelta = deltas.some((d) => Number(d?.delta || 0) !== 0);
+
+    const shouldResetCartAutoClearTimer =
+      hasCartItems && (!existingCartAutoClearAt || hasReserveDelta);
+
+    const cartAutoClearAt = hasCartItems
+      ? shouldResetCartAutoClearTimer
+        ? new Date(Date.now() + Math.max(1, Number(CART_AUTO_CLEAR_AFTER_MINUTES || 10)) * 60 * 1000)
+        : existingCartAutoClearAt
+      : null;
+
+
+    // ================= END STOCK RESERVATION =================
+
+    console.log("[CART][SAVE][FINAL]", {
+      telegramId,
+      deltas,
+      stockContextId: nextStockContextId,
+      cartAutoClearAt,
+      cleanItems: cleanItemsWithReserveContext,
+    });
+
+    const updated = await Cart.findOneAndUpdate(
+      { telegramId },
+      {
+        $set: {
+          telegramId,
+          items: cleanItemsWithReserveContext,
+          stockContextId: isClearingCart ? "" : nextStockContextId,
+          reservedContextId: isClearingCart ? "" : nextStockContextId,
+          cartAutoClearAt,
+
+          checkoutDeliveryType: finalCheckoutDeliveryType,
+          checkoutDeliveryMethod: finalCheckoutDeliveryMethod,
+          checkoutPickupPointId: finalCheckoutPickupPointId,
+
+          checkout: isClearingCart
+            ? {}
+            : {
+                stockContextId: nextStockContextId,
+                reservedContextId: nextStockContextId,
+                deliveryType: finalCheckoutDeliveryType,
+                deliveryMethod: finalCheckoutDeliveryMethod,
+                pickupPointId: finalCheckoutPickupPointId,
+              },
+
+          courierAddress,
+          inpostData,
+          arrivalTime,
+          deliveryTimeWindow,
+          comment,
+
+          courierDistrict:
+            finalCheckoutDeliveryType === "delivery" && finalCheckoutDeliveryMethod === "courier"
+              ? courierDistrict
+              : null,
+
+          deliveryFeeZl:
+            finalCheckoutDeliveryType === "delivery" && finalCheckoutDeliveryMethod === "courier"
+              ? Number(deliveryPricing?.deliveryFeeZl || 0)
+              : 0,
+
+          inpostDeliveryFeeZl:
+            finalCheckoutDeliveryType === "delivery" && finalCheckoutDeliveryMethod === "inpost"
+              ? Number(inpostPricing.deliveryFeeZl || 0)
+              : 0,
+
+          inpostPackageUnits:
+            finalCheckoutDeliveryType === "delivery" && finalCheckoutDeliveryMethod === "inpost"
+              ? Number(inpostPricing.packageUnits || 0)
+              : 0,
+        },
+      },
+      { upsert: true, new: true }
+    ).lean();
+
+    return res.json({
+      ok: true,
+      cart: updated,
+      smartPricingMeta,
+      referralFirstOrderDiscount: {
+        eligible: referralFirstOrderDiscountEligibility.eligible,
+        applied: Boolean(referralFirstOrderDiscountMeta?.applied),
+        usedCode: String(referralFirstOrderDiscountMeta?.usedCode || "").trim(),
+        percent: Number(referralFirstOrderDiscountMeta?.percent || 0),
+        totalBeforeDiscount: Number(referralFirstOrderDiscountMeta?.totalBeforeDiscount || 0),
+        totalDiscountZl: Number(referralFirstOrderDiscountMeta?.totalDiscountZl || 0),
+        reason: referralFirstOrderDiscountEligibility.reason || null,
+      },
+    });
+  } catch (e) {
+    console.error("PUT /cart error:", e);
+    if (String(e?.message || "").trim() === "RESERVE_CONFLICT") {
+  return res.status(409).json({
+    ok: false,
+    error: "OUT_OF_STOCK",
+    meta: e?.meta || null,
+  });
+}
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.post("/orders/confirm", async (req, res) => {
+  console.time("orders/confirm total");
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+
+  console.time("orders/confirm load cart+user");
+
+  const [cart, user] = await Promise.all([
+    Cart.findOne({ telegramId }).lean(),
+    User.findOne(
+      { telegramId },
+      { telegramId: 1, referral: 1 }
+    ).lean(),
+  ]);
+
+  console.timeEnd("orders/confirm load cart+user");
+
+    const referralDiscountMeta = {
+      applied: Array.isArray(cart?.items)
+        ? cart.items.some((it) => Number(it?.referralFirstOrderDiscountTotalZl || 0) > 0)
+        : false,
+
+      usedCode: String(user?.referral?.usedCode || "").trim(),
+
+      percent: Array.isArray(cart?.items)
+        ? Number(
+            cart.items.find((it) => Number(it?.referralFirstOrderDiscountPercent || 0) > 0)
+              ?.referralFirstOrderDiscountPercent || 0
+          )
+        : 0,
+
+      totalDiscountZl: Number(
+        (Array.isArray(cart?.items) ? cart.items : []).reduce((sum, it) => {
+          return sum + Number(it?.referralFirstOrderDiscountTotalZl || 0);
+        }, 0).toFixed(2)
+      ),
+
+      totalBeforeDiscount: Number(
+        (Array.isArray(cart?.items) ? cart.items : []).reduce((sum, it) => {
+          const qty = Math.max(1, Number(it?.qty || 1));
+          const baseUnitPrice = Number(it?.baseUnitPrice || it?.unitPrice || 0);
+          return sum + qty * baseUnitPrice;
+        }, 0).toFixed(2)
+      ),
+    };
+
+    if (!cart || !Array.isArray(cart.items) || cart.items.length === 0) {
+      return res.status(400).json({ ok: false, error: "Cart is empty" });
+    }
+
+    const itemsTotalZl = cart.items.reduce((sum, it) => {
+      const qty = Math.max(1, Number(it.qty || 1));
+      const price = Number(it.unitPrice || 0);
+      return sum + qty * price;
+    }, 0);
+
+    if (cart.checkoutDeliveryType === "delivery" && cart.checkoutDeliveryMethod === "courier") {
+      if (!String(cart?.courierAddress || "").trim()) {
+        return res.status(400).json({
+          ok: false,
+          field: "courierAddress",
+          error: "Для доставки курьером нужно заполнить адрес доставки.",
+        });
+      }
+
+      if (!String(cart?.deliveryTimeWindow || "").trim()) {
+        return res.status(400).json({
+          ok: false,
+          field: "deliveryTimeWindow",
+          error: "Для доставки курьером нужно выбрать временной промежуток",
+        });
+      }
+    }
+
+    // 1) delivery mapping (из Cart -> Order)
+    const deliveryType = cart.checkoutDeliveryType === "pickup" ? "pickup" : "delivery";
+    const deliveryMethod =
+      deliveryType === "delivery"
+        ? (cart.checkoutDeliveryMethod === "inpost"
+            ? "inpost"
+            : (cart.checkoutDeliveryMethod === "courier" ? "courier" : null))
+        : null;
+
+    if (
+      deliveryType === "delivery" &&
+      deliveryMethod === "courier" &&
+      Number(itemsTotalZl || 0) < COURIER_MIN_ORDER_TOTAL_ZL
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "COURIER_MIN_ORDER_NOT_REACHED",
+        field: "courierMinOrder",
+        message: `Courier delivery requires a minimum order of ${COURIER_MIN_ORDER_TOTAL_ZL} PLN`,
+        minOrderZl: COURIER_MIN_ORDER_TOTAL_ZL,
+      });
+    }
+
+    const isFreeCourierDelivery =
+      itemsTotalZl >= FREE_COURIER_DELIVERY_THRESHOLD_ZL;
+
+    const confirmedDeliveryPricing =
+      deliveryType === "delivery" && deliveryMethod === "courier"
+        ? (
+            String(cart?.courierDistrict || "").trim() &&
+            (Number(cart?.deliveryFeeZl || 0) > 0 || isFreeCourierDelivery)
+              ? {
+                  districtLabel: String(cart.courierDistrict || "").trim(),
+                  deliveryFeeZl: isFreeCourierDelivery
+                    ? 0
+                    : Number(cart.deliveryFeeZl || 0),
+                }
+              : await resolveWarsawDeliveryPricing(
+                  cart.courierAddress || "",
+                  itemsTotalZl
+                )
+          )
+        : { districtLabel: null, deliveryFeeZl: 0 };
+
+    if (deliveryType === "delivery" && deliveryMethod === "courier") {
+      const savedCourierDistrict = String(cart?.courierDistrict || "").trim();
+      const savedDeliveryFeeZl = Number(cart?.deliveryFeeZl || 0);
+
+      if (!savedCourierDistrict || (!isFreeCourierDelivery && savedDeliveryFeeZl <= 0)) {
+        const deliveryPricing = await resolveWarsawDeliveryPricing(
+          cart?.courierAddress || "",
+          itemsTotalZl
+        );
+
+        if (!deliveryPricing.matched) {
+          return res.status(400).json({
+            ok: false,
+            field: "courierAddress",
+            error: "Не удалось определить район Варшавы по адресу. Укажите адрес точнее, например: Puławska 12, Warszawa.",
+          });
+        }
+      }
+    }
+
+    const courierDeliveryFeeZl =
+      deliveryType === "delivery" && deliveryMethod === "courier"
+        ? (isFreeCourierDelivery
+            ? 0
+            : Number(confirmedDeliveryPricing?.deliveryFeeZl || cart.deliveryFeeZl || 0))
+        : 0;
+
+    const inpostDeliveryFeeZl =
+
+      deliveryType === "delivery" && deliveryMethod === "inpost"
+
+        ? Number(itemsTotalZl || 0) >= 200
+
+          ? 0
+
+          : Number(cart.inpostDeliveryFeeZl || 0)
+
+        : 0;
+
+    const totalZl = Number((itemsTotalZl + courierDeliveryFeeZl + inpostDeliveryFeeZl).toFixed(2));
+
+    const orderDeliveryFeeZl =
+      deliveryType === "delivery" && deliveryMethod === "courier"
+        ? Number(courierDeliveryFeeZl || 0)
+        : 0;
+
+    const pickupPointId = deliveryType === "pickup" ? (cart.checkoutPickupPointId || null) : null;
+
+    let schedulePoint = null;
+
+    if (deliveryType === "pickup" && pickupPointId) {
+      schedulePoint = await PickupPoint.findById(
+        pickupPointId,
+        { title: 1, address: 1, key: 1, scheduleByDate: 1 }
+      ).lean();
+    } else if (deliveryType === "delivery" && deliveryMethod === "courier") {
+      schedulePoint = await PickupPoint.findOne(
+        { key: { $in: ["delivery", "delivery,"] } },
+        { title: 1, address: 1, key: 1, scheduleByDate: 1 }
+      ).lean();
+    } else if (deliveryType === "delivery" && deliveryMethod === "inpost") {
+      schedulePoint = await PickupPoint.findOne(
+        { key: { $in: ["delivery-2", "delivery-2,"] } },
+        { title: 1, address: 1, key: 1, scheduleByDate: 1 }
+      ).lean();
+    }
+
+    if (schedulePoint) {
+      const isCourierDelivery =
+        deliveryType === "delivery" && deliveryMethod === "courier";
+
+      const openState = getPointOpenStateNow(schedulePoint);
+
+      const courierWindowFitsSchedule = isCourierDelivery
+        ? isTimeWindowInsidePointSchedule(schedulePoint, cart?.deliveryTimeWindow)
+        : false;
+
+      const isPickupOrder = deliveryType === "pickup";
+
+        if (isPickupOrder) {
+          const selectedArrivalTime = String(cart?.arrivalTime || "").trim();
+
+          if (!selectedArrivalTime) {
+            return res.status(400).json({
+              ok: false,
+              field: "arrivalTime",
+              error: "Для самовывоза нужно выбрать время прибытия.",
+            });
+          }
+
+          const selectedArrivalMinutes = timeToMinutes(selectedArrivalTime);
+          const minArrivalMinutes = getWarsawNowMinutes() + 10;
+
+          if (selectedArrivalMinutes < minArrivalMinutes) {
+            return res.status(400).json({
+              ok: false,
+              field: "arrivalTime",
+              error: `Выберите время прибытия не раньше ${minutesToTime(minArrivalMinutes)}.`,
+              minArrivalTime: minutesToTime(minArrivalMinutes),
+            });
+          }
+        }
+
+      // if (
+      //   (isCourierDelivery && !courierWindowFitsSchedule) ||
+      //   (!isCourierDelivery && !openState.isOpen)
+      // ) {
+
+      const pointSchedulePeriods = Array.isArray(openState?.periods)
+        ? openState.periods
+        : [];
+
+      const pointHasWorkingScheduleToday =
+        openState?.reason !== "NO_SCHEDULE" &&
+        openState?.reason !== "CLOSED_TODAY" &&
+        (
+          pointSchedulePeriods.length > 0 ||
+          (String(openState?.openFrom || "").trim() && String(openState?.openTo || "").trim())
+        );
+
+      const scheduleEndMinutesList = pointSchedulePeriods.length
+        ? pointSchedulePeriods
+            .map((p) => timeToMinutes(p?.openTo))
+            .filter((n) => Number.isFinite(n) && n > 0)
+        : [timeToMinutes(openState?.openTo)].filter((n) => Number.isFinite(n) && n > 0);
+
+      const latestScheduleEndMinutes = scheduleEndMinutesList.length
+        ? Math.max(...scheduleEndMinutesList)
+        : 0;
+
+      const isAfterWorkingHoursToday =
+        !isCourierDelivery &&
+        pointHasWorkingScheduleToday &&
+        latestScheduleEndMinutes > 0 &&
+        getWarsawNowMinutes() > latestScheduleEndMinutes;
+
+      if (
+        (isCourierDelivery && !courierWindowFitsSchedule) ||
+        (!isCourierDelivery && !pointHasWorkingScheduleToday) ||
+        isAfterWorkingHoursToday
+      ) {
+        const pointLabel =
+          String(schedulePoint?.title || "").trim() ||
+          String(schedulePoint?.address || "").trim() ||
+          (deliveryType === "delivery" && deliveryMethod === "courier"
+            ? "Курьер"
+            : deliveryType === "delivery" && deliveryMethod === "inpost"
+            ? "InPost"
+            : "Точка самовывоза");
+
+        const scheduleText =
+          Array.isArray(openState?.periods) && openState.periods.length
+            ? `График сегодня: ${openState.periods
+                .map((p) => `${p.openFrom}–${p.openTo}`)
+                .join(", ")}.`
+            : openState.openFrom && openState.openTo
+            ? `График сегодня: ${openState.openFrom}–${openState.openTo}.`
+            : `График на сегодня не настроен.`;
+
+        const selectedWindowText =
+          isCourierDelivery && String(cart?.deliveryTimeWindow || "").trim()
+            ? ` Выбранный промежуток: ${String(cart.deliveryTimeWindow).trim()}.`
+            : "";
+
+        return res.status(400).json({
+
+          ok: false,
+
+          field: "schedule",
+
+          error: isCourierDelivery
+
+            ? `${pointLabel}: выберите время в рамках рабочего графика. ${scheduleText}${selectedWindowText}`
+
+            : isAfterWorkingHoursToday
+
+            ? `${pointLabel}: рабочий день уже закончился. ${scheduleText}`
+
+            : `${pointLabel}: сегодня заказ недоступен. ${scheduleText}`,
+
+        });
+      }
+    }
+
+    // 3) methodLabel (готовая строка для UI)
+    let methodLabel = "";
+    if (deliveryType === "pickup") {
+      if (pickupPointId) {
+        const pp = await PickupPoint.findById(pickupPointId).lean();
+        methodLabel = `Самовывоз — ${pp?.title || pp?.address || "Точка"}`;
+      } else {
+        methodLabel = "Самовывоз";
+      }
+    } else {
+      if (deliveryMethod === "inpost") methodLabel = "Доставка — InPost";
+      else if (deliveryMethod === "courier") methodLabel = "Доставка — Курьер";
+      else methodLabel = "Доставка";
+    }
+
+    // 4) bgUrl from FIRST cart item product
+    const first = cart.items[0];
+    let bgUrl = "";
+    if (first?.productKey) {
+      const prod = await Product.findOne(
+        { productKey: String(first.productKey) },
+        { cardBgUrl: 1 }
+      ).lean();
+
+      bgUrl = String(prod?.cardBgUrl || "");
+    }
+
+    // 5) Собрать items snapshot в твою структуру (product -> flavors[])
+    const productKeys = Array.from(
+      new Set(cart.items.map((it) => String(it.productKey || "").trim()).filter(Boolean))
+    );
+
+    const products = await Product.find(
+      { productKey: { $in: productKeys } },
+      {
+        _id: 1,
+        productKey: 1,
+        title1: 1,
+        title2: 1,
+        orderImgUrl: 1,
+        cardBgUrl: 1,
+        price: 1,
+      }
+    ).lean();
+
+    const prodByKey = new Map(products.map((p) => [String(p.productKey), p]));
+    const byProduct = new Map(); // productKey -> row
+
+    console.time("orders/confirm build order items");
+    for (const it of cart.items) {
+      const pk = String(it.productKey || "").trim();
+      const fk = String(it.flavorKey || "").trim();
+      if (!pk || !fk) continue;
+
+      const qty = Math.max(1, Number(it.qty || 1));
+      const unitPrice = Number(it.unitPrice || 0);
+      const flavorLabel = String(it.flavorLabel || "");
+      const gradient = Array.isArray(it.gradient) ? it.gradient.slice(0, 2) : [];
+
+      const originalBaseUnitPrice = Number(it?.baseUnitPrice || 0);
+      const referralFirstOrderDiscountPerItem = Number(it?.referralFirstOrderDiscountPerItem || 0);
+      const referralFirstOrderDiscountTotalZl = Number(it?.referralFirstOrderDiscountTotalZl || 0);
+
+      const smartDiscountPerItem = Number(
+        Math.max(0, originalBaseUnitPrice - unitPrice - referralFirstOrderDiscountPerItem).toFixed(2)
+      );
+
+      const smartDiscountTotalZl = Number(
+        Math.max(0, smartDiscountPerItem * qty).toFixed(2)
+      );
+
+      const prod = prodByKey.get(pk);
+      if (!prod?._id) continue; // если товар не найден — пропускаем
+
+      const baseUnitPrice = Number(prod?.price || unitPrice || 0);
+
+      let row = byProduct.get(pk);
+      if (!row) {
+        row = {
+          productId: prod._id,
+          productKey: pk,
+          productTitle1: String(prod.title1 || ""),
+          productTitle2: String(prod.title2 || ""),
+          orderImgUrl: String(prod.orderImgUrl || ""),
+          cardBgUrl: String(prod.cardBgUrl || ""),
+          flavorsMap: new Map(), // fk -> flavor snapshot
+        };
+        byProduct.set(pk, row);
+      }
+
+      const prev = row.flavorsMap.get(fk);
+      if (!prev) {
+        row.flavorsMap.set(fk, {
+          flavorKey: fk,
+          qty,
+          unitPrice,
+          baseUnitPrice: Number(originalBaseUnitPrice || baseUnitPrice || unitPrice || 0),
+          smartDiscountPerItem,
+          smartDiscountTotalZl,
+          referralFirstOrderDiscountPercent: Number(it?.referralFirstOrderDiscountPercent || 0),
+          referralFirstOrderDiscountPerItem,
+          referralFirstOrderDiscountTotalZl,
+          flavorLabel,
+          gradient,
+        });
+      } else {
+        prev.qty += qty;
+        if (unitPrice) prev.unitPrice = unitPrice;
+        if (baseUnitPrice) prev.baseUnitPrice = Number(originalBaseUnitPrice || baseUnitPrice || unitPrice || 0);
+
+        prev.smartDiscountPerItem = Number(smartDiscountPerItem || prev.smartDiscountPerItem || 0);
+        prev.smartDiscountTotalZl = Number(
+          (Number(prev.smartDiscountTotalZl || 0) + Number(smartDiscountTotalZl || 0)).toFixed(2)
+        );
+
+        prev.referralFirstOrderDiscountPercent = Number(it?.referralFirstOrderDiscountPercent || prev.referralFirstOrderDiscountPercent || 0);
+        prev.referralFirstOrderDiscountPerItem = Number(referralFirstOrderDiscountPerItem || prev.referralFirstOrderDiscountPerItem || 0);
+        prev.referralFirstOrderDiscountTotalZl = Number(
+          (Number(prev.referralFirstOrderDiscountTotalZl || 0) + Number(referralFirstOrderDiscountTotalZl || 0)).toFixed(2)
+        );
+
+        if (flavorLabel) prev.flavorLabel = flavorLabel;
+        if (gradient.length) prev.gradient = gradient;
+      }
+    }
+
+    const orderItems = Array.from(byProduct.values()).map((row) => ({
+      productId: row.productId,
+      productKey: row.productKey,
+      productTitle1: row.productTitle1,
+      productTitle2: row.productTitle2,
+      orderImgUrl: row.orderImgUrl,
+      cardBgUrl: row.cardBgUrl,
+      flavors: Array.from(row.flavorsMap.values()),
+    }));
+    console.timeEnd("orders/confirm build order items");
+
+    // ================= STOCK CHECK (avoid context mismatch) =================
+    // IMPORTANT: use THE SAME stock context logic as /cart reservations.
+    // Product.flavors.stockByPickupPoint.pickupPointId is ObjectId -> always use ObjectId.
+
+    const normId = (v) => String(v || "").trim().replace(/,+$/, "");
+    const toObjId = (v) => {
+      const s = normId(v);
+      return mongoose.isValidObjectId(s) ? new mongoose.Types.ObjectId(s) : null;
+    };
+
+    // Delivery warehouses are stored as PickupPoints with key "delivery" and "delivery-2"
+    const [courierPP, inpostPP] = await Promise.all([
+      PickupPoint.findOne({ key: { $in: ["delivery", "delivery,"] } }, { _id: 1, key: 1 }).lean(),
+      PickupPoint.findOne({ key: { $in: ["delivery-2", "delivery-2,"] } }, { _id: 1, key: 1 }).lean(),
+    ]);
+
+    const courierWarehouseId = courierPP?._id || null;
+    const inpostWarehouseId = inpostPP?._id || null;
+
+    const stockContextIdFor = ({ type, method, pickupPointId }) => {
+      if (type === "pickup") return toObjId(pickupPointId);
+      if (type === "delivery") {
+        if (method === "inpost") return inpostWarehouseId;
+        return courierWarehouseId;
+      }
+      return null;
+    };
+
+    const contextId = stockContextIdFor({
+      type: cart.checkoutDeliveryType,
+      method: cart.checkoutDeliveryMethod,
+      pickupPointId: cart.checkoutPickupPointId,
+    });
+
+    console.log(
+      "[ORDER][CONFIRM][CTX]",
+      JSON.stringify({
+        telegramId,
+        checkoutDeliveryType: cart.checkoutDeliveryType ?? null,
+        checkoutDeliveryMethod: cart.checkoutDeliveryMethod ?? null,
+        checkoutPickupPointId: cart.checkoutPickupPointId ?? null,
+        contextId: contextId ? String(contextId) : null,
+        deliveryWarehouses: {
+          courierWarehouseId: courierWarehouseId ? String(courierWarehouseId) : null,
+          inpostWarehouseId: inpostWarehouseId ? String(inpostWarehouseId) : null,
+        },
+      })
+    );
+
+    if (!contextId) {
+      return res.status(400).json({ ok: false, error: "Stock context is not set (pickup point / delivery warehouse)" });
+    }
+
+    // Availability check: available = totalQty - reservedQty.
+    // BUT reservedQty already includes THIS cart reservation, so for self-check we add back my qty.
+    const cartSum = new Map(); // key -> qty
+    for (const it of cart.items) {
+      const pk = String(it.productKey || "").trim();
+      const fk = String(it.flavorKey || "").trim();
+      if (!pk || !fk) continue;
+      const key = `${pk}__${fk}`;
+      const q = Math.max(1, Number(it.qty || 1));
+      cartSum.set(key, (cartSum.get(key) || 0) + q);
+    }
+
+    const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+
+    const productKeysForCheck = Array.from(
+      new Set(cart.items.map((it) => String(it.productKey || "").trim()).filter(Boolean))
+    );
+
+    const productsForCheck = await Product.find(
+      { productKey: { $in: productKeysForCheck } },
+      { productKey: 1, title1: 1, title2: 1, flavors: 1 }
+    ).lean();
+
+    const prodByKey2 = new Map(productsForCheck.map((p) => [String(p.productKey), p]));
+
+    const missing = [];
+
+    for (const [k, myQty] of cartSum.entries()) {
+      const [productKey, flavorKey] = k.split("__");
+      const p = prodByKey2.get(productKey);
+
+      if (!p) {
+        missing.push({ productKey, flavorKey, need: myQty, have: 0, reason: "product_not_found" });
+        continue;
+      }
+
+      const fkNorm = normFlavorKey(flavorKey);
+      const fkCandidates = Array.from(new Set([String(flavorKey).trim(), fkNorm, `${fkNorm},`].filter(Boolean)));
+      const flavor = (p.flavors || []).find((f) => fkCandidates.includes(String(f.flavorKey || "").trim()));
+
+      if (!flavor) {
+        missing.push({ productKey, flavorKey, need: myQty, have: 0, reason: "flavor_not_found" });
+        continue;
+      }
+
+      const syncedContextIds = await getSyncedPickupPointIdsByAnyPoint(contextId);
+      const pointIdsToCheck = syncedContextIds.length ? syncedContextIds : [String(contextId)];
+
+      const stockRows = (flavor.stockByPickupPoint || []).filter((s) =>
+        pointIdsToCheck.includes(String(s?.pickupPointId || ""))
+      );
+
+      const total = stockRows.length
+        ? Math.min(...stockRows.map((row) => Number(row?.totalQty || 0)))
+        : 0;
+
+      const reserved = stockRows.length
+        ? Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)))
+        : 0;
+
+      const effectiveHave = Math.max(0, total - reserved + myQty);
+
+      if (effectiveHave < myQty) {
+        missing.push({
+          productKey,
+          flavorKey,
+          need: myQty,
+          have: effectiveHave,
+          total,
+          reserved,
+          syncedContextIds: pointIdsToCheck,
+          reason: "not_enough_stock",
+        });
+      }
+    }
+
+    if (missing.length) {
+      console.warn("[ORDER][CONFIRM][STOCK][MISSING]", JSON.stringify({ telegramId, contextId: String(contextId), missing }));
+      return res.status(409).json({ ok: false, error: "Not enough stock", missing });
+    }
+
+    // ================= /STOCK CHECK =================
+
+    // 6) COMMIT stock: totalQty -= qty AND reservedQty -= qty (ВАЖНО!)
+    // const [courierPP, inpostPP] = await Promise.all([
+    //   PickupPoint.findOne({ key: { $in: ["delivery", "delivery,"] } }, { _id: 1 }).lean(),
+    //   PickupPoint.findOne({ key: { $in: ["delivery-2", "delivery-2,"] } }, { _id: 1 }).lean(),
+    // ]);
+
+    // const courierWarehouseId = courierPP?._id || null;
+    // const inpostWarehouseId = inpostPP?._id || null;
+
+    // const stockContextIdFor = ({ type, method, pickupPointId }) => {
+    //   if (type === "pickup") return pickupPointId || null;
+    //   if (type === "delivery") {
+    //     if (method === "inpost") return inpostWarehouseId;
+    //     return courierWarehouseId;
+    //   }
+    //   return null;
+    // };
+
+    // const contextId = stockContextIdFor({
+    //   type: cart.checkoutDeliveryType,
+    //   method: cart.checkoutDeliveryMethod,
+    //   pickupPointId: cart.checkoutPickupPointId,
+    // });
+
+    // const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+
+    // const applyPurchaseDelta = async ({ productKey, flavorKey, pickupPointId, qty }) => {
+    //   const q = Math.max(1, Number(qty || 1));
+    //   if (!pickupPointId || !productKey || !flavorKey || !Number.isFinite(q) || q <= 0) return;
+
+    //   const ppIdObj = pickupPointId;
+    //   const ppIdStr = String(pickupPointId);
+
+    //   const fkNorm = normFlavorKey(flavorKey);
+    //   const fkCandidates = Array.from(new Set([String(flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean)));
+    //   const ppCandidates = [ppIdObj, ppIdStr].filter(Boolean);
+
+    //   await Product.updateOne(
+    //     {
+    //       productKey,
+    //       "flavors.flavorKey": { $in: fkCandidates },
+    //       "flavors.stockByPickupPoint.pickupPointId": { $in: ppCandidates },
+    //     },
+    //     {
+    //       $inc: {
+    //         "flavors.$[f].stockByPickupPoint.$[s].totalQty": -q,
+    //         "flavors.$[f].stockByPickupPoint.$[s].reservedQty": -q,
+    //       },
+    //     },
+    //     {
+    //       arrayFilters: [
+    //         { "f.flavorKey": { $in: fkCandidates } },
+    //         { "s.pickupPointId": { $in: ppCandidates } },
+    //       ],
+    //     }
+    //   );
+
+    //   // clamp
+    //   await Product.updateOne(
+    //     {
+    //       productKey,
+    //       "flavors.flavorKey": { $in: fkCandidates },
+    //       "flavors.stockByPickupPoint.pickupPointId": { $in: ppCandidates },
+    //     },
+    //     {
+    //       $max: {
+    //         "flavors.$[f].stockByPickupPoint.$[s].totalQty": 0,
+    //         "flavors.$[f].stockByPickupPoint.$[s].reservedQty": 0,
+    //       },
+    //     },
+    //     {
+    //       arrayFilters: [
+    //         { "f.flavorKey": { $in: fkCandidates } },
+    //         { "s.pickupPointId": { $in: ppCandidates } },
+    //       ],
+    //     }
+    //   );
+    // };
+
+    // if (contextId) {
+    //   for (const it of cart.items) {
+    //     const productKey = String(it.productKey || "").trim();
+    //     const flavorKey = String(it.flavorKey || "").trim();
+    //     const qty = Math.max(1, Number(it.qty || 1));
+    //     if (!productKey || !flavorKey) continue;
+    //     await applyPurchaseDelta({ productKey, flavorKey, pickupPointId: contextId, qty });
+    //   }
+    // }
+
+    
+
+    // 7) unique orderNo
+    let orderNo = genOrderNo();
+    for (let i = 0; i < 5; i++) {
+      const exists = await Order.findOne({ orderNo }, { _id: 1 }).lean();
+      if (!exists) break;
+      orderNo = genOrderNo();
+    }
+
+    // 8) create order
+
+    // const isFreeCourierDelivery =
+    //   itemsTotalZl >= FREE_COURIER_DELIVERY_THRESHOLD_ZL;
+
+    // const confirmedDeliveryPricing =
+    //   deliveryType === "delivery" && deliveryMethod === "courier"
+    //     ? (
+    //         String(cart?.courierDistrict || "").trim() &&
+    //         (Number(cart?.deliveryFeeZl || 0) > 0 || isFreeCourierDelivery)
+    //           ? {
+    //               districtLabel: String(cart.courierDistrict || "").trim(),
+    //               deliveryFeeZl: isFreeCourierDelivery
+    //                 ? 0
+    //                 : Number(cart.deliveryFeeZl || 0),
+    //             }
+    //           : await resolveWarsawDeliveryPricing(
+    //               cart.courierAddress || "",
+    //               itemsTotalZl
+    //             )
+    //       )
+    //     : { districtLabel: null, deliveryFeeZl: 0 };
+
+    const confirmedInpostPricing =
+      deliveryType === "delivery" && deliveryMethod === "inpost"
+        ? {
+            packageUnits: Number(cart?.inpostPackageUnits || 0),
+            deliveryFeeZl: Number(itemsTotalZl || 0) >= 200 ? 0 : Number(cart?.inpostDeliveryFeeZl || 0),
+          }
+        : { packageUnits: 0, deliveryFeeZl: 0 };
+
+    const duplicateCreatedAfter = new Date(Date.now() - 15 * 1000);
+
+    const currentOrderFingerprint = JSON.stringify({
+      telegramId,
+      totalZl: Number(totalZl.toFixed(2)),
+      deliveryType,
+      deliveryMethod,
+      pickupPointId: pickupPointId ? String(pickupPointId) : null,
+      arrivalTime: cart.arrivalTime ?? null,
+      deliveryTimeWindow: cart.deliveryTimeWindow ?? null,
+      courierAddress: cart.courierAddress ?? null,
+      inpostData: cart.inpostData ?? {},
+      items: orderItems.map((row) => ({
+        productKey: String(row?.productKey || ""),
+        flavors: (Array.isArray(row?.flavors) ? row.flavors : []).map((f) => ({
+          flavorKey: String(f?.flavorKey || ""),
+          qty: Number(f?.qty || 0),
+          unitPrice: Number(f?.unitPrice || 0),
+        })),
+      })),
+    });
+
+    console.time("orders/confirm duplicate check");
+    const recentDuplicateCandidates = await Order.find(
+      {
+        userTelegramId: telegramId,
+        totalZl: Number(totalZl.toFixed(2)),
+        deliveryType,
+        deliveryMethod,
+        pickupPointId,
+        status: "created",
+        createdAt: { $gte: duplicateCreatedAfter },
+      },
+      {
+        _id: 1,
+        userTelegramId: 1,
+        totalZl: 1,
+        deliveryType: 1,
+        deliveryMethod: 1,
+        pickupPointId: 1,
+        arrivalTime: 1,
+        deliveryTimeWindow: 1,
+        courierAddress: 1,
+        inpostData: 1,
+        items: 1,
+        createdAt: 1,
+      }
+    )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const duplicateOrder = recentDuplicateCandidates.find((existing) => {
+      const existingFingerprint = JSON.stringify({
+        telegramId: String(existing?.userTelegramId || "").trim(),
+        totalZl: Number(existing?.totalZl || 0),
+        deliveryType: existing?.deliveryType || null,
+        deliveryMethod: existing?.deliveryMethod || null,
+        pickupPointId: existing?.pickupPointId ? String(existing.pickupPointId) : null,
+        arrivalTime: existing?.arrivalTime ?? null,
+        deliveryTimeWindow: existing?.deliveryTimeWindow ?? null,
+        courierAddress: existing?.courierAddress ?? null,
+        inpostData: existing?.inpostData ?? {},
+        items: (Array.isArray(existing?.items) ? existing.items : []).map((row) => ({
+          productKey: String(row?.productKey || ""),
+          flavors: (Array.isArray(row?.flavors) ? row.flavors : []).map((f) => ({
+            flavorKey: String(f?.flavorKey || ""),
+            qty: Number(f?.qty || 0),
+            unitPrice: Number(f?.unitPrice || 0),
+          })),
+        })),
+      });
+
+      return existingFingerprint === currentOrderFingerprint;
+    });
+
+    console.timeEnd("orders/confirm duplicate check");
+    if (duplicateOrder) {
+      return res.json({ ok: true, order: duplicateOrder, duplicate: true });
+    }
+    
+    console.time("orders/confirm create order")
+    const created = await Order.create({
+      userTelegramId: telegramId,
+
+      orderNo,
+      totalZl: Number(totalZl.toFixed(2)),
+      currency: "PLN",
+
+      bgUrl,
+      methodLabel,
+
+      deliveryType,
+      deliveryMethod,
+      pickupPointId,
+
+      arrivalTime: cart.arrivalTime ?? null,
+      deliveryTimeWindow: cart.deliveryTimeWindow ?? null,
+      comment: String(
+
+        req.body?.comment ?? cart?.comment ?? ""
+
+      )
+
+        .trim()
+
+        .slice(0, 500) || null,
+      courierAddress: cart.courierAddress ?? null,
+      inpostData: cart.inpostData ?? {},
+
+      courierDistrict:
+        deliveryType === "delivery" && deliveryMethod === "courier"
+          ? (confirmedDeliveryPricing.districtLabel || cart.courierDistrict || null)
+          : null,
+
+      deliveryFeeZl: orderDeliveryFeeZl,
+
+      inpostDeliveryFeeZl:
+        deliveryType === "delivery" && deliveryMethod === "inpost"
+          ? Number(confirmedInpostPricing.deliveryFeeZl || 0)
+          : 0,
+
+      inpostPackageUnits:
+        deliveryType === "delivery" && deliveryMethod === "inpost"
+          ? Number(confirmedInpostPricing.packageUnits || 0)
+          : 0,
+
+      items: orderItems,
+
+      payment: {
+        status: "unpaid",
+        amountZl: Number(totalZl.toFixed(2)),
+        referralUsedCode: referralDiscountMeta.usedCode,
+        referralFirstOrderDiscountApplied: Boolean(referralDiscountMeta.applied),
+        referralFirstOrderDiscountPercent: Number(referralDiscountMeta.percent || 0),
+        referralFirstOrderDiscountTotalZl: Number(referralDiscountMeta.totalDiscountZl || 0),
+        subtotalBeforeReferralDiscountZl: Number(referralDiscountMeta.totalBeforeDiscount || 0),
+        totalBeforeReferralDiscountZl: Number(referralDiscountMeta.totalBeforeDiscount || 0),
+      },
+
+      status: "created",
+      // ✅ заказ создан: товар остаётся в reservedQty (как в корзине)
+      stockReservedAt: new Date(),
+      stockCommittedAt: null,
+      stockReleasedAt: null,
+    });
+
+    // 9) clear cart
+    console.time("orders/confirm clear cart");
+    await Cart.updateOne(
+      { telegramId },
+      {
+        $set: {
+          items: [],
+          checkout: {},
+          stockContextId: "",
+          reservedContextId: "",
+          cartAutoClearAt: null,
+          staleClearedAt: null,
+          checkoutDeliveryType: null,
+          checkoutDeliveryMethod: null,
+          checkoutPickupPointId: null,
+          arrivalTime: null,
+          deliveryTimeWindow: null,
+          comment: "",
+          courierAddress: null,
+          courierDistrict: null,
+          deliveryFeeZl: 0,
+          inpostDeliveryFeeZl: 0,
+          inpostPackageUnits: 0,
+          inpostData: {
+            fullName: null,
+            phone: null,
+            email: null,
+            city: null,
+            lockerAddress: null,
+          },
+        },
+      }
+    );
+    console.timeEnd("orders/confirm clear cart");
+
+    console.timeEnd("orders/confirm total");
+    res.json({ ok: true, order: created });
+
+    Promise.resolve()
+      .then(() => sendClientOrderCreatedInfo(created))
+      .catch((e) => console.error("sendClientOrderCreatedInfo post-response error:", e));
+
+    Promise.resolve()
+      .then(() => startPaymentReminder(created))
+      .catch((e) => console.error("startPaymentReminder post-response error:", e));
+
+    // Promise.resolve()
+    //   .then(() => sendOrderCreatedNotification(created))
+    //   .catch((e) => console.error("sendOrderCreatedNotification post-response error:", e));
+
+    return;
+  } catch (e) {
+    console.error("POST /orders/confirm error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Public: cancel order by user =====
+app.post("/orders/:id/cancel", async (req, res) => {
+  try {
+    const orderId = String(req.params.id || "").trim();
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+
+    if (!orderId) {
+      return res.status(400).json({ ok: false, error: "orderId is required" });
+    }
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: "telegramId is required" });
+    }
+
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    if (String(order.userTelegramId || "") !== telegramId) {
+      return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+    }
+
+    const status = String(order.status || "").toLowerCase();
+
+    if (status === "completed") {
+      return res.status(400).json({
+        ok: false,
+        error: "COMPLETED_ORDER_CANNOT_BE_CANCELED",
+      });
+    }
+
+    if (status === "canceled") {
+      return res.json({ ok: true, order });
+    }
+
+    if (!order.stockReleasedAt) {
+      await releaseOrderReservedStock(order);
+      order.stockReleasedAt = new Date();
+    }
+
+    await refundOrderCashback(order);
+
+    const freshOrderAfterRefund = await Order.findById(order._id);
+    if (!freshOrderAfterRefund) {
+      throw new Error("ORDER_NOT_FOUND_AFTER_REFUND");
+    }
+
+    order.payment = {
+      ...(freshOrderAfterRefund.payment?.toObject
+        ? freshOrderAfterRefund.payment.toObject()
+        : freshOrderAfterRefund.payment || {}),
+      status: "unpaid",
+      paidAt: null,
+      checkedAt: new Date(),
+      checkedByTelegramId: telegramId,
+    };
+
+    order.status = "canceled";
+    order.canceledAt = new Date();
+    order.canceledByTelegramId = telegramId;
+
+    await order.save();
+
+    await refreshManagerOrderMessage(order);
+
+    try {
+      stopPaymentReminder(order._id);
+    } catch {}
+
+    return res.json({ ok: true, order });
+  } catch (e) {
+    console.error("POST /orders/:id/cancel error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Repeat order (create new order from existing snapshot) =====
+app.post("/orders/repeat", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+    const orderNo = req.body?.orderNo ? String(req.body.orderNo).trim() : null;
+    const orderId = req.body?.orderId ? String(req.body.orderId).trim() : null;
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: "telegramId is required" });
+    }
+
+    if (!orderNo && !orderId) {
+      return res.status(400).json({ ok: false, error: "orderNo or orderId is required" });
+    }
+
+    const orig = await Order.findOne(
+      { userTelegramId: telegramId, ...(orderId ? { _id: orderId } : { orderNo }) },
+      {
+        deliveryType: 1,
+        deliveryMethod: 1,
+        pickupPointId: 1,
+        arrivalTime: 1,
+        courierAddress: 1,
+        inpostData: 1,
+        items: 1,
+      }
+    ).lean();
+
+    if (!orig) {
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    const repeatedItems = [];
+
+    for (const p of Array.isArray(orig.items) ? orig.items : []) {
+      const productKey = String(p?.productKey || "").trim();
+      if (!productKey) continue;
+
+      for (const f of Array.isArray(p?.flavors) ? p.flavors : []) {
+        const flavorKey = String(f?.flavorKey || "").trim();
+        if (!flavorKey) continue;
+
+        repeatedItems.push({
+          productKey,
+          flavorKey,
+          qty: Math.max(1, Number(f?.qty || 1)),
+          unitPrice: Number(f?.unitPrice || 0),
+          flavorLabel: String(f?.flavorLabel || ""),
+          gradient: Array.isArray(f?.gradient) ? f.gradient.slice(0, 2) : [],
+        });
+      }
+    }
+
+    if (!repeatedItems.length) {
+      return res.status(400).json({ ok: false, error: "Order has no items" });
+    }
+
+    const allPoints = await PickupPoint.find({}, { _id: 1, key: 1, title: 1, address: 1 }).lean();
+    const pointById = new Map(allPoints.map((p) => [String(p._id), p]));
+    const pointByKey = new Map(
+      allPoints.map((p) => [String(p.key || "").trim().replace(/,+$/, ""), p])
+    );
+
+    const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+
+    const makePointLabel = (point) => {
+      const k = String(point?.key || "").trim().replace(/,+$/, "");
+      if (k === "delivery") return "Доставка — Курьер";
+      if (k === "delivery-2") return "Доставка — InPost";
+      return point?.address || point?.title || "Точка";
+    };
+
+    const targetPoint =
+      orig.deliveryType === "pickup"
+        ? pointById.get(String(orig.pickupPointId || "")) || null
+        : pointByKey.get(orig.deliveryMethod === "inpost" ? "delivery-2" : "delivery") || null;
+
+    const targetContextId = targetPoint?._id ? String(targetPoint._id) : "";
+    const targetLabel = makePointLabel(targetPoint);
+
+    const missing = [];
+
+    for (const it of repeatedItems) {
+      const productKey = String(it.productKey || "").trim();
+      const flavorKey = String(it.flavorKey || "").trim();
+      if (!productKey || !flavorKey) continue;
+
+      const fkNorm = normFlavorKey(flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+
+      const prod = await Product.findOne(
+        { productKey, "flavors.flavorKey": { $in: fkCandidates } },
+        { productKey: 1, title1: 1, title2: 1, flavors: 1 }
+      ).lean();
+
+      const fl = (prod?.flavors || []).find((f) =>
+        fkCandidates.includes(String(f?.flavorKey || "").trim())
+      );
+
+      const row = (fl?.stockByPickupPoint || []).find(
+        (s) => String(s?.pickupPointId) === String(targetContextId)
+      );
+
+      const total = Number(row?.totalQty || 0);
+      const reserved = Number(row?.reservedQty || 0);
+      const available = Math.max(0, total - reserved);
+      const requested = Math.max(1, Number(it.qty || 1));
+
+      if (available >= requested) continue;
+
+      const productTitle =
+        [prod?.title1, prod?.title2].filter(Boolean).join(" ").trim() || productKey;
+
+      const flavorLabel = String(
+        it.flavorLabel || fl?.label || fl?.flavorKey || flavorKey
+      ).trim();
+
+      const alternatives = (fl?.stockByPickupPoint || [])
+        .map((s) => {
+          const point = pointById.get(String(s?.pickupPointId || ""));
+          const altAvailable = Math.max(
+            0,
+            Number(s?.totalQty || 0) - Number(s?.reservedQty || 0)
+          );
+
+          return {
+            pointId: String(s?.pickupPointId || ""),
+            label: makePointLabel(point),
+            available: altAvailable,
+          };
+        })
+        .filter((x) => x.pointId && x.pointId !== String(targetContextId) && x.available > 0)
+        .sort((a, b) => b.available - a.available)
+        .slice(0, 6);
+
+      missing.push({
+        productTitle,
+        flavorLabel,
+        requested,
+        available,
+        alternatives,
+      });
+    }
+
+    if (missing.length) {
+      const message = [
+        `На «${targetLabel}» сейчас недостаточно наличия для повторного заказа.`,
+        ``,
+        ...missing.flatMap((m) => {
+          const head = `• ${m.productTitle} — ${m.flavorLabel}: нужно ${m.requested} шт., доступно ${m.available} шт.`;
+
+          if (!m.alternatives.length) {
+            return [head, `  Альтернатива: выберите другой вкус, позицию или другой склад.`];
+          }
+
+          return [
+            head,
+            `  Где ещё есть:`,
+            ...m.alternatives.map((a) => `  – ${a.label}: ${a.available} шт.`),
+          ];
+        }),
+        ``,
+        `Попробуйте выбрать другой склад, другой вкус или другую позицию.`,
+      ].join("\n");
+
+      return res.status(409).json({
+        ok: false,
+        error: "OUT_OF_STOCK",
+        message,
+        targetLabel,
+        missing,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      cartDraft: {
+        items: repeatedItems,
+        checkoutDeliveryType: orig.deliveryType || null,
+        checkoutDeliveryMethod: orig.deliveryMethod || null,
+        checkoutPickupPointId: orig.pickupPointId || null,
+        arrivalTime: orig.deliveryType === "pickup" ? null : (orig.arrivalTime ?? null),
+        courierAddress: orig.courierAddress ?? null,
+        inpostData: orig.inpostData ?? {
+          fullName: null,
+          phone: null,
+          email: null,
+          city: null,
+          lockerAddress: null,
+        },
+      },
+    });
+  } catch (e) {
+    console.error("POST /orders/repeat error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.get("/orders", async (req, res) => {
+  try {
+  const telegramId = requireTrustedTelegramId(req, res);
+
+  if (!telegramId) return;
+
+    const orders = await Order.find({ userTelegramId: telegramId }).sort({ createdAt: -1 }).lean();
+    return res.json({ ok: true, orders });
+  } catch (e) {
+    console.error("GET /orders error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.post("/orders/:id/apply-cashback", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+
+    const { mode } = req.body || {};
+
+    const safeMode = String(mode || "partial").trim().toLowerCase();
+    const requestedCashbackAmountZl = Number(req.body?.amountZl || 0);
+
+    if (!["partial", "full", "custom"].includes(safeMode)) {
+      return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_MODE" });
+    }
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ ok: false, error: "ORDER_NOT_FOUND" });
+    }
+
+    if (String(order.userTelegramId || "") !== String(telegramId || "")) {
+      return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+    }
+
+    if (String(order.status || "") === "canceled") {
+      return res.status(400).json({ ok: false, error: "ORDER_CANCELED" });
+    }
+
+    if (
+      String(order.payment?.status || "") === "checking" ||
+      String(order.payment?.status || "") === "paid"
+    ) {
+      return res.status(400).json({ ok: false, error: "PAYMENT_ALREADY_SUBMITTED" });
+    }
+
+    // const user = await User.findOne({ telegramId: String(telegramId || "") });
+    // user.cashbackLedger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
+    // if (!user) {
+    //   return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+    // }
+
+    const user = await User.findOne({ telegramId: String(telegramId || "") });
+
+    if (!user) {
+
+      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+
+    }
+
+    user.cashbackLedger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
+
+    const orderTotalZl = Number(order.totalZl || 0);
+    const cashbackBalance = Number(user.cashbackBalance || 0);
+    const alreadyAppliedZl = Number(order?.payment?.cashbackAppliedZl || 0);
+    const maxAvailableCashbackZl = Number((cashbackBalance + alreadyAppliedZl).toFixed(2));
+
+    if (maxAvailableCashbackZl <= 0) {
+      return res.status(400).json({ ok: false, error: "NO_CASHBACK_BALANCE" });
+    }
+
+    const targetAppliedCashbackZl = (() => {
+      if (safeMode === "custom") {
+        return Number(Math.min(requestedCashbackAmountZl, maxAvailableCashbackZl, orderTotalZl).toFixed(2));
+      }
+
+      if (safeMode === "full") {
+        return Number(orderTotalZl.toFixed(2));
+      }
+
+      return Number(Math.min(alreadyAppliedZl + cashbackBalance, orderTotalZl).toFixed(2));
+    })();
+
+    if (!Number.isFinite(targetAppliedCashbackZl) || targetAppliedCashbackZl < 0) {
+      return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_AMOUNT" });
+    }
+
+    if (safeMode === "custom" && requestedCashbackAmountZl > maxAvailableCashbackZl) {
+      return res.status(400).json({ ok: false, error: "INSUFFICIENT_CASHBACK_BALANCE" });
+    }
+
+    if (safeMode === "custom" && requestedCashbackAmountZl > orderTotalZl) {
+
+      return res.status(400).json({ ok: false, error: "CASHBACK_AMOUNT_EXCEEDS_ORDER_TOTAL" });
+
+    }
+
+    if (safeMode === "full" && maxAvailableCashbackZl < orderTotalZl) {
+      return res.status(400).json({ ok: false, error: "INSUFFICIENT_CASHBACK_FOR_FULL_PAYMENT" });
+    }
+
+    const cashbackDeltaZl = Number((targetAppliedCashbackZl - alreadyAppliedZl).toFixed(2));
+    const cashbackAppliedZl = targetAppliedCashbackZl;
+    const remainingToPayZl = Number(Math.max(0, orderTotalZl - cashbackAppliedZl).toFixed(2));
+    const cashbackFullyPaid = remainingToPayZl <= 0;
+
+    let cashbackLeftToDeduct = Math.max(0, Number(cashbackDeltaZl || 0));
+
+    const activeRows = [...user.cashbackLedger]
+      .filter((row) => !row?.expiredAt && Number(row?.remainingZl || 0) > 0)
+      .sort((a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime());
+
+    for (const row of activeRows) {
+      if (cashbackLeftToDeduct <= 0) break;
+
+      const available = Math.max(0, Number(row.remainingZl || 0));
+      if (available <= 0) continue;
+
+      const used = Math.min(available, cashbackLeftToDeduct);
+
+      row.remainingZl = Number((available - used).toFixed(2));
+      cashbackLeftToDeduct = Number((cashbackLeftToDeduct - used).toFixed(2));
+    }
+
+    if (cashbackDeltaZl < 0) {
+      user.cashbackLedger.push({
+        type: "refund",
+        amountZl: Math.abs(cashbackDeltaZl),
+        remainingZl: Math.abs(cashbackDeltaZl),
+        source: "cashback_replace",
+        orderId: order._id,
+        createdAt: new Date(),
+        expiresAt: null,
+      });
+    }
+
+    recalcUserCashbackBalanceFromLedger(user);
+
+    await user.save();
+
+    const prevPayment = order.payment?.toObject ? order.payment.toObject() : (order.payment || {});
+    order.payment = {
+      ...prevPayment,
+      method: cashbackFullyPaid ? "cashback" : String(prevPayment?.method || ""),
+      cashbackAppliedZl,
+      cashbackRemainingToPayZl: remainingToPayZl,
+      cashbackFullyPaid,
+      cashbackAppliedAt: new Date(),
+      cashbackRefundedAt: null,
+      checkedAt: null,
+      checkedByTelegramId: "",
+      status: "unpaid",
+    };
+
+    await order.save();
+
+    const freshOrder = await Order.findById(order._id).lean();
+
+    return res.json({
+      ok: true,
+      order: freshOrder,
+      cashbackBalance: Number(user.cashbackBalance || 0),
+      cashbackAppliedZl,
+      cashbackRemainingToPayZl: remainingToPayZl,
+      cashbackFullyPaid,
+    });
+  } catch (e) {
+    console.error("apply cashback error:", e);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+app.post("/orders/:id/arrived-at-pickup", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+    const { id } = req.params;
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: "telegramId is required" });
+    }
+
+    const order = await Order.findOne({ _id: id, userTelegramId: telegramId });
+    if (!order) {
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    if (String(order.deliveryType || "") !== "pickup") {
+      return res.status(400).json({ ok: false, error: "Only pickup orders are supported" });
+    }
+
+    if (String(order.status || "") === "completed") {
+      return res.json({ ok: true, order, alreadyCompleted: true });
+    }
+
+    order.arrivedNotifiedAt = new Date();
+    await order.save();
+
+    await notifyManagerClientArrived(order);
+
+    return res.json({ ok: true, order });
+  } catch (e) {
+    console.error("POST /orders/:id/arrived-at-pickup error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.post("/orders/:id/payment-check", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+
+    if (!telegramId) return;
+    const { id } = req.params;
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: "telegramId is required" });
+    }
+
+    const order = await Order.findOne({ _id: id, userTelegramId: telegramId });
+    if (!order) {
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    const point = await resolveOrderPaymentPoint(order);
+
+    const allowedMethods = Array.isArray(point?.paymentConfig?.methods)
+      ? point.paymentConfig.methods
+          .filter((m) => m && m.isActive !== false)
+          .map((m) => String(m.key || "").trim())
+          .filter(Boolean)
+      : [];
+
+    const requestedMethod = req.body?.paymentMethod
+      ? String(req.body.paymentMethod).trim()
+      : "";
+
+    const cashbackFullyPaid = Boolean(order?.payment?.cashbackFullyPaid);
+
+    if (!requestedMethod && !cashbackFullyPaid) {
+      return res.status(400).json({ ok: false, error: "paymentMethod is required" });
+    }
+
+    if (requestedMethod && requestedMethod !== "cashback" && allowedMethods.length && !allowedMethods.includes(requestedMethod)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Payment method is not available for this order",
+      });
+    }
+
+    if (String(order?.payment?.status || "") === "paid") {
+      return res.json({ ok: true, order });
+    }
+
+    const prevPayment = order.payment?.toObject
+      ? order.payment.toObject()
+      : (order.payment || {});
+
+    const managerDisplayAmount = Number(req.body?.managerDisplayAmount || 0);
+
+    // const cashbackUsedZl = Number(
+    //   req.body?.cashbackUsedZl ||
+    //   req.body?.cashbackAppliedZl ||
+    //   prevPayment?.cashbackAppliedZl ||
+    //   0
+    // );
+
+    const cashbackUsedZl = Number(prevPayment?.cashbackAppliedZl || 0);
+
+    const fallbackCashbackRemainingToPayZl = Math.max(
+      0,
+      Number(order?.totalZl || 0) - Number(cashbackUsedZl || 0)
+    );
+
+    // const cashbackRemainingToPayZl = Number(
+    //   req.body?.cashbackRemainingToPayZl ||
+    //   prevPayment?.cashbackRemainingToPayZl ||
+    //   fallbackCashbackRemainingToPayZl ||
+    //   0
+    // );
+
+    const cashbackRemainingToPayZl = Number(
+      prevPayment?.cashbackRemainingToPayZl ||
+      fallbackCashbackRemainingToPayZl ||
+      0
+    );
+
+    // const cashbackFullyPaidFromBody = Boolean(
+    //   req.body?.paymentMethod === "cashback" || req.body?.cashbackFullyPaid === true
+    // );
+
+    const cashbackFullyPaidFromBody = Boolean(prevPayment?.cashbackFullyPaid === true);
+
+    const finalCashbackFullyPaid = Boolean(
+      cashbackFullyPaidFromBody ||
+      prevPayment?.cashbackFullyPaid === true ||
+      cashbackRemainingToPayZl <= 0
+    );
+    const managerDisplayCurrency = String(req.body?.managerDisplayCurrency || "PLN").trim() || "PLN";
+    const managerDisplayRate =
+      req.body?.managerDisplayRate === null ||
+      req.body?.managerDisplayRate === undefined ||
+      req.body?.managerDisplayRate === ""
+        ? null
+        : Number(req.body.managerDisplayRate || 0);
+
+    order.payment = {
+      ...prevPayment,
+      status: "checking",
+      method: finalCashbackFullyPaid
+        ? "cashback"
+        : (req.body?.paymentMethod
+            ? String(req.body.paymentMethod)
+            : (prevPayment?.method || null)),
+      cashChangeType: finalCashbackFullyPaid
+        ? null
+        : (req.body?.cashChangeType
+            ? String(req.body.cashChangeType)
+            : null),
+      cashAmount: finalCashbackFullyPaid
+        ? null
+        : (req.body?.cashAmount
+            ? String(req.body.cashAmount)
+            : null),
+      cashbackAppliedZl: Number(Number(cashbackUsedZl || 0).toFixed(2)),
+      cashbackRemainingToPayZl: Number(Number(cashbackRemainingToPayZl || 0).toFixed(2)),
+      cashbackFullyPaid: finalCashbackFullyPaid,
+      managerDisplayAmount,
+      managerDisplayCurrency,
+      managerDisplayRate,
+      checkedAt: new Date(),
+      checkedByTelegramId: "",
+    };
+
+    await order.save();
+
+    stopPaymentReminder(order._id);
+
+    await sendOrderCreatedNotification(
+
+      order,
+
+      {
+
+        skipClientNotification: true,
+
+      }
+
+    );
+    return res.json({ ok: true, order });
+  } catch (e) {
+    console.error("POST /orders/:id/payment-check error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.patch("/admin/orders/:id/payment-status", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const status = String(req.body?.status || "").trim();
+    const checkedByTelegramId = String(req.body?.checkedByTelegramId || "").trim();
+
+    if (!["paid", "unpaid"].includes(status)) {
+      return res.status(400).json({ ok: false, error: "status must be paid or unpaid" });
+    }
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    order.payment = {
+      ...(order.payment?.toObject ? order.payment.toObject() : order.payment || {}),
+      status,
+      paidAt: status === "paid" ? new Date() : null,
+      checkedAt: new Date(),
+      checkedByTelegramId,
+    };
+
+    await order.save();
+    if (
+      status === "paid" &&
+      String(order?.deliveryType || "") === "delivery" &&
+      String(order?.deliveryMethod || "") === "courier"
+    ) {
+      const deliveryPromptChatId = String(
+        order?.payment?.managerMessageChatId || ""
+      ).trim();
+
+      const deliveryPromptMessageIds = Array.isArray(order?.managerArrivalMessageIds)
+        ? order.managerArrivalMessageIds
+            .map((id) => String(id || "").trim())
+            .filter(Boolean)
+        : [];
+
+      if (bot && deliveryPromptChatId && deliveryPromptMessageIds.length) {
+        for (const msgId of deliveryPromptMessageIds) {
+          try {
+            await bot.telegram.deleteMessage(deliveryPromptChatId, Number(msgId));
+          } catch (e) {
+            console.error("delete courier delivery prompt on paid error:", {
+              orderNo: order?.orderNo,
+              chatId: deliveryPromptChatId,
+              msgId,
+              error: e?.message || e,
+            });
+          }
+        }
+      }
+
+      if (deliveryPromptMessageIds.length) {
+        order.managerArrivalMessageIds = [];
+        await order.save();
+      }
+    }
+    return res.json({ ok: true, order });
+  } catch (e) {
+    console.error("PATCH /admin/orders/:id/payment-status error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Admin: создать товар ====
+
+app.post("/admin/products", requireAdmin, async (req, res) => {
+  try {
+    
+    const b = req.body || {};
+    const t1 = String(b.title1 || "").trim();
+    const t2 = String(b.title2 || "").trim();
+    const baseFromTitle = translitRuToLat([t1, t2].filter(Boolean).join(" "));
+    const baseKey = b.productKey ? String(b.productKey) : baseFromTitle;
+    const finalProductKey = await ensureUniqueProductKey(baseKey);
+
+    const created = await Product.create({
+      productKey: finalProductKey,
+      sortOrder: Number(b.sortOrder || 0),
+      categoryKey: String(b.categoryKey),
+      isActive: b.isActive ?? true,
+
+      title1: b.title1 || "",
+      title2: b.title2 || "",
+      titleModal: b.titleModal || "",
+      price: Number(b.price || 0),
+
+      cardBgUrl: b.cardBgUrl || "",
+      cardDuckUrl: b.cardDuckUrl || "",
+      orderImgUrl: b.orderImgUrl || "",
+
+      classCardDuck: b.classCardDuck || "",
+      classActions: b.classActions || "",
+      classNewBadge: b.classNewBadge || "",
+      newBadge: b.newBadge || "",
+
+      accentColor: b.accentColor || "",
+
+      flavors: Array.isArray(b.flavors) ? b.flavors : [],
+    });
+
+    res.json({ ok: true, product: created });
+  } catch (e) {
+    console.error("POST /admin/products error:", e);
+    res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Admin: обновить товар (categoryKey, isActive, media, UI fields) =====
+app.patch("/admin/products/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const b = req.body || {};
+
+    const allow = [
+      "productKey",
+      "sortOrder",
+      "categoryKey",
+      "isActive",
+      "title1",
+      "title2",
+      "titleModal",
+      "price",
+      "cardBgUrl",
+      "cardDuckUrl",
+      "orderImgUrl",
+      "classCardDuck",
+      "classActions",
+      "classNewBadge",
+      "newBadge",
+      "accentColor",
+    ];
+
+    const update = {};
+    for (const k of allow) {
+      if (b[k] !== undefined) update[k] = b[k];
+    }
+
+    if (update.productKey !== undefined) update.productKey = String(update.productKey);
+    if (update.sortOrder !== undefined) update.sortOrder = Number(update.sortOrder || 0);
+    if (update.categoryKey !== undefined) update.categoryKey = String(update.categoryKey);
+    if (update.title1 !== undefined) update.title1 = String(update.title1);
+    if (update.title2 !== undefined) update.title2 = String(update.title2);
+    if (update.titleModal !== undefined) update.titleModal = String(update.titleModal);
+    if (update.price !== undefined) update.price = Number(update.price || 0);
+    if (update.cardBgUrl !== undefined) update.cardBgUrl = String(update.cardBgUrl);
+    if (update.cardDuckUrl !== undefined) update.cardDuckUrl = String(update.cardDuckUrl);
+    if (update.orderImgUrl !== undefined) update.orderImgUrl = String(update.orderImgUrl);
+    if (update.classCardDuck !== undefined) update.classCardDuck = String(update.classCardDuck);
+    if (update.classActions !== undefined) update.classActions = String(update.classActions);
+    if (update.classNewBadge !== undefined) update.classNewBadge = String(update.classNewBadge);
+    if (update.newBadge !== undefined) update.newBadge = String(update.newBadge);
+    if (update.accentColor !== undefined) update.accentColor = String(update.accentColor);
+
+    const updated = await Product.findByIdAndUpdate(id, update, { new: true });
+    if (!updated) return res.status(404).json({ ok: false, error: "Product not found" });
+
+    return res.json({ ok: true, product: updated });
+  } catch (e) {
+    console.error("PATCH /admin/products/:id error:", e);
+    // duplicate key
+    if (e?.code === 11000) {
+      return res.status(409).json({ ok: false, error: "Product key already exists" });
+    }
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Admin: удалить товар =====
+app.delete("/admin/products/:id", requireAdmin, async (req, res) => {
+  try {
+    const productId = String(
+      req.params?.id || ""
+    ).trim();
+
+    if (!mongoose.isValidObjectId(productId)) {
+      return res.status(400).json({
+        ok: false,
+        error: "INVALID_PRODUCT_ID",
+      });
+    }
+
+    const deletedProduct =
+      await Product.findByIdAndDelete(productId);
+
+    if (!deletedProduct) {
+      return res.status(404).json({
+        ok: false,
+        error: "PRODUCT_NOT_FOUND",
+      });
+    }
+
+    cacheInvalidate("products:");
+
+    return res.json({
+      ok: true,
+
+      deletedProductId: String(
+        deletedProduct._id
+      ),
+
+      deletedProductKey: String(
+        deletedProduct.productKey || ""
+      ),
+    });
+  } catch (error) {
+    console.error(
+      "DELETE /admin/products/:id error:",
+      error
+    );
+
+    return res.status(500).json({
+      ok: false,
+
+      error:
+        error?.message ||
+        "INTERNAL_SERVER_ERROR",
+    });
+  }
+});
+
+// ===== Admin: создать/обновить вкус у товара =====
+app.post("/admin/products/:id/flavors", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const b = req.body || {};
+
+    const rawFlavorKey = String(b.flavorKey || "").trim().toLowerCase();
+    const label = String(b.label || "").trim();
+
+    if (!label) {
+      return res.status(400).json({ ok: false, error: "label is required" });
+    }
+
+    const gradient = Array.isArray(b.gradient) ? b.gradient.map((x) => String(x)) : [];
+    if (gradient.length !== 2) {
+      return res.status(400).json({ ok: false, error: "gradient must contain exactly 2 colors" });
+    }
+
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ ok: false, error: "Product not found" });
+
+    const requestedFlavorKey = rawFlavorKey || slugifyFlavorLabel(label);
+
+    const existing = (product.flavors || []).find(
+      (f) => String(f.flavorKey || "").trim().toLowerCase() === requestedFlavorKey
+    );
+
+    const sameFlavorByLabel = (product.flavors || []).find(
+      (f) => String(f.label || "").trim().toLowerCase() === label.toLowerCase()
+    );
+
+    if (existing && sameFlavorByLabel && String(existing._id) === String(sameFlavorByLabel._id)) {
+      // обновляем только если это реально тот же вкус
+      existing.label = label;
+      existing.gradient = gradient;
+      if (b.isActive !== undefined) existing.isActive = !!b.isActive;
+    } else {
+      const uniqueFlavorKey = ensureUniqueFlavorKeyForProduct(product, requestedFlavorKey);
+
+      product.flavors.push({
+        flavorKey: uniqueFlavorKey,
+        label,
+        isActive: b.isActive ?? true,
+        gradient,
+        stockByPickupPoint: [],
+      });
+    }
+
+    await product.save();
+    return res.json({ ok: true, product });
+  } catch (e) {
+    console.error("POST /admin/products/:id/flavors error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// ===== Admin: обновить склад вкуса по точке самовывоза =====
+app.patch("/admin/products/:id/flavors/:flavorId/stock", requireAdmin, async (req, res) => {
+  try {
+    const { id, flavorId } = req.params;
+    const { pickupPointId, totalQty, updatedByTelegramId } = req.body || {};
+
+    if (!pickupPointId) {
+      return res.status(400).json({ ok: false, error: "pickupPointId is required" });
+    }
+
+    const nextQty = Math.max(0, Number(totalQty ?? 0));
+
+    const product = await Product.findById(id);
+    if (!product) return res.status(404).json({ ok: false, error: "Product not found" });
+
+    const flavor = product.flavors.id(flavorId);
+    if (!flavor) return res.status(404).json({ ok: false, error: "Flavor not found" });
+
+    const pid = String(pickupPointId);
+
+    const syncedPointIds = await getSyncedPickupPointIdsByAnyPoint(pickupPointId);
+    const pointIdsToSync = syncedPointIds.length ? syncedPointIds : [String(pickupPointId)];
+
+    const existingRows = (flavor.stockByPickupPoint || []).filter((s) =>
+      pointIdsToSync.includes(String(s.pickupPointId))
+    );
+
+    const syncedReservedQty = existingRows.length
+      ? Math.max(...existingRows.map((row) => Math.max(0, Number(row?.reservedQty || 0))))
+      : 0;
+
+    for (const syncPickupPointId of pointIdsToSync) {
+      const existing = (flavor.stockByPickupPoint || []).find(
+        (s) => String(s.pickupPointId) === String(syncPickupPointId)
+      );
+
+      if (existing) {
+        existing.totalQty = nextQty;
+        existing.reservedQty = Math.min(syncedReservedQty, nextQty);
+        existing.updatedAt = new Date();
+        existing.updatedByTelegramId = String(updatedByTelegramId || "");
+      } else {
+        flavor.stockByPickupPoint.push({
+          pickupPointId: syncPickupPointId,
+          totalQty: nextQty,
+          reservedQty: Math.min(syncedReservedQty, nextQty),
+          updatedAt: new Date(),
+          updatedByTelegramId: String(updatedByTelegramId || ""),
+        });
+      }
+    }
+
+    await product.save();
+    return res.json({ ok: true, product });
+  } catch (e) {
+    console.error("PATCH /admin/products/:id/flavors/:flavorId/stock error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// app.post(
+//   "/admin/products/manual-sheet-stock-sync",
+//   requireAdmin,
+//   async (req, res) => {
+//     try {
+//       const pointKey = String(
+//         req.body?.pointKey || ""
+//       )
+//         .trim()
+//         .replace(/,+$/, "");
+
+//       const modelName = String(
+//         req.body?.modelName || ""
+//       ).trim();
+
+//       const normalizedModel =
+//         String(
+//           req.body
+//             ?.normalizedModel ||
+//           modelName
+//         )
+//           .trim()
+//           .toUpperCase();
+
+//       const flavorLabel = String(
+//         req.body?.flavorLabel || ""
+//       ).trim();
+
+//       const normalizedFlavor =
+//         String(
+//           req.body
+//             ?.normalizedFlavor ||
+//           flavorLabel
+//         )
+//           .trim()
+//           .toUpperCase();
+
+//       const qty =
+//         Number(req.body?.qty);
+
+//       if (
+//         !pointKey ||
+//         !modelName ||
+//         !flavorLabel ||
+//         !Number.isInteger(qty) ||
+//         qty < 0
+//       ) {
+//         return res.status(400).json({
+//           ok: false,
+//           error:
+//             "INVALID_MANUAL_STOCK_DATA",
+//         });
+//       }
+
+//       const pickupPoint =
+//         await PickupPoint.findOne({
+//           key: {
+//             $in: [
+//               pointKey,
+//               `${pointKey},`,
+//             ],
+//           },
+//         });
+
+//       if (!pickupPoint) {
+//         return res.status(404).json({
+//           ok: false,
+//           error:
+//             "PICKUP_POINT_NOT_FOUND",
+//           pointKey,
+//         });
+//       }
+
+//       const normalizeValue = (
+//         value
+//       ) =>
+//         String(value || "")
+//           .toUpperCase()
+//           .replace(/🦆/g, "")
+//           .replace(
+//             /CARTRIDGE/g,
+//             "CATRIDGE"
+//           )
+//           .replace(
+//             /\s*30\s*ML/g,
+//             ""
+//           )
+//           .replace(
+//             /^CHASER\s+/g,
+//             ""
+//           )
+//           .replace(/\s+/g, " ")
+//           .trim();
+
+//       const compactValue = (
+//         value
+//       ) =>
+//         normalizeValue(value)
+//           .replace(
+//             /[^A-ZА-ЯІЇЄҐ0-9]+/g,
+//             ""
+//           );
+
+//       const wantedModel =
+//         normalizeValue(
+//           normalizedModel
+//         );
+
+//       const wantedFlavor =
+//         compactValue(
+//           normalizedFlavor
+//         );
+
+//       const products =
+//         await Product.find({});
+
+//       let foundProduct = null;
+//       let foundFlavor = null;
+
+//       for (
+//         const product of products
+//       ) {
+//         const productNames = [
+//           product?.productKey,
+//           product?.title,
+//           product?.title1,
+//           product?.title2,
+//           [
+//             product?.title1,
+//             product?.title2,
+//           ]
+//             .filter(Boolean)
+//             .join(" "),
+//           product?.name,
+//           product?.model,
+//         ]
+//           .map(normalizeValue)
+//           .filter(Boolean);
+
+//         const modelMatches =
+//           productNames.some(
+//             (candidate) =>
+//               candidate ===
+//                 wantedModel ||
+//               candidate.includes(
+//                 wantedModel
+//               ) ||
+//               wantedModel.includes(
+//                 candidate
+//               )
+//           );
+
+//         if (!modelMatches) {
+//           continue;
+//         }
+
+//         const flavors =
+//           Array.isArray(
+//             product?.flavors
+//           )
+//             ? product.flavors
+//             : [];
+
+//         for (
+//           const flavor of flavors
+//         ) {
+//           const flavorNames = [
+//             flavor?.flavorKey,
+//             flavor?.flavorLabel,
+//             flavor?.label,
+//             flavor?.name,
+//           ]
+//             .map(compactValue)
+//             .filter(Boolean);
+
+//           if (
+//             flavorNames.includes(
+//               wantedFlavor
+//             )
+//           ) {
+//             foundProduct =
+//               product;
+
+//             foundFlavor =
+//               flavor;
+
+//             break;
+//           }
+//         }
+
+//         if (
+//           foundProduct &&
+//           foundFlavor
+//         ) {
+//           break;
+//         }
+//       }
+
+//       if (!foundProduct) {
+//         return res.status(404).json({
+//           ok: false,
+//           error:
+//             "PRODUCT_NOT_FOUND",
+//           modelName,
+//           normalizedModel,
+//         });
+//       }
+
+//       if (!foundFlavor) {
+//         return res.status(404).json({
+//           ok: false,
+//           error:
+//             "FLAVOR_NOT_FOUND",
+//           modelName,
+//           flavorLabel,
+//           normalizedFlavor,
+//         });
+//       }
+
+//       foundFlavor
+//         .stockByPickupPoint =
+//           Array.isArray(
+//             foundFlavor
+//               ?.stockByPickupPoint
+//           )
+//             ? foundFlavor
+//                 .stockByPickupPoint
+//             : [];
+
+//       let stockRow =
+//         foundFlavor
+//           .stockByPickupPoint
+//           .find(
+//             (row) =>
+//               String(
+//                 row?.pickupPointId ||
+//                 ""
+//               ) ===
+//               String(
+//                 pickupPoint._id
+//               )
+//           );
+
+//       if (!stockRow) {
+//         foundFlavor
+//           .stockByPickupPoint
+//           .push({
+//             pickupPointId:
+//               pickupPoint._id,
+
+//             qty,
+
+//             reservedQty: 0,
+//           });
+//       } else {
+//         /*
+//          * Меняем только физический остаток.
+//          *
+//          * reservedQty не трогаем,
+//          * потому что там могут быть
+//          * активные заказы.
+//          */
+//         stockRow.qty = qty;
+//       }
+
+//       foundProduct.markModified(
+//         "flavors"
+//       );
+
+//       await foundProduct.save();
+
+//       cacheInvalidate(
+//         "products"
+//       );
+
+//       console.log(
+//         "[MANUAL SHEET STOCK SYNC]",
+//         {
+//           source:
+//             req.body?.source,
+
+//           spreadsheetId:
+//             req.body
+//               ?.spreadsheetId,
+
+//           sheetName:
+//             req.body?.sheetName,
+
+//           editorEmail:
+//             req.body
+//               ?.editorEmail,
+
+//           pointKey,
+
+//           pickupPointId:
+//             String(
+//               pickupPoint._id
+//             ),
+
+//           productId:
+//             String(
+//               foundProduct._id
+//             ),
+
+//           productKey:
+//             String(
+//               foundProduct
+//                 ?.productKey || ""
+//             ),
+
+//           modelName,
+
+//           flavorLabel,
+
+//           qty,
+//         }
+//       );
+
+//       return res.json({
+//         ok: true,
+
+//         pointKey,
+
+//         pickupPointId:
+//           String(
+//             pickupPoint._id
+//           ),
+
+//         productId:
+//           String(
+//             foundProduct._id
+//           ),
+
+//         productKey:
+//           String(
+//             foundProduct
+//               ?.productKey || ""
+//           ),
+
+//         modelName,
+
+//         flavorLabel,
+
+//         qty,
+//       });
+//     } catch (error) {
+//       console.error(
+//         "POST /admin/products/manual-sheet-stock-sync error:",
+//         error
+//       );
+
+//       return res.status(500).json({
+//         ok: false,
+//         error:
+//           "MANUAL_SHEET_STOCK_SYNC_FAILED",
+//       });
+//     }
+//   }
+// );
+
+app.post("/admin/products/manual-sheet-stock-sync", requireAdmin, async (req, res) => {
+    try {
+      const pointKey = String(
+        req.body?.pointKey || ""
+      )
+        .trim()
+        .replace(/,+$/, "");
+
+      const modelName = String(
+        req.body?.modelName || ""
+      ).trim();
+
+      const normalizedModel =
+        String(
+          req.body
+            ?.normalizedModel ||
+          modelName
+        )
+          .trim()
+          .toUpperCase();
+
+      const flavorLabel = String(
+        req.body?.flavorLabel || ""
+      ).trim();
+
+      const normalizedFlavor =
+        String(
+          req.body
+            ?.normalizedFlavor ||
+          flavorLabel
+        )
+          .trim()
+          .toUpperCase();
+
+      const qty =
+        Number(req.body?.qty);
+
+      if (
+        !pointKey ||
+        !modelName ||
+        !flavorLabel ||
+        !Number.isInteger(qty) ||
+        qty < 0
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "INVALID_MANUAL_STOCK_DATA",
+        });
+      }
+
+      const pickupPoint =
+        await PickupPoint.findOne({
+          key: {
+            $in: [
+              pointKey,
+              `${pointKey},`,
+            ],
+          },
+        });
+
+      if (!pickupPoint) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "PICKUP_POINT_NOT_FOUND",
+          pointKey,
+        });
+      }
+
+    const normalizeValue = (value) =>
+      String(value || "")
+        .toUpperCase()
+        .replace(/🦆/g, "")
+        .replace(/CARTRIDGE/g, "CATRIDGE")
+        .replace(/\s*30\s*ML/g, "")
+        .replace(/^CHASER\s+/g, "")
+
+        // жидкости
+        .replace(/\bLIQ\s+ELFLIQ\b/g, "ELFLIQ")
+        .replace(/\bLIQ\s+HQD\b/g, "HQD")
+        .replace(/\bLIQ\s+ETHEREUM\b/g, "ETHEREUM")
+        .replace(/\bLIQ\s+SPECIAL\b/g, "SPECIAL")
+        .replace(/\bLIQ\s+BLACK\b/g, "BLACK")
+        .replace(/\bLIQ\s+FOR\s+PODS\b/g, "FOR PODS")
+        .replace(/\bLIQ\s+VOZOL\s+PRIME\b/g, "VOZOL PRIME")
+        .replace(/\bLIQ\s+PUFFY\b/g, "PUFFY")
+
+        // ELF BAR / ELF DUCK
+        .replace(/\bELF\s+DUCK\s+D3\s+25K\b/g, "ELF BAR D3")
+        .replace(/\bELF\s+DUCK\s+D3\b/g, "ELF BAR D3")
+        .replace(/\bELF\s+BAR\s+D3\s+25K\b/g, "ELF BAR D3")
+
+        .replace(/\bELF\s+DUCK\s+1500\b/g, "ELF BAR 1500")
+        .replace(/\bELF\s+BAR\s+1500\b/g, "ELF BAR 1500")
+
+        .replace(/\bELF\s+DUCK\s+2000\b/g, "ELF BAR 2000")
+        .replace(/\bELF\s+BAR\s+2000\b/g, "ELF BAR 2000")
+
+        .replace(/\bELF\s+DUCK\s+3000\s+RI\b/g, "ELF BAR 3000")
+        .replace(/\bELF\s+DUCK\s+3000\b/g, "ELF BAR 3000")
+        .replace(/\bELF\s+3000\b/g, "ELF BAR 3000")
+        .replace(/\bELF\s+BAR\s+3000\s+RI\b/g, "ELF BAR 3000")
+        .replace(/\bELF\s+BAR\s+RI\s+3000\b/g, "ELF BAR 3000")
+        .replace(/\bELF\s+BAR\s+3000\b/g, "ELF BAR 3000")
+
+        .replace(/\bELF\s+DUCK\s+GH\s+33000\s+PRO\b/g, "ELF BAR GH 33000")
+        .replace(/\bELF\s+BAR\s+GH\s+33000\s+PRO\b/g, "ELF BAR GH 33000")
+        .replace(/\bELF\s+BAR\s+GH\s+33000\b/g, "ELF BAR GH 33000")
+
+        .replace(/\bELF\s+DUCK\s+MOON\s+40K\b/g, "ELF BAR MOON 40K")
+        .replace(/\bELF\s+BAR\s+MOON\s+40K\b/g, "ELF BAR MOON 40K")
+
+        .replace(/\bELF\s+DUCK\s+KING\s+30K\b/g, "ELF BAR KING 30K")
+        .replace(/\bELF\s+DUCK\s+ICE\s+KING\s+30K\b/g, "ELF BAR KING 30K")
+        .replace(/\bELF\s+BAR\s+KING\s+30K\b/g, "ELF BAR KING 30K")
+
+        .replace(/\bELF\s+DUCK\s+DUKE\s+30K\b/g, "ELF BAR DUKE 30K")
+        .replace(/\bELF\s+BAR\s+DUKE\s+30K\b/g, "ELF BAR DUKE 30K")
+
+        .replace(/\bELF\s+DUCK\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
+        .replace(/\bELF\s+BAR\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
+
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const compactValue = (
+        value
+      ) =>
+        normalizeValue(value)
+          .replace(
+            /[^A-ZА-ЯІЇЄҐ0-9]+/g,
+            ""
+          );
+
+      const wantedModel =
+        normalizeValue(
+          normalizedModel
+        );
+
+      const wantedFlavor =
+        compactValue(
+          normalizedFlavor
+        );
+
+      const products =
+        await Product.find({});
+
+      let foundProduct = null;
+      let foundFlavor = null;
+
+      for (
+        const product of products
+      ) {
+        const productNames = [
+          product?.productKey,
+          product?.title,
+          product?.title1,
+          product?.title2,
+          [
+            product?.title1,
+            product?.title2,
+          ]
+            .filter(Boolean)
+            .join(" "),
+          product?.name,
+          product?.model,
+        ]
+          .map(normalizeValue)
+          .filter(Boolean);
+
+        const modelMatches =
+          productNames.some(
+            (candidate) =>
+              candidate ===
+                wantedModel ||
+              candidate.includes(
+                wantedModel
+              ) ||
+              wantedModel.includes(
+                candidate
+              )
+          );
+
+        if (!modelMatches) {
+          continue;
+        }
+
+        const flavors =
+          Array.isArray(
+            product?.flavors
+          )
+            ? product.flavors
+            : [];
+
+        for (
+          const flavor of flavors
+        ) {
+          const flavorNames = [
+            flavor?.flavorKey,
+            flavor?.flavorLabel,
+            flavor?.label,
+            flavor?.name,
+          ]
+            .map(compactValue)
+            .filter(Boolean);
+
+          if (
+            flavorNames.includes(
+              wantedFlavor
+            )
+          ) {
+            foundProduct =
+              product;
+
+            foundFlavor =
+              flavor;
+
+            break;
+          }
+        }
+
+        if (
+          foundProduct &&
+          foundFlavor
+        ) {
+          break;
+        }
+      }
+
+      console.log("=== MANUAL STOCK SEARCH ===");
+
+      console.log({
+        wantedModel,
+        wantedFlavor,
+      });
+
+      for (const product of products) {
+        console.log({
+          product: product.productKey,
+          names: [
+            product.productKey,
+            product.title,
+            product.title1,
+            product.title2,
+            product.name,
+            product.model,
+          ].map(normalizeValue),
+        });
+      }
+
+      if (!foundProduct) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "PRODUCT_NOT_FOUND",
+          modelName,
+          normalizedModel,
+        });
+      }
+
+      if (!foundFlavor) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "FLAVOR_NOT_FOUND",
+          modelName,
+          flavorLabel,
+          normalizedFlavor,
+        });
+      }
+
+      foundFlavor
+        .stockByPickupPoint =
+          Array.isArray(
+            foundFlavor
+              ?.stockByPickupPoint
+          )
+            ? foundFlavor
+                .stockByPickupPoint
+            : [];
+
+      let stockRow =
+        foundFlavor
+          .stockByPickupPoint
+          .find(
+            (row) =>
+              String(
+                row?.pickupPointId ||
+                ""
+              ) ===
+              String(
+                pickupPoint._id
+              )
+          );
+
+        const syncedPointIds =
+          await getSyncedPickupPointIdsByAnyPoint(
+            pickupPoint._id
+          );
+
+        const pointIdsToSync =
+          syncedPointIds.length
+            ? syncedPointIds
+            : [String(pickupPoint._id)];
+
+        const existingRows =
+          (foundFlavor.stockByPickupPoint || [])
+            .filter((row) =>
+              pointIdsToSync.includes(
+                String(row?.pickupPointId || "")
+              )
+            );
+
+        const syncedReservedQty =
+          existingRows.length
+            ? Math.max(
+                ...existingRows.map((row) =>
+                  Math.max(
+                    0,
+                    Number(row?.reservedQty || 0)
+                  )
+                )
+              )
+            : 0;
+
+        for (const syncPickupPointId of pointIdsToSync) {
+          const existing =
+            (foundFlavor.stockByPickupPoint || [])
+              .find(
+                (row) =>
+                  String(row?.pickupPointId || "") ===
+                  String(syncPickupPointId)
+              );
+
+          if (existing) {
+            existing.totalQty = qty;
+
+            existing.reservedQty = Math.min(
+              syncedReservedQty,
+              qty
+            );
+
+            existing.updatedAt = new Date();
+
+            existing.updatedByTelegramId =
+              "google-sheet";
+          } else {
+            foundFlavor.stockByPickupPoint.push({
+              pickupPointId:
+                syncPickupPointId,
+
+              totalQty:
+                qty,
+
+              reservedQty:
+                Math.min(
+                  syncedReservedQty,
+                  qty
+                ),
+
+              updatedAt:
+                new Date(),
+
+              updatedByTelegramId:
+                "google-sheet",
+            });
+          }
+        }
+
+      foundProduct.markModified(
+        "flavors"
+      );
+
+      await foundProduct.save();
+
+      cacheInvalidate("products:");
+
+      console.log(
+        "[MANUAL SHEET STOCK SYNC]",
+        {
+          source:
+            req.body?.source,
+
+          spreadsheetId:
+            req.body
+              ?.spreadsheetId,
+
+          sheetName:
+            req.body?.sheetName,
+
+          editorEmail:
+            req.body
+              ?.editorEmail,
+
+          pointKey,
+
+          pickupPointId:
+            String(
+              pickupPoint._id
+            ),
+
+          productId:
+            String(
+              foundProduct._id
+            ),
+
+          productKey:
+            String(
+              foundProduct
+                ?.productKey || ""
+            ),
+
+          modelName,
+
+          flavorLabel,
+
+          qty,
+        }
+      );
+
+      return res.json({
+        ok: true,
+
+        pointKey,
+
+        pickupPointId:
+          String(
+            pickupPoint._id
+          ),
+
+        productId:
+          String(
+            foundProduct._id
+          ),
+
+        productKey:
+          String(
+            foundProduct
+              ?.productKey || ""
+          ),
+
+        modelName,
+
+        flavorLabel,
+
+        qty,
+      });
+    } catch (error) {
+      console.error(
+        "POST /admin/products/manual-sheet-stock-sync error:",
+        error
+      );
+
+      return res.status(500).json({
+        ok: false,
+        error:
+          "MANUAL_SHEET_STOCK_SYNC_FAILED",
+      });
+    }
+  }
+);
+
+app.get("/orders/:id/payment-config", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+    const orderId = String(req.params?.id || "").trim();
+
+    if (!telegramId) {
+      return res.status(400).json({ ok: false, error: "telegramId is required" });
+    }
+
+    if (!orderId) {
+      return res.status(400).json({ ok: false, error: "order id is required" });
+    }
+
+    const order = await Order.findOne(
+      { _id: orderId, userTelegramId: telegramId },
+      {
+        _id: 1,
+        orderNo: 1,
+        totalZl: 1,
+        currency: 1,
+        deliveryType: 1,
+        deliveryMethod: 1,
+        pickupPointId: 1,
+        status: 1,
+        payment: 1,
+      }
+    ).lean();
+
+    if (!order) {
+      return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    const point = await resolveOrderPaymentPoint(order);
+
+    const methods = Array.isArray(point?.paymentConfig?.methods)
+      ? point.paymentConfig.methods
+          .filter((m) => m && m.isActive !== false && String(m.key || "").trim())
+          .map((m) => ({
+            key: String(m.key || "").trim(),
+            label: String(m.label || "").trim(),
+            detailsValue: String(m.detailsValue || "").trim(),
+            badge: String(m.badge || "").trim(),
+          }))
+      : [];
+
+    return res.json({
+      ok: true,
+      paymentConfig: {
+        pointId: point?._id || null,
+        pointTitle: point?.title || "",
+        pointAddress: point?.address || "",
+        methods,
+      },
+    });
+  } catch (e) {
+    console.error("GET /orders/:id/payment-config error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+app.post("/promo-codes/activate", async (req, res) => {
+    try {
+      const telegramId =
+        requireTrustedTelegramId(req, res);
+
+      if (!telegramId) {
+        return;
+      }
+
+      const code = normalizePromoCode(
+        req.body?.code
+      );
+
+      if (!code) {
+        return res.status(400).json({
+          ok: false,
+          error: "PROMO_NOT_FOUND",
+        });
+      }
+
+      const promoCode =
+        await getPromoCodeByCode(code);
+
+      if (
+        !promoCode ||
+        promoCode?.isActive !== true
+      ) {
+        return res.status(404).json({
+          ok: false,
+          error: "PROMO_NOT_FOUND",
+        });
+      }
+
+      const amountZl = Number(
+        promoCode?.amountZl || 0
+      );
+
+      if (
+        !Number.isFinite(amountZl) ||
+        amountZl <= 0
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error: "PROMO_NOT_FOUND",
+        });
+      }
+
+      const safeAmountZl = Number(
+        amountZl.toFixed(2)
+      );
+
+      const now = new Date();
+
+      const existingUser =
+        await User.collection.findOne(
+          { telegramId },
+          {
+            projection: {
+              _id: 1,
+              promoCodeActivations: 1,
+            },
+          }
+        );
+
+      if (!existingUser) {
+        return res.status(404).json({
+          ok: false,
+          error: "USER_NOT_FOUND",
+        });
+      }
+
+      const alreadyUsed = Array.isArray(
+        existingUser?.promoCodeActivations
+      )
+        ? existingUser.promoCodeActivations.some(
+            (activation) =>
+              normalizePromoCode(
+                activation?.code
+              ) === code
+          )
+        : false;
+
+      if (alreadyUsed) {
+        return res.status(409).json({
+          ok: false,
+          error: "PROMO_ALREADY_USED",
+          usedCode: code,
+        });
+      }
+
+      const updateResult =
+        await User.collection.findOneAndUpdate(
+          {
+            telegramId,
+
+            "promoCodeActivations.code": {
+              $ne: code,
+            },
+          },
+
+          {
+            $inc: {
+              cashbackBalance: safeAmountZl,
+            },
+
+            $push: {
+              promoCodeActivations: {
+                code,
+                amountZl: safeAmountZl,
+                promoCodeId: promoCode._id,
+                activatedAt: now,
+              },
+            },
+
+            $set: {
+              updatedAt: now,
+            },
+
+            $unset: {
+              promoCodeUsed: "",
+              promoCodeUsedAt: "",
+              promoCodeAmountZl: "",
+            },
+          },
+
+          {
+            returnDocument: "after",
+          }
+        );
+
+      const updatedUser =
+        updateResult?.value || updateResult;
+
+      if (!updatedUser?._id) {
+        return res.status(409).json({
+          ok: false,
+          error: "PROMO_ALREADY_USED",
+          usedCode: code,
+        });
+      }
+
+      await mongoose.connection
+        .collection(PROMO_CODES_COLLECTION)
+        .updateOne(
+          {
+            _id: promoCode._id,
+          },
+
+          {
+            $inc: {
+              activationsCount: 1,
+            },
+
+            $push: {
+              activations: {
+                telegramId,
+                amountZl: safeAmountZl,
+                activatedAt: now,
+              },
+            },
+
+            $set: {
+              lastActivatedAt: now,
+              updatedAt: now,
+            },
+          }
+        );
+
+      return res.json({
+        ok: true,
+        code,
+        amountZl: safeAmountZl,
+
+        cashbackBalance: Number(
+          updatedUser?.cashbackBalance || 0
+        ),
+
+        activation: {
+          code,
+          amountZl: safeAmountZl,
+          activatedAt: now,
+        },
+      });
+    } catch (error) {
+      console.error(
+        "POST /promo-codes/activate error:",
+        error
+      );
+
+      return res.status(500).json({
+        ok: false,
+        error: "PROMO_ACTIVATION_FAILED",
+      });
+    }
+  }
+);
+
+// ====================== BROADCAST TEMPLATES ======================
+
+app.get("/admin/broadcast/templates", async (req, res) => {
+  try {
+    if (req.headers["x-admin-token"] !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false });
+    }
+
+    const templates = await mongoose.connection
+      .collection(BROADCAST_TEMPLATES_COLLECTION)
+      .find({})
+      .sort({ isDefault: -1, createdAt: 1 })
+      .toArray();
+
+    res.json({
+      ok: true,
+      templates,
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
+
+app.post("/admin/broadcast/templates", async (req, res) => {
+  try {
+    if (req.headers["x-admin-token"] !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false });
+    }
+
+    const doc = {
+      title: String(req.body.title || "").trim(),
+      photoUrl: String(req.body.photoUrl || "").trim(),
+      text: String(req.body.text || "").trim(),
+      buttonText: String(req.body.buttonText || "").trim(),
+      buttonUrl: String(req.body.buttonUrl || "").trim(),
+      isDefault: false,
+      createdAt: new Date(),
+    };
+
+    const result = await mongoose.connection
+      .collection(BROADCAST_TEMPLATES_COLLECTION)
+      .insertOne(doc);
+
+    res.json({
+      ok: true,
+      id: result.insertedId,
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
+
+app.patch("/admin/broadcast/templates/:id", async (req, res) => {
+  try {
+    if (req.headers["x-admin-token"] !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false });
+    }
+
+    await mongoose.connection
+      .collection(BROADCAST_TEMPLATES_COLLECTION)
+      .updateOne(
+        {
+          _id: new mongoose.Types.ObjectId(req.params.id),
+        },
+        {
+          $set: {
+            title: String(req.body.title || "").trim(),
+            photoUrl: String(req.body.photoUrl || "").trim(),
+            text: String(req.body.text || "").trim(),
+            buttonText: String(req.body.buttonText || "").trim(),
+            buttonUrl: String(req.body.buttonUrl || "").trim(),
+          },
+        }
+      );
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
+
+app.delete("/admin/broadcast/templates/:id", async (req, res) => {
+  try {
+    if (req.headers["x-admin-token"] !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false });
+    }
+
+    await mongoose.connection
+      .collection(BROADCAST_TEMPLATES_COLLECTION)
+      .deleteOne({
+        _id: new mongoose.Types.ObjectId(req.params.id),
+      });
+
+    res.json({
+      ok: true,
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
+
+app.post("/admin/broadcast/templates/:id/default", async (req, res) => {
+  try {
+    if (req.headers["x-admin-token"] !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false });
+    }
+
+    const collection = mongoose.connection.collection(
+      BROADCAST_TEMPLATES_COLLECTION
+    );
+
+    await collection.updateMany(
+      {},
+      {
+        $set: {
+          isDefault: false,
+        },
+      }
+    );
+
+    await collection.updateOne(
+      {
+        _id: new mongoose.Types.ObjectId(req.params.id),
+      },
+      {
+        $set: {
+          isDefault: true,
+        },
+      }
+    );
+
+    res.json({
+      ok: true,
+    });
+  } catch (e) {
+    console.error(e);
+
+    res.status(500).json({
+      ok: false,
+      error: e.message,
+    });
+  }
+});
+
+
+// ==== Telegram бот ====
+
+const TG_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const WEBAPP_URL = process.env.WEBAPP_URL || "";
+const START_BANNER_URL = String(process.env.START_BANNER_URL || "").trim();
+
+if (TG_BOT_TOKEN) {
+  bot = new Telegraf(TG_BOT_TOKEN);
+
+  app.locals.uploadCrmBroadcastPhoto =
+  async ({
+    buffer,
+    contentType,
+  }) => {
+    if (!bot) {
+      throw new Error(
+        "BOT_DISABLED"
+      );
+    }
+
+const adminChatId = String(
+  process.env.CRM_MEDIA_UPLOAD_CHAT_ID ||
+    process.env.ADMIN_CHAT_ID ||
+    process.env.ADMIN_TELEGRAM_ID ||
+    ""
+).trim();
+
+    if (!adminChatId) {
+      throw new Error(
+        "CRM_MEDIA_UPLOAD_CHAT_NOT_CONFIGURED"
+      );
+    }
+
+    const extension =
+      contentType ===
+      "image/png"
+        ? "png"
+        : contentType ===
+            "image/webp"
+          ? "webp"
+          : "jpg";
+
+    const sent =
+      await bot.telegram.sendPhoto(
+        adminChatId,
+        {
+          source: buffer,
+          filename:
+            `crm-push-${Date.now()}.${extension}`,
+        }
+      );
+
+    const photos =
+      Array.isArray(
+        sent?.photo
+      )
+        ? sent.photo
+        : [];
+
+    const fileId =
+      String(
+        photos[
+          photos.length - 1
+        ]?.file_id || ""
+      ).trim();
+
+    if (!fileId) {
+      throw new Error(
+        "TELEGRAM_FILE_ID_MISSING"
+      );
+    }
+
+    const fileLink =
+  await bot.telegram
+    .getFileLink(
+      fileId
+    );
+
+const photoPreviewUrl =
+  String(
+    fileLink || ""
+  ).trim();
+
+    try {
+      await bot.telegram
+        .deleteMessage(
+          adminChatId,
+          sent.message_id
+        );
+    } catch {}
+
+return {
+  fileId,
+  photoPreviewUrl,
+};
+  };
+
+app.locals.runCrmBroadcastCampaign =
+  async ({
+    campaignId,
+    telegramIds = [],
+    message = {},
+  }) => {
+    const safeCampaignId =
+      String(
+        campaignId || ""
+      ).trim();
+
+    const safeTelegramIds =
+      Array.from(
+        new Set(
+          (
+            Array.isArray(
+              telegramIds
+            )
+              ? telegramIds
+              : []
+          )
+            .map((value) =>
+              String(
+                value || ""
+              ).trim()
+            )
+            .filter(Boolean)
+        )
+      );
+
+    if (!safeCampaignId) {
+      throw new Error(
+        "CAMPAIGN_ID_REQUIRED"
+      );
+    }
+
+    if (!bot) {
+      throw new Error(
+        "BOT_DISABLED"
+      );
+    }
+
+    const campaign =
+      await BroadcastCampaign
+        .findById(
+          safeCampaignId
+        )
+        .lean();
+
+    if (!campaign) {
+      throw new Error(
+        "CAMPAIGN_NOT_FOUND"
+      );
+    }
+
+    /*
+     * Telegram ID, которые уже
+     * были обработаны до возможного
+     * рестарта Railway.
+     */
+    const processedTelegramIds =
+      new Set(
+        (
+          Array.isArray(
+            campaign
+              ?.processedTelegramIds
+          )
+            ? campaign
+                .processedTelegramIds
+            : []
+        )
+          .map((value) =>
+            String(
+              value || ""
+            ).trim()
+          )
+          .filter(Boolean)
+      );
+
+      const sentTelegramIds = new Set(
+  (
+    Array.isArray(
+      campaign?.sentTelegramIds
+    )
+      ? campaign.sentTelegramIds
+      : []
+  )
+    .map((value) =>
+      String(value || "").trim()
+    )
+    .filter(Boolean)
+);
+
+    /*
+     * После рестарта отправляем
+     * только тем, кого ещё
+     * не обрабатывали.
+     */
+    const pendingTelegramIds =
+      safeTelegramIds.filter(
+        (telegramId) =>
+          !processedTelegramIds.has(
+            telegramId
+          )
+      );
+
+    const title =
+      String(
+        message?.title || ""
+      ).trim();
+
+    const text =
+      String(
+        message?.text || ""
+      ).trim();
+
+    const promo =
+      String(
+        message?.promo || ""
+      ).trim();
+
+    const photoUrl =
+      String(
+        message?.photoUrl || ""
+      ).trim();
+
+      const photoFileId =
+  String(
+    message?.photoFileId || ""
+  ).trim();
+
+    const buttonText =
+      String(
+        message?.buttonText || ""
+      ).trim();
+
+    const buttonUrl =
+      String(
+        message?.buttonUrl || ""
+      ).trim();
+
+    const messageText =
+      [
+        title
+          ? `<b>${escapeHtml(
+              title
+            )}</b>`
+          : "",
+
+        text
+          ? escapeHtml(text)
+          : "",
+
+        promo
+          ? `🎁 Промокод: <code>${escapeHtml(
+              promo
+            )}</code>`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+    if (!messageText) {
+      throw new Error(
+        "MESSAGE_REQUIRED"
+      );
+    }
+
+    const replyMarkup =
+      buttonText &&
+      buttonUrl
+        ? {
+            inline_keyboard: [
+              [
+                {
+                  text:
+                    buttonText,
+
+                  url:
+                    buttonUrl,
+                },
+              ],
+            ],
+          }
+        : undefined;
+
+    /*
+     * Продолжаем старые counters,
+     * а не начинаем с нуля.
+     */
+    let processed =
+      Number(
+        campaign?.processed || 0
+      );
+
+    let sent =
+      Number(
+        campaign?.sent || 0
+      );
+
+    let failed =
+      Number(
+        campaign?.failed || 0
+      );
+
+    let blocked =
+      Number(
+        campaign?.blocked || 0
+      );
+
+    let lastErrors =
+      Array.isArray(
+        campaign?.lastErrors
+      )
+        ? campaign.lastErrors.slice(
+            -20
+          )
+        : [];
+
+    /*
+     * Если всех уже обработали,
+     * просто закрываем кампанию.
+     */
+    if (
+      pendingTelegramIds.length ===
+      0
+    ) {
+      await BroadcastCampaign
+        .updateOne(
+          {
+            _id:
+              safeCampaignId,
+          },
+
+          {
+            $set: {
+              status:
+                "completed",
+
+              processed,
+              sent,
+              failed,
+              blocked,
+
+              processedTelegramIds:
+                Array.from(
+                  processedTelegramIds
+                ),
+
+              finishedAt:
+                campaign
+                  ?.finishedAt ||
+                new Date(),
+            },
+          }
+        );
+
+      return;
+    }
+
+    const runningUpdate = {
+      status:
+        "running",
+
+      finishedAt:
+        null,
+    };
+
+    /*
+     * При resume сохраняем
+     * первоначальный startedAt.
+     */
+    if (!campaign?.startedAt) {
+      runningUpdate.startedAt =
+        new Date();
+    }
+
+    await BroadcastCampaign
+      .updateOne(
+        {
+          _id:
+            safeCampaignId,
+        },
+
+        {
+          $set:
+            runningUpdate,
+        }
+      );
+
+    setImmediate(
+      async () => {
+        try {
+          for (
+            const telegramId of
+            pendingTelegramIds
+          ) {
+            try {
+if (photoFileId) {
+  await bot.telegram
+    .sendPhoto(
+      telegramId,
+
+      photoFileId,
+
+      {
+        caption:
+          messageText,
+
+        parse_mode:
+          "HTML",
+
+        ...(replyMarkup
+          ? {
+              reply_markup:
+                replyMarkup,
+            }
+          : {}),
+      }
+    );
+} else if (photoUrl) {
+  await bot.telegram
+    .sendPhoto(
+      telegramId,
+
+      {
+        url: photoUrl,
+      },
+
+      {
+        caption:
+          messageText,
+
+        parse_mode:
+          "HTML",
+
+        ...(replyMarkup
+          ? {
+              reply_markup:
+                replyMarkup,
+            }
+          : {}),
+      }
+    );
+} else {
+  await bot.telegram
+    .sendMessage(
+      telegramId,
+
+      messageText,
+
+      {
+        parse_mode:
+          "HTML",
+
+        disable_web_page_preview:
+          true,
+
+        ...(replyMarkup
+          ? {
+              reply_markup:
+                replyMarkup,
+            }
+          : {}),
+      }
+    );
+}
+
+              sentTelegramIds.add(
+
+                telegramId
+
+              );
+
+              sent += 1;
+            } catch (error) {
+              failed += 1;
+
+              const description =
+                String(
+                  error?.response
+                    ?.description ||
+                    error?.message ||
+                    error ||
+                    "SEND_FAILED"
+                );
+
+              const lower =
+                description
+                  .toLowerCase();
+
+              const isBlocked =
+                lower.includes(
+                  "bot was blocked"
+                ) ||
+                lower.includes(
+                  "user is deactivated"
+                ) ||
+                lower.includes(
+                  "chat not found"
+                ) ||
+                lower.includes(
+                  "forbidden"
+                );
+
+              if (isBlocked) {
+                blocked += 1;
+              }
+
+              lastErrors.push(
+                `${telegramId}: ${description}`
+              );
+
+              lastErrors =
+                lastErrors.slice(
+                  -20
+                );
+            }
+
+            /*
+             * ВАЖНО:
+             * добавляем ID после
+             * попытки отправки.
+             *
+             * Даже failed не нужно
+             * бесконечно повторять
+             * после каждого рестарта.
+             */
+            processedTelegramIds.add(
+              telegramId
+            );
+
+            processed += 1;
+
+            /*
+             * Сохраняем checkpoint
+             * каждые 20 пользователей.
+             */
+            if (
+              processedTelegramIds
+                .size %
+                  20 ===
+                0 ||
+              telegramId ===
+                pendingTelegramIds[
+                  pendingTelegramIds.length -
+                    1
+                ]
+            ) {
+              await BroadcastCampaign
+                .updateOne(
+                  {
+                    _id:
+                      safeCampaignId,
+                  },
+
+                  {
+                    $set: {
+                      processed,
+                      sent,
+                      failed,
+                      blocked,
+
+                      processedTelegramIds:
+                        Array.from(
+                          processedTelegramIds
+                        ),
+
+                      sentTelegramIds:
+                        Array.from(
+                          sentTelegramIds
+                        ),
+
+                      lastErrors,
+                    },
+                  }
+                );
+            }
+
+            await new Promise(
+              (resolve) =>
+                setTimeout(
+                  resolve,
+                  60
+                )
+            );
+          }
+
+          await BroadcastCampaign
+            .updateOne(
+              {
+                _id:
+                  safeCampaignId,
+              },
+
+              {
+                $set: {
+                  status:
+                    "completed",
+
+                  processed,
+                  sent,
+                  failed,
+                  blocked,
+
+                  processedTelegramIds:
+                    Array.from(
+                      processedTelegramIds
+                    ),
+
+                  lastErrors,
+
+                  finishedAt:
+                    new Date(),
+                },
+              }
+            );
+        } catch (error) {
+          const description =
+            String(
+              error?.message ||
+                error ||
+                "BROADCAST_FAILED"
+            );
+
+          lastErrors.push(
+            description
+          );
+
+          lastErrors =
+            lastErrors.slice(
+              -20
+            );
+
+          await BroadcastCampaign
+            .updateOne(
+              {
+                _id:
+                  safeCampaignId,
+              },
+
+              {
+                $set: {
+                  /*
+                   * Оставляем running.
+                   *
+                   * Тогда после
+                   * рестарта/startup
+                   * система попробует
+                   * продолжить кампанию.
+                   */
+                  status:
+                    "running",
+
+                  processed,
+                  sent,
+                  failed,
+                  blocked,
+
+                  processedTelegramIds:
+                    Array.from(
+                      processedTelegramIds
+                    ),
+
+                  lastErrors,
+                },
+              }
+            );
+        }
+      }
+    );
+  };
+
+  async function resumeCrmBroadcastCampaigns() {
+  const campaigns =
+    await BroadcastCampaign
+      .find({
+        status: {
+          $in: [
+            "queued",
+            "running",
+          ],
+        },
+      })
+      .sort({
+        createdAt: 1,
+      })
+      .lean();
+
+  if (!campaigns.length) {
+    return;
+  }
+
+  console.log(
+    `CRM broadcast recovery: ${campaigns.length} campaign(s)`
+  );
+
+  for (const campaign of campaigns) {
+    const campaignId =
+      String(
+        campaign?._id || ""
+      );
+
+    const telegramIds =
+      Array.isArray(
+        campaign
+          ?.recipientTelegramIds
+      )
+        ? campaign
+            .recipientTelegramIds
+        : [];
+
+    if (!telegramIds.length) {
+      await BroadcastCampaign
+        .updateOne(
+          {
+            _id:
+              campaign._id,
+          },
+
+          {
+            $set: {
+              status:
+                "failed",
+
+              finishedAt:
+                new Date(),
+
+              lastErrors: [
+                ...(
+                  Array.isArray(
+                    campaign
+                      ?.lastErrors
+                  )
+                    ? campaign
+                        .lastErrors
+                    : []
+                ),
+
+                "EMPTY_RECIPIENTS",
+              ].slice(-20),
+            },
+          }
+        );
+
+      continue;
+    }
+
+    try {
+      await app.locals
+        .runCrmBroadcastCampaign({
+          campaignId,
+
+          telegramIds,
+
+          message:
+            campaign?.message ||
+            {},
+        });
+
+      console.log(
+        `CRM broadcast resumed: ${campaignId}`
+      );
+    } catch (error) {
+      const description =
+        String(
+          error?.message ||
+            error ||
+            "RESUME_FAILED"
+        );
+
+      console.error(
+        "CRM broadcast resume error:",
+        campaignId,
+        error
+      );
+
+      await BroadcastCampaign
+        .updateOne(
+          {
+            _id:
+              campaign._id,
+          },
+
+          {
+            $set: {
+              status:
+                "failed",
+
+              finishedAt:
+                new Date(),
+
+              lastErrors: [
+                ...(
+                  Array.isArray(
+                    campaign
+                      ?.lastErrors
+                  )
+                    ? campaign
+                        .lastErrors
+                    : []
+                ),
+
+                description,
+              ].slice(-20),
+            },
+          }
+        );
+    }
+  }
+}
+
+  bot.use(handleManagerClientMessageText);
+
+  console.log(
+
+    "[MANAGER CLIENT MESSAGE] middleware registered"
+
+  );
+
+  bot.start(async (ctx) => {
+    try {
+      const payload = String(ctx.startPayload || "").trim();
+      const tgId = String(ctx.from?.id || "").trim();
+      const username = String(ctx.from?.username || "").trim() || null;
+      const firstName = String(ctx.from?.first_name || "").trim() || null;
+      const lastName = String(ctx.from?.last_name || "").trim() || null;
+
+      if (!tgId) {
+        throw new Error("TG_ID_MISSING");
+      }
+
+      let me = await User.findOne({ telegramId: tgId });
+
+      if (!me) {
+        me = await User.create({
+          telegramId: tgId,
+          username,
+          firstName,
+          lastName,
+          cashbackBalance: 0,
+          cashbackLedger: [],
+          referral: {
+            code: "",
+            usedCode: "",
+            rewardGroups: [],
+          },
+        });
+      } else {
+        let changed = false;
+
+        if (me.username !== username) {
+          me.username = username;
+          changed = true;
+        }
+
+        if (me.firstName !== firstName) {
+          me.firstName = firstName;
+          changed = true;
+        }
+
+        if (me.lastName !== lastName) {
+          me.lastName = lastName;
+          changed = true;
+        }
+
+        if (!me.referral || typeof me.referral !== "object") {
+          me.referral = {
+            code: "",
+            usedCode: "",
+            rewardGroups: [],
+          };
+          changed = true;
+        }
+
+        if (!Array.isArray(me.referral.rewardGroups)) {
+          me.referral.rewardGroups = [];
+          changed = true;
+        }
+
+        if (changed) {
+          await me.save();
+        }
+      }
+
+      let myRefCode = String(me?.referral?.code || "").trim();
+
+      if (!myRefCode) {
+        if (typeof ensureUserRefCode === "function") {
+          myRefCode = await ensureUserRefCode(me);
+        } else {
+          myRefCode = genRefCode();
+          me.referral = me.referral || {};
+          me.referral.code = myRefCode;
+          if (!Array.isArray(me.referral.rewardGroups)) {
+            me.referral.rewardGroups = [];
+          }
+          await me.save();
+        }
+      }
+
+      let openLink = String(WEBAPP_URL || "").trim();
+      if (!openLink) {
+        throw new Error("WEBAPP_URL_MISSING");
+      }
+
+      try {
+        const u = new URL(openLink);
+        if (payload) u.searchParams.set("startapp", payload);
+        if (myRefCode) u.searchParams.set("ref", myRefCode);
+        openLink = u.toString();
+      } catch {
+        const params = new URLSearchParams();
+        if (payload) params.set("startapp", payload);
+        if (myRefCode) params.set("ref", myRefCode);
+        openLink = `${String(WEBAPP_URL || "").trim()}${params.toString() ? "?" + params.toString() : ""}`;
+      }
+
+      const caption = "Добро пожаловать в ELF DUCK SHOP!";
+      const keyboard = Markup.inlineKeyboard([
+        [Markup.button.webApp("💨 Посетить магазин 🛍️", openLink)],
+      ]);
+
+      if (START_BANNER_URL) {
+        try {
+          await ctx.replyWithPhoto(START_BANNER_URL, { caption, ...keyboard });
+          return;
+        } catch (photoErr) {
+          console.error("[BOT_START] replyWithPhoto failed:", photoErr);
+        }
+      }
+
+      await ctx.reply(caption, keyboard);
+    } catch (e) {
+      console.error("bot.start error:", e);
+      try {
+        await ctx.reply("Произошла ошибка при открытии магазина. Попробуйте ещё раз.");
+      } catch {}
+    }
+  });
+
+  async function notifyPickupClientAfterManagerPaymentStatus(
+    order,
+    managerTelegramId
+  ) {
+    if (!bot || !order) {
+      return false;
+    }
+
+    if (
+      String(order?.deliveryType || "")
+        .trim()
+        .toLowerCase() !== "pickup"
+    ) {
+      return false;
+    }
+
+    const clientTelegramId = String(
+      order?.userTelegramId || ""
+    ).trim();
+
+    if (!clientTelegramId) {
+      return false;
+    }
+
+    const point =
+      await resolveOrderNotificationPoint(
+        order
+      );
+
+    const arrivalTime =
+      String(
+        order?.arrivalTime || ""
+      ).trim() || "указанное время";
+
+    const pointAddress = String(
+      point?.address ||
+        order?.pickupPointAddress ||
+        order?.methodLabel ||
+        "указанная точка самовывоза"
+    ).trim();
+
+    const paymentMethod = String(
+      order?.payment?.method || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    const paymentStatus = String(
+      order?.payment?.status || ""
+    )
+      .trim()
+      .toLowerCase();
+
+    let text = "";
+
+    /*
+    * Наличные:
+    * менеджер нажал «Ожидаю».
+    */
+    if (
+      paymentMethod === "cash" &&
+      paymentStatus === "awaiting"
+    ) {
+      const remainingToPayZl = Number(
+        order?.payment
+          ?.cashbackRemainingToPayZl ||
+          order?.totalZl ||
+          0
+      );
+
+      text = [
+        "✅ <b>ВАШ ЗАКАЗ В ПРОЦЕССЕ СБОРА!</b>",
+        "",
+        `Ожидаем вас в <b>${escapeHtml(
+          arrivalTime
+        )}</b>.`,
+        `К оплате: <b>${remainingToPayZl.toFixed(
+          2
+        )} PLN</b>.`,
+        `Локация: <b>${escapeHtml(
+          pointAddress
+        )}</b>.`,
+      ].join("\n");
+    }
+
+    /*
+    * BLIK / крипта / украинская карта:
+    * менеджер нажал «Оплачено».
+    */
+    else if (
+      paymentStatus === "paid"
+    ) {
+      text = [
+        "✅ <b>ОПЛАТА ПОДТВЕРЖДЕНА!</b>",
+        "",
+        "Ваш заказ в процессе сбора.",
+        `Ожидаем вас в <b>${escapeHtml(
+          arrivalTime
+        )}</b>.`,
+        `Локация: <b>${escapeHtml(
+          pointAddress
+        )}</b>.`,
+      ].join("\n");
+    } else {
+      return false;
+    }
+
+    /*
+    * Получаем ссылку именно для точки,
+    * где был оформлен заказ.
+    */
+    const managerTelegramUrl =
+      await getOrderManagerTelegramUrl(
+        order
+      );
+
+    console.log(
+      "[PICKUP MANAGER LINK]",
+      {
+        orderNo: String(
+          order?.orderNo || ""
+        ),
+
+        pickupPointId: String(
+          order?.pickupPointId || ""
+        ),
+
+        pointKey: String(
+          point?.key || ""
+        ),
+
+        pointTitle: String(
+          point?.title || ""
+        ),
+
+        managerTelegramId: String(
+          managerTelegramId || ""
+        ),
+
+        managerTelegramUrl,
+      }
+    );
+
+    const replyMarkup =
+      managerTelegramUrl
+        ? {
+            inline_keyboard: [
+              [
+                {
+                  text:
+                    "💬 Связаться с менеджером",
+
+                  url:
+                    managerTelegramUrl,
+                },
+              ],
+            ],
+          }
+        : undefined;
+
+    await bot.telegram.sendMessage(
+      clientTelegramId,
+      text,
+      {
+        parse_mode: "HTML",
+
+        disable_web_page_preview:
+          true,
+
+        ...(replyMarkup
+          ? {
+              reply_markup:
+                replyMarkup,
+            }
+          : {}),
+      }
+    );
+
+    return true;
+  }
+
+  async function sendCourierClientMessage(
+    order,
+    type
+  ) {
+    if (!bot || !order) {
+      return false;
+    }
+
+    const clientTelegramId = String(
+      order?.userTelegramId || ""
+    ).trim();
+
+    if (!clientTelegramId) {
+      return false;
+    }
+
+      const notifyPoint =
+        await resolveOrderNotificationPoint(order).catch(() => null);
+
+      const pointManagerTelegramId = String(
+        Array.isArray(
+          notifyPoint?.allowedAdminTelegramIds
+        )
+          ? notifyPoint.allowedAdminTelegramIds[0] || ""
+          : ""
+      ).trim();
+
+      const pointManagerUser =
+        pointManagerTelegramId
+          ? await User.findOne(
+              {
+                telegramId: pointManagerTelegramId,
+              },
+              {
+                username: 1,
+                firstName: 1,
+                telegramId: 1,
+              }
+            ).lean()
+          : null;
+
+      const managerContactUsernameRaw = String(
+        pointManagerUser?.username ||
+        pointManagerUser?.firstName ||
+        ""
+      ).trim();
+
+      const managerContactUsername =
+        pointManagerUser?.username
+          ? (
+              managerContactUsernameRaw.startsWith("@")
+                ? managerContactUsernameRaw
+                : `@${managerContactUsernameRaw}`
+            )
+          : managerContactUsernameRaw || "—";
+
+    const deliveryWindow = String(
+      order?.deliveryTimeWindow ||
+      order?.arrivalTime ||
+      "указанный промежуток времени"
+    ).trim();
+
+    let text = "";
+
+    if (type === "accepted") {
+      text = [
+        "✅ <b>Ваш заказ принят!</b>",
+        "",
+        "Мы в процессе сбора вашего заказа.",
+        `Ожидайте курьера в промежутке <b>${escapeHtml(
+          deliveryWindow
+        )}</b>.`,
+      ].join("\n");
+    }
+
+    if (type === "soon") {
+      text = [
+        "🚗 <b>Курьер выехал и будет через 15 минут!</b>",
+        "",
+        "Ищите серую Honda с номерами WB 084CY.",
+        "",
+        "Пожалуйста, выйдите навстречу — курьер может ожидать не более 5 минут. В случае опоздания курьер вправе уехать, а повторная доставка оплачивается в двойном размере.",
+      ].join("\n");
+    }
+
+    if (type === "arrived") {
+      text = [
+        "📍 <b>Курьер на месте!</b>",
+        "",
+        "Если не видите курьера — свяжитесь с менеджером.",
+      ].join("\n");
+    }
+
+    if (!text) {
+      return false;
+    }
+
+  const replyMarkup =
+    pointManagerTelegramId
+        ? {
+            inline_keyboard: [
+              [
+                {
+                  text:
+                    "💬 Связаться с менеджером",
+                  url:
+                    `tg://user?id=${encodeURIComponent(
+                      pointManagerTelegramId
+                    )}`,
+                },
+              ],
+            ],
+          }
+        : undefined;
+
+    await bot.telegram.sendMessage(
+      clientTelegramId,
+      text,
+      {
+        parse_mode: "HTML",
+
+        disable_web_page_preview:
+          true,
+
+        ...(replyMarkup
+          ? {
+              reply_markup:
+                replyMarkup,
+            }
+          : {}),
+      }
+    );
+
+    return true;
+  }
+
+  bot.action(/mgr_courier_soon:(.+)/, async (ctx) => {
+      try {
+        const orderId = String(
+          ctx.match?.[1] || ""
+        ).trim();
+
+        const order =
+          await Order.findById(
+            orderId
+          );
+
+        if (!order) {
+          await ctx.answerCbQuery(
+            "Заказ не найден"
+          );
+
+          return;
+        }
+
+        const isCourierOrder =
+          String(
+            order?.deliveryType || ""
+          )
+            .trim()
+            .toLowerCase() ===
+            "delivery" &&
+          String(
+            order?.deliveryMethod || ""
+          )
+            .trim()
+            .toLowerCase() ===
+            "courier";
+
+        if (!isCourierOrder) {
+          await ctx.answerCbQuery(
+            "Доступно только для курьерской доставки",
+            {
+              show_alert: true,
+            }
+          );
+
+          return;
+        }
+
+        order.courierUsername =
+          String(
+            ctx.from?.username || ""
+          ).trim();
+
+        order.courierTelegramId =
+          String(
+            ctx.from?.id || ""
+          ).trim();
+
+        order.handledByTelegramId =
+          String(
+            ctx.from?.id || ""
+          ).trim();
+
+        await order.save();
+
+        await sendCourierClientMessage(
+          order,
+          "soon"
+        );
+
+        await ctx.answerCbQuery(
+          "Клиент уведомлён"
+        );
+      } catch (error) {
+        console.error(
+          "mgr_courier_soon error:",
+          error
+        );
+
+        try {
+          await ctx.answerCbQuery(
+            "Не удалось уведомить клиента",
+            {
+              show_alert: true,
+            }
+          );
+        } catch {}
+      }
+    }
+  );
+
+  bot.action(/mgr_courier_arrived:(.+)/, async (ctx) => {
+      try {
+        const orderId = String(
+          ctx.match?.[1] || ""
+        ).trim();
+
+        const order =
+          await Order.findById(
+            orderId
+          );
+
+        if (!order) {
+          await ctx.answerCbQuery(
+            "Заказ не найден"
+          );
+
+          return;
+        }
+
+        const isCourierOrder =
+          String(
+            order?.deliveryType || ""
+          )
+            .trim()
+            .toLowerCase() ===
+            "delivery" &&
+          String(
+            order?.deliveryMethod || ""
+          )
+            .trim()
+            .toLowerCase() ===
+            "courier";
+
+        if (!isCourierOrder) {
+          await ctx.answerCbQuery(
+            "Доступно только для курьерской доставки",
+            {
+              show_alert: true,
+            }
+          );
+
+          return;
+        }
+
+        order.courierUsername =
+          String(
+            ctx.from?.username || ""
+          ).trim();
+
+        order.courierTelegramId =
+          String(
+            ctx.from?.id || ""
+          ).trim();
+
+        order.handledByTelegramId =
+          String(
+            ctx.from?.id || ""
+          ).trim();
+
+        await order.save();
+
+        await sendCourierClientMessage(
+          order,
+          "arrived"
+        );
+
+        await ctx.answerCbQuery(
+          "Клиент уведомлён"
+        );
+      } catch (error) {
+        console.error(
+          "mgr_courier_arrived error:",
+          error
+        );
+
+        try {
+          await ctx.answerCbQuery(
+            "Не удалось уведомить клиента",
+            {
+              show_alert: true,
+            }
+          );
+        } catch {}
+      }
+    }
+  );
+
+  bot.action(/mgr_pay_paid:(.+)/, async (ctx) => {
+    try {
+      const orderId = String(ctx.match?.[1] || "").trim();
+      if (!orderId) return ctx.answerCbQuery("Order not found");
+
+      const order = await Order.findById(orderId);
+      if (!order) return ctx.answerCbQuery("Заказ не найден");
+
+      const previousPaymentStatus =
+      String(
+        order?.payment?.status || ""
+      )
+        .trim()
+        .toLowerCase();
+
+      // списываем склад только один раз
+      if (String(order?.payment?.method || "").trim().toLowerCase() !== "cash") {
+        await commitOrderStock(order);
+        order.stockCommittedAt = new Date();
+      }
+
+      const isCourierOrder =
+        String(order?.deliveryType || "")
+          .trim()
+          .toLowerCase() ===
+          "delivery" &&
+        String(order?.deliveryMethod || "")
+          .trim()
+          .toLowerCase() ===
+          "courier";
+
+      const isInpostOrder =
+
+        String(order?.deliveryType || "")
+
+          .trim()
+
+          .toLowerCase() === "delivery" &&
+
+        String(order?.deliveryMethod || "")
+
+          .trim()
+
+          .toLowerCase() === "inpost";
+
+      const isCashPayment =
+        String(order?.payment?.method || "")
+          .trim()
+          .toLowerCase() ===
+          "cash";
+
+      const shouldMarkAwaiting =
+        (
+          String(
+            order?.deliveryType || ""
+          )
+            .trim()
+            .toLowerCase() ===
+            "pickup" ||
+          isCourierOrder
+        ) &&
+        isCashPayment;
+
+      order.payment = {
+        ...(order.payment?.toObject ? order.payment.toObject() : order.payment || {}),
+        status: shouldMarkAwaiting
+          ? "awaiting"
+          : "paid",
+
+        paidAt: shouldMarkAwaiting
+          ? null
+          : new Date(),
+        checkedAt: new Date(),
+        checkedByTelegramId: String(ctx.from?.id || ""),
+      };
+
+      if (isCourierOrder) {
+        order.courierUsername = String(ctx.from?.username || "").trim();
+        order.courierTelegramId = String(ctx.from?.id || "").trim();
+      }
+
+      // После подтверждения оплаты заказ остается "assembled"
+      // и только потом отдельно отмечается как shipped/completed.
+      order.status = "assembled";
+      // --- PATCH 1: replace block ---
+      await order.save();
+
+      // await applyOrderCashback(order);
+
+      const freshPaidOrder = await Order.findById(order._id);
+      if (!freshPaidOrder) {
+        throw new Error("ORDER_NOT_FOUND_AFTER_PAY");
+      }
+
+      await refreshManagerOrderMessage(freshPaidOrder);
+      stopPaymentReminder(order._id);
+
+      const nextPaymentStatus =
+        String(
+          freshPaidOrder?.payment?.status ||
+            ""
+        )
+          .trim()
+          .toLowerCase();
+
+      /*
+      * Не отправляем одинаковое сообщение
+      * повторно при повторном нажатии кнопки.
+      */
+
+      if (
+        previousPaymentStatus !==
+        nextPaymentStatus
+      ) {
+        try {
+          if (isCourierOrder) {
+            await sendCourierClientMessage(
+              freshPaidOrder,
+              "accepted"
+            );
+          } else if (isInpostOrder) {
+            await bot.telegram.sendMessage(
+              String(
+                freshPaidOrder?.userTelegramId ||
+                  ""
+              ),
+              [
+                "✅ <b>МЕНЕДЖЕР ПОДТВЕРДИЛ ВАШУ ТРАНЗАКЦИЮ!</b>",
+                "",
+                `Заказ <b>#${escapeHtml(
+                  freshPaidOrder?.orderNo || "—"
+                )}</b> оплачен.`,
+                "",
+                "Мы в процессе сбора вашего заказа и отправим его до конца рабочего дня.",
+                "",
+                "Ожидайте дальнейших сообщений.",
+              ].join("\n"),
+              {
+                parse_mode: "HTML",
+                disable_web_page_preview: true,
+
+                reply_markup: {
+                  inline_keyboard: [
+                    [
+                      {
+                        text:
+                          "💬 Связаться с менеджером",
+
+                        url:
+                          "https://t.me/elfduck_inpost",
+                      },
+                    ],
+                  ],
+                },
+              }
+            );
+          } else {
+            await notifyPickupClientAfterManagerPaymentStatus(
+              freshPaidOrder,
+              String(ctx.from?.id || "")
+            );
+          }
+        } catch (notifyError) {
+          console.error(
+            "mgr_pay_paid client notification error:",
+            notifyError
+          );
+        }
+      }
+
+      // --- END PATCH 1 ---
+
+      // Для доставки отправляем отдельное сообщение-напоминание менеджеру
+      if (
+
+        String(
+          order?.deliveryType || ""
+        ) === "delivery" &&
+
+        String(
+          order?.deliveryMethod || ""
+        ) === "inpost"
+
+      ) {
+        try {
+          const managerChatId = String(order?.payment?.managerMessageChatId || "").trim();
+          const managerMessageId = Number(order?.payment?.managerMessageId || 0);
+          const orderNo = escapeHtml(order?.orderNo || "—");
+          const isInpost = String(order?.deliveryMethod || "").trim() === "inpost";
+
+          const deliveryTitle = isInpost
+            ? `📦 <b>ЗАКАЗ ГОТОВ К ОТПРАВКЕ</b>`
+            : `🚚 <b>ЗАКАЗ ГОТОВ К ДОСТАВКЕ</b>`;
+
+          // const courierUsernameRaw = String(order?.courierUsername || order?.courier?.username || "").trim();
+          // const courierUsername = courierUsernameRaw
+          //   ? (courierUsernameRaw.startsWith("@") ? courierUsernameRaw : `@${courierUsernameRaw}`)
+          //   : "—";
+
+          const deliveryText = isInpost
+            ? `Когда вы отправите с помощью пачкомата этот заказ (<b>#${orderNo}</b>) нажмите кнопку <b>ЗАКАЗ ОТПРАВЛЕН</b>, чтобы клиент был уведомлен.`
+            : `Когда вы прибудете на адрес по заказу <b>#${orderNo}</b>, нажмите кнопку <b>ЗАКАЗ ДОСТАВЛЕН</b>, чтобы клиент был уведомлен.`;
+
+          const deliveryButton = isInpost
+            ? { text: "📦 ЗАКАЗ ОТПРАВЛЕН", callback_data: `mgr_order_shipped:${order._id}` }
+            : { text: "🚚 ЗАКАЗ ДОСТАВЛЕН", callback_data: `mgr_order_delivered:${order._id}` };
+
+          const deliveryDetails = [];
+          if (!isInpost && order?.courierAddress) deliveryDetails.push(`📍 <b>Адрес:</b> ${escapeHtml(order.courierAddress)}`);
+          if (!isInpost && order?.deliveryTimeWindow) deliveryDetails.push(`🕒 <b>Время:</b> ${escapeHtml(order.deliveryTimeWindow)}`);
+          if (isInpost && order?.inpostData?.lockerAddress) deliveryDetails.push(`📦 <b>Пачкомат:</b> ${escapeHtml(order.inpostData.lockerAddress)}`);
+          if (isInpost && order?.inpostData?.fullName) deliveryDetails.push(`👤 <b>Получатель:</b> ${escapeHtml(order.inpostData.fullName)}`);
+          if (order.comment) deliveryDetails.push(`💬 <b>Комментарий:</b> ${escapeHtml(order.comment)}`);
+
+          if (managerChatId && managerMessageId) {
+            const sent = await bot.telegram.sendMessage(
+              managerChatId,
+              [
+                deliveryTitle,
+                ``,
+                ...(deliveryDetails.length ? [...deliveryDetails, ``] : []),
+                deliveryText,
+              ].join("\n"),
+              {
+                parse_mode: "HTML",
+                reply_to_message_id: managerMessageId,
+                allow_sending_without_reply: true,
+                reply_markup: {
+                  inline_keyboard: [[deliveryButton]],
+                },
+              }
+            );
+
+            await Order.updateOne(
+              { _id: order._id },
+              {
+                $push: {
+                  managerDeliveryMessageIds: String(sent?.message_id || ""),
+                },
+              }
+            );
+          }
+        } catch (e) {
+          console.error("mgr_pay_paid delivery notify error:", e);
+        }
+      }
+
+      await ctx.answerCbQuery(
+        shouldMarkAwaiting ? "Клиент ожидается на точке" : "Оплата подтверждена"
+      );
+    } catch (e) {
+      console.error("mgr_pay_paid error:", e);
+      try {
+        await ctx.answerCbQuery("Ошибка");
+      } catch {}
+    }
+  });
+
+  bot.action(/mgr_pay_unpaid:(.+)/, async (ctx) => {
+    try {
+      const orderId = String(ctx.match?.[1] || "").trim();
+      if (!orderId) return ctx.answerCbQuery("Order not found");
+
+      const order = await Order.findById(orderId);
+      if (!order) return ctx.answerCbQuery("Заказ не найден");
+
+      // снимаем резерв только один раз
+      if (!order.stockReleasedAt) {
+        await releaseOrderReservedStock(order);
+        order.stockReleasedAt = new Date();
+      }
+
+      // возвращаем кэшбек, если он был применён
+      await refundOrderCashback(order);
+
+      const freshOrderAfterRefund = await Order.findById(order._id);
+      if (!freshOrderAfterRefund) {
+        throw new Error("ORDER_NOT_FOUND_AFTER_REFUND");
+      }
+
+      order.payment = {
+        ...(freshOrderAfterRefund.payment?.toObject
+          ? freshOrderAfterRefund.payment.toObject()
+          : freshOrderAfterRefund.payment || {}),
+        status: "unpaid",
+        paidAt: null,
+        checkedAt: new Date(),
+        checkedByTelegramId: String(ctx.from?.id || ""),
+      };
+
+      order.status = "canceled";
+
+      order.canceledAt =
+        new Date();
+
+      order.canceledByTelegramId =
+        String(
+          ctx.from?.id || ""
+        );
+
+      order.managerEditedAt =
+        new Date();
+
+      order.managerEditedByTelegramId =
+        String(
+          ctx.from?.id || ""
+        );
+
+      // --- PATCH 3: replace block for unpaid status ---
+      await order.save();
+
+      const freshUnpaidOrder = await Order.findById(order._id);
+      if (!freshUnpaidOrder) {
+        throw new Error("ORDER_NOT_FOUND_AFTER_UNPAID");
+      }
+
+      await refreshManagerOrderMessage(freshUnpaidOrder);
+
+      stopPaymentReminder(order._id);
+
+      await ctx.answerCbQuery("Оплата отклонена, кэшбек возвращён");
+    } catch (e) {
+      console.error("mgr_pay_unpaid error:", e);
+      try {
+        await ctx.answerCbQuery("Ошибка");
+      } catch {}
+    }
+  });
+
+  bot.action(/mgr_order_shipped:(.+)/, async (ctx) => {
+    try {
+      const orderId = String(
+        ctx.match?.[1] || ""
+      ).trim();
+
+      const order = await Order.findById(
+        orderId
+      );
+
+      if (!order) {
+        await ctx.answerCbQuery(
+          "Заказ не найден"
+        );
+        return;
+      }
+
+      const deliveryType = String(
+        order?.deliveryType || ""
+      )
+        .trim()
+        .toLowerCase();
+
+      const deliveryMethod = String(
+        order?.deliveryMethod || ""
+      )
+        .trim()
+        .toLowerCase();
+
+      if (
+        deliveryType !== "delivery" ||
+        deliveryMethod !== "inpost"
+      ) {
+        await ctx.answerCbQuery(
+          "Этот заказ не относится к InPost"
+        );
+        return;
+      }
+
+      const trackingNumber =
+        normalizeInpostTrackingNumber(
+          order?.inpostTrackingNumber || ""
+        );
+
+      if (trackingNumber) {
+        await completeInpostShipment(
+          order,
+          String(ctx.from?.id || "")
+        );
+
+        const callbackChatId = String(
+          ctx?.callbackQuery?.message?.chat?.id ||
+          ctx?.chat?.id ||
+          ""
+        ).trim();
+
+        const callbackMessageId = Number(
+          ctx?.callbackQuery?.message?.message_id ||
+          0
+        );
+
+        if (
+          callbackChatId &&
+          callbackMessageId
+        ) {
+          try {
+            await bot.telegram.editMessageText(
+              callbackChatId,
+              callbackMessageId,
+              undefined,
+              [
+                "✅ <b>ЗАКАЗ ОТПРАВЛЕН</b>",
+                "",
+                `📦 Трекинг-номер: <code>${escapeHtml(
+                  order?.inpostTrackingNumber ||
+                  "—"
+                )}</code>`,
+                "",
+                "Заказ отмечен как отправленный.",
+              ].join("\n"),
+              {
+                parse_mode: "HTML",
+                disable_web_page_preview: true,
+
+                reply_markup: {
+                  inline_keyboard: [],
+                },
+              }
+            );
+          } catch (editError) {
+            const description = String(
+              editError?.response?.description ||
+              editError?.message ||
+              ""
+            ).toLowerCase();
+
+            if (
+              !description.includes(
+                "message is not modified"
+              ) &&
+              !description.includes(
+                "message to edit not found"
+              )
+            ) {
+              console.error(
+                "[INPOST SHIPMENT][READY MESSAGE EDIT FAILED]",
+                editError
+              );
+            }
+          }
+        }
+
+        await ctx.answerCbQuery(
+          "Заказ отмечен как отправленный"
+        );
+
+        return;
+      }
+
+      const stateKey = String(
+
+        ctx.from?.id ||
+
+        ctx.chat?.id ||
+
+        ""
+
+      );
+
+      await ctx.answerCbQuery();
+
+      const promptMessage = await ctx.reply(
+
+        [
+
+          "📦 <b>Введите трекинг-номер InPost</b>",
+
+          "",
+
+          `Заказ: <b>#${escapeHtml(
+
+            order?.orderNo || "—"
+
+          )}</b>`,
+
+          "",
+
+          "Отправьте трекинг-номер следующим сообщением.",
+
+        ].join("\n"),
+
+        {
+
+          parse_mode: "HTML",
+
+          reply_markup: {
+
+            inline_keyboard: [
+
+              [
+
+                {
+
+                  text: "❌ Отмена",
+
+                  callback_data:
+
+                    `mgr_inpost_tracking_cancel:${order._id}`,
+
+                },
+
+              ],
+
+            ],
+
+          },
+
+        }
+
+      );
+
+      inpostTrackingInputState.set(
+
+        stateKey,
+
+        {
+
+          orderId: String(order._id),
+
+          chatId: String(
+
+            ctx.chat?.id || ""
+
+          ),
+
+          requestedAt: Date.now(),
+
+          promptMessageId: Number(
+
+            promptMessage?.message_id || 0
+
+          ),
+
+          readyMessageId: Number(
+
+            ctx.callbackQuery
+
+              ?.message
+
+              ?.message_id || 0
+
+          ),
+
+        }
+
+      );
+    } catch (error) {
+      console.error(
+        "mgr_order_shipped error:",
+        error
+      );
+
+      try {
+        await ctx.answerCbQuery(
+          "Не удалось начать отправку заказа",
+          {
+            show_alert: true,
+          }
+        );
+      } catch {}
+    }
+  });
+
+  bot.action(/mgr_inpost_tracking_cancel:(.+)/, async (ctx) => {
+      try {
+        const orderId = String(
+          ctx.match?.[1] || ""
+        ).trim();
+
+        const stateKey = String(
+          ctx.from?.id ||
+          ctx.chat?.id ||
+          ""
+        );
+
+        const currentState =
+          inpostTrackingInputState.get(
+            stateKey
+          );
+
+        if (
+          currentState &&
+          String(
+            currentState?.orderId || ""
+          ) === orderId
+        ) {
+          inpostTrackingInputState.delete(
+            stateKey
+          );
+        }
+
+        await ctx.answerCbQuery(
+          "Ввод трекинга отменён"
+        );
+
+        try {
+          await ctx.editMessageText(
+            "❌ Ввод трекинг-номера отменён."
+          );
+        } catch {}
+      } catch (error) {
+        console.error(
+          "mgr_inpost_tracking_cancel error:",
+          error
+        );
+
+        try {
+          await ctx.answerCbQuery(
+            "Не удалось отменить ввод",
+            {
+              show_alert: true,
+            }
+          );
+        } catch {}
+      }
+    }
+  );
+
+  bot.action(/mgr_inpost_tracking_confirm:(.+)/, async (ctx) => {
+      try {
+        const orderId = String(
+          ctx.match?.[1] || ""
+        ).trim();
+
+        const stateKey = String(
+          ctx.from?.id ||
+          ctx.chat?.id ||
+          ""
+        );
+
+        const currentState =
+          inpostTrackingInputState.get(
+            stateKey
+          );
+
+        if (
+          !currentState ||
+          String(
+            currentState?.orderId || ""
+          ) !== orderId
+        ) {
+          await ctx.answerCbQuery(
+            "Данные ввода устарели",
+            {
+              show_alert: true,
+            }
+          );
+
+          return;
+        }
+
+        const trackingNumber =
+          normalizeInpostTrackingNumber(
+            currentState?.trackingNumber ||
+              ""
+          );
+
+        if (!trackingNumber) {
+          await ctx.answerCbQuery(
+            "Трекинг-номер не найден",
+            {
+              show_alert: true,
+            }
+          );
+
+          return;
+        }
+
+        const order =
+          await Order.findById(orderId);
+
+        if (!order) {
+          inpostTrackingInputState.delete(
+            stateKey
+          );
+
+          await ctx.answerCbQuery(
+            "Заказ не найден",
+            {
+              show_alert: true,
+            }
+          );
+
+          return;
+        }
+
+        order.inpostTrackingNumber =
+          trackingNumber;
+
+        order.inpostTrackingAddedAt =
+          new Date();
+
+        order.inpostTrackingAddedByTelegramId =
+          String(ctx.from?.id || "");
+
+        order.inpostShippedNotifiedAt =
+          null;
+
+        await order.save();
+
+        await completeInpostShipment(
+          order,
+          String(ctx.from?.id || "")
+        );
+
+        const readyMessageId = Number(
+  currentState?.readyMessageId || 0
+);
+
+const readyMessageChatId = String(
+  currentState?.chatId ||
+  ctx.chat?.id ||
+  ""
+).trim();
+
+if (
+  readyMessageChatId &&
+  readyMessageId
+) {
+  try {
+    await ctx.telegram.editMessageText(
+      readyMessageChatId,
+      readyMessageId,
+      undefined,
+      [
+        "✅ <b>ЗАКАЗ ОТПРАВЛЕН</b>",
+        "",
+        `📦 <b>Заказ:</b> #${escapeHtml(
+          order?.orderNo || "—"
+        )}`,
+        `📦 <b>Трекинг-номер:</b> <code>${escapeHtml(
+          trackingNumber
+        )}</code>`,
+        "",
+        "Заказ отмечен как отправленный.",
+      ].join("\n"),
+      {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        reply_markup: {
+          inline_keyboard: [],
+        },
+      }
+    );
+  } catch (editError) {
+    const description = String(
+      editError?.response?.description ||
+      editError?.message ||
+      ""
+    ).toLowerCase();
+
+    if (
+      !description.includes(
+        "message is not modified"
+      ) &&
+      !description.includes(
+        "message to edit not found"
+      )
+    ) {
+      console.error(
+        "[INPOST SHIPMENT][READY MESSAGE EDIT FAILED]",
+        editError
+      );
+    }
+  }
+}
+
+        const chatId = String(
+          ctx.chat?.id ||
+          currentState?.chatId ||
+          ""
+        );
+
+        const messageIdsToDelete = [
+          Number(
+            currentState?.promptMessageId || 0
+          ),
+
+          Number(
+            currentState?.inputMessageId || 0
+          ),
+
+          // Number(
+          //   currentState?.readyMessageId || 0
+          // ),
+
+          Number(
+            ctx.callbackQuery
+              ?.message
+              ?.message_id || 0
+          ),
+        ].filter(Boolean);
+
+        for (
+          const messageId of new Set(
+            messageIdsToDelete
+          )
+        ) {
+          try {
+            if (chatId && messageId) {
+              await ctx.telegram.deleteMessage(
+                chatId,
+                messageId
+              );
+            }
+          } catch {}
+        }
+
+        inpostTrackingInputState.delete(
+          stateKey
+        );
+
+        await ctx.answerCbQuery(
+          "Заказ отправлен"
+        );
+
+        const resultText = [
+          "✅ <b>Заказ отмечен как отправленный</b>",
+          "",
+          `Трекинг-номер: <code>${escapeHtml(
+            trackingNumber
+          )}</code>`,
+          "",
+          "Клиент получил уведомление со ссылкой на отслеживание.",
+        ].join("\n");
+
+        const originalOrderMessageId =
+          Number(
+            order?.payment
+              ?.managerMessageId || 0
+          );
+
+        await ctx.telegram.sendMessage(
+          chatId,
+          resultText,
+          {
+            parse_mode: "HTML",
+
+            disable_web_page_preview:
+              true,
+
+            ...(originalOrderMessageId
+              ? {
+                  reply_parameters: {
+                    message_id:
+                      originalOrderMessageId,
+
+                    allow_sending_without_reply:
+                      true,
+                  },
+                }
+              : {}),
+          }
+        );
+      } catch (error) {
+        console.error(
+          "mgr_inpost_tracking_confirm error:",
+          error
+        );
+
+        try {
+          await ctx.answerCbQuery(
+            "Не удалось отправить заказ",
+            {
+              show_alert: true,
+            }
+          );
+        } catch {}
+      }
+    }
+  );
+
+  bot.on("text", async (ctx, next) => {
+//       const managerTelegramId = String(
+//         ctx?.from?.id || ""
+//       ).trim();
+
+//   const clientMessageState =
+//     managerClientMessageState.get(
+//       managerTelegramId
+//     );
+
+//   if (clientMessageState) {
+//     const currentChatId = String(
+//       ctx?.chat?.id || ""
+//     );
+
+//     const expectedChatId = String(
+//       clientMessageState
+//         ?.managerChatId || ""
+//     );
+
+//     if (
+//       expectedChatId &&
+//       currentChatId !== expectedChatId
+//     ) {
+//       return next();
+//     }
+
+//     const messageText = String(
+//       ctx?.message?.text || ""
+//     ).trim();
+
+//     if (!messageText) {
+//       return next();
+//     }
+
+//     managerClientMessageState.delete(
+//       managerTelegramId
+//     );
+
+//     console.log(
+//       "[MANAGER CLIENT MESSAGE][SEND]",
+//       {
+//         orderId:
+//           clientMessageState.orderId,
+//         orderNo:
+//           clientMessageState.orderNo,
+//         managerTelegramId,
+//         clientTelegramId:
+//           clientMessageState
+//             .clientTelegramId,
+//       }
+//     );
+
+//     try {
+//     await bot.telegram.sendMessage(
+//     clientMessageState.clientTelegramId,
+//     [
+//       "💬 <b>Сообщение от менеджера</b>",
+//       "",
+//       `Заказ: <b>#${escapeHtml(
+//         clientMessageState.orderNo || "—"
+//       )}</b>`,
+//       "",
+//       escapeHtml(messageText),
+//     ].join("\n"),
+//     {
+//     parse_mode: "HTML",
+//   }
+// );
+
+// const confirmationMessage =
+//   await ctx.reply(
+//     "✅ Сообщение отправлено клиенту."
+//   );
+
+// /*
+//  * Небольшая задержка, чтобы менеджер
+//  * успел увидеть подтверждение.
+//  */
+// await new Promise((resolve) =>
+//   setTimeout(resolve, 100)
+// );
+
+// const managerChatId = String(
+//   clientMessageState.managerChatId ||
+//     ctx?.chat?.id ||
+//     ""
+// ).trim();
+
+// const messageIdsToDelete = [
+//   /*
+//    * Сообщение-инструкция.
+//    */
+//   Number(
+//     clientMessageState
+//       .instructionMessageId || 0
+//   ),
+
+//   /*
+//    * Текст, который написал менеджер.
+//    */
+//   Number(
+//     ctx?.message?.message_id || 0
+//   ),
+
+//   /*
+//    * Подтверждение успешной отправки.
+//    */
+//   Number(
+//     confirmationMessage?.message_id || 0
+//   ),
+// ].filter(Boolean);
+
+// if (managerChatId) {
+//   const deleteResults =
+//     await Promise.allSettled(
+//       messageIdsToDelete.map(
+//         (messageId) =>
+//           bot.telegram.deleteMessage(
+//             managerChatId,
+//             messageId
+//           )
+//       )
+//     );
+
+//   deleteResults.forEach(
+//     (result, index) => {
+//       if (result.status === "rejected") {
+//         console.warn(
+//           "manager client message cleanup failed:",
+//           {
+//             managerChatId,
+
+//             messageId:
+//               messageIdsToDelete[index],
+
+//             error:
+//               result.reason?.response
+//                 ?.description ||
+//               result.reason?.message ||
+//               result.reason,
+//           }
+//         );
+//       }
+//     }
+//   );
+// }
+//     } catch (error) {
+//       console.error(
+//         "manager client message send error:",
+//         error
+//       );
+
+//       await ctx.reply(
+//         "❌ Не удалось отправить сообщение клиенту. Возможно, клиент заблокировал бота или не запускал его."
+//       );
+//     }
+
+//     return;
+//   }
+
+      const incomingText = String(
+        ctx?.message?.text || ""
+      ).trim();
+
+      const managerTelegramId = String(
+        ctx?.from?.id || ""
+      ).trim();
+
+      const currentChatId = String(
+        ctx?.chat?.id || ""
+      ).trim();
+
+      if (
+        incomingText &&
+        !incomingText.startsWith("/")
+      ) {
+        const stateByChat = currentChatId
+          ? managerClientMessageStateByChat.get(
+              currentChatId
+            )
+          : null;
+
+        const stateByManager = managerTelegramId
+          ? managerClientMessageState.get(
+              managerTelegramId
+            )
+          : null;
+
+        const clientMessageState =
+          stateByChat || stateByManager;
+
+        if (clientMessageState) {
+          const expectedChatId = String(
+            clientMessageState?.managerChatId || ""
+          ).trim();
+
+          if (
+            !expectedChatId ||
+            expectedChatId === currentChatId
+          ) {
+            console.log(
+              "[MANAGER CLIENT MESSAGE][RECEIVED]",
+              {
+                orderId: String(
+                  clientMessageState?.orderId || ""
+                ),
+                orderNo: String(
+                  clientMessageState?.orderNo || ""
+                ),
+                managerTelegramId,
+                currentChatId,
+                clientTelegramId: String(
+                  clientMessageState?.clientTelegramId || ""
+                ),
+                resolvedBy:
+                  stateByChat ? "chat" : "manager",
+                messageText: incomingText,
+              }
+            );
+
+            try {
+              await bot.telegram.sendMessage(
+                String(
+                  clientMessageState.clientTelegramId
+                ),
+                [
+                  "💬 <b>Сообщение от менеджера</b>",
+                  "",
+                  `Заказ: <b>#${escapeHtml(
+                    clientMessageState.orderNo || "—"
+                  )}</b>`,
+                  "",
+                  escapeHtml(incomingText),
+                ].join("\n"),
+                {
+                  parse_mode: "HTML",
+                }
+              );
+
+              managerClientMessageState.delete(
+                managerTelegramId
+              );
+
+              const savedManagerTelegramId =
+                String(
+                  clientMessageState
+                    ?.managerTelegramId || ""
+                ).trim();
+
+              if (savedManagerTelegramId) {
+                managerClientMessageState.delete(
+                  savedManagerTelegramId
+                );
+              }
+
+              managerClientMessageStateByChat.delete(
+                currentChatId
+              );
+
+              const successMessage =
+                await ctx.reply(
+                  "✅ Сообщение отправлено клиенту."
+                );
+
+              const cleanupMessageIds = [
+                Number(
+                  clientMessageState
+                    ?.instructionMessageId || 0
+                ),
+                Number(
+                  ctx?.message?.message_id || 0
+                ),
+                Number(
+                  successMessage?.message_id || 0
+                ),
+              ].filter(Boolean);
+
+              setTimeout(async () => {
+                for (
+                  const messageId of cleanupMessageIds
+                ) {
+                  try {
+                    await bot.telegram.deleteMessage(
+                      currentChatId,
+                      messageId
+                    );
+                  } catch {}
+                }
+              }, 1200);
+
+              return;
+            } catch (error) {
+              console.error(
+                "manager client message send error:",
+                {
+                  error:
+                    error?.response?.description ||
+                    error?.message ||
+                    error,
+                  managerTelegramId,
+                  currentChatId,
+                  clientTelegramId:
+                    clientMessageState
+                      ?.clientTelegramId,
+                  orderNo:
+                    clientMessageState
+                      ?.orderNo,
+                }
+              );
+
+              await ctx.reply(
+                [
+                  "❌ Не удалось отправить сообщение клиенту.",
+                  "",
+                  "Возможно, клиент заблокировал бота или ни разу его не запускал.",
+                ].join("\n")
+              );
+
+              return;
+            }
+          }
+        }
+      }
+
+      const stateKey = String(
+        ctx.from?.id ||
+        ctx.chat?.id ||
+        ""
+      );
+
+      const currentState =
+        inpostTrackingInputState.get(
+          stateKey
+        );
+
+      if (!currentState) {
+        return next();
+      }
+
+      try {
+        const currentChatId = String(
+          ctx.chat?.id || ""
+        );
+
+        const expectedChatId = String(
+          currentState?.chatId || ""
+        );
+
+        if (
+          expectedChatId &&
+          currentChatId !== expectedChatId
+        ) {
+          return next();
+        }
+
+        const requestedAt = Number(
+          currentState?.requestedAt || 0
+        );
+
+        if (
+          requestedAt > 0 &&
+          Date.now() - requestedAt >
+            15 * 60 * 1000
+        ) {
+          inpostTrackingInputState.delete(
+            stateKey
+          );
+
+          await ctx.reply(
+            "⌛ Время ввода трекинг-номера истекло. Нажмите «Отправлен» ещё раз."
+          );
+
+          return;
+        }
+
+        const orderId = String(
+          currentState?.orderId || ""
+        ).trim();
+
+        const trackingNumber =
+          normalizeInpostTrackingNumber(
+            ctx.message?.text || ""
+          );
+
+        if (!orderId) {
+          inpostTrackingInputState.delete(
+            stateKey
+          );
+
+          return next();
+        }
+
+        if (
+          !trackingNumber ||
+          trackingNumber.length < 8
+        ) {
+          await ctx.reply(
+            [
+              "⚠️ <b>Некорректный трекинг-номер</b>",
+              "",
+              "Проверьте номер и отправьте его ещё раз.",
+            ].join("\n"),
+            {
+              parse_mode: "HTML",
+            }
+          );
+
+          return;
+        }
+
+        const order =
+          await Order.findById(orderId);
+
+        if (!order) {
+          inpostTrackingInputState.delete(
+            stateKey
+          );
+
+          await ctx.reply(
+            "Заказ не найден."
+          );
+
+          return;
+        }
+
+        inpostTrackingInputState.set(
+          stateKey,
+          {
+            ...currentState,
+
+            trackingNumber,
+
+            receivedAt: Date.now(),
+
+            inputMessageId: Number(
+              ctx.message?.message_id || 0
+            ),
+          }
+        );
+
+        const trackingUrl =
+          getInpostTrackingUrl(
+            trackingNumber
+          );
+
+        await ctx.reply(
+          [
+            "📦 <b>Проверьте трекинг-номер</b>",
+            "",
+            `Заказ: <b>#${escapeHtml(
+              order?.orderNo || "—"
+            )}</b>`,
+            `Трекинг: <code>${escapeHtml(
+              trackingNumber
+            )}</code>`,
+            "",
+            "После подтверждения заказ получит статус «Отправлен», а клиенту придёт уведомление.",
+          ].join("\n"),
+          {
+            parse_mode: "HTML",
+            disable_web_page_preview:
+              true,
+
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text:
+                      "✅ Подтвердить отправку",
+
+                    callback_data:
+                      `mgr_inpost_tracking_confirm:${order._id}`,
+                  },
+                ],
+                [
+                  {
+                    text:
+                      "📦 Проверить трекинг",
+
+                    url: trackingUrl,
+                  },
+                ],
+                [
+                  {
+                    text: "❌ Отмена",
+
+                    callback_data:
+                      `mgr_inpost_tracking_cancel:${order._id}`,
+                  },
+                ],
+              ],
+            },
+          }
+        );
+      } catch (error) {
+        console.error(
+          "inpost tracking text input error:",
+          error
+        );
+
+        await ctx.reply(
+          "Не удалось обработать трекинг-номер. Попробуйте ещё раз."
+        );
+      }
+    }
+  );
+
+  bot.action(/mgr_order_delivered:(.+)/, async (ctx) => {
+    try {
+      const orderId = String(ctx.match?.[1] || "").trim();
+      if (!orderId) {
+        await ctx.answerCbQuery("Заказ не найден");
+        return;
+      }
+
+      const order = await Order.findById(orderId);
+      if (!order) {
+        await ctx.answerCbQuery("Заказ не найден");
+        return;
+      }
+
+      if (String(order.status || "") === "completed") {
+        await ctx.answerCbQuery("Заказ уже доставлен");
+        return;
+      }
+
+      if (!order.stockCommittedAt) {
+        await commitOrderStock(order);
+        order.stockCommittedAt = new Date();
+      }
+
+      order.status = "completed";
+      order.completedAt = new Date();
+      await order.save();
+    
+      await applyOrderCashback(order);
+
+      const deliveryMessageIds = Array.isArray(order.managerDeliveryMessageIds)
+        ? order.managerDeliveryMessageIds.filter(Boolean)
+        : [];
+
+      const deliveryChatId = String(order?.payment?.managerMessageChatId || "").trim();
+
+      for (const messageId of deliveryMessageIds) {
+        try {
+          if (deliveryChatId && messageId) {
+            await bot.telegram.deleteMessage(deliveryChatId, Number(messageId));
+          }
+        } catch (_) {}
+      }
+
+      if (deliveryMessageIds.length) {
+        order.managerDeliveryMessageIds = [];
+        await order.save();
+      }
+
+      const freshDeliveredOrder = await Order.findById(order._id);
+      if (!freshDeliveredOrder) {
+        throw new Error("ORDER_NOT_FOUND_AFTER_DELIVERED");
+      }
+
+      await refreshManagerOrderMessage(freshDeliveredOrder);
+
+      try {
+        const mainChatId = String(freshDeliveredOrder?.payment?.managerMessageChatId || "").trim();
+        const mainMessageId = Number(freshDeliveredOrder?.payment?.managerMessageId || 0);
+
+        if (mainChatId && mainMessageId) {
+          await bot.telegram.editMessageReplyMarkup(mainChatId, mainMessageId, undefined, {
+            inline_keyboard: [
+              [{ text: "🚚 Заказ доставлен", callback_data: `mgr_order_completed_done:${freshDeliveredOrder._id}` }],
+            ],
+          });
+        }
+      } catch (e) {
+        const msg = String(e?.response?.description || e?.message || "").toLowerCase();
+
+        if (!msg.includes("message is not modified")) {
+          console.error("mgr_order_delivered main message markup error:", e);
+        }
+      }
+
+    try {
+      const safeTelegramId = String(order?.userTelegramId || "").trim();
+
+      if (bot && safeTelegramId) {
+
+        const orderNo = escapeHtml(order?.orderNo || "—");
+        const notifyPoint = await resolveOrderNotificationPoint(freshDeliveredOrder || order).catch(() => null);
+
+        const courierTelegramId = String(
+          order?.courierTelegramId || ""
+        ).trim();
+
+        const courierUser = courierTelegramId
+          ? await User.findOne(
+              { telegramId: courierTelegramId },
+              {
+                telegramId: 1,
+                username: 1,
+                firstName: 1,
+              }
+            ).lean()
+          : null;
+
+        const managerContactUsernameRaw = String(
+          pointManagerUser?.username ||
+          notifyPoint?.managerUsername ||
+          freshDeliveredOrder?.courierUsername ||
+          order?.courierUsername ||
+          ""
+        ).trim();
+
+        const managerContactUsername =
+          managerContactUsernameRaw
+            ? (
+                managerContactUsernameRaw.startsWith("@")
+                  ? managerContactUsernameRaw
+                  : `@${managerContactUsernameRaw}`
+              )
+            : "—";
+
+        const courierUsername = courierUsernameRaw
+          ? (courierUsernameRaw.startsWith("@")
+              ? courierUsernameRaw
+              : `@${courierUsernameRaw}`)
+          : "—";
+
+          await bot.telegram.sendMessage(
+            safeTelegramId,
+            [
+              `🚚 <b>КУРЬЕР ПРИБЫЛ НА АДРЕС</b>`,
+              ``,
+              `Курьер прибыл по заказу <b>#${orderNo}</b>.`,
+              ``,
+              `📲 <b>Связь с менеджером:</b> ${escapeHtml(managerContactUsername)}`,
+            ].join("\n"),
+            {
+              parse_mode: "HTML",
+              disable_web_page_preview: true,
+            }
+          );
+        } else {
+          console.warn("mgr_order_delivered client notify skipped:", {
+            hasBot: Boolean(bot),
+            safeTelegramId,
+            orderId: String(order?._id || ""),
+            orderNo: String(order?.orderNo || ""),
+          });
+        }
+      } catch (e) {
+        console.error("mgr_order_delivered client notify error:", {
+          orderId: String(order?._id || ""),
+          orderNo: String(order?.orderNo || ""),
+          userTelegramId: String(order?.userTelegramId || ""),
+          error: e?.response?.description || e?.message || String(e),
+        });
+      }
+
+      await ctx.answerCbQuery("Клиент уведомлен о прибытии курьера");
+
+      try {
+        await ctx.deleteMessage();
+      } catch (_) {}
+    } catch (e) {
+      console.error("mgr_order_delivered error:", e);
+      try {
+        await ctx.answerCbQuery("Не удалось отметить заказ как доставленный");
+      } catch {}
+    }
+  });
+
+  bot.action(/mgr_change_status:(.+)/, async (ctx) => {
+      try {
+        const orderId = String(
+          ctx.match?.[1] || ""
+        ).trim();
+
+        const order =
+          await Order.findById(orderId);
+
+        if (!order) {
+          await ctx.answerCbQuery(
+            "Заказ не найден"
+          );
+
+          return;
+        }
+
+        const deliveryType = String(
+          order?.deliveryType || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const deliveryMethod = String(
+          order?.deliveryMethod || ""
+        )
+          .trim()
+          .toLowerCase();
+
+        const canManagerChangeStatus =
+
+          deliveryType === "pickup" ||
+
+          (
+
+            deliveryType === "delivery" &&
+
+            ["inpost", "courier"].includes(
+
+              deliveryMethod
+
+            )
+
+          );
+
+        if (!canManagerChangeStatus) {
+          await ctx.answerCbQuery(
+            "Изменение статуса недоступно для этого заказа",
+            {
+              show_alert: true,
+            }
+          );
+
+          return;
+        }
+
+        await ctx.answerCbQuery();
+
+        await ctx.editMessageReplyMarkup({
+          inline_keyboard: [
+            [
+              {
+                text:
+                  "✅ Заказ выполнен",
+
+                callback_data:
+                  `mgr_change_status_apply:completed:${order._id}`,
+              },
+            ],
+
+            [
+              {
+                text:
+                  "❌ Заказ отменён",
+
+                callback_data:
+                  `mgr_change_status_apply:canceled:${order._id}`,
+              },
+            ],
+
+            [
+              {
+                text: "⬅️ Назад",
+
+                callback_data:
+                  `mgr_change_status_back:${order._id}`,
+              },
+            ],
+          ],
+        });
+      } catch (error) {
+        console.error(
+          "mgr_change_status error:",
+          error
+        );
+
+        try {
+          await ctx.answerCbQuery(
+            "Не удалось открыть смену статуса"
+          );
+        } catch {}
+      }
+    }
+  );
+
+  bot.action(
+    /mgr_change_status_back:(.+)/,
+    async (ctx) => {
+      try {
+        const orderId = String(
+          ctx.match?.[1] || ""
+        ).trim();
+
+        const order =
+          await Order.findById(orderId);
+
+        if (!order) {
+          await ctx.answerCbQuery(
+            "Заказ не найден"
+          );
+
+          return;
+        }
+
+        await refreshManagerOrderMessage(
+          order
+        );
+
+        await ctx.answerCbQuery();
+      } catch (error) {
+        console.error(
+          "mgr_change_status_back error:",
+          error
+        );
+
+        try {
+          await ctx.answerCbQuery(
+            "Не удалось вернуться"
+          );
+        } catch {}
+      }
+    }
+  );
+
+  bot.action(
+    /mgr_change_status_apply:(completed|canceled):(.+)/,
+    async (ctx) => {
+      try {
+        const nextStatus = String(
+          ctx.match?.[1] || ""
+        ).trim();
+
+        const orderId = String(
+          ctx.match?.[2] || ""
+        ).trim();
+
+        const order =
+          await Order.findById(orderId);
+
+        if (!order) {
+          await ctx.answerCbQuery(
+            "Заказ не найден"
+          );
+
+          return;
+        }
+
+        const changedOrder =
+          await changePickupOrderStatusByManager(
+            order,
+            nextStatus,
+            String(ctx.from?.id || "")
+          );
+
+        await refreshManagerOrderMessage(
+          changedOrder
+        );
+
+        await ctx.answerCbQuery(
+          nextStatus === "completed"
+            ? "Заказ отмечен как выполненный"
+            : "Заказ отмечен как отменённый"
+        );
+      } catch (error) {
+      const errorCode = String(
+
+        error?.message || ""
+
+      );
+
+      const message =
+
+        errorCode ===
+
+        "INSUFFICIENT_CASHBACK_BALANCE_FOR_STATUS_CHANGE"
+
+          ? "У клиента недостаточно кэшбека для возврата статуса"
+
+          : errorCode ===
+
+            "INSUFFICIENT_CASHBACK_BALANCE_FOR_ORDER_CANCELLATION"
+
+          ? "Клиент уже потратил начисленный за заказ кэшбек. Отмена заблокирована"
+
+          : "Не удалось изменить статус";
+
+        try {
+          await ctx.answerCbQuery(
+            message,
+            {
+              show_alert: true,
+            }
+          );
+        } catch {}
+      }
+    }
+  );
+
+  bot.action(/mgr_order_completed:(.+)/, async (ctx) => {
+    try {
+      const orderId = String(ctx.match?.[1] || "").trim();
+      if (!orderId) {
+        await ctx.answerCbQuery("Заказ не найден");
+        return;
+      }
+
+      const order = await Order.findById(orderId);
+      if (!order) {
+        await ctx.answerCbQuery("Заказ не найден");
+        return;
+      }
+
+      if (String(order.status || "") === "completed") {
+        await ctx.answerCbQuery("Заказ уже выполнен");
+        return;
+      }
+
+      if (!order.stockCommittedAt) {
+        await commitOrderStock(order);
+        order.stockCommittedAt = new Date();
+      }
+
+      order.status = "completed";
+      order.completedAt = new Date();
+      await order.save();
+
+      await applyOrderCashback(order);
+
+      const arrivalMessageIds = Array.isArray(order.managerArrivalMessageIds)
+        ? order.managerArrivalMessageIds.filter(Boolean)
+        : [];
+
+      const arrivalChatId = String(order?.payment?.managerMessageChatId || "").trim();
+
+      for (const messageId of arrivalMessageIds) {
+        try {
+          if (arrivalChatId && messageId) {
+            await bot.telegram.deleteMessage(arrivalChatId, Number(messageId));
+          }
+        } catch (_) {}
+      }
+
+      if (arrivalMessageIds.length) {
+        order.managerArrivalMessageIds = [];
+        await order.save();
+      }
+
+      await refreshManagerOrderMessage(order);
+      await ctx.answerCbQuery("Заказ отмечен как выполненный");
+
+      try {
+        await ctx.deleteMessage();
+      } catch (_) {}
+    } catch (e) {
+      console.error("mgr_order_completed error:", e);
+      await ctx.answerCbQuery("Не удалось завершить заказ");
+    }
+  });
+
+  bot.action(/mgr_done:(.+)/, async (ctx) => {
+    try {
+      await ctx.answerCbQuery("Статус уже обновлён");
+    } catch {}
+  });
+
+  bot.launch()
+    .then(() => {
+      console.log("✅ User bot launched");
+    })
+    .catch((e) => {
+      console.error("❌ bot.launch error:", e);
+    });
+    
+  process.once("SIGINT", () => {
+    try {
+      bot?.stop("SIGINT");
+    } catch {}
+  });
+
+  process.once("SIGTERM", () => {
+    try {
+      bot?.stop("SIGTERM");
+    } catch {}
+  });
+
+} else {
+  console.warn("⚠️ TELEGRAM_BOT_TOKEN not set — bot disabled");
+}
+
+bot.action(/^manager_message_client:(.+)$/, async (ctx) => {
+    try {
+      await ctx.answerCbQuery();
+
+      const orderId = String(
+        ctx.match?.[1] || ""
+      ).trim();
+
+      if (!orderId) {
+        return ctx.reply(
+          "❌ Не удалось определить заказ."
+        );
+      }
+
+      const order =
+        await Order.findById(orderId).lean();
+
+      if (!order) {
+        return ctx.reply(
+          "❌ Заказ не найден."
+        );
+      }
+
+      const clientTelegramId = String(
+        order?.userTelegramId || ""
+      ).trim();
+
+      if (!clientTelegramId) {
+        return ctx.reply(
+          "❌ У клиента отсутствует Telegram ID."
+        );
+      }
+
+      const managerTelegramId = String(
+        ctx?.from?.id || ""
+      ).trim();
+
+      if (!managerTelegramId) {
+        return;
+      }
+
+      console.log(
+        "[MANAGER CLIENT MESSAGE][OPEN]",
+        {
+          orderId,
+          orderNo: String(
+            order?.orderNo || ""
+          ),
+          managerTelegramId,
+          clientTelegramId,
+        }
+      );
+
+const instructionMessage =
+  await ctx.reply(
+    [
+      "✉️ <b>СООБЩЕНИЕ КЛИЕНТУ</b>",
+      "",
+      `Заказ: <b>#${escapeHtml(
+        order?.orderNo || "—"
+      )}</b>`,
+      "",
+      "Ответьте на это сообщение текстом, который нужно передать клиенту.",
+    ].join("\n"),
+    {
+      parse_mode: "HTML",
+
+      reply_markup: {
+        force_reply: true,
+        selective: true,
+
+        input_field_placeholder:
+          "Введите сообщение клиенту",
+      },
+    }
+  );
+
+managerClientMessageState.set(
+  managerTelegramId,
+  {
+    orderId: String(order._id),
+
+    orderNo: String(
+      order?.orderNo || ""
+    ),
+
+    clientTelegramId,
+    managerTelegramId,
+
+    managerChatId: String(
+      ctx?.chat?.id || ""
+    ),
+
+    instructionMessageId: Number(
+      instructionMessage?.message_id || 0
+    ),
+  }
+);
+
+managerClientMessageStateByChat.set(
+
+  String(ctx?.chat?.id || ""),
+
+  {
+
+    orderId: String(order._id),
+
+    orderNo: String(
+
+      order?.orderNo || ""
+
+    ),
+
+    clientTelegramId,
+
+    managerTelegramId,
+
+    managerChatId: String(
+
+      ctx?.chat?.id || ""
+
+    ),
+
+    instructionMessageId: Number(
+
+      instructionMessage
+
+        ?.message_id || 0
+
+    ),
+
+  }
+
+);
+
+return instructionMessage;
+    } catch (error) {
+      console.error(
+        "manager_message_client action error:",
+        error
+      );
+
+      try {
+        await ctx.answerCbQuery(
+          "Не удалось открыть отправку сообщения",
+          {
+            show_alert: true,
+          }
+        );
+      } catch {}
+    }
+  }
+);
+
+// старт сервера
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+
+setInterval(() => {
+  processCashbackLedgerExpirations().catch((e) => {
+    console.error("cashback expiration interval error:", e);
+  });
+}, 6 * 60 * 60 * 1000);
+
+setInterval(() => {
+  processOrdersWithoutPaymentConfirm();
+}, 60 * 1000);
+
+setInterval(() => {
+  processStaleCarts();
+}, CART_AUTO_CLEAR_INTERVAL_MS);
+
+setTimeout(() => {
+  processStaleCarts();
+}, 10 * 1000);
+
+processOrdersWithoutPaymentConfirm();
+
+processCashbackLedgerExpirations().catch((e) => {
+  console.error("initial cashback expiration run error:", e);
+});

@@ -1,0 +1,83 @@
+# ELF DUCK — порти на хості:
+#   3000 API (+ основний Telegram-бот)
+#   3001 Mini App (shop)
+#   3002 CRM
+#   3003 admin-бот (процес без HTTP; порт зарезервовано для health/debug за потреби)
+#   3004 MongoDB (мапінг 3004 → 27017)
+
+name: elf-duck
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "3004:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./elf.duck.back.clean
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "3000"
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/elfduck}
+      APP_URL: ${APP_URL:-http://localhost:3001}
+      WEBAPP_URL: ${WEBAPP_URL:-http://localhost:3001}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3001}
+      CRM_ALLOWED_ORIGINS: ${CRM_ALLOWED_ORIGINS:-http://localhost:3002}
+    ports:
+      - "3000:3000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  shop:
+    build:
+      context: .
+      dockerfile: docker/shop.Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      - api
+
+  crm:
+    build:
+      context: .
+      dockerfile: docker/crm.Dockerfile
+      args:
+        VITE_CRM_API_URL: ${VITE_CRM_API_URL:-http://localhost:3000}
+    restart: unless-stopped
+    ports:
+      - "3002:80"
+    depends_on:
+      - api
+
+  admin-bot:
+    build:
+      context: .
+      dockerfile: docker/admin-bot.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      API_URL: http://api:3000
+    depends_on:
+      - api
+
+volumes:
+  mongo_data:

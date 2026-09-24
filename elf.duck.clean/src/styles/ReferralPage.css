@@ -1,0 +1,1809 @@
+
+/* ================= GLOBAL SETTINGS ================= */
+
+html, body {
+  height: 100%;
+  overflow: hidden; 
+}
+
+* {
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  width: 100%;
+  isolation: isolate;
+  padding-top: env(safe-area-inset-top);
+}
+
+.ReferralApp {
+  margin: 0;
+  width: 100%;
+  min-height: 100dvh;
+  position: relative;
+  display: flex;
+  text-align: center;
+  flex-direction: column;
+
+  background-color: #000;
+  background-blend-mode: screen;
+  min-height: 0;
+
+  color: white;
+  font-family: Muller;
+  font-size: 2.2vh;
+}
+
+.ReferralApp::before {
+  content: "";
+  position: absolute;
+  inset: -30%; 
+  z-index: 0;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(76, 151, 64, 0.85) 0%,
+      rgba(76, 151, 64, 0.85) 18%,
+      rgba(76, 151, 64, 0.25) 30%,
+      rgba(0, 0, 0, 0.9) 55%,
+      #000 100%
+    );
+
+  mask-image:
+    radial-gradient(
+      20% 70% at 15% 45%,
+      black 20%,
+      black 30%,
+      transparent 65%
+    );
+
+  transform: rotate(-32deg);
+  transform-origin: left center;
+
+  opacity: 0.8;
+  animation: gradientReveal 1.1s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.ReferralApp::after {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  z-index: 0;
+  pointer-events: none;
+
+  background:
+    radial-gradient(
+      45% 65% at 18% 45%,
+      rgba(76, 151, 64, 0.45) 0%,
+      rgba(76, 151, 64, 0.18) 40%,
+      transparent 72%
+    ),
+    linear-gradient(
+      120deg,
+      transparent 35%,
+      rgba(120, 210, 105, 0.22) 50%,
+      transparent 65%
+    );
+
+  filter: blur(20px);
+  opacity: 0.65;
+
+  background-size: 100% 100%, 220% 220%;
+  background-position: 0 0, -40% -30%;
+
+  mix-blend-mode: screen;
+
+  animation: glowShimmer 8.5s ease-in-out infinite;
+  will-change: background-position, opacity, transform;
+}
+
+.ReferralApp p {
+  margin: 0;
+}
+
+.Referral_Window {
+  width: 100%;
+  height: 100dvh;
+  position: relative;
+  flex-direction: column;
+  bottom: 0;
+  color: white;
+  z-index: 1001;
+  animation: fade-in 0.3s forwards;
+  overflow: hidden; 
+  display: flex;
+}
+
+.ReferralScrollContent {
+  height: calc(100dvh - 66px); /* высота хедера */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.ReferralHeaderContainer {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.mainRefferalPageContainer {
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
+  box-sizing: border-box;
+
+  height: 100%;
+  overflow-y: auto;
+
+  overscroll-behavior-y: none;
+
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+}
+
+.catalogContent.reveal {
+  transform: none;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.45s ease-out,
+    transform 0.45s ease-out;
+}
+
+/* задержки */
+.reveal.delay-1 { transition-delay: 0.05s; }
+.reveal.delay-2 { transition-delay: 0.1s; }
+.reveal.delay-3 { transition-delay: 0.15s; }
+.reveal.delay-4 { transition-delay: 0.2s; }
+.reveal.delay-5 { transition-delay: 0.25s; }
+
+.scrollReferralContent {
+  height: calc(100dvh - 66px); /* высота хедера */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+
+/* ================= SECTION TITLE ================= */
+
+.sectionReferralTitle {
+  width: 90%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 12px; 
+  margin: 17px 0;
+  align-self: center;
+}
+
+.sectionReferralSubTitle {
+  width: 90%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 12px; 
+  margin: 5px 0;
+  align-self: center;
+}
+
+.sectionReferralLine {
+  flex: 1;
+  height: 1px;
+
+  background: rgba(123, 123, 123, 0.5);
+}
+
+.sectionReferralText {
+  font-family: Unbounded-Regular;
+  font-size: 14px;
+  line-height: 1;
+  color: #7B7B7B;
+
+  white-space: nowrap;
+}
+
+/* ================= HIDE SCROLLBAR (KEEP SCROLL) ================= */
+
+.mainReferralPageContainer::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+}
+
+.mainReferralPageContainer::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.mainReferralPageContainer {
+  scrollbar-width: none; 
+}
+
+.mainReferralPageContainer {
+  -ms-overflow-style: none;
+}
+
+/* ================= HEADER (адаптивный) ================= */
+
+.ReferralHeaderContainer {
+  position: sticky;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  width: 100%;
+  height: 66px;
+
+  padding: 0 12px;
+  box-sizing: border-box;
+
+  background: #0B0B0B;
+
+  flex-shrink: 0;
+
+  z-index: 1200;
+}
+
+.ReferralHeaderLeft {
+  height: 100%;
+
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-shrink: 0;
+
+  max-width: 50%;
+  overflow: hidden;
+}
+
+.ReferralHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-shrink: 0;
+}
+
+.ReferralLogo {
+  flex-shrink: 0;
+}
+
+.ReferralMenuIcon {
+  height: 24px;
+}
+
+.ReferralMenuIcon:active {
+  transform: scale(0.96);
+}
+
+.ReferralLogo {
+  height: 58px;
+  width: clamp(90px, 30vw, 100px);
+  object-fit: contain;
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+
+.ReferralBonusBlock {
+  height: 40px;
+  min-width: 90px;
+  max-width: 140px;
+
+  padding: 0 14px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+
+  border-radius: 13px;
+
+  position: relative;
+
+  background: linear-gradient(90deg, #1f1f1f4d, #ffffff4d 60% 85%, #8282824f);
+
+  box-shadow:
+    inset 0 10px 18px rgba(255, 255, 255, 0.05),
+    inset -18px 0 28px rgba(0, 0, 0, 0.42),
+    0 6px 16px rgba(0, 0, 0, 0.18);
+
+  box-sizing: border-box;
+  flex-shrink: 0;
+
+  overflow: hidden;
+  transition: transform 0.15s ease;
+}
+
+.ReferralBonusBlock::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.16) 0%,
+      rgba(255, 255, 255, 0.08) 18%,
+      rgba(255, 255, 255, 0.03) 34%,
+      rgba(255, 255, 255, 0) 55%
+    );
+
+  opacity: 0.9;
+}
+
+.ReferralBonusBlock:active {
+  transform: scale(0.96);
+}
+
+.ReferralBonusText {
+  font-family: Unbounded-Medium;
+  font-size: 14px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 1);
+  white-space: nowrap;
+}
+
+.ReferralBonusIconLeft {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.ReferralBonusIconRight {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.ReferralAvatarHeaderContainer {
+  width: 52px;
+  height: 52px;
+
+  border-radius: 10px;
+  overflow: hidden;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #131313;
+
+  flex-shrink: 0; 
+}
+
+.ReferralUserAvatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ReferralAvatarHeaderContainer.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ReferralAvatarHeaderContainer.visible {
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.sideMenuBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  z-index: 1002;
+  opacity: 1;
+  transition: opacity 280ms ease;
+}
+
+.sideMenuBackdrop.closing {
+  opacity: 0;
+}
+
+.sideMenu {
+  position: fixed;
+  top: 0;
+  left: 0;
+
+  width: 68%;
+  max-width: 420px;
+  height: 100dvh;
+
+  border-radius: 0px 30px 30px 0px;
+
+  background-color: #000; /* ⬅️ СЛОЙ 1 */
+
+  z-index: 5001;
+  overflow: hidden;
+
+  transform: translateX(-100%);
+  transition: transform 280ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.sideMenu::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  background: linear-gradient(
+    180deg,
+    #553D9E 0%,
+    #B69EFF 49%,
+    #6D3DFF 100%
+  );
+
+  opacity: 0.15;          /* ⬅️ ВАЖНО */
+  pointer-events: none;   /* ⬅️ не мешает кликам */
+}
+
+.sideMenu {
+  box-shadow:
+    inset -1px 0 0 rgba(161, 134, 255, 1),
+    12px 0 40px rgba(0, 0, 0, 0.6);
+}
+
+.sideMenu.open {
+  transform: translateX(0);
+}
+
+.sideMenu {
+  will-change: transform;
+}
+
+.sideMenu.closing {
+  transform: translateX(-100%);
+}
+
+.sideMenuInner {
+  position: relative;
+  z-index: 1;
+
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
+
+  padding: 20px 14px 20px;
+  /* overflow-y: auto; */
+}
+
+.sideMenuScroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+
+  display: flex;
+  flex-direction: column;
+}
+
+.sideMenuBottom {
+
+  padding-bottom: 20px;
+}
+
+.sideMenuCard,
+.sideHistoryCard,
+.sideRefferalCard,
+.sideSupportCard,
+.sideSavedCard,
+.balanceCard {
+  flex-shrink: 0;
+}
+
+/* ================= SIDE MENU PROFILE ================= */
+
+.sideMenuProfile {
+  position: relative;
+  width: 100%;
+  height: 58px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 0 10px 0 0; 
+  margin-bottom: 18px;
+
+  border-radius: 10px;
+  border: none;
+
+  background: rgba(40,35,57,1);
+  box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+  /* backdrop-filter: blur(6px); */
+
+  color: #fff;
+  cursor: pointer;
+}
+
+.sideMenuProfile:active {
+  transform: scale(0.97);
+}
+
+.sideMenuProfileLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+}
+
+.sideMenuProfileAccent {
+  position: absolute;
+  left: 0;            
+  top: 50%;
+  transform: translateY(-50%);
+
+  width: 2px;
+  height: 22px;
+
+  background: #A186FF;
+
+  border-radius: 0 10px 10px 0;
+
+  flex-shrink: 0;
+}
+
+.sideMenuAvatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.sideMenuName {
+  font-family: Unbounded-Regular;
+  font-size: 13px;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.sideMenuExitIcon {
+  width: 22px;
+  height: 22px;
+}
+
+
+.balanceCard {
+  position: relative;
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+
+  background: rgba(40, 35, 57, 0.8);
+
+  /* inner shadow */
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25);
+
+  isolation: isolate;
+}
+
+.balanceCard::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  background-image: url("../assets/balanceBG.webp");
+  background-size: cover;
+  background-position: center;
+
+  opacity: 0.15;
+
+  pointer-events: none;
+  z-index: 0;
+}
+
+.balanceContent {
+  position: relative;
+  z-index: 1;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 16px 38% 16px 16px;
+  box-sizing: border-box;
+}
+
+.balanceInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.balanceTitle {
+  font-family: Unbounded-Medium;
+  font-size: 14px;
+  color: rgba(255,255,255,1);
+  align-self: flex-start;
+}
+
+.balanceRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0px 6px;
+}
+
+.balanceAmount {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  font-family: Unbounded-Medium;
+  font-size: 12px;
+  color: #fff;
+}
+
+.balanceAmount img {
+  width: 20px;
+  height: 20px;
+}
+
+.balanceBadge {
+  padding: 4px 12px;
+  border-radius: 20px;
+
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+
+  font-size: 8px;
+  font-family: Unbounded-Light;
+}
+
+.balanceAction {
+  margin-top: 8px;
+
+  height: 28px;
+  padding: 0 18px;
+
+  border-radius: 8px;
+  border: none;
+
+  background: #8875C9;
+  color: #fff;
+
+  font-family: Unbounded-Regular;
+  font-size: 10px;
+
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+
+  cursor: pointer;
+}
+
+.balanceAction:active {
+  transform: scale(0.96);
+}
+
+.balanceDuck {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+
+  /* border-radius: 0px 0px 0px 10px; */
+
+  height: 100%;
+  width: auto;
+
+  pointer-events: none;
+}
+
+/* ================= SIDE MENU CARD ================= */
+
+.sideMenuCard {
+  position: relative;
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 18px;
+  overflow: hidden;
+
+  /* 1 слой — базовый */
+  background: rgba(40, 35, 57, 0.8);
+
+  /* inner shadow */
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+
+  isolation: isolate;
+}
+
+/* 2 слой — мягкий фиолетовый градиент */
+.sideMenuCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    -165deg,
+    rgba(40, 35, 57, 1) 0%,
+    rgba(86, 76, 122, .8) 49%,
+    rgba(40, 35, 57, 1) 100%
+  );
+
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+  
+  z-index: 0;   
+  pointer-events: none;
+}
+
+.sideMenuCardContent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  z-index: 1; 
+}
+
+/* утка */
+.sideMenuCardDuck {
+  height: 100%;
+  width: auto;
+  margin-left: 6px;
+
+  position: absolute;
+  left: 0;
+  bottom: 0;
+
+  z-index: 1;
+  pointer-events: none;
+}
+
+.sideMenuCardInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 18px;
+  flex: 1;
+}
+
+.sideMenuCardTitle {
+  position: relative;
+  font-size: 16px;
+  font-family: Unbounded-Medium;
+  color: #fff;
+
+  margin-right: -3px;
+}
+
+/* фиолетовый индикатор справа */
+.sideMenuCardAccent {
+  position: absolute;
+  right: 0;
+  top: 25%;
+  transform: translateY(-43%);
+  width: 2px;
+  height: 23px;
+  border-radius: 10px 0px 0px 10px;
+  background: #A186FF;
+
+  z-index: 1;
+}
+
+.sideMenuCardAction {
+  align-self: flex-end;
+  padding: 5px 20px;
+  border-radius: 8px;
+
+  background: #8875C9;
+  color: #fff;
+  font-family: Unbounded-Regular;
+  font-size: 12px;
+
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+
+  border: none;
+  cursor: pointer;
+
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sideMenuCardAction:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+/* ================= SIDE SAVED CARD ================= */
+
+.sideSavedCard {
+  position: relative;
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 18px;
+  overflow: hidden;
+
+  /* 1 слой — базовый */
+  background: rgba(40, 35, 57, 0.8);
+
+  /* inner shadow */
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+
+  isolation: isolate;
+}
+
+/* 2 слой — мягкий фиолетовый градиент */
+.sideSavedCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    -165deg,
+    rgba(40, 35, 57, 1) 0%,
+    rgba(86, 76, 122, .8) 49%,
+    rgba(40, 35, 57, 1) 100%
+  );
+
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+  
+  z-index: 0;   
+  pointer-events: none;
+}
+
+.sideSavedCardContent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  z-index: 1; 
+}
+
+/* утка */
+.sideSavedCardDuck {
+  height: 100%;
+  width: auto;
+  margin-right: 6px;
+
+  position: absolute;
+  right: 0;
+  bottom: 0;
+
+  z-index: 1;
+  pointer-events: none;
+}
+
+.sideSavedCardInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 18px;
+  flex: 1;
+}
+
+.sideSavedCardTitle {
+  position: relative;
+  font-size: 16px;
+  font-family: Unbounded-Medium;
+  color: #fff;
+
+  margin-right: -3px;
+}
+
+/* фиолетовый индикатор справа */
+.sideSavedCardAccent {
+  position: absolute;
+  left: 0;
+  top: 25%;
+  transform: translateY(-43%);
+  width: 2px;
+  height: 23px;
+  border-radius: 10px 0px 0px 10px;
+  background: #A186FF;
+
+  z-index: 1;
+}
+
+.sideSavedCardAction {
+  align-self: flex-start;
+  padding: 5px 20px;
+  border-radius: 8px;
+
+  background: #8875C9;
+  color: #fff;
+  font-family: Unbounded-Regular;
+  font-size: 12px;
+
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+
+  border: none;
+  cursor: pointer;
+
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sideSavedCardAction:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+
+/* ================= SIDE HISTORY CARD ================= */
+
+.sideHistoryCard {
+  position: relative;
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 14px;
+  overflow: hidden;
+
+  /* 1 слой — базовый */
+  background: rgba(40, 35, 57, 0.8);
+
+  /* inner shadow */
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+
+  isolation: isolate;
+}
+
+/* 2 слой — мягкий фиолетовый градиент */
+.sideHistoryCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    166deg,
+    rgba(40, 35, 57, 1) 0%,
+    rgba(86, 76, 122, .8) 49%,
+    rgba(40, 35, 57, 1) 100%
+  );
+
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+  
+  z-index: 0;   
+  pointer-events: none;
+}
+
+.sideHistoryCardContent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  z-index: 1; 
+}
+
+/* утка */
+.sideHistoryCardDuck {
+  height: 100%;
+  width: auto;
+  /* margin-left: 6px; */
+
+  position: absolute;
+  left: 0;
+  bottom: 0;
+
+  z-index: 4;
+  pointer-events: none;
+}
+
+.sideHistoryCardInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 18px;
+  flex: 1;
+}
+
+.sideHistoryCardTitle {
+  position: relative;
+  font-size: 16px;
+  font-family: Unbounded-Medium;
+  color: #fff;
+
+  margin-left: -3px;
+}
+
+/* фиолетовый индикатор справа */
+.sideHistoryCardAccent {
+  position: absolute;
+  right: 0;
+  top: 25%;
+  transform: translateY(-34%);
+  width: 2px;
+  height: 43px;
+  border-radius: 0 10px 10px 0;
+  background: #A186FF;
+
+  z-index: 1;
+}
+
+.sideHistoryCardAction {
+  align-self: flex-end;
+  padding: 5px 20px;
+  border-radius: 8px;
+
+  background: #8875C9;
+  color: #fff;
+  font-family: Unbounded-Regular;
+  font-size: 12px;
+
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+
+  border: none;
+  cursor: pointer;
+
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sideHistoryCardAction:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+/* ================= SIDE REFFERAL CARD ================= */
+
+.sideRefferalCard {
+  position: relative;
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 14px;
+  overflow: hidden;
+
+  /* 1 слой — базовый */
+  background: rgba(35, 57, 37, 0.8);
+
+  /* inner shadow */
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+
+  isolation: isolate;
+}
+
+/* 2 слой — мягкий фиолетовый градиент */
+.sideRefferalCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    -165deg,
+    rgba(35, 57, 37, 1) 0%,
+    rgba(77, 122, 78, .8) 49%,
+    rgba(35, 57, 37, 1) 100%
+  );
+
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+  
+  z-index: 0;   
+  pointer-events: none;
+}
+
+.sideRefferalCardContent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  z-index: 1; 
+}
+
+/* утка */
+.sideRefferalCardDuck {
+  height: 100%;
+  width: auto;
+
+  position: absolute;
+  right: 0;
+  bottom: 0;
+
+  z-index: 3;
+  pointer-events: none;
+}
+
+.sideRefferalCardInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 18px;
+  flex: 1;
+}
+
+.sideRefferalCardTitle {
+  position: relative;
+  font-size: 15px;
+  font-family: Unbounded-Medium;
+  color: #fff;
+
+  text-align: left;
+
+  margin-right: -3px;
+}
+
+/* фиолетовый индикатор справа */
+.sideRefferalCardAccent {
+  position: absolute;
+  left: 0;
+  top: 25%;
+  transform: translateY(-32%);
+  width: 2px;
+  height: 40px;
+  border-radius: 10px 0px 0px 10px;
+  background: #86FF8C;
+
+  z-index: 1;
+}
+
+.sideRefferalCardAction {
+  align-self: flex-start;
+  padding: 5px 20px;
+  border-radius: 8px;
+
+  background: #75C985;
+  color: #fff;
+  font-family: Unbounded-Regular;
+  font-size: 12px;
+
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+
+  border: none;
+  cursor: pointer;
+
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sideRefferalCardAction:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+/* ================= SIDE SUPPORT CARD ================= */
+
+.sideSupportCard {
+  position: relative;
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 25px;
+  margin-top: 14px;
+  overflow: hidden;
+
+  /* 1 слой — базовый */
+  background: rgba(40, 35, 57, 0.8);
+
+  /* inner shadow */
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+
+  isolation: isolate;
+}
+
+/* 2 слой — мягкий фиолетовый градиент */
+.sideSupportCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    166deg,
+    rgba(40, 35, 57, 1) 0%,
+    rgba(86, 76, 122, .8) 49%,
+    rgba(40, 35, 57, 1) 100%
+  );
+
+  box-shadow:
+    inset 0 4px 4px rgba(0, 0, 0, 0.25),
+    0 12px 30px rgba(0, 0, 0, 0.35);
+  
+  z-index: 0;   
+  pointer-events: none;
+}
+
+.sideSupportCardContent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  z-index: 1; 
+}
+
+/* утка */
+.sideSupportCardDuck {
+  height: 97%;
+  width: auto;
+  /* margin-left: 6px; */
+
+  position: absolute;
+  right: 0;
+  bottom: 0;
+
+  z-index: 4;
+  pointer-events: none;
+}
+
+.sideSupportCardInfo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  flex: 1;
+}
+
+.sideSupportCardTitle {
+  position: relative;
+  font-size: 16px;
+  font-family: Unbounded-Medium;
+  color: #fff;
+
+  margin-left: -3px;
+}
+
+/* фиолетовый индикатор справа */
+.sideSupportCardAccent {
+  position: absolute;
+  left: 0;
+  top: 25%;
+  transform: translateY(-43%);
+  width: 2px;
+  height: 23px;
+  border-radius: 0 10px 10px 0;
+  background: #A186FF;
+
+  z-index: 1;
+}
+
+.sideSupportCardAction {
+  align-self: flex-start;
+  padding: 5px 20px;
+  border-radius: 8px;
+
+  background: #8875C9;
+  color: #fff;
+  font-family: Unbounded-Regular;
+  font-size: 12px;
+
+  box-shadow: 0 4px 4px rgba(0, 0, 0, 0.25);
+
+  border: none;
+  cursor: pointer;
+
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.sideSupportCardAction:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+/* Контейнер как у баннеров (но без скролла) */
+.refInviteCard{
+  width: 100%;
+  /* margin-top: 2px; */
+  padding: 0 15px;              /* как у bannerSection */
+  box-sizing: border-box;
+
+  display: flex;
+  justify-content: center;      /* чтобы карточка была по центру */
+}
+
+/* Сама карточка (как баннер-слайд по ощущению) */
+.refInviteInner{
+  width: 100%;
+  max-width: 560px;             /* “гибкость” на больших экранах */
+  border-radius: 26px;
+  overflow: hidden;
+
+  padding: 20px;
+  box-sizing: border-box;
+
+  background: rgba(72,72,72,0.3);
+
+  border: 1px solid rgba(206,206,206,1);
+}
+
+/* Заголовок */
+.refInviteTitle{
+  font-family: Unbounded-Medium;
+  font-size: 18.5px;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* Акцентный зелёный */
+.refAccent{
+  color: rgba(37,255,0,1);
+}
+
+/* Блоки с инфо */
+.refInviteInfo{
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.refInviteInfoRow{
+  width: 90%;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+  align-items: center;
+  align-self: center;
+}
+
+.refInfoIcon{
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: rgba(255,255,255,0.45);
+  color: rgba(0,0,0,0.85);
+
+  font-family: Unbounded-Medium;
+  font-size: 16px;
+  line-height: 1;
+
+  align-self: center;
+  justify-self: center;
+}
+
+.refInviteInfoText{
+  font-family: Unbounded-Light;
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: rgba(255,255,255,0.92);
+  text-transform: uppercase;
+
+  text-align: left;
+}
+
+/* Кнопка */
+.refInviteBtn{
+  margin-top: 22px;
+  width: 94%;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+
+  background: rgba(83,255,67,0.5);
+  color: #fff;
+
+  font-family: Unbounded-SemiBold;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.promoInputBtn{
+  margin-top: 16px;
+  width: 94%;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+
+  background: rgba(83,255,67,0.5);
+  color: #fff;
+
+  font-family: Unbounded-SemiBold;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.refInviteBtn:active{
+  transform: translateY(1px);
+}
+
+/* ===== Referral list blocks ===== */
+.refListBlocks{
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0 18px 24px;
+  box-sizing: border-box;
+}
+
+.refListCard{
+  width: 100%;
+  border-radius: 26px;
+  border: 1px solid rgba(255,255,255,.65);
+  background: rgba(72,72,72,.3);
+
+  box-shadow: 0 14px 34px rgba(0,0,0,.35);
+  padding: 20px 24px 20px;
+  box-sizing: border-box;
+  text-align: left;
+
+  justify-self: center;
+}
+
+.refListCardTitle{
+  font-family: Unbounded-Medium;
+
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  font-size: 16px;
+  line-height: 1.05;
+  margin-bottom: 14px;
+
+  text-align: center;
+}
+
+.refListInfoRow{
+  width: 100%;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 22px 0 22px;
+  justify-content: center;
+}
+
+.refListInfoRowCompact{ margin-top: 12px; }
+
+.refListInfoText{
+  font-family: Unbounded-Regular;
+
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  font-size: 10px;
+  line-height: 1.55;
+  opacity: .95;
+}
+
+.refListActionBtn{
+  width: 100%;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,.35);
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.55);
+  font-family: Unbounded-SemiBold;
+
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  font-size: 13px;
+}
+
+.refListActionBtnDisabled{
+  background: rgba(255,255,255,.08);
+  color: rgba(255,255,255,.35);
+  filter: grayscale(1);
+}
+
+.refListActionBtnTerms{
+  background: rgba(83,255,67,0.5);
+  color: #fff;
+  border: none;
+}
+
+/* Referral row */
+.refReferralTopRow{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.refReferralLeft{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refReferralAvatar{
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,.25);
+  flex: 0 0 auto;
+}
+
+/* .refReferralNameBlock{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+} */
+
+.refReferralNameBlock{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  min-width: 0;
+}
+
+.refReferralName{
+  font-family: Unbounded-Regular;
+
+  text-transform: uppercase;
+  letter-spacing: .02em;
+  font-size: 12px;
+  line-height: 1.1;
+}
+
+.refReferralNameGreen{ color: rgba(120, 255, 80, 1); }
+
+.refReferralUsername{
+  font-family: Unbounded-Regular;
+
+  font-size: 9px;
+  opacity: .9;
+}
+
+/* .refReferralDatePill{
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.14);
+  border: none;
+  font-family: Unbounded-Regular;
+
+  font-size: 10px;
+  white-space: nowrap;
+  opacity: .85;
+  flex: 0 0 auto;
+} */
+
+.refReferralDatePill{
+  padding: 8px 12px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.14);
+  border: none;
+  font-family: Unbounded-Regular;
+
+  font-size: 9px;
+  white-space: nowrap;
+
+  width: 100px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  flex-shrink: 0;
+}
+
+.refReferralPeople{
+  width: 95%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 22px;
+  align-self: center;
+  justify-self: center;
+}
+
+/* .refReferralPerson{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+} */
+
+.refReferralPerson{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  width: 100%;
+  justify-content: space-between;
+}
+
+.refReferralPerson .refReferralDatePill{
+  margin-left: auto;
+}
+
+.refRewardBtn{
+  width: 100%;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(76, 151, 64, 0.9);
+  color: #fff;
+  font-family: Unbounded-SemiBold;
+
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  font-size: 14px;
+  justify-self: center;
+}
+
+/* ================= FOOTER BAR (прозрачный) ================= */
+
+.footerBar {
+  height: auto;
+  padding: 0 22px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  background: transparent;
+  z-index: 900;
+
+  box-sizing: border-box;
+
+  margin-top: auto;   /* push footer to bottom when content is short */
+  margin-bottom: 24px;
+}
+
+.checkoutFooter {
+  padding: 20px 28px;
+
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  font-size: 12px;
+  color: rgba(255,255,255,0.6);
+}
+
+.checkoutSheet {
+  display: flex;
+  flex-direction: column;
+
+  max-height: calc(100dvh - 112px);
+}
+
+.footerLeft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  font-family: Unbounded-Regular;
+  font-size: 10px;
+  color: #818181;
+}
+
+.footerLeft img {
+  width: 16px;
+  height: 16px;
+  opacity: 0.6;
+}
+
+.footerRight {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  font-family: Unbounded-Regular;
+  font-size: 10px;
+  color: #818181;
+}
+
+.footerRight img {
+  width: 16px;
+  height: 16px;
+}
+
+.footerLeft,
+.footerRight {
+  transition: opacity 0.2s ease;
+}
+
+.footerLeft:active,
+.footerRight:active {
+  opacity: 0.8;
+}
+
+/* ================= FONTS ================= */
+
+@font-face {
+  font-family: "Unbounded-SemiBold";
+  src: url("/fonts/Unbounded-SemiBold.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Unbounded-Light";
+  src: url("/fonts/Unbounded-Light.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Unbounded-Regular";
+  src: url("/fonts/Unbounded-Regular.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Unbounded-Medium";
+  src: url("/fonts/Unbounded-Medium.woff2") format("woff2");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.referralPlaceholderWrap {
+  min-height: 100svh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px 120px;
+  box-sizing: border-box;
+}
+
+.referralPlaceholderCard {
+  width: min(100%, 420px);
+  border-radius: 28px;
+  padding: 22px 18px 20px;
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 18px;
+}
+
+.referralPlaceholderImage {
+  width: min(100%, 260px);
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.referralPlaceholderTextBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.referralPlaceholderTitle {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffffff;
+}
+
+.referralPlaceholderText {
+  max-width: 300px;
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.82);
+}

@@ -1,0 +1,7341 @@
+// =====================================================
+// ================= ELF DUCK ADMIN BOT =================
+// =====================================================
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+dotenv.config({
+  path: path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../.env"
+  ),
+});
+import { Telegraf, Markup } from "telegraf";
+
+// =====================================================
+// ===================== CONFIG/ENV =====================
+// =====================================================
+const BOT_TOKEN = process.env.ADMIN_BOT_TOKEN;
+const API_URL = process.env.API_URL;
+const ADMIN_API_TOKEN = process.env.ADMIN_API_TOKEN;
+const ADMIN_IDS = (process.env.ADMIN_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+if (!BOT_TOKEN) throw new Error("ADMIN_BOT_TOKEN is missing");
+if (!API_URL) throw new Error("API_URL is missing");
+if (!ADMIN_API_TOKEN) throw new Error("ADMIN_API_TOKEN is missing");
+
+// =====================================================
+// ======================= HELPERS ======================
+// =====================================================
+const bot = new Telegraf(BOT_TOKEN);
+
+const lastBotMessageIdByChat = new Map();
+
+const forgetBotMessage = (chatId, messageId) => {
+  const safeChatId = String(chatId || "");
+  const safeMessageId = Number(messageId || 0);
+  if (!safeChatId || !safeMessageId) return;
+
+  const current = Number(lastBotMessageIdByChat.get(safeChatId) || 0);
+  if (current === safeMessageId) {
+    lastBotMessageIdByChat.delete(safeChatId);
+  }
+};
+
+const replaceBotMessage = async (ctx, sendFn) => {
+  const chatId = String(ctx?.chat?.id || "");
+  if (!chatId) {
+    return sendFn();
+  }
+
+  const prevMessageId = Number(lastBotMessageIdByChat.get(chatId) || 0);
+
+  if (prevMessageId) {
+    try {
+      await ctx.telegram.deleteMessage(chatId, prevMessageId);
+    } catch {}
+    lastBotMessageIdByChat.delete(chatId);
+  }
+
+  const sent = await sendFn();
+  const nextMessageId = Number(sent?.message_id || 0);
+
+  if (nextMessageId) {
+    lastBotMessageIdByChat.set(chatId, nextMessageId);
+  }
+
+  return sent;
+};
+
+bot.use(async (ctx, next) => {
+  if (ctx?.update?.__fromReplyKeyboard === true) {
+
+    ctx.answerCbQuery = async () => true;
+
+  }
+  const originalReply = ctx.reply.bind(ctx);
+  const originalReplyWithPhoto = ctx.replyWithPhoto.bind(ctx);
+  const originalReplyWithDocument = ctx.replyWithDocument?.bind(ctx);
+  const originalReplyWithMediaGroup = ctx.replyWithMediaGroup?.bind(ctx);
+
+  ctx.reply = (...args) => replaceBotMessage(ctx, () => originalReply(...args));
+  ctx.replyWithPhoto = (...args) => replaceBotMessage(ctx, () => originalReplyWithPhoto(...args));
+
+  if (originalReplyWithDocument) {
+    ctx.replyWithDocument = (...args) =>
+      replaceBotMessage(ctx, () => originalReplyWithDocument(...args));
+  }
+
+  if (originalReplyWithMediaGroup) {
+    ctx.replyWithMediaGroup = async (...args) => {
+      const chatId = String(ctx?.chat?.id || "");
+      if (!chatId) {
+        return originalReplyWithMediaGroup(...args);
+      }
+
+      const prevMessageId = Number(lastBotMessageIdByChat.get(chatId) || 0);
+      if (prevMessageId) {
+        try {
+          await ctx.telegram.deleteMessage(chatId, prevMessageId);
+        } catch {}
+        lastBotMessageIdByChat.delete(chatId);
+      }
+
+      const sentList = await originalReplyWithMediaGroup(...args);
+      const lastItem = Array.isArray(sentList) ? sentList[sentList.length - 1] : null;
+      const nextMessageId = Number(lastItem?.message_id || 0);
+
+      if (nextMessageId) {
+        lastBotMessageIdByChat.set(chatId, nextMessageId);
+      }
+
+      return sentList;
+    };
+  }
+
+  return next();
+});
+
+const WEBAPP_URL = String(
+  process.env.APP_URL ||
+    process.env.WEBAPP_URL ||
+    "https://elfduck.telebots.site"
+).replace(/\/+$/, "");
+
+const isAdmin = (ctx) => ADMIN_IDS.includes(String(ctx.from?.id || ""));
+
+const api = async (path, options = {}) => {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "x-admin-token": ADMIN_API_TOKEN,
+      ...(options.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.error || `HTTP ${res.status}`);
+  }
+  return data;
+};
+
+const isValidUrl = (s) => /^https?:\/\/\S+$/i.test(s);
+
+const broadcastPollTimers = new Map();
+
+const formatBroadcastJobStatus = (job = {}) => {
+  const totalUsers = Number(job?.totalUsers || 0);
+  const processed = Number(job?.processed || 0);
+  const sent = Number(job?.sent || 0);
+  const failed = Number(job?.failed || 0);
+  const blocked = Number(job?.blocked || 0);
+  const status = String(job?.status || "running");
+  const percent = totalUsers > 0 ? Math.floor((processed / totalUsers) * 100) : 0;
+
+  const title = status === "done"
+    ? "✅ *Рассылка завершена*"
+    : "📣 *Рассылка выполняется*";
+
+  const errors = Array.isArray(job?.lastErrors)
+    ? job.lastErrors.slice(-3).map((row, index) => {
+        const error = String(row?.error || "UNKNOWN_ERROR").slice(0, 160);
+        return `\`${index + 1}. ${error}\``;
+      })
+    : [];
+
+  return [
+    title,
+    "",
+    `ID задачи: \`${String(job?.jobId || "—")}\``,
+    `Прогресс: *${processed}/${totalUsers}* — *${percent}%*`,
+    `Отправлено: *${sent}*`,
+    `Ошибок: *${failed}*`,
+    `Заблокировали / недоступны: *${blocked}*`,
+    ...(errors.length ? ["", "*Последние ошибки:*", ...errors] : []),
+  ].join("\n");
+};
+
+const startBroadcastStatusPolling = (ctx, jobId, statusMessageId) => {
+  const chatId = String(ctx?.chat?.id || "");
+  const safeJobId = String(jobId || "").trim();
+  const safeMessageId = Number(statusMessageId || 0);
+
+  if (!chatId || !safeJobId || !safeMessageId) return;
+
+  const timerKey = `${chatId}:${safeJobId}`;
+
+  const prevTimer = broadcastPollTimers.get(timerKey);
+
+  if (prevTimer) {
+    clearTimeout(prevTimer);
+    broadcastPollTimers.delete(timerKey);
+  }
+
+  let lastText = "";
+  let attempts = 0;
+  let stopped = false;
+
+  const stopPolling = () => {
+    stopped = true;
+
+    const currentTimer =
+      broadcastPollTimers.get(timerKey);
+
+    if (currentTimer) {
+      clearTimeout(currentTimer);
+    }
+
+    broadcastPollTimers.delete(timerKey);
+  };
+
+  const scheduleNextPoll = () => {
+    if (stopped) return;
+
+    const timer = setTimeout(() => {
+      poll();
+    }, 2000);
+
+    broadcastPollTimers.set(
+      timerKey,
+      timer
+    );
+  };
+
+  const poll = async () => {
+    if (stopped) return;
+
+    attempts += 1;
+
+    try {
+      const data = await api(
+        `/admin/users/broadcast-jobs/${safeJobId}?_ts=${Date.now()}`
+      );
+
+      const job = data?.job || {};
+      const text =
+        formatBroadcastJobStatus(job);
+
+      const status = String(
+        job?.status || "running"
+      );
+
+      console.log(
+        "[BROADCAST STATUS POLL]",
+        {
+          jobId: safeJobId,
+          status,
+          processed: job?.processed,
+          totalUsers: job?.totalUsers,
+          sent: job?.sent,
+          failed: job?.failed,
+          blocked: job?.blocked,
+        }
+      );
+
+      if (text !== lastText) {
+        try {
+        await bot.telegram.editMessageText(
+
+          Number(chatId),
+
+          safeMessageId,
+
+          undefined,
+
+          text,
+
+          {
+
+            parse_mode: "Markdown",
+
+          }
+
+        );
+
+          lastText = text;
+        } catch (editError) {
+          const description = String(
+            editError?.response?.description ||
+              editError?.message ||
+              editError ||
+              ""
+          );
+
+          if (description.includes("message is not modified")) {
+            lastText = text;
+          } else {
+            console.error("[BROADCAST STATUS EDIT FAILED]", {
+              jobId: safeJobId,
+              chatId,
+              messageId: safeMessageId,
+              description,
+            });
+
+            if (["done", "failed"].includes(status)) {
+              try {
+                const fallbackMessage =
+                  await bot.telegram.sendMessage(
+                    Number(chatId),
+                    text,
+                    {
+                      parse_mode: "Markdown",
+                    }
+                  );
+
+                const fallbackMessageId = Number(
+                  fallbackMessage?.message_id || 0
+                );
+
+                if (fallbackMessageId) {
+                  lastBotMessageIdByChat.set(
+                    String(chatId),
+                    fallbackMessageId
+                  );
+                }
+
+                lastText = text;
+              } catch (fallbackError) {
+                console.error(
+                  "[BROADCAST STATUS FALLBACK FAILED]",
+                  fallbackError?.response?.description ||
+                    fallbackError?.message ||
+                    fallbackError
+                );
+              }
+            }
+          }
+        }
+      }
+
+      if (
+        ["done", "failed"].includes(status)
+      ) {
+        stopPolling();
+        return;
+      }
+
+      if (attempts >= 120) {
+        stopPolling();
+        return;
+      }
+
+      scheduleNextPoll();
+    } catch (error) {
+      console.error(
+        "[BROADCAST STATUS POLLING FAILED]",
+        {
+          jobId: safeJobId,
+          attempt: attempts,
+          error:
+            error?.stack ||
+            error?.message ||
+            error,
+        }
+      );
+
+      if (attempts >= 120) {
+        stopPolling();
+        return;
+      }
+
+      scheduleNextPoll();
+    }
+  };
+
+  poll();
+};
+
+function translitRuToLat(input) {
+  const s = String(input || "").trim().toLowerCase();
+  const map = {
+    а:"a", б:"b", в:"v", г:"g", д:"d", е:"e", ё:"e", ж:"zh", з:"z", и:"i", й:"y",
+    к:"k", л:"l", м:"m", н:"n", о:"o", п:"p", р:"r", с:"s", т:"t", у:"u", ф:"f",
+    х:"h", ц:"ts", ч:"ch", ш:"sh", щ:"sch", ъ:"", ы:"y", ь:"", э:"e", ю:"yu", я:"ya",
+  };
+
+  let out = "";
+  for (const ch of s) {
+    if (map[ch] !== undefined) out += map[ch];
+    else if (/[a-z0-9]/.test(ch)) out += ch;
+    else out += "-";
+  }
+
+  out = out.replace(/-+/g, "-").replace(/^-+/, "").replace(/-+$/, "");
+  if (out.length < 2) out = "category";
+  if (out.length > 32) out = out.slice(0, 32).replace(/-+$/, "");
+  return out;
+}
+
+// =====================================================
+// ====================== UI MENU =======================
+// =====================================================
+const managerMainMenu = () =>
+
+  Markup.keyboard([
+
+    ["➕ Категория", "➕ Товар"],
+
+    ["📦 Наличие", "💰 Кэшбек"],
+
+    ["🎟 Промокоды", "📣 Рассылка"],
+
+    ["🏪 Самовывоз"],
+
+  ])
+
+    .resize()
+
+    .persistent();
+
+const superAdminMainMenu = () =>
+  Markup.keyboard([
+    ["➕ Категория", "➕ Товар"],
+    ["🍓 Вкусы / наличие", "💰 Кэшбек"],
+    ["🎟 Промокоды", "📣 Рассылка"],
+    ["🏪 Точки", "✏️ Категории"],
+    ["📋 Список категорий"],
+  ])
+    .resize()
+    .persistent();
+
+const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : managerMainMenu());
+
+const MAIN_MENU_TEXT_TO_CALLBACK = new Map([
+  ["📦 Наличие", "fl_builder_start"],
+  ["🍓 Вкусы / наличие", "fl_builder_start"],
+  ["💰 Кэшбек", "cashback_grant_start"],
+  ["🎟 Промокоды", "promo_codes_menu"],
+  ["🏪 Самовывоз", "pp_list"],
+  ["➕ Категория", "cat_builder_start"],
+  ["➕ Товар", "prod_builder_start"],
+  ["📣 Рассылка", "broadcast_start"],
+  ["🏪 Точки", "pp_list"],
+  ["✏️ Категории", "cat_edit_start"],
+  ["📋 Список категорий", "cat_list"],
+]);
+
+bot.hears(
+  Array.from(MAIN_MENU_TEXT_TO_CALLBACK.keys()),
+  async (ctx) => {
+    if (!isAdmin(ctx)) return;
+
+    const text = String(ctx?.message?.text || "").trim();
+    const callbackData = MAIN_MENU_TEXT_TO_CALLBACK.get(text);
+
+    if (!callbackData) return;
+
+    const syntheticUpdate = {
+      update_id: Number(ctx?.update?.update_id || Date.now()),
+      __fromReplyKeyboard: true,
+      callback_query: {
+        id: `reply-keyboard-${Date.now()}`,
+        from: ctx.from,
+        chat_instance: String(ctx?.chat?.id || ""),
+        data: callbackData,
+        message: ctx.message,
+      },
+    };
+
+    return bot.handleUpdate(syntheticUpdate);
+  }
+);
+
+const pickupPointManagerMenu = (ppId, options = {}) => {
+  const isSuper = options?.isSuper === true;
+
+  const pointKey = String(options?.pointKey || "").trim().replace(/,+$/, "");
+  const canSendCourierMessage = true;
+
+  const rows = [
+    [Markup.button.callback("📍 Адрес", `pp_edit_address:${ppId}`)],
+    [
+
+      Markup.button.callback(
+
+        "🗓 График по датам",
+
+        `pp_edit_schedule_by_date:${ppId}`
+
+      ),
+
+    ],
+  ];
+
+  if (isSuper) {
+    rows.push(
+      [Markup.button.callback("🔔 ID канала уведомлений", `pp_edit_orders_chat:${ppId}`)],
+      [Markup.button.callback("📊 ID канала статистики", `pp_edit_stats_chat:${ppId}`)],
+    );
+  }
+
+  if (canSendCourierMessage) {
+    rows.push([Markup.button.callback("📨 Сообщение клиенту", `courier_msg_start:${ppId}`)]);
+  }
+
+  rows.push(
+    [Markup.button.callback("💳 Настроить оплату", `pp_payment_menu:${ppId}`)],
+    [Markup.button.callback("⬅️ К списку", "pp_list")],
+    [Markup.button.callback("🏠 Меню", "menu")],
+  );
+
+  return Markup.inlineKeyboard(rows);
+};
+
+const isPickupPointManager = async (ctx, pickupPointId) => {
+  if (isSuperAdmin(ctx)) return true;
+
+  const myTelegramId = String(ctx?.from?.id || "").trim();
+  const safePickupPointId = String(pickupPointId || "").trim();
+
+  if (!myTelegramId || !safePickupPointId) return false;
+
+  try {
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
+    const data = await r.json().catch(() => ({}));
+
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const point = pickupPoints.find((p) => String(p?._id || "") === safePickupPointId);
+    if (!point) return false;
+
+    return Array.isArray(point.allowedAdminTelegramIds)
+      ? point.allowedAdminTelegramIds.map((x) => String(x)).includes(myTelegramId)
+      : false;
+  } catch (e) {
+    console.error("isPickupPointManager error:", e);
+    return false;
+  }
+};
+
+const isCourierManager = async (ctx) => {
+  if (isSuperAdmin(ctx)) return true;
+
+  const myTelegramId = String(ctx?.from?.id || "").trim();
+  if (!myTelegramId) return false;
+
+  try {
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
+    const data = await r.json().catch(() => ({}));
+
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const courierPoint = pickupPoints.find(
+      (p) => String(p?.key || "").trim().replace(/,+$/, "") === "delivery"
+    );
+
+    if (!courierPoint) return false;
+
+    return Array.isArray(courierPoint.allowedAdminTelegramIds)
+      ? courierPoint.allowedAdminTelegramIds.map((x) => String(x)).includes(myTelegramId)
+      : false;
+  } catch (e) {
+    console.error("isCourierManager error:", e);
+    return false;
+  }
+};
+
+// =====================================================
+// ===================== BOT STATE ======================
+// =====================================================
+const state = new Map(); // chatId -> { mode, step, data }
+const getState = (chatId) => state.get(String(chatId));
+const setState = (chatId, st) => state.set(String(chatId), st);
+const clearState = (chatId) => state.delete(String(chatId));
+const defaultCashbackGrantData = () => ({
+  username: "",
+  amountZl: 0,
+});
+
+const defaultPromoCodeData = () => ({
+
+  code: "",
+
+  amountZl: 0,
+
+  expiresAt: null,
+
+  expiresAtInput: "без срока",
+
+});
+
+const PROMO_CODE_STEPS = [
+
+  "code",
+
+  "amount",
+
+  "expiresAt",
+
+  "confirm",
+
+];
+
+const normalizePromoCodeInput = (value) =>
+
+  String(value || "")
+
+    .trim()
+
+    .toUpperCase()
+
+    .replace(/\s+/g, "")
+
+    .replace(/[^A-Z0-9_-]/g, "")
+
+    .slice(0, 32);
+
+const renderPromoCodePreview = (data = {}) => {
+  const code = String(
+    data?.code || ""
+  ).trim();
+
+  const amountZl = Number(
+    data?.amountZl || 0
+  );
+
+  const expiresAtInput = String(
+    data?.expiresAtInput || "без срока"
+  ).trim();
+
+  return [
+    "🎟 *Промокод — превью*",
+    "",
+    `• код: *${code || "—"}*`,
+    `• начисление: *${
+      amountZl > 0
+        ? amountZl.toFixed(2)
+        : "0.00"
+    } PLN*`,
+    `• действует до: *${
+      expiresAtInput || "без срока"
+    }*`,
+  ].join("\n");
+};
+
+const promoCodeNavKeyboard = (stepIndex) => {
+  if (stepIndex > 0) {
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback("⬅️ Назад", "promo_code_back"),
+        Markup.button.callback("✖️ Отмена", "promo_code_cancel"),
+      ],
+    ]);
+  }
+
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("✖️ Отмена", "promo_code_cancel")],
+  ]);
+};
+
+const askPromoCodeStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+
+  if (!st || st.mode !== "promo_code_create") {
+    return;
+  }
+
+  const step = PROMO_CODE_STEPS[st.step];
+  const preview = renderPromoCodePreview(st.data || {});
+
+  if (step === "code") {
+    return ctx.reply(
+      `${preview}\n\nВведите *промокод* латиницей.\n\nПример: \`ELFDUCK25\``,
+      {
+        parse_mode: "Markdown",
+        ...promoCodeNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "amount") {
+    return ctx.reply(
+      `${preview}\n\nВведите *сумму начисления* в PLN.\n\nПример: \`25\` или \`37.5\``,
+      {
+        parse_mode: "Markdown",
+        ...promoCodeNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "expiresAt") {
+  return ctx.reply(
+    [
+      preview,
+      "",
+      "Введите *срок действия промокода* по времени Варшавы.",
+      "",
+      "Формат: `ДД.ММ.ГГГГ ЧЧ:ММ`",
+      "Пример: `31.08.2026 23:59`",
+      "",
+      "Для промокода без ограничения отправьте: `без срока`",
+    ].join("\n"),
+    {
+      parse_mode: "Markdown",
+      ...promoCodeNavKeyboard(
+        st.step
+      ),
+    }
+  );
+}
+
+  return ctx.reply(
+    `${preview}\n\nСоздать и активировать этот промокод?`,
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "✅ Создать промокод",
+            "promo_code_confirm"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "⬅️ Назад",
+            "promo_code_back"
+          ),
+          Markup.button.callback(
+            "✖️ Отмена",
+            "promo_code_cancel"
+          ),
+        ],
+      ]),
+    }
+  );
+};
+
+const defaultCourierMessageData = () => ({
+  pickupPointId: "",
+  username: "",
+  text: "",
+  photoUrl: "",
+});
+
+const BROADCAST_STEPS = [
+  "audienceType",
+  "segmentType",
+  "segmentValue",
+  "templateChoice",
+  "photo",
+  "text",
+  "buttonText",
+  "buttonUrl",
+  "confirm",
+];
+
+const defaultBroadcastData = () => ({
+
+  audienceType: "all",
+
+  segmentType: "",
+
+  segmentValue: "",
+
+  username: "",
+
+  templateId: "",
+
+  photoUrl: "",
+
+  text: "",
+
+  buttonText: "Открыть ELF DUCK",
+
+  buttonUrl: `${WEBAPP_URL}/referral`,
+
+});
+
+const BROADCAST_TEMPLATE_STEPS = [
+  "title",
+  "photoUrl",
+  "text",
+  "buttonText",
+  "buttonUrl",
+  "confirm",
+];
+
+const defaultBroadcastTemplateData = () => ({
+  id: "",
+  title: "",
+  photoUrl: "",
+  text: "",
+  buttonText: "",
+  buttonUrl: "",
+});
+
+const renderBroadcastTemplatePreview = (d = {}) => [
+  "📂 *Шаблон*",
+  "",
+  `Название: *${d.title || "—"}*`,
+  `Фото: ${d.photoUrl ? "✅" : "—"}`,
+  `Текст: ${d.text ? "✅" : "—"}`,
+  `Кнопка: *${d.buttonText || "—"}*`,
+  `Ссылка: ${d.buttonUrl || "—"}`,
+].join("\n");
+
+const broadcastTemplateNav = (step) => {
+  if (step > 0) {
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          "⬅️ Назад",
+          "broadcast_template_back"
+        ),
+        Markup.button.callback(
+          "✖️ Отмена",
+          "broadcast_templates"
+        ),
+      ],
+    ]);
+  }
+
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        "✖️ Отмена",
+        "broadcast_templates"
+      ),
+    ],
+  ]);
+};
+
+const askBroadcastTemplateStep = async (ctx) => {
+
+  const st = getState(ctx.chat.id);
+
+  if (!st) return;
+
+  if (
+    st.mode !== "broadcast_template_create" &&
+    st.mode !== "broadcast_template_edit"
+  ) {
+    return;
+  }
+
+  const step =
+    BROADCAST_TEMPLATE_STEPS[st.step];
+
+  const preview =
+    renderBroadcastTemplatePreview(st.data);
+
+  switch (step) {
+
+    case "title":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите название шаблона.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "photoUrl":
+
+      return ctx.reply(
+        preview +
+          "\n\nОтправьте URL картинки.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "text":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите текст сообщения.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "buttonText":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите текст кнопки.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "buttonUrl":
+
+      return ctx.reply(
+        preview +
+          "\n\nВведите ссылку кнопки.",
+        {
+          parse_mode: "Markdown",
+          ...broadcastTemplateNav(st.step),
+        }
+      );
+
+    case "confirm":
+
+      return ctx.reply(
+        preview +
+          "\n\nСохранить шаблон?",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "💾 Сохранить",
+                "broadcast_template_save"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "⬅️ Назад",
+                "broadcast_template_back"
+              ),
+            ],
+          ]),
+        }
+      );
+  }
+
+};
+
+let BROADCAST_TEMPLATES = [];
+
+const loadBroadcastTemplates = async () => {
+  try {
+    const data = await api("/admin/broadcast/templates");
+
+    BROADCAST_TEMPLATES = Array.isArray(data.templates)
+      ? data.templates
+      : [];
+  } catch (e) {
+    console.error("loadBroadcastTemplates:", e);
+    BROADCAST_TEMPLATES = [];
+  }
+};
+
+const getBroadcastTemplateById = (id) =>
+  BROADCAST_TEMPLATES.find(
+    (x) => String(x._id) === String(id)
+  );
+
+const renderBroadcastPreview = (d = {}) => {
+  let audienceLabel = "Массовая — всем клиентам";
+
+  if (d.audienceType === "username") {
+    audienceLabel = `Точечная — @${
+      String(d.username || "")
+        .trim()
+        .replace(/^@/, "") || "—"
+    }`;
+  }
+
+  if (d.audienceType === "segment") {
+    audienceLabel = `Сегмент — ${
+      d.segmentType || "—"
+    } / ${d.segmentValue || "—"}`;
+  }
+
+  const template = getBroadcastTemplateById(
+    d.templateId
+  );
+
+  const lines = [];
+
+  lines.push("📣 *Push-уведомление*");
+  lines.push("");
+
+  lines.push(
+    `• аудитория: *${audienceLabel}*`
+  );
+
+  lines.push(
+    `• шаблон: *${
+      template?.title || "Свой текст"
+    }*`
+  );
+
+  lines.push(
+    `• фото: ${
+      d.photoUrl ? "*прикреплено*" : "—"
+    }`
+  );
+
+  lines.push(
+    `• текст: ${
+      d.text ? "*заполнен*" : "—"
+    }`
+  );
+
+  lines.push(
+    `• кнопка: *${d.buttonText || "—"}*`
+  );
+
+  lines.push(
+    `• ссылка: ${d.buttonUrl || "—"}`
+  );
+
+  return lines.join("\n");
+};
+
+const broadcastNavKeyboard = (stepIndex) => {
+  if (stepIndex > 0) {
+    return Markup.inlineKeyboard([
+      [
+        Markup.button.callback("⬅️ Назад", "broadcast_back"),
+        Markup.button.callback("✖️ Отмена", "broadcast_cancel"),
+      ],
+    ]);
+  }
+
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("✖️ Отмена", "broadcast_cancel")],
+  ]);
+};
+
+const askBroadcastStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "broadcast") return;
+
+  const step = BROADCAST_STEPS[st.step];
+  const d = st.data || {};
+  const preview = renderBroadcastPreview(d);
+
+  if (step === "audienceType") {
+    return ctx.reply("📣 *Выберите аудиторию рассылки*", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "👥 Всем клиентам",
+            "broadcast_audience:all"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "🎯 По сегменту",
+            "broadcast_audience:segment"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "👤 По username",
+            "broadcast_audience:username"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "✖️ Отмена",
+            "broadcast_cancel"
+          ),
+        ],
+      ]),
+    });
+  }
+
+  if (step === "segmentType") {
+    if (d.audienceType === "username") {
+      return ctx.reply(
+        `${preview}\n\nВведите *username клиента* в формате: \`@username\``,
+        {
+          parse_mode: "Markdown",
+          ...broadcastNavKeyboard(st.step),
+        }
+      );
+    }
+
+    return ctx.reply("🎯 *Выберите тип сегмента*", {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "📦 Категория товара",
+            "broadcast_segment_type:category"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "🏪 Точка самовывоза",
+            "broadcast_segment_type:pickupPoint"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "🚚 Способ получения",
+            "broadcast_segment_type:deliveryMethod"
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "⬅️ Назад",
+            "broadcast_back"
+          ),
+          Markup.button.callback(
+            "✖️ Отмена",
+            "broadcast_cancel"
+          ),
+        ],
+      ]),
+    });
+  }
+
+  if (step === "segmentValue") {
+    if (d.segmentType === "category") {
+      return ctx.reply(
+        "📦 *Выберите категорию товара*",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "Жидкости",
+                "broadcast_segment_value:liquids"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Одноразки",
+                "broadcast_segment_value:disposables"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Поды",
+                "broadcast_segment_value:pods"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Картриджи",
+                "broadcast_segment_value:cartridges"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "⬅️ Назад",
+                "broadcast_back"
+              ),
+              Markup.button.callback(
+                "✖️ Отмена",
+                "broadcast_cancel"
+              ),
+            ],
+          ]),
+        }
+      );
+    }
+
+    if (d.segmentType === "deliveryMethod") {
+      return ctx.reply(
+        "🚚 *Выберите способ получения*",
+        {
+          parse_mode: "Markdown",
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "Самовывоз",
+                "broadcast_segment_value:pickup"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "Доставка курьером",
+                "broadcast_segment_value:courier"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "InPost",
+                "broadcast_segment_value:inpost"
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "⬅️ Назад",
+                "broadcast_back"
+              ),
+              Markup.button.callback(
+                "✖️ Отмена",
+                "broadcast_cancel"
+              ),
+            ],
+          ]),
+        }
+      );
+    }
+
+    const pointsData = await api(
+      `/pickup-points?active=0&_ts=${Date.now()}`
+    );
+
+    const points = Array.isArray(
+      pointsData?.pickupPoints
+    )
+      ? pointsData.pickupPoints
+      : Array.isArray(pointsData)
+      ? pointsData
+      : [];
+
+    return ctx.reply(
+      "🏪 *Выберите точку самовывоза*",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          ...points.map((point) => [
+            Markup.button.callback(
+              String(
+                point?.title ||
+                  point?.address ||
+                  point?.key ||
+                  "Точка"
+              ),
+              `broadcast_segment_value:${String(
+                point?._id || point?.key || ""
+              )}`
+            ),
+          ]),
+          [
+            Markup.button.callback(
+              "⬅️ Назад",
+              "broadcast_back"
+            ),
+            Markup.button.callback(
+              "✖️ Отмена",
+              "broadcast_cancel"
+            ),
+          ],
+        ]),
+      }
+    );
+  }
+
+  if (step === "templateChoice") {
+    return ctx.reply(
+      "🗂 *Выберите шаблон или создайте уведомление вручную*",
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          ...BROADCAST_TEMPLATES.map((template) => [
+            Markup.button.callback(
+              template.title,
+                `broadcast_template:${template._id}`
+            ),
+          ]),
+          [
+            Markup.button.callback(
+              "✍️ Свой текст",
+              "broadcast_template:custom"
+            ),
+          ],
+          [
+            Markup.button.callback(
+              "⬅️ Назад",
+              "broadcast_back"
+            ),
+            Markup.button.callback(
+              "✖️ Отмена",
+              "broadcast_cancel"
+            ),
+          ],
+        ]),
+      }
+    );
+  }
+
+  if (step === "photo") {
+    return ctx.reply(
+      `${preview}\n\nПрикрепите *фото* для пуш-уведомления одним сообщением.`,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "text") {
+    return ctx.reply(
+      `${preview}\n\nВведите *текст уведомления*.\n\nМожно использовать HTML: <b>жирный</b>, <i>курсив</i>.`,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "buttonText") {
+    return ctx.reply(
+      `${preview}\n\nВведите *текст кнопки*.\n\nПример: \`Открыть ELF DUCK\``,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  if (step === "buttonUrl") {
+    return ctx.reply(
+      `${preview}\n\nВведите *ссылку кнопки для Mini App*.\n\nПример: \`${WEBAPP_URL}/referral\``,
+      {
+        parse_mode: "Markdown",
+        ...broadcastNavKeyboard(st.step),
+      }
+    );
+  }
+
+  const sendButtonText =
+    d.audienceType === "username"
+      ? "✅ Отправить клиенту"
+      : d.audienceType === "segment"
+      ? "✅ Отправить сегменту"
+      : "✅ Отправить всем";
+
+  const confirmKeyboard = Markup.inlineKeyboard([
+    // [
+    //   Markup.button.callback(
+    //     "🧪 Тест на 5 пользователей",
+    //     "broadcast_test"
+    //   ),
+    // ],
+    [
+      Markup.button.callback(
+        sendButtonText,
+        "broadcast_confirm"
+      ),
+    ],
+    [
+      Markup.button.callback(
+        "⬅️ Назад",
+        "broadcast_back"
+      ),
+      Markup.button.callback(
+        "✖️ Отмена",
+        "broadcast_cancel"
+      ),
+    ],
+  ]);
+
+  if (d.photoUrl && isValidUrl(d.photoUrl)) {
+    await ctx.reply("👇 Ниже показано, как уведомление будет выглядеть у клиента:");
+
+    return ctx.replyWithPhoto(
+      { url: d.photoUrl },
+      {
+        caption: d.text || " ",
+        parse_mode: "HTML",
+        reply_markup: confirmKeyboard.reply_markup,
+      }
+    );
+  }
+
+  return ctx.reply(
+    `${preview}\n\nПроверь сообщение перед отправкой.`,
+    {
+      parse_mode: "Markdown",
+      ...confirmKeyboard,
+    }
+  );
+};
+
+const renderCourierMessagePreview = (d = {}) => {
+  const lines = [];
+  lines.push("📨 *Сообщение клиенту от курьера*");
+  lines.push("");
+  lines.push(`• username: *${d.username || "—"}*`);
+  lines.push(`• текст: ${d.text ? `*${d.text}*` : "—"}`);
+  lines.push(`• фото: ${d.photoUrl ? "*прикреплено*" : "—"}`);
+  return lines.join("\n");
+};
+
+const askCourierMessageStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "courier_msg") return;
+
+  const d = st.data || {};
+  const preview = renderCourierMessagePreview(d);
+
+  if (st.step === 0) {
+    return ctx.reply(
+      `${preview}\n\nВведите *username клиента* в формате: \`@username\``,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("✖️ Отмена", "courier_msg_cancel")]]),
+      }
+    );
+  }
+
+  if (st.step === 1) {
+    return ctx.reply(
+      `${preview}\n\nВведите *текст сообщения* для клиента`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+            Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+          ],
+        ]),
+      }
+    );
+  }
+
+  if (st.step === 2) {
+    return ctx.reply(
+      `${preview}\n\nПрикрепите *фото* одним сообщением или отправьте \`-\`, если без картинки`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+            Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+          ],
+        ]),
+      }
+    );
+  }
+
+  // if (st.step === 3) {
+  //   return ctx.reply(
+  //     `${preview}\n\nВведите *текст кнопки* или \`-\`, чтобы оставить стандартный`,
+  //     {
+  //       parse_mode: "Markdown",
+  //       ...Markup.inlineKeyboard([
+  //         [
+  //           Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+  //           Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+  //         ],
+  //       ]),
+  //     }
+  //   );
+  // }
+
+  return ctx.reply(
+    `${preview}\n\nОтправить это сообщение клиенту?`,
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Отправить", "courier_msg_confirm")],
+        [
+          Markup.button.callback("⬅️ Назад", "courier_msg_back"),
+          Markup.button.callback("✖️ Отмена", "courier_msg_cancel"),
+        ],
+      ]),
+    }
+  );
+};
+
+// =====================================================
+// ================= CASHBACK GRANT WIZARD ==============
+// =====================================================
+
+const CASHBACK_GRANT_STEPS = ["username", "amount", "confirm"];
+
+const renderCashbackGrantPreview = (d = {}) => {
+  const lines = [];
+  lines.push("💰 *Начисление кэшбека — превью*");
+  lines.push("");
+  lines.push(`• username: *${d.username || "—"}*`);
+  lines.push(`• сумма: *${Number(d.amountZl || 0).toFixed(2)} zł*`);
+  // lines.push(`• комментарий: ${d.note ? `*${d.note}*` : "—"}`);
+  return lines.join("\n");
+};
+
+const cashbackGrantNavKeyboard = (stepIndex) => {
+  const backBtn = stepIndex > 0
+    ? Markup.button.callback("⬅️ Назад", "cashback_grant_back")
+    : null;
+
+  const cancelBtn = Markup.button.callback("✖️ Отмена", "cashback_grant_cancel");
+
+  return backBtn
+    ? Markup.inlineKeyboard([[backBtn, cancelBtn]])
+    : Markup.inlineKeyboard([[cancelBtn]]);
+};
+
+const askCashbackGrantStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cashback_grant") return;
+
+  const step = CASHBACK_GRANT_STEPS[st.step];
+  const preview = renderCashbackGrantPreview(st.data || {});
+
+  if (step === "username") {
+    return ctx.reply(
+      `${preview}\n\nВведите *username пользователя* в формате: \`@username\``,
+      { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
+    );
+  }
+
+  if (step === "amount") {
+    return ctx.reply(
+      `${preview}\n\nВведите *сумму начисления* в zł, пример: \`25\` или \`37.5\``,
+      { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
+    );
+  }
+
+  // if (step === "note") {
+  //   return ctx.reply(
+  //     `${preview}\n\nВведите *комментарий* для истории начисления или отправьте \`-\`, если без комментария.`,
+  //     { parse_mode: "Markdown", ...cashbackGrantNavKeyboard(st.step) }
+  //   );
+  // }
+
+  if (step === "confirm") {
+    return ctx.reply(
+      `${preview}\n\nПодтвердить начисление кэшбека?`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback("✅ Начислить", "cashback_grant_confirm")],
+          [
+            Markup.button.callback("⬅️ Назад", "cashback_grant_back"),
+            Markup.button.callback("✖️ Отмена", "cashback_grant_cancel"),
+          ],
+        ]),
+      }
+    );
+  }
+};
+
+// =====================================================
+// =================== CATEGORY BUILDER =================
+// =====================================================
+
+// ----- Builder steps order -----
+const BUILDER_STEPS = [
+  "variant",
+  "assetsAndTitle",
+  "badge",
+  "sortOrder",
+  "isActive",
+  "confirm",
+];
+
+// =====================================================
+// =================== PRODUCT BUILDER =================
+// =====================================================
+
+const PRODUCT_BUILDER_STEPS = [
+  "category",
+  "titles",
+  "price",
+  "cardImages",
+  "layout",
+  "badge",
+  "orderImage",
+  "titleModal",
+  "accentColor",
+  "sortOrder",
+  "isActive",
+  "confirm",
+];
+
+// =================== PRODUCT BUILDER (WIZARD) ===================
+
+// ===== Product builder: presets for layout =====
+const PRODUCT_LAYOUTS = [
+  {
+    id: 1,
+    label: "Вариант 1 — утка справа / кнопки справа",
+    value: {
+      classCardDuck: "productCardImageRight",
+      classActions: "productActionsRight",
+    },
+  },
+  {
+    id: 2,
+    label: "Вариант 2 — утка слева / кнопки слева",
+    value: {
+      classCardDuck: "productCardImageLeft",
+      classActions: "productActionsLeft",
+    },
+  },
+];
+
+// ----- defaults for new product -----
+const defaultProductData = () => ({
+  categoryKey: "",
+
+  title1: "",
+  title2: "",
+  titleModal: "",
+  price: 0,
+
+  cardBgUrl: "",
+  cardDuckUrl: "",
+  orderImgUrl: "",
+
+  classCardDuck: "",
+  classActions: "",
+
+  classNewBadge: "",
+  newBadge: "",
+
+  accentColor: "", // "32, 130, 231"
+
+  sortOrder: 0,
+  isActive: true,
+});
+
+// ===== optional: step images (can be empty) =====
+const PRODUCT_STEP_IMAGES = {
+  category: "",
+  titles: "",
+  price: "",
+  cardImages: "",
+  layout: "",
+  badge: "",
+  orderImage: "",
+  titleModal: "",
+  accentColor: "",
+  sortOrder: "",
+  isActive: "",
+  confirm: "",
+};
+
+const renderProductPreview = (d) => {
+  const lines = [];
+  lines.push("🧩 *Конструктор товара — превью*");
+  lines.push("");
+  lines.push(`• категория: *${d.categoryKey || "—"}*`);
+  lines.push(`• название (1): *${d.title1 || "—"}*`);
+  lines.push(`• название (2): *${d.title2 || "—"}*`);
+  lines.push(`• цена: *${Number(d.price || 0)}*`);
+  lines.push(`• фон (карточка): ${d.cardBgUrl || "—"}`);
+  lines.push(`• утка (карточка): ${d.cardDuckUrl || "—"}`);
+  lines.push(
+    `• расположение: ${d.classCardDuck ? `\`${d.classCardDuck}\`` : "—"} / ${
+      d.classActions ? `\`${d.classActions}\`` : "—"
+    }`
+  );
+  lines.push(`• бейдж: ${d.newBadge ? `*${d.newBadge}* (\`${d.classNewBadge}\`)` : "—"}`);
+  lines.push(`• картинка (оформление): ${d.orderImgUrl || "—"}`);
+  lines.push(`• название (оформление): *${d.titleModal || "—"}*`);
+  lines.push(`• цвет (RGB): ${d.accentColor ? `\`${d.accentColor}\`` : "—"}`);
+  lines.push(`• sortOrder: *${d.sortOrder}*`);
+  lines.push(`• isActive: *${d.isActive ? "true" : "false"}*`);
+  return lines.join("\n");
+};
+
+// =====================================================
+// =================== FLAVOR BUILDER ==================
+// =====================================================
+
+const SUPER_ADMIN_IDS = (process.env.SUPER_ADMIN_IDS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const isSuperAdmin = (ctx) => SUPER_ADMIN_IDS.includes(String(ctx.from?.id || ""));
+
+const slugify = (s) =>
+  translitRuToLat(String(s || ""))
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+/, "")
+    .replace(/-+$/, "")
+    .slice(0, 32) || "flavor";
+
+const isHex = (s) => /^#[0-9a-fA-F]{6}$/.test(String(s || "").trim());
+
+const FL_BUILDER_STEPS = [
+  "product",      // выбрать товар
+  "mode",         // новый вкус или наличие существующего
+  "newFlavor",    // ввод label + 2 цвета
+  "pickFlavor",   // выбрать существующий вкус
+  "bulkEdit",
+  "pickupPoint",  // выбрать точку
+  "qty",          // ввести количество
+  "confirm",      // подтвердить
+];
+
+const defaultFlavorBuilderData = () => ({
+
+  categoryKey: "",
+
+  categoryTitle: "",
+
+  productId: "",
+
+  productTitle: "",
+
+  mode: "",
+
+  flavorId: "",
+  flavorKey: "",
+  label: "",
+  gradient: ["", ""],
+
+  pickupPointId: "",
+  pickupPointLabel: "",
+
+  totalQty: null,
+
+  bulkEditText: "",
+  bulkEdits: [],
+});
+
+const renderFlavorBuilderPreview = (d = {}) => {
+  const lines = [];
+  lines.push("🍓 *Вкусы / наличие*");
+
+  // показываем ТОЛЬКО заполненное (без “—”)
+  if (d.productTitle) lines.push(`\nТовар: *${String(d.productTitle)}*`);
+
+  if (d.mode) {
+    const modeLabel =
+      d.mode === "new" ? "добавить новый вкус" :
+      d.mode === "stock" ? "обновить наличие" : "";
+    if (modeLabel) lines.push(`Действие: *${modeLabel}*`);
+  }
+
+  if (d.label) lines.push(`Вкус: *${String(d.label)}*`);
+
+  if (Array.isArray(d.gradient) && d.gradient[0] && d.gradient[1]) {
+    lines.push(`Цвета: \`${d.gradient[0]}\`, \`${d.gradient[1]}\``);
+  }
+
+  if (d.pickupPointLabel) lines.push(`Точка: *${String(d.pickupPointLabel)}*`);
+
+  // qty показываем только если реально вводили
+  if (typeof d.totalQty === "number") {
+    lines.push(`Количество: *${d.totalQty}*`);
+  }
+
+  if (d.bulkEditText) lines.push(`Массовое изменение: *да*`);
+
+  return lines.join("\n");
+};
+
+// Доступные точки для менеджера:
+// - супер-админ видит все
+// - обычный менеджер видит только точки где его telegramId в allowedAdminTelegramIds
+const fetchMyPickupPoints = async (ctx) => {
+  const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
+  const data = await r.json().catch(() => ({}));
+  const points = data.pickupPoints || [];
+  const myId = String(ctx.from?.id || "");
+
+  if (isSuperAdmin(ctx)) return points;
+
+  return points.filter((p) =>
+    Array.isArray(p.allowedAdminTelegramIds) && p.allowedAdminTelegramIds.includes(myId)
+  );
+};
+
+const askFlavorStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const step = FL_BUILDER_STEPS[st.step];
+  const d = st.data || {};
+  const preview = renderFlavorBuilderPreview(d);
+
+  // 1) сначала выбрать категорию, затем товар
+  if (step === "product") {
+    if (!d.categoryKey) {
+      const r = await fetch(`${API_URL}/categories?active=0`);
+      const data = await r.json().catch(() => ({}));
+
+      const categories = Array.isArray(data)
+        ? data
+        : data.categories || [];
+
+      if (!categories.length) {
+        clearState(ctx.chat.id);
+
+        return ctx.reply(
+          "Категорий пока нет. Сначала создай категорию.",
+          mainMenu(ctx)
+        );
+      }
+
+      const kb = Markup.inlineKeyboard([
+        ...categories
+          .sort(
+            (a, b) =>
+              (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+          )
+          .map((c) => [
+            Markup.button.callback(
+              `${c.isActive ? "✅" : "⛔️"} ${c.title}`,
+              `fl_category:${c.key}`
+            ),
+          ]),
+
+        [
+          Markup.button.callback(
+            "✖️ Отмена",
+            "fl_cancel"
+          ),
+        ],
+      ]);
+
+      return sendStepCard(ctx, {
+        photoUrl: "",
+        caption: `Выберите *категорию*:`,
+        keyboard: kb,
+      });
+    }
+
+    const r = await fetch(
+      `${API_URL}/products?active=0`
+    );
+
+    const data = await r.json().catch(() => ({}));
+
+    const products = (data.products || []).filter(
+      (p) =>
+        String(p.categoryKey || "") ===
+        String(d.categoryKey)
+    );
+
+    if (!products.length) {
+      const kb = Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "⬅️ К категориям",
+            "fl_category_back"
+          ),
+        ],
+
+        [
+          Markup.button.callback(
+            "✖️ Отмена",
+            "fl_cancel"
+          ),
+        ],
+      ]);
+
+      return sendStepCard(ctx, {
+        photoUrl: "",
+        caption: `В этой категории пока нет товаров.`,
+        keyboard: kb,
+      });
+    }
+
+    const kb = Markup.inlineKeyboard([
+      ...products
+        .sort(
+          (a, b) =>
+            (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+        )
+        .map((p) => [
+          Markup.button.callback(
+            `${p.isActive ? "✅" : "⛔️"} ${(
+              p.title1 || ""
+            ).trim()} ${(p.title2 || "").trim()}`.trim(),
+
+            `fl_pick_product:${p._id}`
+          ),
+        ]),
+
+      [
+        Markup.button.callback(
+          "⬅️ К категориям",
+          "fl_category_back"
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "✖️ Отмена",
+          "fl_cancel"
+        ),
+      ],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `Выберите *товар*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 2) действие с выбранной моделью
+  if (step === "mode") {
+    const kb = Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          "➕ Добавить вкус",
+          "fl_set_mode:new"
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "✏️ Изменить наличие",
+          "fl_set_mode:stock"
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "❌ Удалить модель",
+          `fl_delete_ask:${d.productId}`
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "⬅️ Назад",
+          "fl_back"
+        ),
+
+        Markup.button.callback(
+          "✖️ Отмена",
+          "fl_cancel"
+        ),
+      ],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `Выберите *действие*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 3) новый вкус: ввод label + цвета
+  if (step === "newFlavor") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*название вкуса, #ЦВЕТ1, #ЦВЕТ2*\n\n` +
+      `Пример:\nCool Menthol, #92B8CB, #31460E`;
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+      ]),
+    });
+  }
+
+  // 4) выбрать существующий вкус
+  if (step === "pickFlavor") {
+    // грузим товар, чтобы взять актуальные flavors
+    const r = await fetch(`${API_URL}/products?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const products = data.products || [];
+    const prod = products.find((p) => String(p._id) === String(d.productId));
+
+    const flavors = (prod?.flavors || []).filter((f) => f.isActive !== false);
+
+    if (!flavors.length) {
+      // если вкусов нет — отправим в newFlavor
+      st.step = FL_BUILDER_STEPS.indexOf("newFlavor");
+      st.data.mode = "new";
+      setState(ctx.chat.id, st);
+      return askFlavorStep(ctx);
+    }
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✏️ Массово изменить", "fl_bulk_edit_start")],
+      ...flavors.map((f) => [
+        Markup.button.callback(f.label || f.flavorKey, `fl_pick_flavor:${f._id}`),
+      ]),
+      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nВыберите *вкус*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 5) bulk edit for all flavors of one product
+  if (step === "bulkEdit") {
+    if (!d.pickupPointId) {
+      st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
+      setState(ctx.chat.id, st);
+      return askFlavorStep(ctx);
+    }
+
+    const r = await fetch(`${API_URL}/products?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const products = data.products || [];
+    const prod = products.find((p) => String(p._id) === String(d.productId));
+    const flavors = Array.isArray(prod?.flavors) ? prod.flavors.filter((f) => f.isActive !== false) : [];
+
+    if (!flavors.length) {
+      st.step = FL_BUILDER_STEPS.indexOf("newFlavor");
+      st.data.mode = "new";
+      setState(ctx.chat.id, st);
+      return askFlavorStep(ctx);
+    }
+
+    const flavorLines = flavors.map((f) => {
+      const label = String(f?.label || f?.flavorKey || "Вкус").trim();
+      const stockRow = (Array.isArray(f?.stockByPickupPoint) ? f.stockByPickupPoint : []).find(
+        (row) => String(row?.pickupPointId || "") === String(d.pickupPointId || "")
+      );
+      const currentQty = Math.max(0, Number(stockRow?.totalQty || 0));
+      return `${label}=${currentQty}`;
+    });
+
+    const caption =
+      `${preview}\n\n` +
+      `Отправь изменения *одним сообщением*, каждый вкус с новой цифрой с новой строки.\n\n` +
+      `Поддерживаются оба формата:\n` +
+      `\`Blueberry Ice=10\`\n` +
+      `\`1=10\`\n\n` +
+      `Скопируй список ниже, отредактируй цифры и отправь обратно:\n\n` +
+      `\`\`\`\n${flavorLines.join("\n")}\n\`\`\``;
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+      ]),
+    });
+  }
+
+  // 5) выбрать точку
+  if (step === "pickupPoint") {
+    const points = await fetchMyPickupPoints(ctx);
+
+    if (!points.length) {
+      return ctx.reply("❌ У тебя нет доступных точек самовывоза. Добавь свой telegramId в точку (allowedAdminTelegramIds).");
+    }
+
+    const kb = Markup.inlineKeyboard([
+      ...points
+        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+        .map((p) => {
+          const pointTitle = String(p?.title || "").trim();
+          const pointAddress = String(p?.address || "").trim();
+          const pointLabel = pointTitle && pointAddress
+            ? `${pointTitle} (${pointAddress})`
+            : pointTitle || pointAddress || "Без названия";
+
+          return [
+            Markup.button.callback(`${p.isActive ? "✅" : "⛔️"} ${pointLabel}`, `fl_pick_point:${p._id}`),
+          ];
+        }),
+      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nВыберите *точку самовывоза*:`,
+      keyboard: kb,
+    });
+  }
+
+  // 6) qty
+  if (step === "qty") {
+    // показываем текущее количество по выбранному вкусу на выбранной точке
+    let currentQty = 0;
+
+    try {
+      const r = await fetch(`${API_URL}/products?active=0`);
+      const data = await r.json().catch(() => ({}));
+      const products = data.products || [];
+
+      const prod = products.find((p) => String(p._id) === String(d.productId));
+
+      if (prod) {
+        // вкус может быть выбран по _id (flavorId) или по flavorKey
+        const flavor =
+          (prod.flavors || []).find((f) => String(f._id) === String(d.flavorId)) ||
+          (prod.flavors || []).find((f) => String(f.flavorKey) === String(d.flavorKey));
+
+        if (flavor) {
+          const row = (flavor.stockByPickupPoint || []).find(
+            (s) => String(s.pickupPointId) === String(d.pickupPointId)
+          );
+          currentQty = Number(row?.totalQty || 0);
+        }
+      }
+    } catch (e) {
+      // не ломаем шаг — просто покажем 0
+      currentQty = 0;
+    }
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption:
+        `${preview}\n\n` +
+        `Текущее количество на точке: *${currentQty}*\n\n` +
+        `Введите *количество* (число 0+):`,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+      ]),
+    });
+  }
+
+  // 7) confirm
+  if (step === "confirm") {
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Сохранить", "fl_confirm")],
+      [Markup.button.callback("⬅️ Назад", "fl_back"), Markup.button.callback("✖️ Отмена", "fl_cancel")],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption: `${preview}\n\nПодтвердить сохранение?`,
+      keyboard: kb,
+    });
+  }
+};
+
+const nextFlavorStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  st.step += 1;
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+};
+
+const productNavKeyboard = (stepIndex) => {
+  const backBtn = stepIndex > 0 ? Markup.button.callback("⬅️ Назад", "prod_builder_back") : null;
+  const cancelBtn = Markup.button.callback("✖️ Отмена", "prod_builder_cancel");
+  return backBtn
+    ? Markup.inlineKeyboard([[backBtn, cancelBtn]])
+    : Markup.inlineKeyboard([[cancelBtn]]);
+};
+
+// ===== ask user per product step =====
+const askProductStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const step = PRODUCT_BUILDER_STEPS[st.step];
+  const preview = renderProductPreview(st.data);
+
+  // 1) CATEGORY (buttons from /categories)
+  if (step === "category") {
+    try {
+      const r = await fetch(`${API_URL}/categories?active=0`);
+      const data = await r.json().catch(() => ({}));
+      const categories = Array.isArray(data) ? data : data.categories || [];
+
+      if (!categories.length) {
+        clearState(ctx.chat.id);
+        return ctx.reply("Категорий пока нет. Сначала создай категорию.", mainMenu(ctx));
+      }
+
+      const kb = Markup.inlineKeyboard([
+        ...categories
+          .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+          .map((c) => [
+            Markup.button.callback(
+              `${c.isActive ? "✅" : "⛔️"} ${c.title}`,
+              `prod_set_category:${c.key}`
+            ),
+          ]),
+        [Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+      ]);
+
+      const caption = `${preview}\n\nВыберите *категорию* для товара:`;
+      return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.category, caption, keyboard: kb });
+    } catch (e) {
+      clearState(ctx.chat.id);
+      return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+    }
+  }
+
+  // 2) TITLES (text)
+  if (step === "titles") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*первая строка названия, вторая строка названия (или -)*\n\n` +
+      `Пример:\nCHASER, FOR PODS 30 ML\nили\nSOLANA 30 ML, -`;
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.titles, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 3) PRICE (text)
+  if (step === "price") {
+    const caption = `${preview}\n\nВведите *цену* (число), пример: 55`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.price, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 4) CARD IMAGES (text)
+  if (step === "cardImages") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*ссылка_на_фон_карточки, ссылка_на_утку_карточки*\n\n` +
+      `Пример:\nhttps://...bg.png, https://...duck.png`;
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.cardImages, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 5) LAYOUT (buttons)  ✅ вот тут “шаг layout”
+  if (step === "layout") {
+    const caption = `${preview}\n\nВыберите *расположение карточки*:`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("Вариант 1 — утка справа", "prod_set_layout:1")],
+      [Markup.button.callback("Вариант 2 — утка слева", "prod_set_layout:2")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.layout, caption, keyboard: kb });
+  }
+
+  // 6) BADGE (buttons)
+  if (step === "badge") {
+    const caption = `${preview}\n\nХотите добавить бейдж?`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("NEW", "prod_set_badge:NEW"), Markup.button.callback("SALE", "prod_set_badge:SALE")],
+      [Markup.button.callback("НЕ ДОБАВЛЯТЬ", "prod_set_badge:NONE")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.badge, caption, keyboard: kb });
+  }
+
+  // 7) ORDER IMAGE (text)
+  if (step === "orderImage") {
+    const caption = `${preview}\n\nВставь *ссылку на изображение для оформления заказа* (https://...)`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.orderImage, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 8) TITLE MODAL (text)
+  if (step === "titleModal") {
+    const caption = `${preview}\n\nВведите *название для оформления заказа* (как в модалке)`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.titleModal, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 9) ACCENT COLOR (text)
+  if (step === "accentColor") {
+    const caption = `${preview}\n\nВведите *цвет (RGB)* в формате: \`32, 130, 231\``;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.accentColor, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 10) SORT ORDER (text)
+  if (step === "sortOrder") {
+    const caption = `${preview}\n\nВведите *порядок в сетке* (0,1,2...)`;
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.sortOrder, caption, keyboard: productNavKeyboard(st.step) });
+  }
+
+  // 11) IS ACTIVE (buttons)
+  if (step === "isActive") {
+    const caption = `${preview}\n\nТовар активен?`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Включить", "prod_set_isActive:true")],
+      [Markup.button.callback("⛔️ Выключить", "prod_set_isActive:false")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.isActive, caption, keyboard: kb });
+  }
+
+  // 12) CONFIRM (buttons)
+  if (step === "confirm") {
+    const caption = `${preview}\n\n*Вопрос:*\nПодтвердить создание товара?`;
+
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Создать", "prod_builder_confirm")],
+      [Markup.button.callback("⬅️ Назад", "prod_builder_back"), Markup.button.callback("✖️ Отмена", "prod_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: PRODUCT_STEP_IMAGES.confirm, caption, keyboard: kb });
+  }
+};
+
+const nextProductStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  st.step += 1;
+  setState(ctx.chat.id, st);
+  return askProductStep(ctx);
+};
+
+// ===== Step images (Pinata) =====
+const CAT_STEP_IMAGES = {
+  variant: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreicopjyvhtoec43taajyah3rsb22hriuwm4mdiamilbbqztmfldmoe",
+  assetsAndTitle: "",
+  sortOrder: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiaectbg64b5iud6p3thvqmciwusne4xvn2woosyso3cgqruoqx3wy",
+  isActive: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeibqdkr5tk6ozooh4lngx37coih63v7m2ufrspimstxccxbcuqfzke",
+  confirm: "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreiembjot7lxn3lvjwkjc5nswqizgldije3hrib2jy5hdxkgtfnzh7q",
+};
+
+// ===== Send ONE message: photo + caption + keyboard (or text fallback) =====
+const sendStepCard = async (ctx, { photoUrl, caption, keyboard }) => {
+  const extra = {
+    caption,
+    parse_mode: "Markdown",
+    ...(keyboard?.reply_markup ? { reply_markup: keyboard.reply_markup } : {}),
+  };
+
+  if (photoUrl && isValidUrl(photoUrl)) {
+    return ctx.replyWithPhoto({ url: photoUrl }, extra);
+  }
+
+  // текстовый fallback
+  const extraText = {
+    parse_mode: "Markdown",
+    ...(keyboard?.reply_markup ? { reply_markup: keyboard.reply_markup } : {}),
+  };
+  return ctx.reply(caption, extraText);
+};
+
+// ----- defaults for new category -----
+const defaultCategoryData = () => ({
+  layoutVariant: null,
+  key: "",
+  title: "",
+  badgeText: "",
+  badgeSide: "left",
+  showOverlay: false,
+  classCardDuck: "cardImageLeft",
+  titleClass: "cardTitle",
+  cardBgUrl: "",
+  cardDuckUrl: "",
+  sortOrder: 0,
+  isActive: true,
+});
+
+// ----- options: managers see `label`, DB stores `value` -----
+const DUCK_CLASS_OPTIONS = [
+  { label: "высота 95%, слева", value: "cardImageLeft" },
+  { label: "высота 60%, справа", value: "cardImageRight" },
+  { label: "высота 60%, слева", value: "cardImageLeft2" },
+  { label: "высота 95%, справа", value: "cardImageRight2" },
+];
+
+const TITLE_CLASS_OPTIONS = [
+  { label: "по центру", value: "cardTitle" },
+  { label: "сверху", value: "cardTitle2" },
+];
+
+// ===== 4 готовых варианта карточки категории =====
+const CATEGORY_VARIANTS = [
+  {
+    id: 1,
+    label: "ВАРИАНТ 1",
+    value: { layoutVariant: 1, classCardDuck: "cardImageLeft", titleClass: "cardTitle", showOverlay: true },
+  },
+  {
+    id: 2,
+    label: "ВАРИАНТ 2",
+    value: { layoutVariant: 2, classCardDuck: "cardImageRight", titleClass: "cardTitle2", showOverlay: false },
+  },
+  {
+    id: 3,
+    label: "ВАРИАНТ 3",
+    value: { layoutVariant: 3, classCardDuck: "cardImageLeft2", titleClass: "cardTitle2", showOverlay: false },
+  },
+  {
+    id: 4,
+    label: "ВАРИАНТ 4",
+    value: { layoutVariant: 4, classCardDuck: "cardImageRight2", titleClass: "cardTitle", showOverlay: true },
+  },
+];
+
+const getVariantLabel = (v) =>
+  CATEGORY_VARIANTS.find((x) => x.id === v)?.label || (v ? `ВАРИАНТ ${v}` : "—");
+
+const getDuckLabel = (value) =>
+  DUCK_CLASS_OPTIONS.find((o) => o.value === value)?.label || value || "—";
+
+const getTitleLabel = (value) =>
+  TITLE_CLASS_OPTIONS.find((o) => o.value === value)?.label || value || "—";
+
+// ----- render preview text -----
+const renderCategoryPreview = (d) => {
+  const lines = [];
+  lines.push("🧩 *Конструктор категории — превью*");
+  lines.push("");
+  lines.push(`• вариант: *${getVariantLabel(d.layoutVariant)}*`);
+  // lines.push(`• key: \`${d.key || "—"}\``);
+  lines.push(`• title: *${d.title || "—"}*`);
+  lines.push(`• badgeText: ${d.badgeText ? `*${d.badgeText}*` : "—"}`);
+  lines.push(`• badgeSide: *${d.badgeText ? (d.badgeSide || "left") : "—"}*`);
+  lines.push(`• showOverlay: *${d.showOverlay ? "true" : "false"}*`);
+  lines.push(`• classCardDuck: ${getDuckLabel(d.classCardDuck)} (\`${d.classCardDuck}\`)`);
+  lines.push(`• titleClass: ${getTitleLabel(d.titleClass)} (\`${d.titleClass}\`)`);
+  lines.push(`• cardBgUrl: ${d.cardBgUrl || "—"}`);
+  lines.push(`• cardDuckUrl: ${d.cardDuckUrl || "—"}`);
+  lines.push(`• sortOrder: *${d.sortOrder}*`);
+  lines.push(`• isActive: *${d.isActive ? "true" : "false"}*`);
+  return lines.join("\n");
+};
+
+// =====================================================
+// =================== PICKUP POINTS ===================
+// ====================================================
+
+const renderPickupPointPreview = (p) => {
+  const lines = [];
+  lines.push("🏪 *Точка самовывоза — превью*");
+  lines.push("");
+  lines.push(`Адрес: *${p?.address || "—"}*`);
+  lines.push("");
+  lines.push(
+    `Менеджеры (ID): ${
+      Array.isArray(p?.allowedAdminTelegramIds) && p.allowedAdminTelegramIds.length
+        ? p.allowedAdminTelegramIds.join(", ")
+        : "—"
+    }`
+  );
+
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Warsaw",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+  const todaySchedule =
+    p?.scheduleByDate?.[todayKey] ||
+    p?.scheduleByDate?.get?.(todayKey) ||
+    null;
+
+  const todayScheduleLabel = todaySchedule
+    ? todaySchedule.isOpen
+      ? `${todaySchedule.from || "--:--"}-${todaySchedule.to || "--:--"}`
+      : String(todaySchedule.note || "выходной")
+    : "не задан";
+
+  lines.push("");
+  lines.push(`График на сегодня: *${todayScheduleLabel}*`);
+  lines.push("");
+  const autoStatsTime = String(todaySchedule?.to || p?.statsSendTime || "23:59").trim();
+  lines.push(`Время отправки статистики: *${autoStatsTime}*`);
+
+  const pm = Array.isArray(p?.paymentConfig?.methods) ? p.paymentConfig.methods : [];
+  lines.push("");
+  lines.push(
+    `Способы оплаты: ${
+      pm.length
+        ? pm
+            .map((m) => `\`${String(m.key || "").replace(/`/g, "")}${m.isActive === false ? " (off)" : ""}\``)
+            .join(", ")
+        : "—"
+    }`
+  );
+
+  return lines.join("\n");
+};
+
+const ppMenuKeyboard = (id) =>
+  Markup.inlineKeyboard([
+    [
+      Markup.button.callback("🟢/🔴 Вкл/Выкл", `pp_toggle:${id}`),
+      Markup.button.callback("🗑 Удалить", `pp_delete:${id}`),
+    ],
+    [
+      Markup.button.callback("📝 Название", `pp_prompt:title:${id}`),
+      Markup.button.callback("📍 Адрес", `pp_prompt:address:${id}`),
+    ],
+    [Markup.button.callback(
+      "🗓 График по датам",
+      `pp_edit_schedule_by_date:${id}`
+    )],
+    [Markup.button.callback("👤 ID менеджеров", `pp_prompt:allowedAdminTelegramIds:${id}`)],
+    [Markup.button.callback("🔔 ID канала уведомлений", `pp_prompt:notificationChatId:${id}`)],
+    [Markup.button.callback("📊 ID канала статистики", `pp_prompt:statsChatId:${id}`)],
+    [Markup.button.callback("💳 Настроить оплату", `pp_payment_menu:${id}`)],
+    [Markup.button.callback("🔢 sortOrder", `pp_prompt:sortOrder:${id}`)],
+    [Markup.button.callback("⬅️ К списку", "pp_list")],
+    [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+  ]);
+
+const ppPaymentMenuKeyboard = (id) =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback("BLIK", `pp_pay_prompt:${id}:blik`)],
+    [Markup.button.callback("Криптовалюта", `pp_pay_prompt:${id}:crypto`)],
+    [Markup.button.callback("Укр. карта", `pp_pay_prompt:${id}:ua_card`)],
+    [Markup.button.callback("Наличные", `pp_pay_prompt:${id}:cash`)],
+    [Markup.button.callback("⬅️ К точке", `pp_open:${id}`)],
+  ]);
+
+const ppListKeyboard = (points = [], ctx = null) =>
+  Markup.inlineKeyboard([
+    ...points
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((p) => [
+        Markup.button.callback(
+          `${p.isActive ? "✅" : "⛔️"} ${p.title || p.address || "(без названия)"}`,
+          `pp_open:${p._id}`
+        ),
+      ]),
+    ...(ctx && isSuperAdmin(ctx) ? [[Markup.button.callback("➕ Создать точку", "pp_create")]] : []),
+    [Markup.button.callback("🏠 Меню", "menu")],
+  ]);
+
+const askPickupCreateStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+
+  const step = Number(st.step || 0);
+
+  // step 0: title,address
+  if (step === 0) {
+    const caption =
+      "🏪 *Создание точки самовывоза*\n\n" +
+      "Отправь *одним сообщением* через запятую:\n" +
+      "*название, адрес*\n\n" +
+      "Пример:\nKrucza, ul. Krucza 03, Śródmieście";
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([[Markup.button.callback("✖️ Отмена", "pp_cancel")]]),
+    });
+  }
+
+  // step 1: managers ids
+  if (step === 1) {
+    const d = st.data || {};
+    const caption =
+      `${renderPickupPointPreview(d)}\n\n` +
+      "Вставь *ID менеджеров* через запятую (telegramId).\n" +
+      "Если никого не добавлять — отправь `-`.\n\n" +
+      "Пример:\n123456789, 987654321";
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Назад", "pp_back"), Markup.button.callback("✖️ Отмена", "pp_cancel")],
+      ]),
+    });
+  }
+
+  // step 2: confirm
+  if (step === 2) {
+    const d = st.data || {};
+    const caption = `${renderPickupPointPreview(d)}\n\n*Вопрос:*\nПодтвердить создание точки?`;
+
+    return sendStepCard(ctx, {
+      photoUrl: "",
+      caption,
+      keyboard: Markup.inlineKeyboard([
+        [Markup.button.callback("✅ Создать", "pp_create_confirm")],
+        [Markup.button.callback("⬅️ Назад", "pp_back"), Markup.button.callback("✖️ Отмена", "pp_cancel")],
+      ]),
+    });
+  }
+};
+
+const nextPickupCreateStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+  st.step = Number(st.step || 0) + 1;
+  setState(ctx.chat.id, st);
+  return askPickupCreateStep(ctx);
+};
+
+// ----- quick edit menu (no wizard) -----
+const renderEditMenuText = (d) => {
+  const lines = [];
+  lines.push("✏️ *Редактирование категории*");
+  lines.push("");
+  lines.push(`• key: \`${d.key || "—"}\``);
+  lines.push(`• title: *${d.title || "—"}*`);
+  lines.push(`• badgeText: ${d.badgeText ? `*${d.badgeText}*` : "—"}`);
+  lines.push(`• showOverlay: *${d.showOverlay ? "true" : "false"}*`);
+  lines.push(`• classCardDuck: ${getDuckLabel(d.classCardDuck)} (\`${d.classCardDuck || "—"}\`)`);
+  lines.push(`• titleClass: ${getTitleLabel(d.titleClass)} (\`${d.titleClass || "—"}\`)`);
+  lines.push(`• cardBgUrl: ${d.cardBgUrl || "—"}`);
+  lines.push(`• cardDuckUrl: ${d.cardDuckUrl || "—"}`);
+  lines.push(`• sortOrder: *${d.sortOrder ?? 0}*`);
+  lines.push(`• isActive: *${d.isActive ? "true" : "false"}*`);
+  lines.push("");
+  lines.push("Выбери, что поменять:");
+  return lines.join("\n");
+};
+
+const editMenuKeyboard = () =>
+  Markup.inlineKeyboard([
+    [
+      Markup.button.callback("🟢/🔴 isActive", "cat_edit_toggle_isActive"),
+      Markup.button.callback("🌓 overlay", "cat_edit_toggle_overlay"),
+    ],
+    [
+      Markup.button.callback("📝 title", "cat_edit_prompt:title"),
+      Markup.button.callback("🔑 key", "cat_edit_prompt:key"),
+    ],
+    [
+      Markup.button.callback("🏷 badgeText", "cat_edit_prompt:badgeText"),
+      Markup.button.callback("🔢 sortOrder", "cat_edit_prompt:sortOrder"),
+    ],
+    [Markup.button.callback("🖼 фон (cardBgUrl)", "cat_edit_prompt:cardBgUrl")],
+    [Markup.button.callback("🦆 утка (cardDuckUrl)", "cat_edit_prompt:cardDuckUrl")],
+    [
+      Markup.button.callback("📐 classCardDuck", "cat_edit_pick_classDuck"),
+      Markup.button.callback("🔤 titleClass", "cat_edit_pick_titleClass"),
+    ],
+    [Markup.button.callback("🧩 Открыть конструктор", "cat_edit_open_wizard")],
+    [
+      Markup.button.callback("⬅️ К списку", "cat_edit_start"),
+      Markup.button.callback("🏠 Меню", "cat_builder_cancel"),
+    ],
+  ]);
+
+const sendEditMenu = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  return ctx.replyWithMarkdownV2(
+    renderEditMenuText(st.data).replace(/[-.()]/g, "\\$&"),
+    editMenuKeyboard()
+  );
+};
+
+const builderNavKeyboard = (stepIndex) => {
+  const backBtn = stepIndex > 0 ? Markup.button.callback("⬅️ Назад", "cat_builder_back") : null;
+  const cancelBtn = Markup.button.callback("✖️ Отмена", "cat_builder_cancel");
+
+  if (backBtn) return Markup.inlineKeyboard([[backBtn, cancelBtn]]);
+  return Markup.inlineKeyboard([[cancelBtn]]);
+};
+
+// ----- ask user per step -----
+const askStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  const step = BUILDER_STEPS[st.step];
+
+  const preview = renderCategoryPreview(st.data);
+  const navKb = builderNavKeyboard(st.step);
+
+  // Текст вопроса для каждого шага
+  let question = "";
+
+  if (step === "variant") {
+    const caption = `${preview}\n\nВыберите *вариант карточки* (готовая разметка):`;
+    const kb = Markup.inlineKeyboard([
+      [
+        Markup.button.callback("ВАРИАНТ 1", "cat_builder_set_variant:1"),
+        Markup.button.callback("ВАРИАНТ 2", "cat_builder_set_variant:2"),
+      ],
+      [
+        Markup.button.callback("ВАРИАНТ 3", "cat_builder_set_variant:3"),
+        Markup.button.callback("ВАРИАНТ 4", "cat_builder_set_variant:4"),
+      ],
+      [Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.variant, caption, keyboard: kb });
+  }
+
+  if (step === "sortOrder") {
+    question = "Введите *порядок в сетке* (0,1,2...)";
+  } else if (step === "confirm") {
+    const isEdit = st?.mode === "cat_edit";
+    question = isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?";
+  }
+
+  if (step === "assetsAndTitle") {
+    const caption =
+      `${preview}\n\n` +
+      `Отправь *одним сообщением* через запятую:\n` +
+      `*ссылка_на_фон, ссылка_на_утку, название категории*\n\n` +
+      `Пример:\nhttps://...bg.png, https://...duck.png, ЖИДКОСТИ`;
+
+    const kb = builderNavKeyboard(st.step);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.assetsAndTitle, caption, keyboard: kb });
+  }
+
+  if (step === "badge") {
+    const caption = `${preview}\n\nХотите добавить бейдж?`;
+    const kb = Markup.inlineKeyboard([
+      [
+        Markup.button.callback("SALE (слева)", "cat_builder_set_badge:SALE:left"),
+        Markup.button.callback("SALE (справа)", "cat_builder_set_badge:SALE:right"),
+      ],
+      [
+        Markup.button.callback("NEW DROP (слева)", "cat_builder_set_badge:NEW DROP:left"),
+        Markup.button.callback("NEW DROP (справа)", "cat_builder_set_badge:NEW DROP:right"),
+      ],
+      [Markup.button.callback("НЕ ДОБАВЛЯТЬ", "cat_builder_set_badge:NONE")],
+      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES.badge, caption, keyboard: kb });
+  }
+
+  // Кнопочные шаги оставим как есть (там inline keyboard да/нет)
+  // но превью всё равно можно отправить одним сообщением (см. ниже)
+
+  // Если шаг НЕ кнопочный — отправляем 1 сообщение (картинка+подпись)
+  const photoUrl = CAT_STEP_IMAGES[step];
+  if (
+    ["key", "title", "badgeText", "cardBgUrl", "cardDuckUrl", "sortOrder"].includes(step)
+  ) {
+    const caption = `${preview}\n\n*Вопрос:*\n${question}`;
+    return sendStepCard(ctx, { photoUrl, caption, keyboard: navKb });
+  }
+
+
+  if (step === "isActive") {
+    const caption = `${preview}\n\nКатегория активна?`;
+    const kb = Markup.inlineKeyboard([
+      [Markup.button.callback("✅ Включить", "cat_builder_set_isActive:true")],
+      [Markup.button.callback("⛔️ Выключить", "cat_builder_set_isActive:false")],
+      [Markup.button.callback("⬅️ Назад", "cat_builder_back"), Markup.button.callback("✖️ Отмена", "cat_builder_cancel")],
+    ]);
+    return sendStepCard(ctx, { photoUrl: CAT_STEP_IMAGES[step], caption, keyboard: kb });
+  }
+
+  if (step === "confirm") {
+    const st = getState(ctx.chat.id);
+    const isEdit = st?.mode === "cat_edit";
+
+    const caption = `${preview}\n\n*Вопрос:*\n${isEdit ? "Подтвердить обновление категории?" : "Подтвердить создание категории?"}`;
+
+    const kb = Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          isEdit ? "💾 Сохранить" : "✅ Создать",
+          isEdit ? "cat_edit_confirm" : "cat_builder_confirm"
+        ),
+      ],
+      [
+        Markup.button.callback("⬅️ Назад", "cat_builder_back"),
+        Markup.button.callback("✖️ Отмена", "cat_builder_cancel"),
+      ],
+    ]);
+
+    return sendStepCard(ctx, {
+      photoUrl: CAT_STEP_IMAGES.confirm,
+      caption,
+      keyboard: kb,
+    });
+  }
+};
+
+const nextStep = async (ctx) => {
+  const st = getState(ctx.chat.id);
+  st.step += 1;
+  setState(ctx.chat.id, st);
+  return askStep(ctx);
+};
+
+// =====================================================
+// ======================= COMMANDS =====================
+// =====================================================
+
+bot.action("menu", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const callbackMessageId = ctx.callbackQuery?.message?.message_id;
+
+  if (callbackMessageId) {
+    forgetBotMessage(ctx.chat.id, callbackMessageId);
+
+    try {
+      await ctx.deleteMessage(callbackMessageId);
+    } catch {}
+  }
+
+  clearState(ctx.chat.id);
+  return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
+});
+
+bot.start(async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.reply("⛔️ Нет доступа");
+  clearState(ctx.chat.id);
+
+  if (ctx.message?.message_id) {
+    try {
+      await ctx.deleteMessage(ctx.message.message_id);
+    } catch {}
+  }
+
+  return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
+});
+
+bot.action("cashback_grant_start", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    setState(ctx.chat.id, {
+      mode: "cashback_grant",
+      step: 0,
+      data: defaultCashbackGrantData(),
+    });
+
+    return askCashbackGrantStep(ctx);
+  } catch (e) {
+    console.error("cashback_grant_start error:", e);
+  }
+});
+
+bot.action("cashback_grant_back", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "cashback_grant") return;
+
+    st.step = Math.max(0, Number(st.step || 0) - 1);
+    setState(ctx.chat.id, st);
+    return askCashbackGrantStep(ctx);
+  } catch (e) {
+    console.error("cashback_grant_back error:", e);
+  }
+});
+
+bot.action("cashback_grant_cancel", async (ctx) => {
+  try {
+    await ctx.answerCbQuery("Отменено");
+    if (!isAdmin(ctx)) return;
+
+    clearState(ctx.chat.id);
+    return ctx.reply("Начисление кэшбека отменено.", mainMenu(ctx));
+  } catch (e) {
+    console.error("cashback_grant_cancel error:", e);
+  }
+});
+
+bot.action("cashback_grant_confirm", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "cashback_grant") return;
+
+    const username = String(st.data?.username || "").trim().replace(/^@+/, "");
+    const amountZl = Number(st.data?.amountZl || 0);
+    // const note = String(st.data?.note || "").trim();
+
+    if (!username) return ctx.reply("❌ Укажи username пользователя.");
+    if (!(amountZl > 0)) return ctx.reply("❌ Сумма должна быть больше 0.");
+
+    const result = await api("/admin/users/cashback/grant-by-username", {
+      method: "POST",
+      body: JSON.stringify({
+        username,
+        amountZl,
+        // note,
+        grantedByTelegramId: String(ctx.from?.id || ""),
+        grantedByUsername: String(ctx.from?.username || ""),
+      }),
+    });
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      [
+        "✅ Кэшбек начислен",
+        `username: @${username}`,
+        `сумма: ${amountZl.toFixed(2)} zł`,
+        `новый баланс: ${Number(result?.cashbackBalance || 0).toFixed(2)} zł`,
+      ].join("\n"),
+      mainMenu(ctx)
+    );
+  } catch (e) {
+    console.error("cashback_grant_confirm error:", e);
+    return ctx.reply(`❌ Ошибка начисления: ${e.message}`);
+  }
+});
+
+const formatPickupScheduleDates = (scheduleByDate) => {
+  const source =
+    scheduleByDate &&
+    typeof scheduleByDate === "object"
+      ? scheduleByDate
+      : {};
+
+      const warsawDateParts =
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Europe/Warsaw",
+        year: "numeric",
+        month: "2-digit",
+      }).formatToParts(new Date());
+
+    const warsawDateValues =
+      Object.fromEntries(
+        warsawDateParts.map((part) => [
+          part.type,
+          part.value,
+        ])
+      );
+
+    const currentYear = String(
+      warsawDateValues.year || ""
+    );
+
+    const currentMonth = String(
+      warsawDateValues.month || ""
+    ).padStart(2, "0");
+
+    const rows = Object.entries(source)
+      .filter(([dateKey]) => {
+        const dateMatch = String(
+          dateKey
+        ).match(
+          /^(\d{4})-(\d{2})-(\d{2})$/
+        );
+
+        if (!dateMatch) {
+          return false;
+        }
+
+        return (
+          dateMatch[1] === currentYear &&
+          dateMatch[2] === currentMonth
+        );
+      })
+      .map(([dateKey, value]) => {
+      const dateMatch = String(
+        dateKey
+      ).match(
+        /^(\d{4})-(\d{2})-(\d{2})$/
+      );
+
+      if (!dateMatch) {
+        return null;
+      }
+
+      const displayDate =
+        `${dateMatch[3]}.${dateMatch[2]}.${dateMatch[1]}`;
+
+      const timestamp = Date.UTC(
+        Number(dateMatch[1]),
+        Number(dateMatch[2]) - 1,
+        Number(dateMatch[3])
+      );
+
+      if (value?.isOpen !== true) {
+        return {
+          timestamp,
+          text:
+            `• ${displayDate} — закрыто`,
+        };
+      }
+
+      const periods = Array.isArray(
+        value?.periods
+      )
+        ? value.periods
+            .map((period) => {
+              const from = String(
+                period?.from ||
+                  period?.openFrom ||
+                  ""
+              ).trim();
+
+              const to = String(
+                period?.to ||
+                  period?.openTo ||
+                  ""
+              ).trim();
+
+              return from && to
+                ? `${from}-${to}`
+                : "";
+            })
+            .filter(Boolean)
+        : [];
+
+      const fallbackFrom = String(
+        value?.from ||
+          value?.openFrom ||
+          ""
+      ).trim();
+
+      const fallbackTo = String(
+        value?.to ||
+          value?.openTo ||
+          ""
+      ).trim();
+
+      const scheduleLabel =
+        periods.length
+          ? periods.join(" / ")
+          : fallbackFrom && fallbackTo
+          ? `${fallbackFrom}-${fallbackTo}`
+          : "график не указан";
+
+      return {
+        timestamp,
+        text:
+          `• ${displayDate} — ${scheduleLabel}`,
+      };
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        a.timestamp - b.timestamp
+    );
+
+  return rows.length
+
+    ? rows
+
+        .map((row) => row.text)
+
+        .join("\n")
+
+    : "В текущем месяце добавленных дат пока нет.";
+};
+
+// =====================================================
+// =================== PICKUP POINTS CRUD ==============
+// =====================================================
+
+bot.action("pp_list", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  try {
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
+
+    if (!points.length) {
+      return ctx.reply(
+        "Точек самовывоза пока нет.",
+        Markup.inlineKeyboard([
+          ...(isSuperAdmin(ctx) ? [[Markup.button.callback("➕ Создать точку", "pp_create")]] : []),
+          [Markup.button.callback("🏠 Меню", "menu")],
+        ])
+      );
+    }
+
+    return ctx.reply("🏪 *Точки самовывоза:*", {
+      parse_mode: "Markdown",
+      reply_markup: ppListKeyboard(points, ctx).reply_markup,
+    });
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action("pp_create", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "pp_create",
+    step: 0,
+    data: {
+      title: "",
+      address: "",
+      sortOrder: 0,
+      isActive: true,
+      allowedAdminTelegramIds: [],
+      notificationChatId: "",
+      statsChatId: "",
+      statsSendTime: "23:59",
+      scheduleByDate: {},
+    },
+  });
+
+  return askPickupCreateStep(ctx);
+});
+
+bot.action("pp_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("Ок, отменено.", mainMenu(ctx));
+});
+
+bot.action("pp_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+  return askPickupCreateStep(ctx);
+});
+
+bot.action("pp_create_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "pp_create") return;
+
+  try {
+    const d = st.data || {};
+    if (!String(d.title || "").trim() && !String(d.address || "").trim()) {
+      throw new Error("Нужно указать хотя бы название или адрес");
+    }
+
+    const payload = {
+      title: String(d.title || "").trim(),
+      address: String(d.address || "").trim(),
+      sortOrder: Number(d.sortOrder || 0),
+      isActive: d.isActive !== false,
+      allowedAdminTelegramIds: Array.isArray(d.allowedAdminTelegramIds)
+        ? d.allowedAdminTelegramIds.map((x) => String(x).trim()).filter(Boolean)
+        : [],
+      notificationChatId: String(d.notificationChatId || "").trim(),
+      statsChatId: String(d.statsChatId || "").trim(),
+      statsSendTime: String(d.statsSendTime || "23:59").trim(),
+      scheduleByDate:
+        d.scheduleByDate && typeof d.scheduleByDate === "object"
+          ? d.scheduleByDate
+          : {},
+    };
+
+    await api("/admin/pickup-points", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    clearState(ctx.chat.id);
+    return ctx.reply(
+      "✅ Точка создана",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("🏪 К списку точек", "pp_list")],
+        [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+      ])
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action(/pp_open:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+
+  try {
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
+    const p = points.find((x) => String(x._id) === id);
+
+    if (!p) return ctx.reply("Точка не найдена", mainMenu(ctx));
+
+    setState(ctx.chat.id, { mode: "pp_open", ppId: id, data: p });
+
+    return ctx.reply(renderPickupPointPreview(p), {
+      parse_mode: "Markdown",
+      reply_markup: (isSuperAdmin(ctx)
+        ? ppMenuKeyboard(id)
+        : pickupPointManagerMenu(id, {
+            isSuper: isSuperAdmin(ctx),
+            pointKey: p?.key,
+          })
+      ).reply_markup,
+    });
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action(/pp_toggle:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+
+  try {
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
+    const p = points.find((x) => String(x._id) === id);
+    if (!p) return ctx.reply("Точка не найдена", mainMenu(ctx));
+
+    const updated = await api(`/admin/pickup-points/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive: !p.isActive }),
+    });
+
+    const fresh = updated?.pickupPoint || updated;
+    setState(ctx.chat.id, { mode: "pp_open", ppId: id, data: fresh });
+
+    return ctx.reply(renderPickupPointPreview(fresh), {
+      parse_mode: "Markdown",
+      reply_markup: (
+        isSuperAdmin(ctx)
+          ? ppMenuKeyboard(id)
+          : pickupPointManagerMenu(id, {
+              isSuper: false,
+              pointKey: fresh?.key,
+            })
+      ).reply_markup,
+    });
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action(/pp_delete:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+
+  try {
+    await api(`/admin/pickup-points/${id}`, { method: "DELETE" });
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      "🗑 Точка удалена",
+      Markup.inlineKeyboard([
+        [Markup.button.callback("🏪 К списку точек", "pp_list")],
+        [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+      ])
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action(/pp_edit_address:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  const allowed = await isPickupPointManager(ctx, pickupPointId);
+  if (!allowed) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt",
+    field: "address",
+    ppId: pickupPointId,
+  });
+
+return ctx.reply("Введите новый *адрес* (или `-` чтобы отменить)", {
+  parse_mode: "Markdown",
+  reply_markup: Markup.inlineKeyboard([
+    [Markup.button.callback("⬅️ К точке", `pp_open:${pickupPointId}`)],
+    [Markup.button.callback("🏠 Меню", "menu")],
+  ]).reply_markup,
+});
+});
+
+bot.action(/pp_edit_schedule_by_date:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery("No access");
+  }
+
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(
+    ctx.match?.[1] || ""
+  ).trim();
+
+  if (!pickupPointId) {
+    return ctx.reply(
+      "❌ Точка не найдена."
+    );
+  }
+
+  const allowed =
+    await isPickupPointManager(
+      ctx,
+      pickupPointId
+    );
+
+  if (!allowed) {
+    return ctx.reply(
+      "❌ Нет доступа."
+    );
+  }
+
+  try {
+    const pointsData = await api(
+      "/pickup-points?active=0"
+    );
+
+    const points = Array.isArray(
+      pointsData
+    )
+      ? pointsData
+      : Array.isArray(
+          pointsData?.pickupPoints
+        )
+      ? pointsData.pickupPoints
+      : [];
+
+    const point =
+      points.find(
+        (item) =>
+          String(
+            item?._id || ""
+          ) === pickupPointId
+      ) || null;
+
+    if (!point) {
+      return ctx.reply(
+        "❌ Точка не найдена."
+      );
+    }
+
+    const monthScheduleText =
+      formatPickupScheduleDates(
+        point?.scheduleByDate || {}
+      );
+
+    return ctx.reply(
+      [
+        "🗓 *График на текущий месяц:*",
+        "",
+        monthScheduleText,
+      ].join("\n"),
+      {
+        parse_mode: "Markdown",
+
+        reply_markup:
+          Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "➕ Добавить другую дату",
+                `pp_add_schedule_date:${pickupPointId}`
+              ),
+            ],
+            [
+              Markup.button.callback(
+                "⬅️ К точке",
+                `pp_open:${pickupPointId}`
+              ),
+            ],
+          ]).reply_markup,
+      }
+    );
+  } catch (error) {
+    console.error(
+      "pp_edit_schedule_by_date error:",
+      error
+    );
+
+    return ctx.reply(
+      `❌ Не удалось загрузить график: ${error.message}`
+    );
+  }
+});
+
+bot.action(/pp_add_schedule_date:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery(
+      "No access"
+    );
+  }
+
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(
+    ctx.match?.[1] || ""
+  ).trim();
+
+  if (!pickupPointId) {
+    return ctx.reply(
+      "❌ Точка не найдена."
+    );
+  }
+
+  const allowed =
+    await isPickupPointManager(
+      ctx,
+      pickupPointId
+    );
+
+  if (!allowed) {
+    return ctx.reply(
+      "❌ Нет доступа."
+    );
+  }
+
+  setState(ctx.chat.id, {
+    mode:
+      "pp_prompt_schedule_by_date",
+
+    step: "date",
+
+    pickupPointId,
+
+    dateKey: "",
+
+    displayDate: "",
+  });
+
+  return ctx.reply(
+    [
+      "🗓 *График по конкретной дате*",
+      "",
+      "Введите дату в формате `ДД.ММ.ГГГГ`.",
+      "",
+      "Пример: `21.07.2026`",
+    ].join("\n"),
+    {
+      parse_mode: "Markdown",
+
+      reply_markup:
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "⬅️ Назад к графику",
+              `pp_edit_schedule_by_date:${pickupPointId}`
+            ),
+          ],
+        ]).reply_markup,
+    }
+  );
+});
+
+bot.action(/pp_edit_orders_chat:(.+)/, async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt",
+    field: "notificationChatId",
+    ppId: pickupPointId,
+  });
+
+  return ctx.reply("Введите *ID чата* для получения уведомлений о заказах", {
+    parse_mode: "Markdown",
+  });
+});
+
+bot.action(/pp_edit_stats_chat:(.+)/, async (ctx) => {
+  if (!isSuperAdmin(ctx)) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+  await ctx.answerCbQuery();
+
+  const pickupPointId = String(ctx.match[1] || "").trim();
+  if (!pickupPointId) return ctx.reply("❌ Точка не найдена.");
+
+  setState(ctx.chat.id, {
+    mode: "pp_prompt",
+    field: "statsChatId",
+    ppId: pickupPointId,
+  });
+
+  return ctx.reply("Введите *ID чата* для получения статистики по складу", {
+    parse_mode: "Markdown",
+  });
+});
+
+bot.action(/pp_prompt:(title|address|allowedAdminTelegramIds|notificationChatId|statsChatId|sortOrder):(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const field = String(ctx.match[1] || "");
+  const id = String(ctx.match[2] || "");
+
+  setState(ctx.chat.id, { mode: "pp_prompt", field, ppId: id });
+
+  const prompts = {
+    title: "Введите новое *название* (или `-` чтобы отменить)",
+    address: "Введите новый *адрес* (или `-` чтобы отменить)",
+    allowedAdminTelegramIds: "Введите *ID менеджеров* через запятую (telegramId) (или `-` чтобы очистить/отменить)",
+    notificationChatId: "Введите *ID чата* для получения уведомлений о заказах",
+    statsChatId: "Введите *ID чата* для получения статистики по складу",
+    sortOrder: "Введите новый *sortOrder* (0,1,2...) (или `-` чтобы отменить)",
+  };
+
+  return ctx.reply(prompts[field] || "Введите новое значение", { parse_mode: "Markdown" });
+});
+
+bot.action(/pp_payment_menu:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return;
+
+  const id = String(ctx.match?.[1] || "").trim();
+  if (!id) return;
+
+  try {
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
+    const point = points.find((x) => String(x._id) === id);
+
+    if (!point) return ctx.answerCbQuery("Точка не найдена");
+
+const escapeTelegramMarkdown = (value) =>
+  String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\*/g, "\\*")
+    .replace(/_/g, "\\_")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+
+const pm = Array.isArray(point?.paymentConfig?.methods) ? point.paymentConfig.methods : [];
+
+const paymentMethodsLabel = pm.length
+  ? pm
+      .map((m) => `\`${String(m?.key || "").trim().replace(/`/g, "")}${m?.isActive === false ? " (off)" : ""}\``)
+      .filter(Boolean)
+      .join(", ")
+  : "—";
+
+const safeAddress = escapeTelegramMarkdown(String(point?.address || point?.title || "—"));
+
+const text = [
+  "🏪 *Точка самовывоза — методы оплаты*",
+  "",
+  `Адрес: *${safeAddress}*`,
+  "",
+  `Способы оплаты: ${paymentMethodsLabel}`,
+  "",
+  "Выберите способ оплаты для настройки:",
+].join("\n");
+
+    if (ctx.callbackQuery?.message?.photo) {
+      await ctx.editMessageCaption(text, {
+        parse_mode: "Markdown",
+        reply_markup: ppPaymentMenuKeyboard(id).reply_markup,
+      });
+    } else {
+      await ctx.editMessageText(text, {
+        parse_mode: "Markdown",
+        reply_markup: ppPaymentMenuKeyboard(id).reply_markup,
+      });
+    }
+  } catch (e) {
+    console.error(e);
+    await ctx.answerCbQuery("Ошибка");
+  }
+});
+
+bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return;
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match?.[1] || "").trim();
+  const methodKey = String(ctx.match?.[2] || "").trim();
+  if (!id || !methodKey) return;
+
+  const paymentMethodPromptMeta = {
+    blik: {
+      title: "BLIK",
+      label: "BLIK",
+      badge: "BLIK",
+      defaultDetailsValue: "+48 573 401 389",
+      example: "+48 573 401 389",
+    },
+    crypto: {
+      title: "Криптовалюта",
+      label: "Криптовалюта",
+      badge: "USDT TRC20",
+      defaultDetailsValue: "TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a",
+      example: "TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a",
+    },
+    ua_card: {
+      title: "УКР. КАРТА",
+      label: "Украинская карта",
+      badge: "Перевод на карту",
+      defaultDetailsValue: "5395 4182 3356 7590",
+      example: "5395 4182 3356 7590",
+    },
+    cash: {
+      title: "НАЛИЧНЫЕ",
+      label: "Наличные",
+      badge: "Наличные",
+      defaultDetailsValue: "Оплата при получении",
+      example: "Оплата при получении",
+    },
+  };
+
+  const promptMeta = paymentMethodPromptMeta[String(methodKey || "").trim()] || {
+    title: "СПОСОБ ОПЛАТЫ",
+    example: "Label | detailsValue | badge | on",
+  };
+
+  try {
+    const points = isSuperAdmin(ctx)
+      ? await api("/pickup-points?active=0").then((data) => data.pickupPoints || [])
+      : await fetchMyPickupPoints(ctx);
+
+    const point = points.find((x) => String(x._id) === id);
+    if (!point) return ctx.reply("❌ Точка не найдена.");
+
+    const methods = Array.isArray(point?.paymentConfig?.methods) ? point.paymentConfig.methods : [];
+    const currentMethod = methods.find((m) => String(m?.key || "") === methodKey) || null;
+
+    const currentMethodText = currentMethod
+      ? [
+          `Текущие настройки для *${promptMeta.title}*:`,
+          `Реквизиты: \`${String(currentMethod.detailsValue || "").trim() || "—"}\``,
+          `Статус: *${currentMethod.isActive === false ? "выключен" : "включен"}*`,
+        ].join("\n")
+      : `Текущий метод оплаты для *${promptMeta.title}* не установлен.`;
+
+    const isActive = currentMethod?.isActive !== false;
+    const toggleLabel = isActive ? "🔴 Выключить" : "🟢 Включить";
+
+    const promptText = [
+      `Введите *реквизиты* для *${promptMeta.title}*:`,
+      "",
+      currentMethodText,
+      "",
+      `Что нужно отправить сейчас:`,
+      `\`${promptMeta.example}\``,
+    ].join("\n");
+
+    setState(ctx.chat.id, {
+      mode: "pp_payment_prompt",
+      pointId: id,
+      methodKey,
+    });
+
+    return ctx.reply(promptText, {
+      parse_mode: "Markdown",
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(toggleLabel, `pp_pay_toggle:${id}:${methodKey}`)],
+        [Markup.button.callback("⬅️ К оплатам", `pp_payment_menu:${id}`)],
+        [Markup.button.callback("🏠 Меню", `pp_open:${id}`)],
+      ]).reply_markup,
+    });
+  } catch (e) {
+    console.error(e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action(/pp_pay_toggle:(.+):(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return;
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match?.[1] || "").trim();
+  const methodKey = String(ctx.match?.[2] || "").trim();
+  if (!id || !methodKey) return;
+
+  try {
+    const data = await api("/pickup-points?active=0");
+    const points = data.pickupPoints || [];
+    const point = points.find((x) => String(x._id) === id);
+
+    if (!point) return ctx.reply("❌ Точка не найдена.");
+
+    const methods = Array.isArray(point?.paymentConfig?.methods)
+      ? [...point.paymentConfig.methods]
+      : [];
+
+    const idx = methods.findIndex((m) => String(m?.key || "") === methodKey);
+
+    if (idx >= 0) {
+      methods[idx] = {
+        ...methods[idx],
+        isActive: methods[idx]?.isActive === false ? true : false,
+      };
+    } else {
+      methods.push({
+        key: methodKey,
+        label: "",
+        detailsValue: "",
+        badge: "",
+        isActive: true,
+      });
+    }
+
+    await api(`/admin/pickup-points/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        paymentConfig: { methods },
+      }),
+    });
+
+    return ctx.reply("✅ Статус метода оплаты обновлён.", {
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback("⬅️ Вернуться к методу", `pp_pay_prompt:${id}:${methodKey}`)],
+        [Markup.button.callback("⬅️ К оплатам", `pp_payment_menu:${id}`)],
+      ]).reply_markup,
+    });
+  } catch (e) {
+    console.error(e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action("courier_msg_main", async (ctx) => {
+  try {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+  }
+
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
+    const data = await r.json().catch(() => ({}));
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const courierPoint = pickupPoints.find(
+      (p) => String(p?.key || "").trim().replace(/,+$/, "") === "delivery"
+    );
+
+    if (!courierPoint?._id) {
+      return ctx.answerCbQuery("Точка delivery не найдена", { show_alert: true });
+    }
+
+    if (!ctx.from?.username) {
+      await ctx.answerCbQuery();
+      return ctx.reply(
+        "❌ У вас должен быть установлен Telegram username, чтобы клиент мог связаться с курьером.",
+        mainMenu(ctx)
+      );
+    }
+
+    setState(ctx.chat.id, {
+      mode: "courier_msg",
+      step: 0,
+      data: {
+        ...defaultCourierMessageData(),
+        pickupPointId: String(courierPoint._id),
+      },
+    });
+
+    await ctx.answerCbQuery();
+    return askCourierMessageStep(ctx);
+  } catch (e) {
+    console.error("courier_msg_main error:", e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action(/^courier_msg_start:(.+)$/, async (ctx) => {
+  try {
+    const pickupPointId = String(ctx.match[1] || "").trim();
+
+    if (!pickupPointId) {
+      return ctx.answerCbQuery("Точка не найдена");
+    }
+
+    const allowed = await isPickupPointManager(ctx, pickupPointId);
+    if (!allowed && !isSuperAdmin(ctx)) {
+      return ctx.answerCbQuery("Нет доступа", { show_alert: true });
+    }
+
+    const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
+    const data = await r.json().catch(() => ({}));
+    const pickupPoints = Array.isArray(data?.pickupPoints)
+      ? data.pickupPoints
+      : Array.isArray(data)
+      ? data
+      : [];
+
+    const point = pickupPoints.find((p) => String(p?._id || "") === pickupPointId);
+    const pointKey = String(point?.key || "").trim().replace(/,+$/, "");
+
+    if (pointKey !== "delivery") {
+      return ctx.answerCbQuery("Только для курьера", { show_alert: true });
+    }
+
+    if (!ctx.from?.username) {
+      return ctx.reply("❌ У вас должен быть установлен Telegram username, чтобы клиент мог связаться с курьером.");
+    }
+
+    setState(ctx.chat.id, {
+      mode: "courier_msg",
+      step: 0,
+      data: {
+        ...defaultCourierMessageData(),
+        pickupPointId,
+      },
+    });
+
+    await ctx.answerCbQuery();
+    return askCourierMessageStep(ctx);
+  } catch (e) {
+    console.error("courier_msg_start error:", e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+bot.action("courier_msg_back", async (ctx) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "courier_msg") return ctx.answerCbQuery();
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+
+  await ctx.answerCbQuery();
+  return askCourierMessageStep(ctx);
+});
+
+bot.action("courier_msg_cancel", async (ctx) => {
+  clearState(ctx.chat.id);
+  await ctx.answerCbQuery("Отменено");
+  return ctx.reply("❌ Отправка сообщения отменена", mainMenu(ctx));
+});
+
+bot.action("courier_msg_confirm", async (ctx) => {
+  try {
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "courier_msg") return ctx.answerCbQuery();
+
+    const d = st.data || {};
+
+    const result = await api("/admin/courier/customer-message", {
+      method: "POST",
+      body: JSON.stringify({
+        pickupPointId: d.pickupPointId,
+        target: d.username,
+        username: d.username,
+        text: d.text,
+        photoUrl: d.photoUrl || "",
+        managerTelegramId: String(ctx.from?.id || ""),
+        managerUsername: String(ctx.from?.username || ""),
+      }),
+    });
+
+    clearState(ctx.chat.id);
+    await ctx.answerCbQuery("Отправлено");
+
+    const sentToLabel = result?.sentToUsername
+
+      ? `@${result.sentToUsername}`
+
+      : String(result?.sentToTelegramId || d.username || "клиент");
+
+    return ctx.reply(
+
+      `✅ Сообщение отправлено клиенту ${sentToLabel}`,
+
+      mainMenu(ctx)
+
+    );
+  } catch (e) {
+    console.error("courier_msg_confirm error:", e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+// =====================================================
+// =================== PRODUCT BUILDER =================
+// =====================================================
+
+bot.action("prod_builder_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "prod_builder",
+    step: 0,
+    data: defaultProductData(),
+  });
+
+  return askProductStep(ctx);
+});
+
+bot.action("prod_builder_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("Ок, отменил.", mainMenu(ctx));
+});
+
+bot.action("prod_builder_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+  return askProductStep(ctx);
+});
+
+// CATEGORY
+bot.action(/prod_set_category:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.data.categoryKey = String(ctx.match[1] || "");
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// LAYOUT
+bot.action(/prod_set_layout:(1|2)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const id = Number(ctx.match[1]);
+  const preset = PRODUCT_LAYOUTS.find((x) => x.id === id);
+  if (!preset) return;
+
+  st.data.classCardDuck = preset.value.classCardDuck;
+  st.data.classActions = preset.value.classActions;
+
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// BADGE
+bot.action(/prod_set_badge:(NEW|SALE|NONE)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const v = String(ctx.match[1]);
+  if (v === "NONE") {
+    st.data.newBadge = "";
+    st.data.classNewBadge = "";
+  } else {
+    st.data.newBadge = v;
+    // у тебя в карточках сейчас используется classNewBadge:"actionBadge sale"
+    st.data.classNewBadge = "actionBadge sale";
+  }
+
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// IS ACTIVE
+bot.action(/prod_set_isActive:(true|false)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.data.isActive = ctx.match[1] === "true";
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+// CONFIRM -> POST /admin/products
+bot.action("prod_builder_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  try {
+    // минимальная валидация
+    if (!st.data.categoryKey) throw new Error("Не выбрана категория");
+    if (!st.data.title1) throw new Error("Нет названия (строка 1)");
+    if (!st.data.price || Number(st.data.price) <= 0) throw new Error("Цена должна быть больше 0");
+    if (!st.data.cardBgUrl || !isValidUrl(st.data.cardBgUrl)) throw new Error("Неверная ссылка на фон");
+    if (!st.data.cardDuckUrl || !isValidUrl(st.data.cardDuckUrl)) throw new Error("Неверная ссылка на утку");
+    if (!st.data.orderImgUrl || !isValidUrl(st.data.orderImgUrl)) throw new Error("Неверная ссылка на картинку оформления");
+
+    const payload = {
+      categoryKey: st.data.categoryKey,
+
+      title1: st.data.title1,
+      title2: st.data.title2,
+      titleModal: st.data.titleModal,
+      price: Number(st.data.price || 0),
+
+      cardBgUrl: st.data.cardBgUrl,
+      cardDuckUrl: st.data.cardDuckUrl,
+      orderImgUrl: st.data.orderImgUrl,
+
+      classCardDuck: st.data.classCardDuck,
+      classActions: st.data.classActions,
+
+      classNewBadge: st.data.classNewBadge,
+      newBadge: st.data.newBadge,
+
+      accentColor: st.data.accentColor,
+
+      sortOrder: Number(st.data.sortOrder || 0),
+      isActive: st.data.isActive !== false,
+
+      flavors: [], // вкусы добавим отдельным конструктором
+    };
+
+    const created = await api("/admin/products", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    clearState(ctx.chat.id);
+    return ctx.reply(`✅ Товар создан: ${created?.product?.title1 || "OK"}`, mainMenu(ctx));
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+// ===== Text steps handler for product wizard =====
+bot.on("text", async (ctx, next) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return next();
+
+  const step = PRODUCT_BUILDER_STEPS[st.step];
+  const text = String(ctx.message?.text || "").trim();
+
+  try {
+    if (step === "titles") {
+      const parts = text.split(",").map((s) => s.trim());
+      if (parts.length < 2) throw new Error("Нужно 2 значения через запятую");
+
+      st.data.title1 = parts[0] || "";
+      st.data.title2 = parts[1] === "-" ? "" : (parts[1] || "");
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "price") {
+      const n = Number(text.replace(/\s+/g, ""));
+      if (!Number.isFinite(n) || n <= 0) throw new Error("Цена должна быть числом больше 0");
+
+      st.data.price = n;
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "cardImages") {
+      const parts = text.split(",").map((s) => s.trim());
+      if (parts.length < 2) throw new Error("Нужно 2 ссылки через запятую");
+
+      const bg = parts[0];
+      const duck = parts[1];
+
+      if (!isValidUrl(bg)) throw new Error("Ссылка на фон некорректная");
+      if (!isValidUrl(duck)) throw new Error("Ссылка на утку некорректная");
+
+      st.data.cardBgUrl = bg;
+      st.data.cardDuckUrl = duck;
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "orderImage") {
+      if (!isValidUrl(text)) throw new Error("Ссылка некорректная");
+      st.data.orderImgUrl = text;
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "titleModal") {
+      if (text.length < 2) throw new Error("Название слишком короткое");
+      st.data.titleModal = text;
+
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "accentColor") {
+      const m = text.match(/^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/);
+      if (!m) throw new Error("Формат: 32, 130, 231");
+
+      const r = Number(m[1]);
+      const g = Number(m[2]);
+      const b = Number(m[3]);
+
+      if ([r, g, b].some((x) => x < 0 || x > 255)) throw new Error("RGB должен быть 0..255");
+
+      st.data.accentColor = `${r}, ${g}, ${b}`;
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    if (step === "sortOrder") {
+      const n = Number(text);
+      if (!Number.isFinite(n) || n < 0) throw new Error("sortOrder должен быть числом 0+");
+
+      st.data.sortOrder = n;
+      setState(ctx.chat.id, st);
+      return nextProductStep(ctx);
+    }
+
+    return next();
+  } catch (e) {
+    return ctx.reply(`❌ ${e.message}`);
+  }
+});
+
+// =====================================================
+// ================== FLAVOR BUILDER ACTIONS ============
+// =====================================================
+
+bot.action("fl_builder_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "fl_builder",
+    step: 0,
+    data: defaultFlavorBuilderData(),
+  });
+
+  return askFlavorStep(ctx);
+});
+
+bot.action("fl_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("Ок, отменил.", mainMenu(ctx));
+});
+
+bot.action("fl_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const currentStep = FL_BUILDER_STEPS[st.step];
+
+  // Меню модели -> список товаров выбранной категории
+  if (currentStep === "mode") {
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    st.step = FL_BUILDER_STEPS.indexOf("product");
+
+    setState(ctx.chat.id, st);
+    return askFlavorStep(ctx);
+  }
+
+  // Список товаров -> список категорий
+  if (currentStep === "product") {
+    st.data.categoryKey = "";
+    st.data.categoryTitle = "";
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    st.step = FL_BUILDER_STEPS.indexOf("product");
+
+    setState(ctx.chat.id, st);
+    return askFlavorStep(ctx);
+  }
+
+  // На остальных шагах возвращаемся на один шаг назад
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action(/^fl_category:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const categoryKey = String(ctx.match[1] || "");
+
+  try {
+    const r = await fetch(`${API_URL}/categories?active=0`);
+    const data = await r.json().catch(() => ({}));
+
+    const categories = Array.isArray(data)
+      ? data
+      : data.categories || [];
+
+    const category = categories.find(
+      (c) => String(c.key) === categoryKey
+    );
+
+    st.data.categoryKey = categoryKey;
+    st.data.categoryTitle = category?.title || "";
+
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    setState(ctx.chat.id, st);
+
+    return askFlavorStep(ctx);
+  } catch (e) {
+    console.error(e);
+    return ctx.reply("❌ Не удалось загрузить категории.");
+  }
+});
+
+bot.action("fl_category_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  st.data.categoryKey = "";
+  st.data.categoryTitle = "";
+
+  st.data.productId = "";
+  st.data.productTitle = "";
+  st.data.mode = "";
+
+  setState(ctx.chat.id, st);
+
+  return askFlavorStep(ctx);
+});
+
+bot.action(/fl_pick_product:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const productId = String(ctx.match[1] || "");
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  // найдём title для превью
+  const r = await fetch(`${API_URL}/products?active=0`);
+  const data = await r.json().catch(() => ({}));
+  const products = data.products || [];
+  const prod = products.find((p) => String(p._id) === productId);
+
+  st.data.productId = productId;
+  st.data.productTitle = prod ? `${prod.title1 || ""} ${prod.title2 || ""}`.trim() : productId;
+
+  setState(ctx.chat.id, st);
+  return nextFlavorStep(ctx);
+});
+
+bot.action(/^fl_delete_ask:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const productId = String(ctx.match[1] || "");
+
+  return ctx.reply(
+    `❌ *Удалить модель?*
+
+*${st.data.productTitle || "Модель"}*
+
+Будут удалены:
+
+• модель
+• все вкусы
+• все остатки
+
+Это действие необратимо.`,
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "✅ Да, удалить",
+            `fl_delete_confirm:${productId}`
+          ),
+        ],
+        [
+          Markup.button.callback(
+            "⬅️ Отмена",
+            "fl_delete_cancel"
+          ),
+        ],
+      ]),
+    }
+  );
+});
+
+bot.action("fl_delete_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  st.step = FL_BUILDER_STEPS.indexOf("mode");
+
+  setState(ctx.chat.id, st);
+
+  return askFlavorStep(ctx);
+});
+
+bot.action(/^fl_delete_confirm:(.+)$/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const productId = String(ctx.match[1] || "");
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  try {
+    await api(`/admin/products/${productId}`, {
+      method: "DELETE",
+    });
+
+    st.data.productId = "";
+    st.data.productTitle = "";
+    st.data.mode = "";
+
+    st.step = FL_BUILDER_STEPS.indexOf("product");
+
+    setState(ctx.chat.id, st);
+
+    await ctx.reply("✅ Модель удалена.");
+
+    return askFlavorStep(ctx);
+  } catch (e) {
+    console.error(e);
+
+    return ctx.reply(
+      `❌ Ошибка удаления:\n${e.message}`
+    );
+  }
+});
+
+bot.action(/fl_set_mode:(new|stock)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const mode = String(ctx.match[1]);
+  st.data.mode = mode;
+
+  // если new -> шаг newFlavor, если stock -> шаг pickFlavor
+  st.step = mode === "new"
+    ? FL_BUILDER_STEPS.indexOf("newFlavor")
+    : FL_BUILDER_STEPS.indexOf("pickFlavor");
+
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action("fl_bulk_edit_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  st.data.bulkEditText = "";
+  st.data.bulkEdits = [];
+  st.step = st.data.pickupPointId
+    ? FL_BUILDER_STEPS.indexOf("bulkEdit")
+    : FL_BUILDER_STEPS.indexOf("pickupPoint");
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action(/fl_pick_flavor:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const flavorId = String(ctx.match[1] || "");
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  // подцепим label/gradient чтобы показывать в превью
+  const r = await fetch(`${API_URL}/products?active=0`);
+  const data = await r.json().catch(() => ({}));
+  const products = data.products || [];
+  const prod = products.find((p) => String(p._id) === String(st.data.productId));
+  const fl = (prod?.flavors || []).find((f) => String(f._id) === flavorId);
+
+  st.data.flavorId = flavorId;
+  st.data.label = fl?.label || "";
+  st.data.flavorKey = fl?.flavorKey || "";
+  st.data.gradient = Array.isArray(fl?.gradient) ? fl.gradient : ["", ""];
+
+  // дальше — точка
+  st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action(/fl_pick_point:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = String(ctx.match[1] || "");
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  const points = await fetchMyPickupPoints(ctx);
+  const p = points.find((x) => String(x._id) === id);
+
+  st.data.pickupPointId = id;
+  st.data.pickupPointLabel = p?.address || "—";
+
+  if (Array.isArray(st.data.bulkEdits) && st.data.bulkEdits.length) {
+    try {
+      for (const row of st.data.bulkEdits) {
+        await api(`/admin/products/${st.data.productId}/flavors/${row.flavorId}/stock`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            pickupPointId: st.data.pickupPointId,
+            totalQty: row.totalQty,
+          }),
+        });
+      }
+
+      clearState(ctx.chat.id);
+      return ctx.reply(
+        `✅ Массовое изменение сохранено.\n\nИзменено вкусов: ${st.data.bulkEdits.length}`,
+        mainMenu(ctx)
+      );
+    } catch (e) {
+      return ctx.reply(`❌ Ошибка: ${e.message}`);
+    }
+  }
+
+  
+
+  // дальше qty
+  if (FL_BUILDER_STEPS[st.step] === "pickupPoint" && st.data.mode === "stock" && !st.data.flavorId) {
+    st.step = FL_BUILDER_STEPS.indexOf("bulkEdit");
+    setState(ctx.chat.id, st);
+    return askFlavorStep(ctx);
+  }
+
+  // дальше qty
+  st.step = FL_BUILDER_STEPS.indexOf("qty");
+  setState(ctx.chat.id, st);
+  return askFlavorStep(ctx);
+});
+
+bot.action("fl_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "fl_builder") return;
+
+  try {
+    const d = st.data;
+
+    if (!d.productId) throw new Error("Не выбран товар");
+    if (!d.pickupPointId) throw new Error("Не выбрана точка");
+    if (!Number.isFinite(Number(d.totalQty)) || Number(d.totalQty) < 0) throw new Error("Некорректное количество");
+
+    let flavorId = d.flavorId;
+
+    // 1) если новый вкус — создаём вкус
+    if (d.mode === "new") {
+      if (!d.label) throw new Error("Нет названия вкуса");
+      if (!isHex(d.gradient?.[0]) || !isHex(d.gradient?.[1])) throw new Error("Цвета должны быть #RRGGBB");
+
+      const flavorKey = d.flavorKey || slugify(d.label);
+
+      const created = await api(`/admin/products/${d.productId}/flavors`, {
+        method: "POST",
+        body: JSON.stringify({
+          flavorKey,
+          label: d.label,
+          gradient: [d.gradient[0], d.gradient[1]],
+          isActive: true,
+        }),
+      });
+
+      const prod = created.product || created?.data?.product || created; // на всякий
+      const found = (prod.flavors || []).find((f) => String(f.flavorKey) === String(flavorKey));
+      if (!found?._id) throw new Error("Не смог найти созданный вкус в ответе сервера");
+      flavorId = String(found._id);
+    }
+
+    if (!flavorId) throw new Error("Не выбран вкус");
+
+    // 2) выставляем остаток по точке
+    await api(`/admin/products/${d.productId}/flavors/${flavorId}/stock`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        pickupPointId: d.pickupPointId,
+        totalQty: Number(d.totalQty),
+        updatedByTelegramId: String(ctx.from?.id || ""),
+      }),
+    });
+
+    clearState(ctx.chat.id);
+    return ctx.reply("✅ Готово! Вкус/наличие сохранены.", mainMenu(ctx));
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+// ==================== CATEGORY EDIT ===================
+
+bot.action("cat_edit_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  try {
+    const r = await fetch(`${API_URL}/categories?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const categories = Array.isArray(data) ? data : data.categories || [];
+
+    if (!categories.length) return ctx.reply("Категорий пока нет", mainMenu(ctx));
+
+    return ctx.reply(
+      "Выберите категорию для редактирования:",
+      Markup.inlineKeyboard(
+        categories.map((c) => [
+          Markup.button.callback(
+            `${c.isActive ? "✅" : "⛔️"} ${c.title}`,
+            `cat_edit_pick:${c._id}`
+          ),
+        ])
+      )
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action(/cat_edit_pick:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const id = ctx.match[1];
+
+  const r = await fetch(`${API_URL}/categories?active=0`);
+  const data = await r.json().catch(() => ({}));
+  const categories = Array.isArray(data) ? data : data.categories || [];
+  const cat = categories.find((c) => String(c._id) === String(id));
+
+  if (!cat) return ctx.reply("Категория не найдена", mainMenu(ctx));
+
+    setState(ctx.chat.id, {
+    mode: "cat_edit_menu",
+    editId: id,
+    data: {
+        key: cat.key || "",
+        title: cat.title || "",
+        badgeText: cat.badgeText || "",
+        showOverlay: !!cat.showOverlay,
+        classCardDuck: cat.classCardDuck || "cardImageLeft",
+        titleClass: cat.titleClass || "cardTitle",
+        cardBgUrl: cat.cardBgUrl || "",
+        cardDuckUrl: cat.cardDuckUrl || "",
+        sortOrder: cat.sortOrder || 0,
+        isActive: cat.isActive !== false,
+    },
+    });
+
+  return sendEditMenu(ctx);
+});
+
+bot.action("cat_edit_open_wizard", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  setState(ctx.chat.id, {
+    mode: "cat_edit",
+    step: 0,
+    editId: st.editId,
+    data: { ...st.data },
+  });
+
+  return askStep(ctx);
+});
+
+bot.action(/cat_builder_set_variant:(1|2|3|4)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  const id = Number(ctx.match[1]);
+  const preset = CATEGORY_VARIANTS.find((v) => v.id === id);
+  if (!preset) return;
+
+  st.data.layoutVariant = id;
+  st.data.classCardDuck = preset.value.classCardDuck;
+  st.data.titleClass = preset.value.titleClass;
+  st.data.showOverlay = preset.value.showOverlay;
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+// SALE/NEW DROP + side
+bot.action(/cat_builder_set_badge:(SALE|NEW DROP):(left|right)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  st.data.badgeText = ctx.match[1];
+  st.data.badgeSide = ctx.match[2] === "right" ? "right" : "left";
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+// NONE
+bot.action("cat_builder_set_badge:NONE", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  st.data.badgeText = "";
+  st.data.badgeSide = "left";
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+bot.action("cat_edit_toggle_isActive", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  const nextVal = !st.data.isActive;
+
+  try {
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ isActive: nextVal }),
+    });
+
+    st.data.isActive = updated.category.isActive !== false;
+    setState(ctx.chat.id, st);
+    return sendEditMenu(ctx);
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action("cat_edit_toggle_overlay", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  const nextVal = !st.data.showOverlay;
+
+  try {
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ showOverlay: nextVal }),
+    });
+
+    st.data.showOverlay = !!updated.category.showOverlay;
+    setState(ctx.chat.id, st);
+    return sendEditMenu(ctx);
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action(/cat_edit_prompt:(key|title|badgeText|cardBgUrl|cardDuckUrl|sortOrder)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  const field = ctx.match[1];
+  setState(ctx.chat.id, { ...st, mode: "cat_edit_prompt", field });
+
+  const prompts = {
+    key: "Введите новый *key* (a-z/0-9/-, 2-32) или `-` чтобы отменить",
+    title: "Введите новый *title* или `-` чтобы отменить",
+    badgeText: "Введите новый *badgeText* (или `-` чтобы отменить)",
+    cardBgUrl: "Вставьте новый *cardBgUrl* (https://...) или `-` чтобы отменить",
+    cardDuckUrl: "Вставьте новый *cardDuckUrl* (https://...) или `-` чтобы отменить",
+    sortOrder: "Введите новый *sortOrder* (число) или `-` чтобы отменить",
+  };
+
+  return ctx.reply(prompts[field], { parse_mode: "Markdown" });
+});
+
+bot.action("cat_edit_pick_classDuck", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  return ctx.reply(
+    "Выберите classCardDuck:",
+    Markup.inlineKeyboard([
+      ...DUCK_CLASS_OPTIONS.map((o) => [Markup.button.callback(o.label, `cat_edit_set_classDuck:${o.value}`)]),
+      [Markup.button.callback("⬅️ Назад", "cat_edit_back_to_menu")],
+    ])
+  );
+});
+
+bot.action(/cat_edit_set_classDuck:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  const val = ctx.match[1];
+  const nextVal = DUCK_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardImageLeft";
+
+  try {
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ classCardDuck: nextVal }),
+    });
+
+    st.data.classCardDuck = updated.category.classCardDuck || nextVal;
+    setState(ctx.chat.id, st);
+    return sendEditMenu(ctx);
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action("cat_edit_pick_titleClass", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  return ctx.reply(
+    "Выберите titleClass:",
+    Markup.inlineKeyboard([
+      ...TITLE_CLASS_OPTIONS.map((o) => [Markup.button.callback(o.label, `cat_edit_set_titleClass:${o.value}`)]),
+      [Markup.button.callback("⬅️ Назад", "cat_edit_back_to_menu")],
+    ])
+  );
+});
+
+bot.action(/cat_edit_set_titleClass:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit_menu") return;
+
+  const val = ctx.match[1];
+  const nextVal = TITLE_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardTitle";
+
+  try {
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ titleClass: nextVal }),
+    });
+
+    st.data.titleClass = updated.category.titleClass || nextVal;
+    setState(ctx.chat.id, st);
+    return sendEditMenu(ctx);
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action("cat_edit_back_to_menu", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+  return sendEditMenu(ctx);
+});
+
+// =====================================================
+// ==================== CATEGORY LIST ===================
+// =====================================================
+bot.action("cat_list", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  try {
+    const r = await fetch(`${API_URL}/categories?active=0`);
+    const data = await r.json().catch(() => ({}));
+    const categories = Array.isArray(data) ? data : data.categories || [];
+
+    if (!categories.length) return ctx.reply("Категорий пока нет", mainMenu(ctx));
+
+    const msg = categories
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+      .map((c) => `${c.isActive ? "✅" : "⛔️"} ${c.title} (${c.key})`)
+      .join("\n");
+
+    return ctx.reply(msg, mainMenu(ctx));
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+// =====================================================
+// ============ CATEGORY BUILDER (FULL WIZARD) ===========
+// =====================================================
+bot.action("cat_builder_start", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, { mode: "cat_builder", step: 0, data: defaultCategoryData() });
+  return askStep(ctx);
+});
+
+bot.action("cat_builder_cancel", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+  return ctx.reply("Ок, отменено.", mainMenu(ctx));
+});
+
+bot.action("cat_builder_back", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  st.step = Math.max(0, st.step - 1);
+  setState(ctx.chat.id, st);
+  return askStep(ctx);
+});
+
+// ----- button setters -----
+bot.action(/cat_builder_set_showOverlay:(true|false)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  st.data.showOverlay = ctx.match[1] === "true";
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+bot.action(/cat_builder_set_classCardDuck:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  const val = ctx.match[1];
+  st.data.classCardDuck = DUCK_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardImageLeft";
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+bot.action(/cat_builder_set_titleClass:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  const val = ctx.match[1];
+  st.data.titleClass = TITLE_CLASS_OPTIONS.some((o) => o.value === val) ? val : "cardTitle";
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+bot.action(/cat_builder_set_isActive:(true|false)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || (st.mode !== "cat_builder" && st.mode !== "cat_edit")) return;
+
+  st.data.isActive = ctx.match[1] === "true";
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+});
+
+// ----- confirm create -----
+bot.action("cat_builder_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_builder") return;
+
+  try {
+    const payload = { ...st.data };
+
+    const created = await api("/admin/categories", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    clearState(ctx.chat.id);
+    return ctx.reply(
+      `✅ Категория создана:\n${created.category.title} (${created.category.key})`,
+      mainMenu(ctx)
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action("cat_edit_confirm", async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "cat_edit") return;
+
+  try {
+    const payload = { ...st.data };
+
+    const updated = await api(`/admin/categories/${st.editId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      `✅ Категория обновлена:\n${updated.category.title} (${updated.category.key})`,
+      mainMenu(ctx)
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+  }
+});
+
+bot.action(/prod_set_layout:(1|2)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  const id = Number(ctx.match[1]);
+  const preset = PRODUCT_LAYOUTS.find((x) => x.id === id);
+  if (!preset) return;
+
+  st.data.classCardDuck = preset.value.classCardDuck;
+  st.data.classActions = preset.value.classActions;
+
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+bot.action(/prod_set_category:(.+)/, async (ctx) => {
+  if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "prod_builder") return;
+
+  st.data.categoryKey = ctx.match[1];
+  setState(ctx.chat.id, st);
+  return nextProductStep(ctx);
+});
+
+bot.action(
+  /^broadcast_audience:(all|segment|username)$/,
+  async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return ctx.answerCbQuery("No access");
+    }
+
+    await ctx.answerCbQuery();
+
+    const st = getState(ctx.chat.id);
+
+    if (!st || st.mode !== "broadcast") return;
+
+    st.data.audienceType = ctx.match[1];
+
+    st.data.segmentType = "";
+    st.data.segmentValue = "";
+    st.data.username = "";
+
+    if (st.data.audienceType === "all") {
+
+      st.step = st.data.templateId
+
+        ? BROADCAST_STEPS.indexOf("confirm")
+
+        : BROADCAST_STEPS.indexOf("templateChoice");
+
+    } else {
+
+      st.step = BROADCAST_STEPS.indexOf("segmentType");
+
+    }
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+);
+
+bot.action(
+  /^broadcast_segment_type:(category|pickupPoint|deliveryMethod)$/,
+  async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return ctx.answerCbQuery("No access");
+    }
+
+    await ctx.answerCbQuery();
+
+    const st = getState(ctx.chat.id);
+
+    if (!st || st.mode !== "broadcast") return;
+
+    st.data.segmentType = ctx.match[1];
+    st.data.segmentValue = "";
+
+    st.step =
+      BROADCAST_STEPS.indexOf(
+        "segmentValue"
+      );
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+);
+
+bot.action(
+  /^broadcast_segment_value:(.+)$/,
+  async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return ctx.answerCbQuery("No access");
+    }
+
+    await ctx.answerCbQuery();
+
+    const st = getState(ctx.chat.id);
+
+    if (!st || st.mode !== "broadcast") return;
+
+    st.data.segmentValue = String(
+      ctx.match[1] || ""
+    ).trim();
+
+    st.step = st.data.templateId
+      ? BROADCAST_STEPS.indexOf("confirm")
+      : BROADCAST_STEPS.indexOf("templateChoice");
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+);
+
+bot.action("broadcast_start", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery("Недостаточно прав");
+  }
+
+  await ctx.answerCbQuery();
+
+  return ctx.reply("📣 *Рассылки*", {
+    parse_mode: "Markdown",
+    ...Markup.inlineKeyboard([
+      [
+        Markup.button.callback(
+          "📨 Новая рассылка",
+          "broadcast_new"
+        ),
+      ],
+      [
+        Markup.button.callback(
+          "📂 Шаблоны",
+          "broadcast_templates"
+        ),
+      ],
+      [
+        Markup.button.callback(
+          "⬅️ Назад",
+          "menu"
+        ),
+      ],
+    ]),
+  });
+});
+
+bot.action("broadcast_new", async (ctx) => {
+
+  if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
+
+  await ctx.answerCbQuery();
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "broadcast",
+    step: 0,
+    data: defaultBroadcastData(),
+  });
+
+  return askBroadcastStep(ctx);
+});
+
+bot.action("broadcast_cancel", async (ctx) => {
+    if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
+  await ctx.answerCbQuery();
+  clearState(ctx.chat.id);
+  return ctx.reply("Рассылка отменена.", mainMenu(ctx));
+});
+
+bot.action("broadcast_back", async (ctx) => {
+    if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "broadcast") return;
+
+  st.step = Math.max(0, Number(st.step || 0) - 1);
+  setState(ctx.chat.id, st);
+
+  return askBroadcastStep(ctx);
+});
+
+const runBroadcastFromState = async (ctx, options = {}) => {
+  const st = getState(ctx.chat.id);
+  if (!st || st.mode !== "broadcast") return null;
+
+  const d = st.data || {};
+  const limit = Math.max(0, Number(options?.limit || 0));
+
+  const data = await api(
+    options?.async
+      ? "/admin/users/broadcast-photo-async"
+      : "/admin/users/broadcast-photo",
+    {
+      method: "POST",
+      body: JSON.stringify({
+
+        dryRun: false,
+
+        limit,
+
+        audienceType: d.audienceType || "all",
+
+        segmentType: d.segmentType || "",
+
+        segmentValue: d.segmentValue || "",
+
+        username: d.username || "",
+
+        templateId: d.templateId || "",
+
+        photoUrl: d.photoUrl,
+
+        text: d.text,
+
+        buttonText: d.buttonText,
+
+        buttonUrl: d.buttonUrl,
+
+      }),
+    }
+  );
+
+  return data;
+};
+
+bot.action("broadcast_test", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery("Недостаточно прав");
+  }
+
+  await ctx.answerCbQuery("Отправляю тест...");
+
+  try {
+    const data = await runBroadcastFromState(ctx, { limit: 5 });
+
+    const errorSamples = Array.isArray(data?.results)
+      ? data.results
+          .filter((row) => row && row.ok === false)
+          .slice(0, 5)
+          .map((row, index) => {
+            const error = String(row?.error || "UNKNOWN_ERROR").slice(0, 300);
+            return `${index + 1}. ${error}`;
+          })
+      : [];
+
+    return ctx.reply(
+      [
+        "🧪 *Тестовая рассылка отправлена*",
+        "",
+        `Найдено пользователей: *${Number(data?.totalUsers || 0)}*`,
+        `Отправлено: *${Number(data?.sent || 0)}*`,
+        `Ошибок: *${Number(data?.failed || 0)}*`,
+        `Заблокировали бота / недоступны: *${Number(data?.blocked || 0)}*`,
+        ...(errorSamples.length
+          ? ["", "*Ошибки Telegram:*", ...errorSamples.map((x) => `\`${x}\``)]
+          : []),
+      ].join("\n"),
+      { parse_mode: "Markdown" }
+    );
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка тестовой рассылки: ${String(e?.message || e)}`);
+  }
+});
+
+bot.action("broadcast_confirm", async (ctx) => {
+    if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery("Недостаточно прав");
+  }
+
+  await ctx.answerCbQuery("Запускаю рассылку...");
+
+  try {
+    const data = await runBroadcastFromState(ctx, { async: true });
+    clearState(ctx.chat.id);
+
+    const statusMessage = await ctx.reply(formatBroadcastJobStatus({
+      jobId: data?.jobId,
+      status: "running",
+      totalUsers: Number(data?.totalUsers || 0),
+      processed: 0,
+      sent: 0,
+      failed: 0,
+      blocked: 0,
+      lastErrors: [],
+    }), {
+      parse_mode: "Markdown",
+      ...mainMenu(ctx),
+    });
+
+    startBroadcastStatusPolling(ctx, data?.jobId, statusMessage?.message_id);
+    return statusMessage;
+  } catch (e) {
+    return ctx.reply(`❌ Ошибка рассылки: ${String(e?.message || e)}`);
+  }
+});
+
+// =====================================================
+// ===================== PROMO CODES ====================
+// =====================================================
+
+bot.action("promo_codes_menu", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "promo_code_create",
+    step: 0,
+    data: defaultPromoCodeData(),
+  });
+
+  return askPromoCodeStep(ctx);
+});
+
+bot.action("promo_code_cancel", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  clearState(ctx.chat.id);
+
+  return ctx.reply(
+    "❌ Создание промокода отменено.",
+    mainMenu(ctx)
+  );
+});
+
+bot.action("promo_code_back", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+
+  if (!st || st.mode !== "promo_code_create") {
+    return;
+  }
+
+  st.step = Math.max(0, st.step - 1);
+
+  setState(ctx.chat.id, st);
+
+  return askPromoCodeStep(ctx);
+});
+
+bot.action(
+  "promo_code_confirm",
+  async (ctx) => {
+    await ctx.answerCbQuery();
+
+    const st = getState(
+      ctx.chat.id
+    );
+
+    if (
+      !st ||
+      st.mode !==
+        "promo_code_create"
+    ) {
+      return;
+    }
+
+    try {
+      const res = await api(
+        "/admin/promo-codes",
+        {
+          method: "POST",
+
+          body: JSON.stringify({
+            code:
+              st.data.code,
+
+            amountZl:
+              st.data.amountZl,
+
+            expiresAt:
+              st.data?.expiresAt ||
+              null,
+          }),
+        }
+      );
+
+      const expiresAtInput =
+        String(
+          st.data
+            ?.expiresAtInput ||
+            "без срока"
+        );
+
+      clearState(
+        ctx.chat.id
+      );
+
+      return ctx.reply(
+        [
+          `✅ Промокод *${res.promoCode.code}* создан.`,
+          "",
+          `💰 Начисление: *${Number(
+            res.promoCode
+              .amountZl
+          ).toFixed(2)} PLN*`,
+          `⏳ Действует до: *${expiresAtInput}*`,
+        ].join("\n"),
+        {
+          parse_mode:
+            "Markdown",
+
+          ...mainMenu(ctx),
+        }
+      );
+    } catch (e) {
+      return ctx.reply(
+        `❌ Ошибка:\n\n${e.message}`
+      );
+    }
+  }
+);
+
+bot.action(/^broadcast_template:(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+
+  const value = ctx.match[1];
+
+  const st = getState(ctx.chat.id);
+
+  if (!st || st.mode !== "broadcast") return;
+
+  if (value === "custom") {
+    st.data.templateId = "";
+    st.step++;
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastStep(ctx);
+  }
+
+  const template = getBroadcastTemplateById(value);
+
+  if (!template) {
+    return ctx.reply("❌ Шаблон не найден.");
+  }
+
+  st.data.templateId = String(template._id);
+  st.data.photoUrl = template.photoUrl || "";
+  st.data.text = template.text || "";
+  st.data.buttonText = template.buttonText || "";
+  st.data.buttonUrl = template.buttonUrl || "";
+
+  st.step = BROADCAST_STEPS.indexOf("confirm");
+
+  setState(ctx.chat.id, st);
+
+  return askBroadcastStep(ctx);
+});
+
+bot.action("broadcast_templates", async (ctx) => {
+
+  if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
+
+  await ctx.answerCbQuery();
+
+  await loadBroadcastTemplates();
+
+  return ctx.reply(
+    "📂 *Шаблоны рассылок*",
+    {
+      parse_mode: "Markdown",
+      ...Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            "➕ Создать шаблон",
+            "broadcast_template_create"
+          ),
+        ],
+
+        ...BROADCAST_TEMPLATES.map((template) => [
+          Markup.button.callback(
+            `${template.isDefault ? "⭐ " : ""}${template.title}`,
+            `broadcast_template_manage:${template._id}`
+          ),
+        ]),
+
+        [
+          Markup.button.callback(
+            "⬅️ Назад",
+            "broadcast_start"
+          ),
+        ],
+      ]),
+    }
+  );
+});
+
+bot.action("broadcast_template_create", async (ctx) => {
+  await ctx.answerCbQuery();
+
+  setState(ctx.chat.id, {
+    mode: "broadcast_template_create",
+    step: 0,
+    data: {
+      title: "",
+      photoUrl: "",
+      text: "",
+      buttonText: "",
+      buttonUrl: "",
+    },
+  });
+
+  return ctx.reply(
+    "📝 Введите название шаблона."
+  );
+});
+
+bot.action(
+  /^broadcast_template_manage:(.+)$/,
+  async (ctx) => {
+        if (!isAdmin(ctx)) {
+
+      return ctx.answerCbQuery(
+
+        "Недостаточно прав"
+
+      );
+
+    }
+    await ctx.answerCbQuery();
+
+    await loadBroadcastTemplates();
+
+    const template = getBroadcastTemplateById(
+      ctx.match[1]
+    );
+
+    if (!template) {
+      return ctx.reply("❌ Шаблон не найден.");
+    }
+
+    const rows = [
+      [
+        Markup.button.callback(
+          "🚀 Использовать",
+          `broadcast_template_use:${template._id}`
+        ),
+      ],
+
+      [
+        Markup.button.callback(
+          "✏️ Изменить",
+          `broadcast_edit_template:${template._id}`
+        ),
+      ],
+    ];
+
+    if (isSuperAdmin(ctx)) {
+      rows.push([
+        Markup.button.callback(
+          template.isDefault
+            ? "⭐ По умолчанию"
+            : "⭐ Сделать по умолчанию",
+          `broadcast_default_template:${template._id}`
+        ),
+      ]);
+    }
+
+    rows.push([
+      Markup.button.callback(
+        "🗑 Удалить",
+        `broadcast_delete_template:${template._id}`
+      ),
+    ]);
+
+    rows.push([
+      Markup.button.callback(
+        "⬅️ Назад",
+        "broadcast_templates"
+      ),
+    ]);
+
+    return ctx.reply(
+      `📄 *${template.title}*`,
+      {
+        parse_mode: "Markdown",
+
+        ...Markup.inlineKeyboard(
+          rows
+        ),
+      }
+    );
+  }
+);
+
+bot.action(/^broadcast_template_use:(.+)$/, async (ctx) => {
+
+  if (!isAdmin(ctx)) {
+
+    return ctx.answerCbQuery(
+
+      "Недостаточно прав"
+
+    );
+
+  }
+
+  await ctx.answerCbQuery();
+
+  const templateId = ctx.match[1];
+
+  await loadBroadcastTemplates();
+
+  const template = getBroadcastTemplateById(templateId);
+
+  if (!template) {
+    return ctx.reply("❌ Шаблон не найден.");
+  }
+
+  setState(ctx.chat.id, {
+    mode: "broadcast",
+    step: BROADCAST_STEPS.indexOf("audienceType"),
+    data: {
+      ...defaultBroadcastData(),
+
+      templateId: String(template._id),
+      photoUrl: template.photoUrl || "",
+      text: template.text || "",
+      buttonText: template.buttonText || "",
+      buttonUrl: template.buttonUrl || "",
+    },
+  });
+
+  return askBroadcastStep(ctx);
+});
+
+bot.action(
+  /^broadcast_default_template:(.+)$/,
+  async (ctx) => {
+        if (!isAdmin(ctx)) {
+
+      return ctx.answerCbQuery(
+
+        "Недостаточно прав"
+
+      );
+
+    }
+    await ctx.answerCbQuery("Сохраняю...");
+
+    try {
+      await api(
+        `/admin/broadcast/templates/${ctx.match[1]}/default`,
+        {
+          method: "POST",
+        }
+      );
+
+      await loadBroadcastTemplates();
+
+      const template = getBroadcastTemplateById(
+        ctx.match[1]
+      );
+
+      return ctx.reply(
+        `⭐ Шаблон "${template?.title || ""}" теперь используется по умолчанию.`,
+        {
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "⬅️ К шаблонам",
+                "broadcast_templates"
+              ),
+            ],
+          ]),
+        }
+      );
+    } catch (e) {
+      return ctx.reply(`❌ ${e.message}`);
+    }
+  }
+);
+
+bot.action(
+  /^broadcast_delete_template:(.+)$/,
+  async (ctx) => {
+if (!isAdmin(ctx)) {
+
+  return ctx.answerCbQuery(
+
+    "Недостаточно прав"
+
+  );
+
+}
+    await ctx.answerCbQuery();
+
+    const template =
+      getBroadcastTemplateById(ctx.match[1]);
+
+    if (!template) {
+      return ctx.reply("❌ Шаблон не найден.");
+    }
+
+    return ctx.reply(
+      `Удалить шаблон *${template.title}*?`,
+      {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "🗑 Да, удалить",
+              `broadcast_delete_template_confirm:${template._id}`
+            ),
+          ],
+          [
+            Markup.button.callback(
+              "⬅️ Назад",
+              `broadcast_template_manage:${template._id}`
+            ),
+          ],
+        ]),
+      }
+    );
+  }
+);
+
+bot.action(
+  /^broadcast_delete_template_confirm:(.+)$/,
+  async (ctx) => {
+    if (!isAdmin(ctx)) {
+      return ctx.answerCbQuery(
+        "Недостаточно прав"
+      );
+    }
+    await ctx.answerCbQuery("Удаляю...");
+
+    try {
+      await api(
+        `/admin/broadcast/templates/${ctx.match[1]}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      await loadBroadcastTemplates();
+
+      return bot.telegram.sendMessage(
+        ctx.chat.id,
+        "✅ Шаблон удалён.",
+        {
+          ...Markup.inlineKeyboard([
+            [
+              Markup.button.callback(
+                "📂 Шаблоны",
+                "broadcast_templates"
+              ),
+            ],
+          ]),
+        }
+      );
+    } catch (e) {
+      return ctx.reply(`❌ ${e.message}`);
+    }
+  }
+);
+
+bot.action("broadcast_template_back", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery(
+      "Недостаточно прав"
+    );
+  }
+
+  await ctx.answerCbQuery();
+
+  const st = getState(ctx.chat.id);
+
+  if (
+    !st ||
+    (
+      st.mode !== "broadcast_template_create" &&
+      st.mode !== "broadcast_template_edit"
+    )
+  ) {
+    return;
+  }
+
+  st.step = Math.max(0, st.step - 1);
+
+  setState(ctx.chat.id, st);
+
+  return askBroadcastTemplateStep(ctx);
+});
+
+bot.action("broadcast_template_save", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.answerCbQuery(
+      "Недостаточно прав"
+    );
+  }
+
+  await ctx.answerCbQuery(
+    "Сохраняю..."
+  );
+
+  const st = getState(ctx.chat.id);
+
+  if (
+    !st ||
+    (
+      st.mode !== "broadcast_template_create" &&
+      st.mode !== "broadcast_template_edit"
+    )
+  ) {
+    return;
+  }
+
+  try {
+    if (st.mode === "broadcast_template_create") {
+
+      await api("/admin/broadcast/templates", {
+        method: "POST",
+        body: JSON.stringify({
+          title: st.data.title,
+          photoUrl: st.data.photoUrl,
+          text: st.data.text,
+          buttonText: st.data.buttonText,
+          buttonUrl: st.data.buttonUrl,
+        }),
+      });
+
+    } else {
+
+      await api(
+        `/admin/broadcast/templates/${st.data.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            title: st.data.title,
+            photoUrl: st.data.photoUrl,
+            text: st.data.text,
+            buttonText: st.data.buttonText,
+            buttonUrl: st.data.buttonUrl,
+          }),
+        }
+      );
+
+    }
+
+    await loadBroadcastTemplates();
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      "✅ Шаблон сохранён.",
+      {
+        ...Markup.inlineKeyboard([
+          [
+            Markup.button.callback(
+              "📂 К шаблонам",
+              "broadcast_templates"
+            ),
+          ],
+        ]),
+      }
+    );
+
+  } catch (e) {
+    return ctx.reply(`❌ ${e.message}`);
+  }
+});
+
+bot.action(
+  /^broadcast_edit_template:(.+)$/,
+  async (ctx) => {
+        if (!isAdmin(ctx)) {
+
+      return ctx.answerCbQuery(
+
+        "Недостаточно прав"
+
+      );
+
+    }
+
+    await ctx.answerCbQuery();
+
+    await loadBroadcastTemplates();
+
+    const template =
+      getBroadcastTemplateById(ctx.match[1]);
+
+    if (!template) {
+      return ctx.reply("❌ Шаблон не найден.");
+    }
+
+    setState(ctx.chat.id, {
+      mode: "broadcast_template_edit",
+      step: 0,
+      data: {
+        id: String(template._id),
+        title: template.title || "",
+        photoUrl: template.photoUrl || "",
+        text: template.text || "",
+        buttonText: template.buttonText || "",
+        buttonUrl: template.buttonUrl || "",
+      },
+    });
+
+    return askBroadcastTemplateStep(ctx);
+
+  }
+);
+
+// ----- text inputs for steps -----
+bot.on("text", async (ctx) => {
+  if (!isAdmin(ctx)) return;
+
+  const text = String(ctx.message?.text || "").trim();
+  if (text.startsWith("/")) return;
+
+  if (ctx.message?.message_id) {
+    try {
+      await ctx.deleteMessage(ctx.message.message_id);
+    } catch {}
+  }
+
+  const broadcastState = getState(ctx.chat.id);
+
+  if (broadcastState?.mode === "broadcast") {
+    if (!isAdmin(ctx)) {
+      clearState(ctx.chat.id);
+      return ctx.reply("Недостаточно прав.");
+    }
+
+    const step = BROADCAST_STEPS[broadcastState.step];
+    const d = broadcastState.data || defaultBroadcastData();
+
+    if (
+      step === "segmentType" &&
+      d.audienceType === "username"
+    ) {
+      const username = String(ctx.message?.text || "")
+        .trim()
+        .replace(/^@/, "");
+
+      if (!username) {
+        return ctx.reply("Введите корректный username.");
+      }
+
+      d.username = username;
+      broadcastState.data = d;
+
+      broadcastState.step =
+        BROADCAST_STEPS.indexOf("templateChoice");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    if (step === "photo") {
+      const photoUrl = String(ctx.message?.text || "").trim();
+
+      if (!isValidUrl(photoUrl)) {
+        return ctx.reply(
+          "❌ Отправьте прямую публичную ссылку на картинку, которая начинается с http:// или https://.\n\nНапример: https://.../banner.jpg"
+        );
+      }
+
+      d.photoUrl = photoUrl;
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("text");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    if (step === "text") {
+      const text = String(ctx.message?.text || ctx.message?.caption || "").trim();
+
+      if (!text) {
+        return ctx.reply("Введите текст уведомления.");
+      }
+
+      d.text = text.slice(0, 1024);
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("buttonText");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    if (step === "buttonText") {
+      const text = String(ctx.message?.text || "").trim();
+
+      if (!text) {
+        return ctx.reply("Введите текст кнопки.");
+      }
+
+      d.buttonText = text.slice(0, 64);
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("buttonUrl");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    if (step === "buttonUrl") {
+      const text = String(ctx.message?.text || "").trim();
+
+      if (!isValidUrl(text)) {
+        return ctx.reply("Введите корректную ссылку, которая начинается с http:// или https://");
+      }
+
+      d.buttonUrl = text;
+      broadcastState.data = d;
+      broadcastState.step = BROADCAST_STEPS.indexOf("confirm");
+
+      setState(ctx.chat.id, broadcastState);
+
+      return askBroadcastStep(ctx);
+    }
+
+    return askBroadcastStep(ctx);
+  }
+
+  const st = getState(ctx.chat.id);
+
+  if (!st) return;
+
+  // ================= BROADCAST TEMPLATE WIZARD =================
+
+  if (
+
+    st.mode === "broadcast_template_create" ||
+
+    st.mode === "broadcast_template_edit"
+
+  ) {
+
+    const step = BROADCAST_TEMPLATE_STEPS[st.step];
+
+    switch (step) {
+
+      case "title":
+
+        st.data.title = text;
+
+        break;
+
+      case "photoUrl":
+
+        if (!isValidUrl(text)) {
+
+          return ctx.reply("❌ Укажите корректную ссылку.");
+
+        }
+
+        st.data.photoUrl = text;
+
+        break;
+
+      case "text":
+
+        st.data.text = text;
+
+        break;
+
+      case "buttonText":
+
+        st.data.buttonText = text;
+
+        break;
+
+      case "buttonUrl":
+
+        if (!isValidUrl(text)) {
+
+          return ctx.reply("❌ Укажите корректную ссылку.");
+
+        }
+
+        st.data.buttonUrl = text;
+
+        break;
+
+    }
+
+    st.step++;
+
+    setState(ctx.chat.id, st);
+
+    return askBroadcastTemplateStep(ctx);
+
+  }
+
+  // ===== PROMO CODES =====
+
+  if (st.mode === "promo_code_create") {
+    const step = PROMO_CODE_STEPS[st.step];
+    const data = st.data || defaultPromoCodeData();
+
+    if (step === "code") {
+      const code = normalizePromoCodeInput(text);
+
+      if (!code || code.length < 3) {
+        return ctx.reply(
+          "❌ Введите корректный промокод длиной минимум 3 символа. Разрешены латинские буквы, цифры, _ и -."
+        );
+      }
+
+      data.code = code;
+      st.data = data;
+      st.step = PROMO_CODE_STEPS.indexOf("amount");
+
+      setState(ctx.chat.id, st);
+
+      return askPromoCodeStep(ctx);
+    }
+
+    if (step === "amount") {
+      const amountZl = Number(
+        text.replace(",", ".")
+      );
+
+      if (
+        !Number.isFinite(amountZl) ||
+        amountZl <= 0
+      ) {
+        return ctx.reply(
+          "❌ Введите корректную сумму больше 0. Например: 25 или 37.5"
+        );
+      }
+
+      data.amountZl = Number(
+        amountZl.toFixed(2)
+      );
+
+      st.data = data;
+
+      st.step =
+        PROMO_CODE_STEPS.indexOf(
+          "expiresAt"
+        );
+
+      setState(ctx.chat.id, st);
+
+      return askPromoCodeStep(ctx);
+    }
+
+    if (step === "expiresAt") {
+      const rawExpiresAt = String(
+        text || ""
+      ).trim();
+
+      if (
+        [
+          "без срока",
+          "бессрочно",
+          "нет",
+          "none",
+        ].includes(
+          rawExpiresAt.toLowerCase()
+        )
+      ) {
+        data.expiresAt = null;
+        data.expiresAtInput =
+          "без срока";
+
+        st.data = data;
+
+        st.step =
+          PROMO_CODE_STEPS.indexOf(
+            "confirm"
+          );
+
+        setState(ctx.chat.id, st);
+
+        return askPromoCodeStep(ctx);
+      }
+
+      const match = rawExpiresAt.match(
+        /^(\d{2})\.(\d{2})\.(\d{4})\s+([01]\d|2[0-3]):([0-5]\d)$/
+      );
+
+      if (!match) {
+        return ctx.reply(
+          "❌ Неверный формат. Используйте `ДД.ММ.ГГГГ ЧЧ:ММ`, например `31.08.2026 23:59`, или отправьте `без срока`.",
+          {
+            parse_mode: "Markdown",
+          }
+        );
+      }
+
+      const day = Number(match[1]);
+      const month = Number(match[2]);
+      const year = Number(match[3]);
+      const hours = Number(match[4]);
+      const minutes = Number(match[5]);
+
+      const probe = new Date(
+        Date.UTC(
+          year,
+          month - 1,
+          day,
+          hours,
+          minutes
+        )
+      );
+
+      const isRealDate =
+        probe.getUTCFullYear() === year &&
+        probe.getUTCMonth() ===
+          month - 1 &&
+        probe.getUTCDate() === day &&
+        probe.getUTCHours() === hours &&
+        probe.getUTCMinutes() ===
+          minutes;
+
+      if (!isRealDate) {
+        return ctx.reply(
+          "❌ Такой даты или времени не существует."
+        );
+      }
+
+      const getWarsawOffsetMinutes = (
+        date
+      ) => {
+        const parts =
+          new Intl.DateTimeFormat(
+            "en-GB",
+            {
+              timeZone:
+                "Europe/Warsaw",
+              year: "numeric",
+              month: "2-digit",
+              day: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: false,
+            }
+          ).formatToParts(date);
+
+        const values =
+          Object.fromEntries(
+            parts.map((part) => [
+              part.type,
+              part.value,
+            ])
+          );
+
+        const warsawAsUtc =
+          Date.UTC(
+            Number(values.year),
+            Number(values.month) - 1,
+            Number(values.day),
+            Number(values.hour),
+            Number(values.minute),
+            Number(values.second)
+          );
+
+        return Math.round(
+          (
+            warsawAsUtc -
+            date.getTime()
+          ) / 60000
+        );
+      };
+
+      const requestedUtcMs =
+        Date.UTC(
+          year,
+          month - 1,
+          day,
+          hours,
+          minutes
+        );
+
+      let expiresAt = new Date(
+        requestedUtcMs
+      );
+
+      let offsetMinutes =
+        getWarsawOffsetMinutes(
+          expiresAt
+        );
+
+      expiresAt = new Date(
+        requestedUtcMs -
+          offsetMinutes *
+            60 *
+            1000
+      );
+
+      const correctedOffsetMinutes =
+        getWarsawOffsetMinutes(
+          expiresAt
+        );
+
+      if (
+        correctedOffsetMinutes !==
+        offsetMinutes
+      ) {
+        offsetMinutes =
+          correctedOffsetMinutes;
+
+        expiresAt = new Date(
+          requestedUtcMs -
+            offsetMinutes *
+              60 *
+              1000
+        );
+      }
+
+      if (
+        expiresAt.getTime() <=
+        Date.now()
+      ) {
+        return ctx.reply(
+          "❌ Срок действия должен быть в будущем."
+        );
+      }
+
+      data.expiresAt =
+        expiresAt.toISOString();
+
+      data.expiresAtInput =
+        rawExpiresAt;
+
+      st.data = data;
+
+      st.step =
+        PROMO_CODE_STEPS.indexOf(
+          "confirm"
+        );
+
+      setState(ctx.chat.id, st);
+
+      return askPromoCodeStep(ctx);
+    }
+
+    return askPromoCodeStep(ctx);
+  }
+
+    if (st?.mode === "cashback_grant") {
+      const step = CASHBACK_GRANT_STEPS[st.step];
+      if (text.startsWith("/")) return;
+
+      if (step === "username") {
+        const username = text.replace(/^@+/, "").trim();
+        if (!username || username.includes(" ")) {
+          return ctx.reply("❌ Введи username в формате @username или username без пробелов.");
+        }
+
+        st.data.username = `@${username}`;
+        st.step = 1;
+        setState(ctx.chat.id, st);
+        return askCashbackGrantStep(ctx);
+      }
+
+      if (step === "amount") {
+        const normalized = text.replace(",", ".");
+        const amountZl = Number(normalized);
+        if (!Number.isFinite(amountZl) || amountZl <= 0) {
+          return ctx.reply("❌ Введи корректную сумму больше 0. Пример: 25 или 37.5");
+        }
+
+        st.data.amountZl = Number(amountZl.toFixed(2));
+        st.step = 2;
+        setState(ctx.chat.id, st);
+        return askCashbackGrantStep(ctx);
+      }
+    }
+
+    // ===== pickup points: create wizard =====
+    if (st.mode === "pp_create") {
+      const step = Number(st.step || 0);
+
+      try {
+        if (step === 0) {
+          const parts = text.split(",").map((s) => s.trim()).filter(Boolean);
+          if (parts.length < 2) return ctx.reply("❌ Формат неверный. Нужно: название, адрес");
+
+          st.data.title = parts[0] || "";
+          st.data.address = parts.slice(1).join(", ");
+          setState(ctx.chat.id, st);
+          return nextPickupCreateStep(ctx);
+        }
+
+        if (step === 1) {
+          if (text === "-" || text.toLowerCase() === "нет") {
+            st.data.allowedAdminTelegramIds = [];
+          } else {
+            const ids = text.split(",").map((s) => s.trim()).filter(Boolean);
+            const bad = ids.find((x) => !/^\d+$/.test(x));
+            if (bad) return ctx.reply("❌ ID менеджера должен быть числом (telegramId). Пример: 123456789");
+            st.data.allowedAdminTelegramIds = ids;
+          }
+
+          setState(ctx.chat.id, st);
+          return nextPickupCreateStep(ctx);
+        }
+
+        return ctx.reply("❌ Неожиданный шаг. Нажми Отмена и попробуй снова.");
+      } catch (e) {
+        return ctx.reply(`❌ ${e.message}`);
+      }
+    }
+
+    // ===== Text handler for FLAVOR BUILDER =====
+    if (st && st.mode === "fl_builder") {
+      const step = FL_BUILDER_STEPS[st.step];
+
+      try {
+        // new flavor input: "label, #HEX1, #HEX2"
+        if (step === "newFlavor") {
+          const parts = text.split(",").map((s) => s.trim());
+          if (parts.length < 3) throw new Error("Нужно: название, #ЦВЕТ1, #ЦВЕТ2");
+
+          const label = parts[0];
+          const c1 = parts[1];
+          const c2 = parts[2];
+
+          if (label.length < 2) throw new Error("Слишком короткое название вкуса");
+          if (!isHex(c1) || !isHex(c2)) throw new Error("Цвета должны быть в формате #RRGGBB");
+
+          st.data.label = label;
+          st.data.gradient = [c1, c2];
+          st.data.flavorKey = slugify(label);
+
+          // дальше — выбор точки
+          st.step = FL_BUILDER_STEPS.indexOf("pickupPoint");
+          setState(ctx.chat.id, st);
+          return askFlavorStep(ctx);
+        }
+
+        if (FL_BUILDER_STEPS[st.step] === "bulkEdit") {
+          const raw = String(text || "").trim();
+
+          if (!raw) {
+            return ctx.reply(
+              "❌ Отправь хотя бы одно изменение в формате `1=10` или `Blueberry Ice=10`.",
+              { parse_mode: "Markdown" }
+            );
+          }
+
+          try {
+            const r = await fetch(`${API_URL}/products?active=0`);
+            const data = await r.json().catch(() => ({}));
+            const products = data.products || [];
+            const prod = products.find((p) => String(p._id) === String(st.data.productId));
+            const flavors = Array.isArray(prod?.flavors) ? prod.flavors.filter((f) => f.isActive !== false) : [];
+
+            if (!prod || !flavors.length) {
+              return ctx.reply("❌ Не удалось загрузить вкусы товара.");
+            }
+
+            const byIndex = new Map();
+            const byName = new Map();
+
+            flavors.forEach((f, index) => {
+              const label = String(f?.label || f?.flavorKey || "").trim();
+              byIndex.set(String(index + 1), f);
+              if (label) byName.set(label.toLowerCase(), f);
+            });
+
+            const lines = raw
+              .split(/\r?\n/)
+              .map((line) => line.trim())
+              .filter(Boolean);
+
+            const parsed = [];
+
+            for (const line of lines) {
+              const parts = line.split("=");
+              if (parts.length !== 2) {
+                return ctx.reply(
+                  `❌ Неверный формат строки: ${line}\nИспользуй \`1=10\` или \`Blueberry Ice=10\`.`,
+                  { parse_mode: "Markdown" }
+                );
+              }
+
+              const left = String(parts[0] || "").trim();
+              const right = String(parts[1] || "").trim();
+              const qty = Number(right);
+
+              if (!left || !Number.isFinite(qty) || qty < 0) {
+                return ctx.reply(`❌ Неверное количество в строке: ${line}`);
+              }
+
+              let flavor = byIndex.get(left);
+              if (!flavor) {
+                flavor = byName.get(left.toLowerCase());
+              }
+
+              if (!flavor) {
+                return ctx.reply(`❌ Не найден вкус: ${left}`);
+              }
+
+              parsed.push({
+                flavorId: String(flavor._id || ""),
+                flavorKey: String(flavor.flavorKey || ""),
+                label: String(flavor.label || flavor.flavorKey || ""),
+                totalQty: qty,
+              });
+            }
+
+            const pointId = String(st.data.pickupPointId || "").trim();
+
+            if (!pointId) {
+              return ctx.reply("❌ Сначала выбери точку самовывоза для массового изменения.");
+            }
+
+            for (const row of parsed) {
+              await api(`/admin/products/${st.data.productId}/flavors/${row.flavorId}/stock`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                  pickupPointId: pointId,
+                  totalQty: row.totalQty,
+                }),
+              });
+            }
+
+            clearState(ctx.chat.id);
+            return ctx.reply(
+              `✅ Массовое изменение сохранено.\n\nИзменено вкусов: ${parsed.length}`,
+              mainMenu(ctx)
+            );
+          } catch (e) {
+            return ctx.reply(`❌ Ошибка: ${e.message}`);
+          }
+        }
+
+        // qty
+        if (step === "qty") {
+          const n = Number(text.replace(/\s+/g, ""));
+          if (!Number.isFinite(n) || n < 0) throw new Error("Количество должно быть числом 0+");
+
+          st.data.totalQty = n;
+          st.step = FL_BUILDER_STEPS.indexOf("confirm");
+          setState(ctx.chat.id, st);
+          return askFlavorStep(ctx);
+        }
+
+        return next?.();
+      } catch (e) {
+        return ctx.reply(`❌ ${e.message}`);
+      }
+    }
+
+    if (st.mode === "pp_payment_prompt") {
+      try {
+        const paymentMethodPromptMeta = {
+          blik: {
+            label: "BLIK",
+            badge: "BLIK",
+            defaultDetailsValue: "+48 573 401 389",
+          },
+          crypto: {
+            label: "Криптовалюта",
+            badge: "USDT TRC20",
+            defaultDetailsValue: "TGG97dKjM1nQpQkVb8Yt6vYz2w3x4c5b6a",
+          },
+          ua_card: {
+            label: "Украинская карта",
+            badge: "Перевод на карту",
+            defaultDetailsValue: "5395 4182 3356 7590",
+          },
+          cash: {
+            label: "Наличные",
+            badge: "Наличные",
+            defaultDetailsValue: "Оплата при получении",
+          },
+        };
+
+        const methodMeta = paymentMethodPromptMeta[String(st.methodKey || "").trim()] || {
+          label: "Способ оплаты",
+          badge: "",
+          defaultDetailsValue: "",
+        };
+
+        const detailsRaw = String(text || "").trim();
+
+        if (!detailsRaw) {
+          return ctx.reply("❌ Отправьте только реквизиты для выбранного способа оплаты.");
+        }
+
+        const data = await api(`/pickup-points?active=0`);
+        const points = data.pickupPoints || [];
+        const point = points.find((x) => String(x._id) === String(st.pointId));
+
+        if (!point) {
+          clearState(ctx.chat.id);
+          return ctx.reply("❌ Точка не найдена", mainMenu(ctx));
+        }
+
+        const methods = Array.isArray(point?.paymentConfig?.methods)
+          ? [...point.paymentConfig.methods]
+          : [];
+
+        const idx = methods.findIndex(
+          (m) => String(m?.key || "") === String(st.methodKey)
+        );
+
+        const nextMethod = {
+          key: st.methodKey,
+          label: methodMeta.label,
+          detailsValue: detailsRaw || methodMeta.defaultDetailsValue || "",
+          badge: methodMeta.badge,
+          isActive: idx >= 0 ? methods[idx]?.isActive !== false : true,
+        };
+
+        if (idx >= 0) methods[idx] = nextMethod;
+        else methods.push(nextMethod);
+
+        await api(`/admin/pickup-points/${st.pointId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            paymentConfig: { methods },
+          }),
+        });
+
+        const refreshed = await api(`/pickup-points?active=0`);
+        const updatedPoint = (refreshed.pickupPoints || []).find(
+          (x) => String(x._id) === String(st.pointId)
+        );
+
+        clearState(ctx.chat.id);
+
+        return ctx.reply(renderPickupPointPreview(updatedPoint), {
+          parse_mode: "Markdown",
+          ...ppMenuKeyboard(updatedPoint._id),
+        });
+      } catch (e) {
+        console.error(e);
+        return ctx.reply(`❌ Ошибка: ${e.message}`);
+      }
+    }
+
+    // ===== pickup points: prompt edit =====
+    if (st.mode === "pp_prompt") {
+      // cancel
+      if (text === "-") {
+        clearState(ctx.chat.id);
+        return ctx.reply(
+          "Ок.",
+          Markup.inlineKeyboard([
+            [Markup.button.callback("🏪 К списку точек", "pp_list")],
+            [Markup.button.callback("🏠 Меню", "cat_builder_cancel")],
+          ])
+        );
+      }
+
+      const field = st.field;
+      const id = st.ppId;
+
+      try {
+        const patch = {};
+
+        if (field === "title") patch.title = text;
+        if (field === "address") patch.address = text;
+
+        if (field === "sortOrder") {
+          const n = Number(text);
+          if (!Number.isFinite(n) || n < 0) return ctx.reply("❌ sortOrder должен быть числом 0+");
+          patch.sortOrder = n;
+        }
+
+        if (field === "allowedAdminTelegramIds") {
+          const ids = text.split(",").map((s) => s.trim()).filter(Boolean);
+          const bad = ids.find((x) => !/^\d+$/.test(x));
+          if (bad) return ctx.reply("❌ ID менеджера должен быть числом (telegramId). Пример: 123456789");
+          patch.allowedAdminTelegramIds = ids;
+        }
+
+        if (field === "notificationChatId" || field === "statsChatId") {
+          patch[field] = String(text || "").trim();
+        }
+
+        const updated = await api(`/admin/pickup-points/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        });
+
+        const fresh = updated?.pickupPoint || updated;
+        setState(ctx.chat.id, { mode: "pp_open", ppId: id, data: fresh });
+
+        return ctx.reply(renderPickupPointPreview(fresh), {
+          parse_mode: "Markdown",
+          reply_markup: (isSuperAdmin(ctx)
+            ? ppMenuKeyboard(id)
+            : pickupPointManagerMenu(id, {
+                isSuper: false,
+                pointKey: fresh?.key,
+              })
+          ).reply_markup,
+        });
+      } catch (e) {
+        return ctx.reply(`❌ Ошибка: ${e.message}`);
+      }
+    }
+
+    if (
+      st?.mode ===
+      "pp_prompt_schedule_by_date"
+    ) {
+      const input = String(
+        ctx.message?.text || ""
+      ).trim();
+
+      const pickupPointId = String(
+        st?.pickupPointId || ""
+      ).trim();
+
+      if (!pickupPointId) {
+        clearState(ctx.chat.id);
+
+        return ctx.reply(
+          "❌ Точка не найдена."
+        );
+      }
+
+      /*
+      * Шаг 1: ввод даты.
+      */
+      if (st.step === "date") {
+        const match = input.match(
+          /^(\d{2})\.(\d{2})\.(\d{4})$/
+        );
+
+        if (!match) {
+          return ctx.reply(
+            "❌ Неверный формат даты. Используйте `ДД.ММ.ГГГГ`, например `21.07.2026`.",
+            {
+              parse_mode: "Markdown",
+            }
+          );
+        }
+
+        const day = Number(match[1]);
+        const month = Number(match[2]);
+        const year = Number(match[3]);
+
+        const parsedDate = new Date(
+          Date.UTC(
+            year,
+            month - 1,
+            day
+          )
+        );
+
+        const isRealDate =
+          parsedDate.getUTCFullYear() ===
+            year &&
+          parsedDate.getUTCMonth() ===
+            month - 1 &&
+          parsedDate.getUTCDate() ===
+            day;
+
+        if (!isRealDate) {
+          return ctx.reply(
+            "❌ Такой даты не существует."
+          );
+        }
+
+        st.step = "schedule";
+
+        st.dateKey = [
+          String(year).padStart(4, "0"),
+          String(month).padStart(2, "0"),
+          String(day).padStart(2, "0"),
+        ].join("-");
+
+        st.displayDate = input;
+
+        setState(ctx.chat.id, st);
+
+        return ctx.reply(
+          [
+            `🗓 *Дата:* ${input}`,
+            "",
+            "Введите один или несколько интервалов работы.",
+            "",
+            "Примеры:",
+            "`12:00-20:00`",
+            "`11:00-14:00, 15:00-20:00`",
+            "",
+            "Чтобы отметить день закрытым, отправьте:",
+            "`закрыто`",
+          ].join("\n"),
+          {
+            parse_mode: "Markdown",
+
+            reply_markup:
+              Markup.inlineKeyboard([
+                [
+                  Markup.button.callback(
+                    "⬅️ К точке",
+                    `pp_open:${pickupPointId}`
+                  ),
+                ],
+              ]).reply_markup,
+          }
+        );
+      }
+
+      /*
+      * Шаг 2: ввод графика.
+      */
+      if (st.step === "schedule") {
+        const normalizedInput =
+          input.toLowerCase();
+
+        const isClosed = [
+          "закрыто",
+          "выходной",
+          "closed",
+          "off",
+        ].includes(normalizedInput);
+
+        let scheduleValue;
+
+        if (isClosed) {
+          scheduleValue = {
+            isOpen: false,
+
+            from: "",
+            to: "",
+
+            openFrom: "",
+            openTo: "",
+
+            periods: [],
+
+            note: "закрыто",
+          };
+        } else {
+          const rawPeriods = input
+            .split(/[,;\n]+/)
+            .map((value) =>
+              value.trim()
+            )
+            .filter(Boolean);
+
+          if (!rawPeriods.length) {
+            return ctx.reply(
+              "❌ Укажите график, например `12:00-20:00`.",
+              {
+                parse_mode:
+                  "Markdown",
+              }
+            );
+          }
+
+          const timePattern =
+            /^([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)$/;
+
+          const periods = [];
+
+          for (
+            const rawPeriod of rawPeriods
+          ) {
+            const match =
+              rawPeriod.match(
+                timePattern
+              );
+
+            if (!match) {
+              return ctx.reply(
+                "❌ Неверный формат. Используйте `HH:MM-HH:MM`, например `12:00-20:00`.",
+                {
+                  parse_mode:
+                    "Markdown",
+                }
+              );
+            }
+
+            const from =
+              `${match[1]}:${match[2]}`;
+
+            const to =
+              `${match[3]}:${match[4]}`;
+
+            const fromMinutes =
+              Number(match[1]) * 60 +
+              Number(match[2]);
+
+            const toMinutes =
+              Number(match[3]) * 60 +
+              Number(match[4]);
+
+            if (
+              toMinutes <= fromMinutes
+            ) {
+              return ctx.reply(
+                `❌ В интервале ${rawPeriod} время окончания должно быть позже начала.`
+              );
+            }
+
+            periods.push({
+              from,
+              to,
+
+              openFrom: from,
+              openTo: to,
+
+              fromMinutes,
+              toMinutes,
+            });
+          }
+
+          periods.sort(
+            (a, b) =>
+              a.fromMinutes -
+              b.fromMinutes
+          );
+
+          for (
+            let index = 1;
+            index < periods.length;
+            index += 1
+          ) {
+            if (
+              periods[index]
+                .fromMinutes <
+              periods[index - 1]
+                .toMinutes
+            ) {
+              return ctx.reply(
+                "❌ Интервалы пересекаются. Исправьте график."
+              );
+            }
+          }
+
+          const cleanPeriods =
+            periods.map(
+              ({
+                from,
+                to,
+                openFrom,
+                openTo,
+              }) => ({
+                from,
+                to,
+                openFrom,
+                openTo,
+              })
+            );
+
+          scheduleValue = {
+            isOpen: true,
+
+            from:
+              cleanPeriods[0].from,
+
+            to:
+              cleanPeriods[
+                cleanPeriods.length - 1
+              ].to,
+
+            openFrom:
+              cleanPeriods[0].from,
+
+            openTo:
+              cleanPeriods[
+                cleanPeriods.length - 1
+              ].to,
+
+            periods: cleanPeriods,
+
+            note: cleanPeriods
+              .map(
+                (period) =>
+                  `${period.from}-${period.to}`
+              )
+              .join(", "),
+          };
+        }
+
+        await api(
+
+          `/admin/pickup-points/${pickupPointId}`,
+
+          {
+
+            method: "PATCH",
+
+            body: JSON.stringify({
+
+              scheduleByDatePatch: {
+
+                [st.dateKey]: scheduleValue,
+
+              },
+
+            }),
+
+          }
+
+        );
+
+        let freshPoint = null;
+
+        try {
+          const pointsData = await api(
+            "/pickup-points?active=0"
+          );
+
+          const points = Array.isArray(
+            pointsData
+          )
+            ? pointsData
+            : Array.isArray(
+                pointsData?.pickupPoints
+              )
+            ? pointsData.pickupPoints
+            : [];
+
+          freshPoint =
+            points.find(
+              (point) =>
+                String(
+                  point?._id || ""
+                ) === pickupPointId
+            ) || null;
+        } catch (loadError) {
+          console.error(
+            "load pickup schedules after save error:",
+            loadError
+          );
+        }
+
+        const savedDate = String(
+          st.displayDate ||
+            st.dateKey
+        );
+
+        const allScheduleDatesText =
+          formatPickupScheduleDates(
+            freshPoint?.scheduleByDate || {
+              [st.dateKey]: scheduleValue,
+            }
+          );
+
+        clearState(ctx.chat.id);
+
+        return ctx.reply(
+          [
+            "✅ *График сохранён*",
+            "",
+            `Дата: *${savedDate}*`,
+
+            scheduleValue.isOpen
+              ? `Время: *${scheduleValue.periods
+                  .map(
+                    (period) =>
+                      `${period.from}-${period.to}`
+                  )
+                  .join(" / ")}*`
+              : "Статус: *закрыто*",
+
+            "",
+            "🗓 *График на текущий месяц:*",
+            allScheduleDatesText,
+          ].join("\n"),
+          {
+            parse_mode: "Markdown",
+
+            reply_markup:
+              Markup.inlineKeyboard([
+                [
+                  Markup.button.callback(
+                    "➕ Добавить другую дату",
+                    `pp_add_schedule_date:${pickupPointId}`
+                  )
+                ],
+                [
+                  Markup.button.callback(
+                    "⬅️ К точке",
+                    `pp_open:${pickupPointId}`
+                  ),
+                ],
+              ]).reply_markup,
+          }
+        );
+      }
+    }
+
+    // ===== quick edit prompt inputs =====
+    if (st.mode === "cat_edit_prompt") {
+    const field = st.field;
+
+    // cancel/back
+    if (text === "-") {
+        setState(ctx.chat.id, { ...st, mode: "cat_edit_menu" });
+        return sendEditMenu(ctx);
+    }
+
+    const patch = {};
+
+    if (field === "key") {
+        if (!isValidKey(text)) {
+        return ctx.reply("❌ Неверный key. Формат: a-z, 0-9, дефис. 2-32 символа.");
+        }
+        patch.key = text;
+    }
+
+    if (field === "title") {
+        if (text.length < 2) return ctx.reply("❌ Слишком короткий title");
+        patch.title = text;
+    }
+
+    if (field === "badgeText") {
+        patch.badgeText = text;
+    }
+
+    if (field === "cardBgUrl") {
+        if (!isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...)");
+        patch.cardBgUrl = text;
+    }
+
+    if (field === "cardDuckUrl") {
+        if (!isValidUrl(text)) return ctx.reply("❌ Вставь нормальный URL (https://...)");
+        patch.cardDuckUrl = text;
+    }
+
+    if (field === "sortOrder") {
+        const n = Number(text);
+        if (Number.isNaN(n)) return ctx.reply("❌ sortOrder должен быть числом (0,1,2...)");
+        patch.sortOrder = n;
+    }
+
+    try {
+        const updated = await api(`/admin/categories/${st.editId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+        });
+
+        setState(ctx.chat.id, {
+        mode: "cat_edit_menu",
+        editId: st.editId,
+        data: {
+            key: updated.category.key || "",
+            title: updated.category.title || "",
+            badgeText: updated.category.badgeText || "",
+            showOverlay: !!updated.category.showOverlay,
+            classCardDuck: updated.category.classCardDuck || "cardImageLeft",
+            titleClass: updated.category.titleClass || "cardTitle",
+            cardBgUrl: updated.category.cardBgUrl || "",
+            cardDuckUrl: updated.category.cardDuckUrl || "",
+            sortOrder: updated.category.sortOrder || 0,
+            isActive: updated.category.isActive !== false,
+        },
+        });
+
+        return sendEditMenu(ctx);
+    } catch (e) {
+        return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
+    }
+    }
+
+
+      if (st?.mode === "courier_msg") {
+        const text = String(ctx.message?.text || "").trim();
+
+        if (st.step === 0) {
+          st.data.username = text.replace(/^@+/, "").trim();
+          st.step = 1;
+          setState(ctx.chat.id, st);
+          return askCourierMessageStep(ctx);
+        }
+
+        if (st.step === 1) {
+          st.data.text = text;
+          st.step = 2;
+          setState(ctx.chat.id, st);
+          return askCourierMessageStep(ctx);
+        }
+
+        if (st.step === 2) {
+          if (text !== "-") {
+            return ctx.reply(
+              "❌ На этом шаге прикрепите фото сообщением или отправьте '-' если фото не нужно."
+            );
+          }
+
+          st.data.photoFileId = "";
+          st.step = 3;
+          setState(ctx.chat.id, st);
+          return askCourierMessageStep(ctx);
+        }
+      }
+    
+    // ===== wizard inputs (старое поведение) =====
+    if (st.mode !== "cat_builder" && st.mode !== "cat_edit") return;
+
+    const step = BUILDER_STEPS[st.step];
+
+  if (step === "assetsAndTitle") {
+  const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
+
+  if (parts.length < 3) {
+    return ctx.reply("❌ Формат неверный. Нужно так: ссылка_на_фон, ссылка_на_утку, название категории");
+  }
+
+  const bg = parts[0];
+  const duck = parts[1];
+  const title = parts.slice(2).join(", ");
+
+  if (!isValidUrl(bg)) return ctx.reply("❌ Первая часть должна быть ссылкой на фон (https://...)");
+  if (!isValidUrl(duck)) return ctx.reply("❌ Вторая часть должна быть ссылкой на утку (https://...)");
+  if (title.length < 2) return ctx.reply("❌ Слишком короткое название категории");
+
+  st.data.cardBgUrl = bg;
+  st.data.cardDuckUrl = duck;
+  st.data.title = title;
+
+  if (!st.data.key) {
+    st.data.key = translitRuToLat(st.data.title);
+  }
+
+  setState(ctx.chat.id, st);
+  return nextStep(ctx);
+  }
+
+  // sortOrder
+  if (step === "sortOrder") {
+    const n = Number(text);
+    if (Number.isNaN(n)) return ctx.reply("❌ sortOrder должен быть числом (0,1,2...)");
+    st.data.sortOrder = n;
+    setState(ctx.chat.id, st);
+    return nextStep(ctx);
+  }
+});
+
+bot.on("photo", async (ctx, next) => {
+  try {
+    const st = getState(ctx.chat.id);
+
+    if (st?.mode === "broadcast") {
+      if (!isSuperAdmin(ctx)) {
+        clearState(ctx.chat.id);
+        return ctx.reply("Недостаточно прав.");
+      }
+
+      const step = BROADCAST_STEPS[st.step];
+
+      if (step !== "photo") {
+        return ctx.reply("Сейчас нужно отправить текст, а не фото.");
+      }
+
+      const d = st.data || defaultBroadcastData();
+      const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+      const bestPhoto = photos.length ? photos[photos.length - 1] : null;
+
+      if (!bestPhoto?.file_id) {
+        return ctx.reply("Прикрепите фото одним сообщением.");
+      }
+
+      const file = await ctx.telegram.getFile(bestPhoto.file_id);
+      const filePath = String(file?.file_path || "").trim();
+
+      if (!filePath) {
+        return ctx.reply("❌ Не удалось получить путь к фото. Попробуйте ещё раз.");
+      }
+
+      d.photoUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+      st.data = d;
+      st.step = BROADCAST_STEPS.indexOf("text");
+
+      setState(ctx.chat.id, st);
+      return askBroadcastStep(ctx);
+    }
+
+    if (!st || st.mode !== "courier_msg" || Number(st.step) !== 2) {
+      return next();
+    }
+
+    const photos = Array.isArray(ctx.message?.photo) ? ctx.message.photo : [];
+    const bestPhoto = photos[photos.length - 1];
+    const fileId = String(bestPhoto?.file_id || "").trim();
+
+    if (!fileId) {
+      return ctx.reply("❌ Не удалось прочитать фото. Попробуйте отправить ещё раз.");
+    }
+
+    const file = await ctx.telegram.getFile(fileId);
+    const filePath = String(file?.file_path || "").trim();
+
+    if (!filePath) {
+      return ctx.reply("❌ Не удалось получить путь к фото. Попробуйте ещё раз.");
+    }
+
+    const photoUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+
+    st.data = st.data || {};
+    st.data.photoUrl = photoUrl;
+    st.step = 3;
+    setState(ctx.chat.id, st);
+
+    return askCourierMessageStep(ctx);
+  } catch (e) {
+    console.error("courier_msg photo handler error:", e);
+    return ctx.reply(`❌ Ошибка: ${e.message}`);
+  }
+});
+
+// =====================================================
+// ===================== BOT START ======================
+// =====================================================
+
+await loadBroadcastTemplates();
+
+try {
+  await bot.telegram.setMyCommands([
+    {
+      command: "menu",
+      description: "Открыть меню",
+    },
+    {
+      command: "start",
+      description: "Запустить бота",
+    },
+  ]);
+
+  await bot.telegram.setChatMenuButton({
+    menuButton: {
+      type: "commands",
+    },
+  });
+
+  console.log(
+    "✅ Telegram menu button configured"
+  );
+} catch (menuError) {
+  console.error(
+    "Telegram menu button setup error:",
+    menuError
+  );
+}
+
+bot.command("menu", async (ctx) => {
+  if (!isAdmin(ctx)) {
+    return ctx.reply("Нет доступа.");
+  }
+
+  clearState(ctx.chat.id);
+
+  return ctx.reply(
+    "Главное меню",
+    mainMenu(ctx)
+  );
+});
+
+bot.launch().then(() => console.log("✅ Admin bot launched")); 

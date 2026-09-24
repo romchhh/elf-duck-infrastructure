@@ -1,0 +1,22 @@
+.DS_Store
+**/.DS_Store
+
+# Secrets (single root .env for all services)
+.env
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Local scratch / leaked env copies
+ewrrwr/
+
+# Dependencies & build output
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+
+# Logs
+**/npm-debug.log*
+**/.vite/
