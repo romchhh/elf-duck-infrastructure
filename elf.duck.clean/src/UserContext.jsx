@@ -60,10 +60,29 @@ useEffect(() => {
     ref: tg?.initDataUnsafe?.start_param || null,
   };
 
+  const optimisticUser = {
+    telegramId: body.telegramId,
+    username: body.username || "",
+    firstName: body.firstName || "",
+    lastName: body.lastName || "",
+    photoUrl: body.photoUrl || "",
+    cashbackBalance: 0,
+  };
+
+  // Дані з Telegram одразу — не чекаємо API, щоб не було вічного лоадера.
+  setUser(optimisticUser);
+  setUserLoading(false);
+
+  const apiBase = String(import.meta.env.VITE_API_URL || "").trim();
+  if (!apiBase) {
+    console.error("VITE_API_URL is not configured");
+    return;
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-  fetch(import.meta.env.VITE_API_URL + "/register-user", {
+  fetch(`${apiBase}/register-user`, {
     method: "POST",
     signal: controller.signal,
     headers: {
@@ -79,29 +98,12 @@ useEffect(() => {
         return;
       }
       console.error("register-user failed", data);
-      setUser({
-        telegramId: body.telegramId,
-        username: body.username,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        photoUrl: body.photoUrl,
-        cashbackBalance: 0,
-      });
     })
     .catch((e) => {
       console.error("register-user error", e);
-      setUser({
-        telegramId: body.telegramId,
-        username: body.username,
-        firstName: body.firstName,
-        lastName: body.lastName,
-        photoUrl: body.photoUrl,
-        cashbackBalance: 0,
-      });
     })
     .finally(() => {
       clearTimeout(timeoutId);
-      setUserLoading(false);
     });
 }, []);
 

@@ -339,7 +339,7 @@ const MainPage = () => {
 
   const [activeOrder, setActiveOrder] = useState(null);
 
-  const [activeOrderLoading, setActiveOrderLoading] = useState(true);
+  const [activeOrderLoading, setActiveOrderLoading] = useState(false);
   const [activeOrderCanceling, setActiveOrderCanceling] = useState(false);
 
   const [activeOrderCancelConfirmOpen, setActiveOrderCancelConfirmOpen] =
@@ -870,9 +870,17 @@ const MainPage = () => {
   useEffect(() => {
     let cancelled = false;
 
-    if (userLoading) return;
+    if (userLoading) {
+      return;
+    }
 
     if (isGuestBrowser) {
+      setActiveOrder(null);
+      setActiveOrderLoading(false);
+      return;
+    }
+
+    if (!telegramId) {
       setActiveOrder(null);
       setActiveOrderLoading(false);
       return;
@@ -940,7 +948,7 @@ const MainPage = () => {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [userLoading, isGuestBrowser]);
+  }, [userLoading, isGuestBrowser, telegramId]);
 
 
 

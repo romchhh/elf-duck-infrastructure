@@ -1511,11 +1511,15 @@ useEffect(() => {
       return;
     }
 
-    if (userLoading) return;
+    if (userLoading && !sessionTelegramId) return;
 
     (async () => {
       const telegramId = String(sessionTelegramId || "");
-      if (!telegramId) return;
+      if (!telegramId) {
+        cartHydratedRef.current = true;
+        setCartHydrated(true);
+        return;
+      }
 
       // If we arrived here right after "add to cart" on MainPage, a merged
       // items snapshot + in-flight saveCart promise are waiting in the shared
