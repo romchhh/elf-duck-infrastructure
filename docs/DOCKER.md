@@ -37,7 +37,7 @@ docker compose up -d
 MONGODB_URI=mongodb+srv://USER:PASS@cluster.mongodb.net/elfduck?appName=elf-duck-shop
 ```
 
-У `docker-compose.yml` можна вимкнути сервіс `mongo` — backend візьме URI з `.env`.
+Backend бере URI з `.env`; `depends_on: mongo` необов’язковий — API стартує одразу з Atlas (контейнер `mongo` можна не піднімати: `docker compose up -d api shop crm admin-bot`).
 
 ## Prod на VPS
 
