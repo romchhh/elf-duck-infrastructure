@@ -4348,15 +4348,9 @@ async function notifyManagerClientArrived(order) {
       return { ok: false, reason: "NO_MANAGER_MESSAGE" };
     }
 
-    const user = await User.findOne(
-      { telegramId: String(order.userTelegramId || "") },
-      { telegramId: 1, username: 1, firstName: 1 }
-    ).lean();
-
-    const customerName =
-      (user?.username ? `@${user.username}` : "") ||
-      String(user?.firstName || "").trim() ||
-      "—";
+    const clientContact =
+      await resolveManagerOrderClientContact(order);
+    const customerName = clientContact.displayLabel;
 
     const text = [
       `📍 <b>КЛИЕНТ ПРИБЫЛ НА ТОЧКУ САМОВЫВОЗА</b>`,
@@ -6952,6 +6946,126 @@ function getOrderClientUsername(
   );
 }
 
+function buildManagerClientContactUrl(telegramId, username) {
+  const safeUsername = normalizeTelegramUsername(username);
+  if (safeUsername) {
+    return `https://t.me/${safeUsername}`;
+  }
+
+  const safeTelegramId = String(telegramId || "").trim();
+  if (safeTelegramId) {
+    return `tg://user?id=${encodeURIComponent(safeTelegramId)}`;
+  }
+
+  return "";
+}
+
+function formatManagerOrderClientLabel(user, order, username = "") {
+  const safeUsername = normalizeTelegramUsername(
+    username || getOrderClientUsername(order, user)
+  );
+  const telegramId = String(
+    order?.userTelegramId || user?.telegramId || ""
+  ).trim();
+  const firstName = String(user?.firstName || "").trim();
+
+  if (safeUsername) {
+    return `@${safeUsername}`;
+  }
+
+  if (firstName && telegramId) {
+    return `${firstName} (${telegramId})`;
+  }
+
+  if (firstName) return firstName;
+  if (telegramId) return `ID ${telegramId}`;
+  return "—";
+}
+
+async function resolveManagerOrderClientContact(order) {
+  const telegramId = String(order?.userTelegramId || "").trim();
+  let user = null;
+
+  if (telegramId) {
+    user = await User.findOne(
+      { telegramId },
+      { telegramId: 1, username: 1, firstName: 1 }
+    ).lean();
+  }
+
+  let username = getOrderClientUsername(order, user);
+
+  if (!username && bot && telegramId) {
+    try {
+      const chat = await bot.telegram.getChat(telegramId);
+      username = normalizeTelegramUsername(chat?.username || "");
+      if (username) {
+        await User.updateOne(
+          { telegramId },
+          { $set: { username } }
+        );
+        user = {
+          ...(user || {}),
+          telegramId,
+          username,
+        };
+      }
+    } catch {
+      // getChat fails if the client never opened the bot
+    }
+  }
+
+  return {
+    user,
+    username,
+    telegramId,
+    displayLabel: formatManagerOrderClientLabel(
+      user,
+      order,
+      username
+    ),
+    contactUrl: buildManagerClientContactUrl(
+      telegramId,
+      username
+    ),
+  };
+}
+
+function applyManagerClientContactUrl(replyMarkup, contactUrl) {
+  const safeUrl = String(contactUrl || "").trim();
+  if (!safeUrl || !replyMarkup) {
+    return replyMarkup;
+  }
+
+  const rows = Array.isArray(replyMarkup?.inline_keyboard)
+    ? replyMarkup.inline_keyboard
+    : [];
+
+  return {
+    ...(replyMarkup || {}),
+    inline_keyboard: rows.map((row) =>
+      (Array.isArray(row) ? row : []).map((button) => {
+        const url = String(button?.url || "")
+          .trim()
+          .toLowerCase();
+
+        if (
+          url.startsWith("tg://user?id=") ||
+          url.startsWith("tg://openmessage?user_id=") ||
+          url.startsWith("https://t.me/")
+        ) {
+          return {
+            ...button,
+            url: safeUrl,
+          };
+        }
+
+        return button;
+      })
+    ),
+  };
+}
+
 function removeTelegramUserContactButtons(
   replyMarkup
 ) {
@@ -7107,15 +7221,10 @@ async function sendOrderCreatedNotification(order, options = {}) {
     const point = await resolveOrderNotificationPoint(order);
     if (!point?.notificationChatId) return;
 
-    const user = await User.findOne(
-      { telegramId: String(order.userTelegramId || "") },
-      { telegramId: 1, username: 1, firstName: 1 }
-    ).lean();
-
-    const customerName =
-      (user?.username ? `@${user.username}` : "") ||
-      String(user?.firstName || "").trim() ||
-      "—";
+    const clientContact =
+      await resolveManagerOrderClientContact(order);
+    const customerName = clientContact.displayLabel;
+    const user = clientContact.user;
 
     const managerAmountValue = Number(order?.payment?.managerDisplayAmount || 0);
     const managerAmountCurrency = String(order?.payment?.managerDisplayCurrency || "").trim();
@@ -7285,7 +7394,7 @@ const isCashPayment =
     .trim()
     .toLowerCase() === "cash";
 
-const initialReplyMarkup =
+const initialReplyMarkup = applyManagerClientContactUrl(
   String(order?.deliveryType || "") === "pickup" &&
   String(order?.payment?.method || "") === "cash"
     ? {
@@ -7386,7 +7495,9 @@ const initialReplyMarkup =
           },
         ],
       ],
-    };
+    },
+  clientContact.contactUrl
+);
 
 const pickupPoint = order?.pickupPointId
   ? await PickupPoint.findById(order.pickupPointId).lean().catch(() => null)
@@ -7527,7 +7638,7 @@ try {
 
   const clientUsername =
     normalizeTelegramUsername(
-      user?.username || ""
+      clientContact.username || user?.username || ""
     );
 
   // Вторая попытка: ссылка через username
@@ -7695,15 +7806,10 @@ async function refreshManagerOrderMessage(order) {
       return { ok: false, reason: "NO_MANAGER_MESSAGE" };
     }
 
-    const user = await User.findOne(
-      { telegramId: String(order.userTelegramId || "") },
-      { telegramId: 1, username: 1, firstName: 1 }
-    ).lean();
-
-    const customerName =
-      (user?.username ? `@${user.username}` : "") ||
-      String(user?.firstName || "").trim() ||
-      "—";
+    const clientContact =
+      await resolveManagerOrderClientContact(order);
+    const customerName = clientContact.displayLabel;
+    const user = clientContact.user;
 
     const itemsText = (order.items || [])
       .map((it) => {
@@ -8148,16 +8254,19 @@ async function refreshManagerOrderMessage(order) {
             ],
           ];
 
-    const replyMarkup = {
-      inline_keyboard: [
-        ...baseInlineKeyboard,
-        ...permanentManagerButtons,
-      ],
-    };
+    const replyMarkup = applyManagerClientContactUrl(
+      {
+        inline_keyboard: [
+          ...baseInlineKeyboard,
+          ...permanentManagerButtons,
+        ],
+      },
+      clientContact.contactUrl
+    );
 
     const clientUsername =
   normalizeTelegramUsername(
-    user?.username || ""
+    clientContact.username || user?.username || ""
   );
 
   const editCaptionWithContactFallback =
@@ -8558,12 +8667,9 @@ try {
     }
 
     const clientUsername =
-
-        normalizeTelegramUsername(
-
-            user?.username || ""
-
-        );
+      normalizeTelegramUsername(
+        clientContact.username || user?.username || ""
+      );
 
     let edited = false;
 
@@ -9459,10 +9565,10 @@ app.post("/register-user", async (req, res) => {
     }
 
     const tgUser = verified?.user || {};
-    const username = String(tgUser?.username || "").trim() || null;
-    const firstName = String(tgUser?.first_name || "").trim() || null;
-    const lastName = String(tgUser?.last_name || "").trim() || null;
-    const photoUrl = String(tgUser?.photo_url || "").trim() || null;
+    const username = String(tgUser?.username || "").trim();
+    const firstName = String(tgUser?.first_name || "").trim();
+    const lastName = String(tgUser?.last_name || "").trim();
+    const photoUrl = String(tgUser?.photo_url || "").trim();
 
     const { ref } = req.body || {};
     const normalizedRef = String(ref || "").replace(/^ref_/, "").trim();
@@ -9471,10 +9577,10 @@ app.post("/register-user", async (req, res) => {
     // for the common "returning user" path.
     const setOnInsert = { telegramId };
     const set = {};
-    if (username !== null) set.username = username;
-    if (firstName !== null) set.firstName = firstName;
-    if (lastName !== null) set.lastName = lastName;
-    if (photoUrl !== null) set.photoUrl = photoUrl;
+    if (username) set.username = username;
+    if (firstName) set.firstName = firstName;
+    if (lastName) set.lastName = lastName;
+    if (photoUrl) set.photoUrl = photoUrl;
 
     let user = await User.findOneAndUpdate(
       { telegramId },
@@ -19004,6 +19110,9 @@ if (
         }
       );
 
+      const clientContact =
+        await resolveManagerOrderClientContact(order);
+
 const instructionMessage =
   await ctx.reply(
     [
@@ -19011,6 +19120,9 @@ const instructionMessage =
       "",
       `Заказ: <b>#${escapeHtml(
         order?.orderNo || "—"
+      )}</b>`,
+      `Клиент: <b>${escapeHtml(
+        clientContact.displayLabel
       )}</b>`,
       "",
       "Ответьте на это сообщение текстом, который нужно передать клиенту.",
