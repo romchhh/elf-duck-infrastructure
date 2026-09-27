@@ -1,0 +1,316 @@
+/* Desktop / tablet landscape — mobile styles untouched below 1024px */
+
+@media (min-width: 1024px) {
+  html {
+    background:
+      radial-gradient(ellipse 80% 60% at 12% 20%, rgba(88, 61, 158, 0.45), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 88% 80%, rgba(120, 80, 220, 0.2), transparent 50%),
+      #030304;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .desktopShell {
+    display: grid;
+    grid-template-columns: 272px minmax(0, 1fr);
+    width: min(1680px, 100%);
+    height: 100dvh;
+    margin: 0 auto;
+    box-sizing: border-box;
+    padding: 16px 16px 16px 0;
+    gap: 16px;
+  }
+
+  .desktopSidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    height: calc(100dvh - 32px);
+    padding: 20px 16px;
+    box-sizing: border-box;
+    border-radius: 24px;
+    background: linear-gradient(
+      165deg,
+      rgba(22, 18, 38, 0.95) 0%,
+      rgba(8, 8, 12, 0.98) 100%
+    );
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow:
+      0 24px 64px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+
+  .desktopSidebarBrand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+  }
+
+  .desktopSidebarLogo {
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+  }
+
+  .desktopSidebarBrandText {
+    font-family: Unbounded-Medium, Muller, sans-serif;
+    font-size: 15px;
+    letter-spacing: 0.04em;
+  }
+
+  .desktopSidebarProfile {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .desktopSidebarAvatar,
+  .desktopSidebarAvatarPlaceholder {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    object-fit: cover;
+  }
+
+  .desktopSidebarAvatarPlaceholder {
+    background: linear-gradient(135deg, #5a3d9e, #2a2040);
+  }
+
+  .desktopSidebarProfileText {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .desktopSidebarProfileName {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .desktopSidebarProfileUser {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.55);
+  }
+
+  .desktopSidebarNav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+  }
+
+  .desktopSidebarNavItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border: none;
+    border-radius: 14px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 14px;
+    font-family: Inter_18pt-Regular, Muller, sans-serif;
+    cursor: pointer;
+    text-align: left;
+    transition:
+      background 0.2s ease,
+      color 0.2s ease,
+      transform 0.15s ease;
+  }
+
+  .desktopSidebarNavItem:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+  }
+
+  .desktopSidebarNavItem.is-active {
+    background: rgba(138, 97, 255, 0.22);
+    color: #fff;
+    box-shadow: inset 0 0 0 1px rgba(180, 150, 255, 0.35);
+  }
+
+  .desktopSidebarNavIcon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    flex-shrink: 0;
+  }
+
+  .desktopSidebarHint {
+    margin: 0;
+    padding: 0 8px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  .desktopMainStage {
+    min-width: 0;
+    height: calc(100dvh - 32px);
+    border-radius: 24px;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    background: #000;
+  }
+
+  .desktopMainStage .Main_Window,
+  .desktopMainStage > .CartApp,
+  .desktopMainStage .OrdersPageContainer,
+  .desktopMainStage .FavoritePageContainer,
+  .desktopMainStage .ManagersPageContainer,
+  .desktopMainStage .mainReferralPageContainer,
+  .desktopMainStage .mainRefferalPageContainer {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .desktopMainStage .Main_Window,
+  .desktopMainStage > .CartApp {
+    border-radius: 24px;
+    overflow: hidden;
+  }
+
+  /* Catalog grids */
+  .categoriesGrid:not(.productsGrid) {
+    grid-template-columns: repeat(3, 1fr);
+    width: 94%;
+    gap: 16px;
+  }
+
+  .categoriesGrid.productsGrid {
+    grid-template-columns: repeat(4, 1fr);
+    width: 94%;
+    gap: 16px;
+  }
+
+  .headerContainer {
+    height: 72px;
+    padding: 0 24px;
+    border-radius: 0;
+  }
+
+  .desktopMainStage .Main_Window,
+  .desktopMainStage .CartApp {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .desktopMainStage .scrollContent {
+    height: calc(100% - 72px);
+    padding-bottom: 24px;
+  }
+
+  .bannerSection {
+    max-width: 920px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .mainActiveOrderSection,
+  .mainHeroLoadingSection {
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Checkout overlay — centered panel on desktop */
+  .checkoutSheet {
+    left: 50%;
+    right: auto;
+    width: min(520px, calc(100% - 48px));
+    transform: translateX(-50%);
+    border-radius: 28px 28px 0 0;
+    max-height: min(88dvh, 900px);
+  }
+
+  .checkoutBackdrop {
+    backdrop-filter: blur(10px);
+  }
+
+  .sideMenu {
+    width: min(400px, 42vw);
+  }
+
+  .menuIcon {
+    cursor: pointer;
+  }
+
+  .actionButton,
+  .catalogButton,
+  .categoryCard,
+  .productCard {
+    cursor: pointer;
+  }
+
+  .categoryCard:hover,
+  .productCard:hover {
+    transform: translateY(-2px);
+    transition: transform 0.2s ease;
+  }
+
+  /* Cart — wider content, optional two-column feel */
+  .cartPageContainer,
+  .cartContentWrapper {
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .cartItemRow {
+    border-radius: 18px;
+  }
+
+  .desktopMainStage .OrdersPageContainer {
+    max-width: 1040px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media (min-width: 1280px) {
+  .categoriesGrid:not(.productsGrid) {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .categoriesGrid.productsGrid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+}
+
+@media (max-width: 1023px) {
+  .desktopShell {
+    display: contents;
+  }
+
+  .desktopSidebar {
+    display: none !important;
+  }
+
+  .desktopMainStage {
+    display: contents;
+  }
+}

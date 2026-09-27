@@ -47,7 +47,13 @@ import wolaManagerDuckIMG from "../assets/wolaManagerDuck.webp";
 import srodmiescieManagerDuckIMG from "../assets/srodmiescieManagerDuck.webp";
 import pragaManagerDuckIMG from "../assets/pragaManagerDuck.webp";
 
-import { getCart, saveCart } from "../cartApi"; // путь поправь
+import { getCart, saveCart, buildGuestConfirmPayload } from "../cartApi";
+import { buildApiHeaders } from "../utils/shoppingSession";
+import {
+  getGuestProfile,
+  saveGuestProfile,
+  addGuestOrder,
+} from "../utils/guestLocalStore";
 import { peekPendingCart, clearPendingCart } from "../pendingCart";
 import { readProductVisualCache, writeProductVisualCache } from "../utils/visualCache";
 
@@ -622,6 +628,8 @@ const CartPage = () => {
     city: "",
     lockerAddress: "",
   });
+
+  const [guestProfileForm, setGuestProfileForm] = useState(() => getGuestProfile());
 
   const [arrivalTime, setArrivalTime] = useState(""); // "HH:MM"
   const [deliveryTimeWindow, setDeliveryTimeWindow] = useState("");
@@ -1504,10 +1512,61 @@ useEffect(() => {
     if (isOrderDetailsMode) return;
 
     if (isGuestBrowser) {
-      clearPendingCart();
-      cartHydratedRef.current = true;
-      setCartHydrated(true);
-      setCartItems([]);
+      (async () => {
+        const pending = peekPendingCart();
+        const seededItems = Array.isArray(pending?.items) ? pending.items : null;
+        if (seededItems) {
+          setCartItems(seededItems);
+          preloadCartVisuals(seededItems);
+          syncedCartQtyRef.current = sumCartQty(seededItems);
+        }
+        if (pending?.savePromise) {
+          try {
+            await pending.savePromise;
+          } catch {
+            /* ignore */
+          }
+        }
+
+        try {
+          const cartResponse = await getCart();
+          const cart =
+            cartResponse?.cart && typeof cartResponse.cart === "object"
+              ? cartResponse.cart
+              : cartResponse;
+
+          const loadedItems = Array.isArray(cart?.items) ? cart.items : [];
+          setCartItems(loadedItems);
+          preloadCartVisuals(loadedItems);
+          setCourierAddress(String(cart?.courierAddress || ""));
+          setDeliveryTimeWindow(String(cart?.deliveryTimeWindow || ""));
+          setOrderComment(String(cart?.comment || "").slice(0, 500));
+          setArrivalTime(cart?.arrivalTime || "");
+          if (cart?.inpostData) {
+            setInpostForm({
+              fullName: cart.inpostData.fullName || "",
+              phone: cart.inpostData.phone || "",
+              email: cart.inpostData.email || "",
+              city: cart.inpostData.city || "",
+              lockerAddress: cart.inpostData.lockerAddress || "",
+            });
+          }
+          const lockedType =
+            cart?.checkoutDeliveryType ||
+            (cart?.checkoutPickupPointId ? "pickup" : "delivery");
+          const lockedMethod = cart?.checkoutDeliveryMethod || "courier";
+          setDeliveryType(lockedType);
+          setDeliveryMethod(lockedMethod);
+          setCheckoutPickupPointId(cart?.checkoutPickupPointId || null);
+          syncedCartQtyRef.current = sumCartQty(loadedItems);
+        } catch (e) {
+          console.error("guest cart load failed", e);
+        } finally {
+          clearPendingCart();
+          cartHydratedRef.current = true;
+          setCartHydrated(true);
+        }
+      })();
       return;
     }
 
@@ -1556,7 +1615,7 @@ useEffect(() => {
       }
 
       try {
-        const cartResponse = await getCart(telegramId);
+        const cartResponse = await getCart();
 
         const cart =
           cartResponse?.cart && typeof cartResponse.cart === "object"
@@ -1629,7 +1688,7 @@ useEffect(() => {
 
   useEffect(() => {
     const telegramId = String(user?.telegramId || "");
-    if (!telegramId) return;
+    if (!telegramId && !isGuestBrowser) return;
     if (!cartHydratedRef.current) return;
 
     const t = setTimeout(() => {
@@ -1733,7 +1792,7 @@ useEffect(() => {
     }, 200);
 
     return () => clearTimeout(t);
-  }, [cartItems, checkoutPickupPointId, deliveryType, deliveryMethod, courierAddress, inpostForm, arrivalTime, deliveryTimeWindow, user?.telegramId, isOrderDetailsMode, cartHydrated]);
+  }, [cartItems, checkoutPickupPointId, deliveryType, deliveryMethod, courierAddress, inpostForm, arrivalTime, deliveryTimeWindow, user?.telegramId, isGuestBrowser, isOrderDetailsMode, cartHydrated]);
 
 
   /* ================= SIDE MENU STATE ================= */
@@ -2044,7 +2103,7 @@ const incQty = (key) => {
       console.error("removeItem save failed", e);
 
       try {
-      const cartResponse = await getCart(telegramId);
+      const cartResponse = await getCart();
 
       const cart =
         cartResponse?.cart && typeof cartResponse.cart === "object"
@@ -3179,8 +3238,40 @@ const trySwitchCheckout = ({ nextType, nextMethod, nextPickupPointId, targetLabe
   return true;
 };
 
+  const buildCartPayloadForConfirm = () => ({
+    items: cartItems,
+    checkoutPickupPointId,
+    checkoutDeliveryType: deliveryType,
+    checkoutDeliveryMethod: deliveryMethod,
+    courierAddress,
+    courierDistrict:
+      editableDeliveryPricing?.districtLabel || savedCourierDistrict || null,
+    deliveryFeeZl: Number(editableDeliveryFeeZl || savedDeliveryFeeZl || 0),
+    inpostDeliveryFeeZl: Number(savedCartData?.inpostDeliveryFeeZl || 0),
+    inpostPackageUnits: Number(savedCartData?.inpostPackageUnits || 0),
+    inpostData: inpostForm,
+    arrivalTime,
+    deliveryTimeWindow,
+    comment: normalizedOrderComment,
+  });
+
+  const resolveGuestContactForOrder = () => {
+    if (deliveryType === "delivery" && deliveryMethod === "inpost") {
+      return {
+        fullName: String(inpostForm.fullName || "").trim(),
+        phone: String(inpostForm.phone || "").trim(),
+        email: String(inpostForm.email || "").trim(),
+      };
+    }
+    return {
+      fullName: String(guestProfileForm.fullName || "").trim(),
+      phone: String(guestProfileForm.phone || "").trim(),
+      email: String(guestProfileForm.email || "").trim(),
+    };
+  };
+
   const handleConfirmOrder = async () => {
-    if (!user?.telegramId) return;
+    if (!user?.telegramId && !isGuestBrowser) return;
 
     try {
       haptic.heavy();
@@ -4643,6 +4734,65 @@ if (pointBlob.includes("srodmiescie")) {
                       <span className="sectionCartLine" />
                     </div>
 
+                    {isGuestBrowser &&
+                      !(
+                        deliveryType === "delivery" && deliveryMethod === "inpost"
+                      ) && (
+                        <div className="cartInfoBlock guestContactBlock">
+                          <div className="cartInfoSectionTitle">
+                            <div className="cartInfoSectionLine" />
+                            <span className="cartInfoSectionText">
+                              {t("Контактные данные", "Dane kontaktowe")}
+                            </span>
+                            <div className="cartInfoSectionLine" />
+                          </div>
+                          <label className="guestContactField">
+                            <span>{t("Имя и Фамилия", "Imię i nazwisko")}</span>
+                            <input
+                              type="text"
+                              value={guestProfileForm.fullName}
+                              onChange={(e) =>
+                                setGuestProfileForm((p) => ({
+                                  ...p,
+                                  fullName: e.target.value,
+                                }))
+                              }
+                              placeholder={t("Введите имя и фамилию", "Wpisz imię i nazwisko")}
+                            />
+                          </label>
+                          <label className="guestContactField">
+                            <span>{t("Номер телефона", "Numer telefonu")}</span>
+                            <input
+                              type="tel"
+                              inputMode="tel"
+                              value={guestProfileForm.phone}
+                              onChange={(e) =>
+                                setGuestProfileForm((p) => ({
+                                  ...p,
+                                  phone: sanitizePhone(e.target.value),
+                                }))
+                              }
+                              placeholder="+48 ..."
+                            />
+                          </label>
+                          <label className="guestContactField">
+                            <span>{t("Электронная почта", "Adres e-mail")}</span>
+                            <input
+                              type="email"
+                              inputMode="email"
+                              value={guestProfileForm.email}
+                              onChange={(e) =>
+                                setGuestProfileForm((p) => ({
+                                  ...p,
+                                  email: sanitizeEmail(e.target.value),
+                                }))
+                              }
+                              placeholder="email@example.com"
+                            />
+                          </label>
+                        </div>
+                      )}
+
                     <div className="checkoutTabs">
 
                       {hasAvailablePickup && (
@@ -5619,7 +5769,7 @@ if (pointBlob.includes("srodmiescie")) {
 
                       try {
                         const telegramId = String(user?.telegramId || "").trim();
-                        if (!telegramId) return;
+                        if (!telegramId && !isGuestBrowser) return;
 
                         // 0) Проверяем заполнение обязательных полей оформления
                         if (deliveryType === "pickup") {
@@ -5675,6 +5825,21 @@ if (pointBlob.includes("srodmiescie")) {
                             );
                             return;
                           }
+                        }
+
+                        if (isGuestBrowser) {
+                          const guestContact = resolveGuestContactForOrder();
+                          if (!guestContact.fullName || !guestContact.phone) {
+                            showTelegramWarning(
+                              t("⚠️ Не заполнены данные", "⚠️ Dane nie zostały uzupełnione"),
+                              t(
+                                "Укажите имя и номер телефона для связи по заказу.",
+                                "Podaj imię i numer telefonu do kontaktu w sprawie zamówienia."
+                              )
+                            );
+                            return;
+                          }
+                          saveGuestProfile(guestContact);
                         }
 
                         // 0.1) Время прибытия обязательно только для самовывоза
@@ -5751,27 +5916,70 @@ if (pointBlob.includes("srodmiescie")) {
                           canLockCheckout && checkoutTypeToSend === "delivery" ? deliveryMethod : null;
 
                         console.time("checkout:sync-cart");
-                        const syncRes = await fetch(`${API_URL}/cart`, {
-                          method: "PUT",
-                          headers: {
-                            "Content-Type": "application/json",
-                            "x-telegram-init-data": window?.Telegram?.WebApp?.initData || "",
-                          },
-                          body: JSON.stringify({
-                            items: cartItems,
-                            checkoutPickupPointId,
-                            checkoutDeliveryType: checkoutTypeToSend,
-                            checkoutDeliveryMethod: checkoutMethodToSend,
-                            forceCheckoutSelection: canLockCheckout,
-                            courierAddress,
-                            inpostData: inpostForm,
-                            arrivalTime,
-                            deliveryTimeWindow,
-                            comment: normalizedOrderComment,
-                          }),
-                        });
+                        let syncRes;
+                        let syncData = {};
 
-                        const syncData = await syncRes.json().catch(() => ({}));
+                        if (isGuestBrowser) {
+                          try {
+                            const saved = await saveCart(
+                              null,
+                              cartItems,
+                              checkoutPickupPointId,
+                              checkoutTypeToSend,
+                              checkoutMethodToSend,
+                              canLockCheckout,
+                              {
+                                courierAddress,
+                                courierDistrict:
+                                  editableDeliveryPricing?.districtLabel || null,
+                                deliveryFeeZl: editableDeliveryFeeZl,
+                                inpostData: inpostForm,
+                                arrivalTime,
+                                deliveryTimeWindow,
+                                comment: normalizedOrderComment,
+                              }
+                            );
+                            syncData = {
+                              ok: true,
+                              cart:
+                                saved?.cart && typeof saved.cart === "object"
+                                  ? saved.cart
+                                  : saved,
+                            };
+                            syncRes = { ok: true };
+                          } catch (e) {
+                            syncRes = { ok: false };
+                            syncData = {
+                              ok: false,
+                              error: e?.message,
+                              field: e?.field,
+                            };
+                          }
+                        } else {
+                          syncRes = await fetch(`${API_URL}/cart`, {
+                            method: "PUT",
+                            headers: buildApiHeaders({
+                              "Content-Type": "application/json",
+                            }),
+                            body: JSON.stringify({
+                              items: cartItems,
+                              checkoutPickupPointId,
+                              checkoutDeliveryType: checkoutTypeToSend,
+                              checkoutDeliveryMethod: checkoutMethodToSend,
+                              forceCheckoutSelection: canLockCheckout,
+                              courierAddress,
+                              courierDistrict:
+                                editableDeliveryPricing?.districtLabel || null,
+                              deliveryFeeZl: editableDeliveryFeeZl,
+                              inpostData: inpostForm,
+                              arrivalTime,
+                              deliveryTimeWindow,
+                              comment: normalizedOrderComment,
+                            }),
+                          });
+                          syncData = await syncRes.json().catch(() => ({}));
+                        }
+
                         console.timeEnd("checkout:sync-cart");
                         console.log("checkout:sync-cart response", syncData);
 
@@ -5851,16 +6059,22 @@ if (pointBlob.includes("srodmiescie")) {
 
                         // 5) И только теперь создаём заказ
                         console.time("checkout:confirm-order");
+                        const guestContactPayload = isGuestBrowser
+                          ? resolveGuestContactForOrder()
+                          : null;
+                        const confirmBody = isGuestBrowser
+                          ? buildGuestConfirmPayload(
+                              buildCartPayloadForConfirm(),
+                              guestContactPayload
+                            )
+                          : {};
+
                         const r = await fetch(`${API_URL}/orders/confirm`, {
                           method: "POST",
-                          headers: {
-
+                          headers: buildApiHeaders({
                             "Content-Type": "application/json",
-
-                            "x-telegram-init-data": window?.Telegram?.WebApp?.initData || "",
-
-                          },
-                          body: JSON.stringify({}),
+                          }),
+                          body: JSON.stringify(confirmBody),
                         });
 
                         const data = await r.json().catch(() => ({}));
@@ -5962,6 +6176,12 @@ if (pointBlob.includes("srodmiescie")) {
                         }
 
                         const createdOrder = data?.order || null;
+
+                        if (isGuestBrowser && createdOrder) {
+                          addGuestOrder(createdOrder);
+                          setCartItems([]);
+                          await saveCart(null, [], null, null, null, true);
+                        }
 
                         navigate("/orders", {
                           replace: true,

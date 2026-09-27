@@ -10,6 +10,11 @@ import {
   getDevTelegramIdFromBrowser,
   getPersonalizedTelegramId,
 } from "./utils/telegramSession";
+import {
+  getOrCreateGuestSessionId,
+  getGuestProfile,
+} from "./utils/guestLocalStore";
+import { isGuestShopping } from "./utils/shoppingSession";
 
 const UserContext = createContext(null);
 
@@ -125,7 +130,17 @@ useEffect(() => {
     [user]
   );
 
-  const isGuestBrowser = !userLoading && !telegramId;
+  const isGuestBrowser = !userLoading && !telegramId && isGuestShopping();
+
+  const guestSessionId = useMemo(() => {
+    if (!isGuestBrowser) return "";
+    return getOrCreateGuestSessionId();
+  }, [isGuestBrowser]);
+
+  const guestProfile = useMemo(() => {
+    if (!isGuestBrowser) return null;
+    return getGuestProfile();
+  }, [isGuestBrowser]);
 
   return (
     <UserContext.Provider
@@ -141,6 +156,10 @@ useEffect(() => {
         telegramId,
 
         isGuestBrowser,
+
+        guestSessionId,
+
+        guestProfile,
 
         initials,
 

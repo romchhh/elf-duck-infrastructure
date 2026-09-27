@@ -3216,4 +3216,32 @@ body {
   word-break: break-word;
 }
 
+.guestContactBlock {
+  margin: 12px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.guestContactField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: Unbounded-Light;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.guestContactField input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-family: Unbounded-Light;
+  font-size: 14px;
+}
+
 /* MainPage.css is now imported directly by CartPage.jsx — shared styles removed */

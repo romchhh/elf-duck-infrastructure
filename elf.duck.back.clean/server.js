@@ -1074,6 +1074,84 @@ function requireTrustedTelegramId(req, res) {
   return telegramId;
 }
 
+function normalizeGuestSessionId(raw) {
+  const s = String(raw || "").trim();
+  if (!s || s.length > 80) return "";
+  if (!/^[a-zA-Z0-9_-]+$/.test(s)) return "";
+  return s;
+}
+
+function normalizeGuestCartPayload(raw) {
+  const c = raw && typeof raw === "object" ? raw : {};
+  const inpost = c.inpostData && typeof c.inpostData === "object" ? c.inpostData : {};
+  return {
+    items: Array.isArray(c.items) ? c.items : [],
+    checkoutPickupPointId: c.checkoutPickupPointId ?? null,
+    checkoutDeliveryType: c.checkoutDeliveryType ?? null,
+    checkoutDeliveryMethod: c.checkoutDeliveryMethod ?? null,
+    courierAddress: c.courierAddress ?? null,
+    courierDistrict: c.courierDistrict ?? null,
+    deliveryFeeZl: Number(c.deliveryFeeZl || 0),
+    inpostDeliveryFeeZl: Number(c.inpostDeliveryFeeZl || 0),
+    inpostPackageUnits: Number(c.inpostPackageUnits || 0),
+    inpostData: {
+      fullName: inpost.fullName ?? null,
+      phone: inpost.phone ?? null,
+      email: inpost.email ?? null,
+      city: inpost.city ?? null,
+      lockerAddress: inpost.lockerAddress ?? null,
+    },
+    arrivalTime: c.arrivalTime ?? null,
+    deliveryTimeWindow: c.deliveryTimeWindow ?? null,
+    comment: String(c.comment || "").slice(0, 500),
+  };
+}
+
+function resolveOrderShoppingActor(req, res) {
+  const telegramId = getTrustedTelegramIdFromRequest(req);
+  if (telegramId) {
+    return { telegramId, isGuest: false, guestContact: null };
+  }
+
+  const guestSession = normalizeGuestSessionId(req.headers["x-guest-session-id"]);
+  if (!guestSession) {
+    res.status(401).json({
+      ok: false,
+      error: "INVALID_TELEGRAM_INIT_DATA",
+    });
+    return null;
+  }
+
+  const contact = req.body?.guestContact || {};
+  const fullName = String(contact.fullName || "").trim();
+  const phone = String(contact.phone || "").trim();
+  const email = String(contact.email || "").trim();
+
+  if (!fullName) {
+    res.status(400).json({
+      ok: false,
+      error: "GUEST_CONTACT_REQUIRED",
+      field: "fullName",
+    });
+    return null;
+  }
+
+  if (!phone) {
+    res.status(400).json({
+      ok: false,
+      error: "GUEST_CONTACT_REQUIRED",
+      field: "phone",
+    });
+    return null;
+  }
+
+  return {
+    telegramId: `guest_${guestSession}`,
+    isGuest: true,
+    guestContact: { fullName, phone, email },
+  };
+}
+
 async function getPromoCodeByCode(code) {
   const safeCode = normalizePromoCode(code);
 
@@ -12700,18 +12778,61 @@ for (const d of deltas) {
 app.post("/orders/confirm", async (req, res) => {
   console.time("orders/confirm total");
   try {
-    const telegramId = requireTrustedTelegramId(req, res);
-    if (!telegramId) return;
+    const actor = resolveOrderShoppingActor(req, res);
+    if (!actor) return;
+
+    const telegramId = actor.telegramId;
+    const isGuestOrder = Boolean(actor.isGuest);
 
   console.time("orders/confirm load cart+user");
 
-  const [cart, user] = await Promise.all([
-    Cart.findOne({ telegramId }).lean(),
-    User.findOne(
+  let cart;
+  let user;
+
+  if (isGuestOrder) {
+    cart = normalizeGuestCartPayload(req.body?.cart);
+    const nameParts = String(actor.guestContact?.fullName || "")
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    const firstName = nameParts[0] || actor.guestContact.fullName;
+    const lastName = nameParts.slice(1).join(" ");
+
+    await User.updateOne(
+      { telegramId },
+      {
+        $set: {
+          telegramId,
+          firstName,
+          lastName,
+          username: "",
+        },
+      },
+      { upsert: true }
+    );
+
+    if (!cart.inpostData?.fullName) {
+      cart.inpostData = {
+        ...(cart.inpostData || {}),
+        fullName: actor.guestContact.fullName,
+        phone: actor.guestContact.phone,
+        email: actor.guestContact.email || cart.inpostData?.email || null,
+      };
+    }
+
+    user = await User.findOne(
       { telegramId },
       { telegramId: 1, referral: 1 }
-    ).lean(),
-  ]);
+    ).lean();
+  } else {
+    [cart, user] = await Promise.all([
+      Cart.findOne({ telegramId }).lean(),
+      User.findOne(
+        { telegramId },
+        { telegramId: 1, referral: 1 }
+      ).lean(),
+    ]);
+  }
 
   console.timeEnd("orders/confirm load cart+user");
 
@@ -13250,7 +13371,9 @@ app.post("/orders/confirm", async (req, res) => {
         ? Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)))
         : 0;
 
-      const effectiveHave = Math.max(0, total - reserved + myQty);
+      const effectiveHave = isGuestOrder
+        ? Math.max(0, total - reserved)
+        : Math.max(0, total - reserved + myQty);
 
       if (effectiveHave < myQty) {
         missing.push({
@@ -13551,37 +13674,39 @@ app.post("/orders/confirm", async (req, res) => {
 
     // 9) clear cart
     console.time("orders/confirm clear cart");
-    await Cart.updateOne(
-      { telegramId },
-      {
-        $set: {
-          items: [],
-          checkout: {},
-          stockContextId: "",
-          reservedContextId: "",
-          cartAutoClearAt: null,
-          staleClearedAt: null,
-          checkoutDeliveryType: null,
-          checkoutDeliveryMethod: null,
-          checkoutPickupPointId: null,
-          arrivalTime: null,
-          deliveryTimeWindow: null,
-          comment: "",
-          courierAddress: null,
-          courierDistrict: null,
-          deliveryFeeZl: 0,
-          inpostDeliveryFeeZl: 0,
-          inpostPackageUnits: 0,
-          inpostData: {
-            fullName: null,
-            phone: null,
-            email: null,
-            city: null,
-            lockerAddress: null,
+    if (!isGuestOrder) {
+      await Cart.updateOne(
+        { telegramId },
+        {
+          $set: {
+            items: [],
+            checkout: {},
+            stockContextId: "",
+            reservedContextId: "",
+            cartAutoClearAt: null,
+            staleClearedAt: null,
+            checkoutDeliveryType: null,
+            checkoutDeliveryMethod: null,
+            checkoutPickupPointId: null,
+            arrivalTime: null,
+            deliveryTimeWindow: null,
+            comment: "",
+            courierAddress: null,
+            courierDistrict: null,
+            deliveryFeeZl: 0,
+            inpostDeliveryFeeZl: 0,
+            inpostPackageUnits: 0,
+            inpostData: {
+              fullName: null,
+              phone: null,
+              email: null,
+              city: null,
+              lockerAddress: null,
+            },
           },
-        },
-      }
-    );
+        }
+      );
+    }
     console.timeEnd("orders/confirm clear cart");
 
     console.timeEnd("orders/confirm total");

@@ -12,6 +12,10 @@ import { flushSync } from "react-dom";
 
 import { getCart, saveCart } from "../cartApi";
 import { getPersonalizedTelegramId } from "../utils/telegramSession";
+import {
+  getGuestFavorites,
+  toggleGuestFavorite,
+} from "../utils/guestLocalStore";
 import { setPendingCart } from "../pendingCart";
 
 import menuIcon from "../assets/menuIcon.webp";
@@ -178,6 +182,12 @@ const MainPage = () => {
   };
 
   const loadFavorites = async () => {
+    if (isGuestBrowser) {
+      setFavoriteProductKeys(getGuestFavorites());
+      lastFavoritesTelegramIdRef.current = "guest";
+      return;
+    }
+
     const telegramId = getEffectiveTelegramId();
 
     if (!telegramId) {
@@ -219,10 +229,21 @@ const MainPage = () => {
   };
 
   const toggleFavoriteProduct = async (product) => {
-    const telegramId = getEffectiveTelegramId();
     const productKey = String(product?.productKey || "").trim();
+    if (!productKey) return;
 
-    if (!telegramId || !productKey) return;
+    if (isGuestBrowser) {
+      try {
+        haptic.light();
+        setFavoriteProductKeys(toggleGuestFavorite(productKey));
+      } catch (e) {
+        console.error("toggleFavoriteProduct guest error", e);
+      }
+      return;
+    }
+
+    const telegramId = getEffectiveTelegramId();
+    if (!telegramId) return;
 
     try {
       haptic.light();
@@ -1295,7 +1316,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     if (!isCheckoutOpen) return;
 
     const tgId = getEffectiveTelegramId();
-    if (!tgId) {
+    if (!tgId && !isGuestBrowser) {
       setBaseCartTotalForCashback(0);
       setBaseCartLiquidQtyForSmartPrice(0);
       return;
@@ -1310,7 +1331,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
       console.time("[PERF][MainPage] loadCartSummary total");
 
       try {
-        const cart = await getCart(tgId);
+        const cart = await getCart();
         const items = Array.isArray(cart?.items) ? cart.items : [];
 
         const totalZl = items.reduce(
@@ -1425,10 +1446,6 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
   useEffect(() => {
     if (userLoading) return;
-    if (isGuestBrowser) {
-      setFavoriteProductKeys([]);
-      return;
-    }
 
     const t = setTimeout(() => {
       loadFavorites();
@@ -1688,20 +1705,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     }, 300);
   };
 
-  const CART_KEY = "elfduck_cart_v1";
-
   // helper: stable id for flavor (works for both old and new backend)
   const getFlavorId = (f) => String(f?._id || f?.flavorKey || f?.id || "");
-
-  const readCart = () => {
-    try {
-      const raw = localStorage.getItem(CART_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  };
 
 
 const [headerPingFlags, setHeaderPingFlags] = useState({
@@ -1716,10 +1721,8 @@ const refreshHeaderPingFlags = async () => {
   let hasCartPing = false;
 
   try {
-    const cartData = telegramId ? await getCart(telegramId).catch(() => null) : null;
-    const cartItems = Array.isArray(cartData?.items)
-      ? cartData.items
-      : readCart();
+    const cartData = await getCart().catch(() => null);
+    const cartItems = Array.isArray(cartData?.items) ? cartData.items : [];
 
     hasCartPing = Array.isArray(cartItems) && cartItems.length > 0;
   } catch {
@@ -1756,14 +1759,6 @@ useEffect(() => {
 const headerPingConfig = headerPingFlags.cart
   ? { icon: buyIcon, className: "cart" }
   : null;
-
-  const writeCart = (items) => {
-    try {
-      localStorage.setItem(CART_KEY, JSON.stringify(items));
-    } catch {
-      // ignore
-    }
-  };
 
   const addCurrentOrderToCart = async () => {
     if (addToCartSubmitting) return;
@@ -1841,13 +1836,9 @@ const headerPingConfig = headerPingFlags.cart
       }
 
       const telegramId = getEffectiveTelegramId();
-      if (!telegramId) {
-        console.warn("No telegramId");
-        return;
-      }
 
-      // 1) тянем текущую корзину из БД
-      const cart = await getCart(telegramId);
+      // 1) текущая корзина (API или localStorage для гостя)
+      const cart = await getCart();
 
       const existing = Array.isArray(cart?.items) ? cart.items : [];
       const hasExistingItems = existing.length > 0;
@@ -2314,7 +2305,7 @@ navigate("/cart");
       try {
         const telegramId = getEffectiveTelegramId();
         if (telegramId) {
-          const liveCart = await getCart(telegramId);
+          const liveCart = await getCart();
 
           if (shouldShowLiquidSmartPriceWarning) {
             latestBaseCartLiquidQty = getLiquidQtyFromCartItems(liveCart?.items || []);
@@ -2491,7 +2482,7 @@ navigate("/cart");
       try {
         const telegramId = getEffectiveTelegramId();
         if (telegramId) {
-          const liveCart = await getCart(telegramId);
+          const liveCart = await getCart();
 
           if (shouldShowLiquidSmartPriceWarning) {
             latestBaseCartLiquidQty = getLiquidQtyFromCartItems(liveCart?.items || []);
@@ -2934,11 +2925,8 @@ navigate("/cart");
       if (!isCheckoutOpen) return;
       if (checkoutPrefillDoneRef.current) return;
 
-      const telegramId = getEffectiveTelegramId();
-      if (!telegramId) return;
-
       try {
-        const cart = await getCart(telegramId);
+        const cart = await getCart();
         const items = Array.isArray(cart?.items) ? cart.items : [];
 
         // ⛔️ если корзина пустая — это первый товар, ничего не префиллим

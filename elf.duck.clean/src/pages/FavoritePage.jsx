@@ -42,6 +42,10 @@ import historyDuckIMG from "../assets/historyDuckIMG.webp";
 import refferalDucksIMG from "../assets/refferalDucksIMG.webp"
 import supportDuckIMG from "../assets/supportDuckIMG.webp"
 import savedDuckIMG from "../assets/savedDuckIMG.webp";
+import {
+  getGuestFavorites,
+  toggleGuestFavorite,
+} from "../utils/guestLocalStore";
 
 
 const FavoritePage = () => {
@@ -151,6 +155,11 @@ const FavoritePage = () => {
     };
 
     const loadFavorites = async () => {
+        if (isGuestBrowser && !debugTgid) {
+            setFavoriteProductKeys(getGuestFavorites());
+            return;
+        }
+
         const currentTelegramId = getEffectiveTelegramId();
 
         if (!currentTelegramId) {
@@ -187,10 +196,21 @@ const FavoritePage = () => {
     };
 
     const toggleFavoriteProduct = async (product) => {
-        const currentTelegramId = getEffectiveTelegramId();
         const productKey = String(product?.productKey || "").trim();
+        if (!productKey) return;
 
-        if (!currentTelegramId || !productKey) return;
+        if (isGuestBrowser && !debugTgid) {
+            try {
+                haptic.light();
+                setFavoriteProductKeys(toggleGuestFavorite(productKey));
+            } catch (e) {
+                console.error("toggleFavoriteProduct guest error", e);
+            }
+            return;
+        }
+
+        const currentTelegramId = getEffectiveTelegramId();
+        if (!currentTelegramId) return;
 
         try {
             haptic.light();
@@ -250,11 +270,6 @@ const FavoritePage = () => {
 
     useEffect(() => {
         if (userLoading) return;
-        if (isGuestBrowser && !debugTgid) {
-            setFavoriteProductKeys([]);
-            setFavoritesLoading(false);
-            return;
-        }
         loadFavorites();
     }, [user?.telegramId, debugTgid, userLoading, isGuestBrowser]);
 

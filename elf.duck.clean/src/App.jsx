@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import React, { useEffect, Suspense } from "react";
 import MainPage from "./pages/MainPage";
+import DesktopShell from "./components/DesktopShell.jsx";
 
 const ReferralPage = React.lazy(() => import("./pages/ReferralPage"));
 const CartPage = React.lazy(() => import("./pages/CartPage"));
@@ -71,17 +72,19 @@ const App = () => {
   }, [location.pathname, navigate]);
 
   return (
-    <Suspense fallback={<div style={routeFallbackStyle} />}>
-      <Routes>
-        <Route path="/" element={<MainPage />} />
-        <Route path="/referral" element={<ReferralPage />} />
-        <Route path="/cart" element={<CartPage />} />
-        <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/favorites" element={<FavoritePage />} />
-        <Route path="/managers" element={<ManagersPage />} />
-        <Route path="/promo" element={<PromoPage />} />
-      </Routes>
-    </Suspense>
+    <DesktopShell>
+      <Suspense fallback={<div style={routeFallbackStyle} />}>
+        <Routes>
+          <Route path="/" element={<MainPage />} />
+          <Route path="/referral" element={<ReferralPage />} />
+          <Route path="/cart" element={<CartPage />} />
+          <Route path="/orders" element={<OrdersPage />} />
+          <Route path="/favorites" element={<FavoritePage />} />
+          <Route path="/managers" element={<ManagersPage />} />
+          <Route path="/promo" element={<PromoPage />} />
+        </Routes>
+      </Suspense>
+    </DesktopShell>
   );
 };
 

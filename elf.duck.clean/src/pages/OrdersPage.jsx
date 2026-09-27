@@ -60,6 +60,7 @@ import blikIcon from "../assets/blikIcon.webp";
 import cryptoIcon from "../assets/cryptoIcon.webp";
 import uaCardIcon from "../assets/uaCardIcon.webp";
 import cashIcon from "../assets/cashIcon.webp";
+import { getGuestOrders } from "../utils/guestLocalStore";
 
 
 const OrdersPage = () => {
@@ -1355,7 +1356,7 @@ useEffect(() => {
 
     useEffect(() => {
         if (isGuestBrowser && !debugTgid) {
-            setOrders([]);
+            setOrders(getGuestOrders());
             setOrdersLoading(false);
             return;
         }
