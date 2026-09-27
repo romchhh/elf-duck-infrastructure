@@ -15885,6 +15885,9 @@ const START_BANNER_URL = String(process.env.START_BANNER_URL || "").trim();
 if (TG_BOT_TOKENS.length) {
   userBots = TG_BOT_TOKENS.map((token) => new Telegraf(token));
   bot = userBots[0];
+  console.log(
+    `[bot] Configured ${userBots.length} user bot token(s) for polling`
+  );
 
   app.locals.uploadCrmBroadcastPhoto =
   async ({
@@ -19281,29 +19284,47 @@ return instructionMessage;
     const dbName =
       mongoose.connection?.db?.databaseName || "unknown";
 
-    for (const activeBot of userBots) {
-      try {
-        const webhookInfo = await activeBot.telegram.getWebhookInfo();
-        if (String(webhookInfo?.url || "").trim()) {
-          console.warn(
-            `[bot] Webhook was set (${webhookInfo.url}) — clearing for long polling`
+    await Promise.all(
+      userBots.map(async (activeBot) => {
+        try {
+          const webhookInfo = await activeBot.telegram.getWebhookInfo();
+          if (String(webhookInfo?.url || "").trim()) {
+            console.warn(
+              `[bot] Webhook was set (${webhookInfo.url}) — clearing for long polling`
+            );
+            await activeBot.telegram.deleteWebhook({
+              drop_pending_updates: false,
+            });
+          }
+
+          const me = await activeBot.telegram.getMe();
+          console.log(
+            `[bot] Launching polling as @${me.username} (id ${me.id}), pid=${process.pid}, db=${dbName}`
           );
-          await activeBot.telegram.deleteWebhook({
-            drop_pending_updates: false,
-          });
+
+          // launch() never resolves while polling — do not await in a serial loop
+          activeBot
+            .launch()
+            .then(() => {
+              console.log(
+                `✅ User bot polling stopped @${me.username}`
+              );
+            })
+            .catch((e) => {
+              console.error(
+                `❌ bot.launch error @${me.username}:`,
+                e
+              );
+            });
+
+          console.log(
+            `✅ User bot launched @${me.username}`
+          );
+        } catch (e) {
+          console.error("❌ bot pre-launch error:", e);
         }
-
-        const me = await activeBot.telegram.getMe();
-        console.log(
-          `[bot] Launching polling as @${me.username} (id ${me.id}), pid=${process.pid}, db=${dbName}`
-        );
-
-        await activeBot.launch();
-        console.log(`✅ User bot launched @${me.username}`);
-      } catch (e) {
-        console.error("❌ bot.launch error:", e);
-      }
-    }
+      })
+    );
   }
 
   launchUserBotPolling();
