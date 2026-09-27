@@ -98,6 +98,259 @@ function getActiveUserBots() {
   return bot ? [bot] : [];
 }
 
+function resolveShopBotIndexFromToken(botToken) {
+  const token = String(botToken || "").trim();
+  if (!token) return 0;
+  const tokens = getTelegramBotTokens();
+  const idx = tokens.indexOf(token);
+  return idx >= 0 ? idx : 0;
+}
+
+function getShopBotByIndex(index) {
+  const bots = getActiveUserBots();
+  if (!bots.length) return null;
+  const idx = Number(index);
+  if (Number.isFinite(idx) && idx >= 0 && idx < bots.length) {
+    return bots[idx];
+  }
+  return bots[0];
+}
+
+async function resolveShopBotIndexForTelegramId(telegramId) {
+  const id = String(telegramId || "").trim();
+  if (!id || id.startsWith("guest_")) return 0;
+
+  const user = await User.findOne(
+    { telegramId: id },
+    { shopBotIndex: 1, shopBotKnown: 1 }
+  ).lean();
+
+  const bots = getActiveUserBots();
+  const idx = Number(user?.shopBotIndex);
+
+  if (
+    user?.shopBotKnown &&
+    Number.isFinite(idx) &&
+    idx >= 0 &&
+    idx < bots.length
+  ) {
+    return idx;
+  }
+
+  // Unknown bot: prefer the newest token (catalog bot is usually TOKEN_2)
+  if (bots.length > 1) {
+    return bots.length - 1;
+  }
+
+  return 0;
+}
+
+function resolveShopBotIndexFromRequest(req) {
+  const verified = verifyTelegramWebAppInitData(
+    req.headers?.["x-telegram-init-data"]
+  );
+  if (verified?.botToken) {
+    return resolveShopBotIndexFromToken(verified.botToken);
+  }
+  return null;
+}
+
+async function resolveShopBotIndexForOrder(order, req = null) {
+  const fromOrder = Number(order?.shopBotIndex);
+  const bots = getActiveUserBots();
+  if (
+    Number.isFinite(fromOrder) &&
+    fromOrder >= 0 &&
+    fromOrder < bots.length &&
+    order?.shopBotIndex != null
+  ) {
+    return fromOrder;
+  }
+
+  const fromReq = req ? resolveShopBotIndexFromRequest(req) : null;
+  if (fromReq != null && fromReq >= 0 && fromReq < bots.length) {
+    return fromReq;
+  }
+
+  return resolveShopBotIndexForTelegramId(order?.userTelegramId);
+}
+
+async function getShopBotForTelegramId(telegramId) {
+  const idx = await resolveShopBotIndexForTelegramId(telegramId);
+  return getShopBotByIndex(idx);
+}
+
+async function persistShopBotIndexFromInitData(req, telegramId) {
+  const id = String(telegramId || "").trim();
+  if (!id || id.startsWith("guest_")) return;
+
+  const verified = verifyTelegramWebAppInitData(
+    req.headers?.["x-telegram-init-data"]
+  );
+  const token = String(verified?.botToken || "").trim();
+  if (!token) return;
+
+  const shopBotIndex = resolveShopBotIndexFromToken(token);
+  await User.updateOne(
+    { telegramId: id },
+    { $set: { shopBotIndex, shopBotKnown: true } }
+  ).catch(() => {});
+}
+
+function isUserChatUnavailableTelegramError(e) {
+  const errorCode = Number(e?.response?.error_code || 0);
+  const description = String(
+    e?.response?.description || e?.description || e?.message || ""
+  );
+
+  return (
+    (errorCode === 400 && /chat not found/i.test(description)) ||
+    (errorCode === 403 &&
+      (/bot was blocked by the user/i.test(description) ||
+        /user is deactivated/i.test(description))) ||
+    (errorCode === 400 && /user not found/i.test(description))
+  );
+}
+
+async function sendViaUserShopBot(telegramId, sendFn, options = {}) {
+  const id = String(telegramId || "").trim();
+  if (!id) {
+    throw new Error("NO_TELEGRAM_ID");
+  }
+
+  const bots = getActiveUserBots();
+  if (!bots.length) {
+    throw new Error("NO_USER_BOT");
+  }
+
+  const overrideIndex = Number(options.preferredBotIndex);
+  const preferredIndex =
+    Number.isFinite(overrideIndex) &&
+    overrideIndex >= 0 &&
+    overrideIndex < bots.length
+      ? overrideIndex
+      : await resolveShopBotIndexForTelegramId(id);
+  const tryOrder = [
+    preferredIndex,
+    ...bots.map((_, i) => i).filter((i) => i !== preferredIndex),
+  ];
+
+  let lastError = null;
+
+  for (const idx of tryOrder) {
+    const activeBot = getShopBotByIndex(idx);
+    if (!activeBot) continue;
+
+    try {
+      const result = await sendFn(activeBot);
+      if (idx !== preferredIndex) {
+        await User.updateOne(
+          { telegramId: id },
+          { $set: { shopBotIndex: idx } }
+        ).catch(() => {});
+      }
+      return { result, botIndex: idx };
+    } catch (e) {
+      lastError = e;
+      if (!isUserChatUnavailableTelegramError(e)) {
+        throw e;
+      }
+    }
+  }
+
+  throw lastError || new Error("SEND_FAILED");
+}
+
+function getShopBotSendOptions(context = {}) {
+  const order = context?.order;
+  const user = context?.user;
+
+  if (order != null) {
+    const idx = Number(order.shopBotIndex);
+    if (Number.isFinite(idx) && idx >= 0) {
+      return { preferredBotIndex: idx };
+    }
+  }
+
+  if (user?.shopBotKnown) {
+    const idx = Number(user.shopBotIndex);
+    if (Number.isFinite(idx) && idx >= 0) {
+      return { preferredBotIndex: idx };
+    }
+  }
+
+  return {};
+}
+
+async function sendClientTelegramMessage(
+  telegramId,
+  text,
+  extra = {},
+  context = {}
+) {
+  const id = String(telegramId || "").trim();
+  if (!id || !getActiveUserBots().length) {
+    return null;
+  }
+
+  return sendViaUserShopBot(
+    id,
+    (clientBot) => clientBot.telegram.sendMessage(id, text, extra),
+    getShopBotSendOptions(context)
+  );
+}
+
+async function sendClientTelegramPhoto(
+  telegramId,
+  photo,
+  extra = {},
+  context = {}
+) {
+  const id = String(telegramId || "").trim();
+  if (!id || !getActiveUserBots().length) {
+    return null;
+  }
+
+  return sendViaUserShopBot(
+    id,
+    (clientBot) => clientBot.telegram.sendPhoto(id, photo, extra),
+    getShopBotSendOptions(context)
+  );
+}
+
+async function sendManagerRelayToClient(clientMessageState, messageText) {
+  const clientTelegramId = String(
+    clientMessageState?.clientTelegramId || ""
+  ).trim();
+
+  if (!clientTelegramId) {
+    return;
+  }
+
+  let order = null;
+  if (clientMessageState?.orderId) {
+    order = await Order.findById(clientMessageState.orderId, {
+      shopBotIndex: 1,
+      userTelegramId: 1,
+    }).lean();
+  }
+
+  await sendClientTelegramMessage(
+    clientTelegramId,
+    [
+      "💬 <b>Сообщение от менеджера</b>",
+      "",
+      `Заказ: <b>#${escapeHtml(
+        clientMessageState?.orderNo || "—"
+      )}</b>`,
+      "",
+      escapeHtml(messageText),
+    ].join("\n"),
+    { parse_mode: "HTML" },
+    { order }
+  );
+}
+
 const inpostTrackingInputState = new Map();
 
 const managerClientMessageState = new Map();
@@ -263,24 +516,9 @@ const resolvedByManager =
     );
 
     try {
-      await bot.telegram.sendMessage(
-        String(
-          clientMessageState
-            .clientTelegramId
-        ),
-        [
-          "💬 <b>Сообщение от менеджера</b>",
-          "",
-          `Заказ: <b>#${escapeHtml(
-            clientMessageState
-              .orderNo || "—"
-          )}</b>`,
-          "",
-          escapeHtml(messageText),
-        ].join("\n"),
-        {
-          parse_mode: "HTML",
-        }
+      await sendManagerRelayToClient(
+        clientMessageState,
+        messageText
       );
 
       const managerMessageId = Number(
@@ -1197,7 +1435,7 @@ function getInpostTrackingUrl(trackingNumber) {
 async function notifyClientAboutInpostPaymentConfirmed(
   order
 ) {
-  if (!bot || !order) {
+  if (!order || !getActiveUserBots().length) {
     return false;
   }
 
@@ -1253,7 +1491,7 @@ async function notifyClientAboutInpostPaymentConfirmed(
     "Ожидайте дальнейших сообщений.",
   ].join("\n");
 
-  await bot.telegram.sendMessage(
+  await sendClientTelegramMessage(
     clientTelegramId,
     text,
     {
@@ -1264,16 +1502,14 @@ async function notifyClientAboutInpostPaymentConfirmed(
         inline_keyboard: [
           [
             {
-              text:
-                "💬 Связаться с менеджером",
-
-              url:
-                "https://t.me/elfduck_inpost",
+              text: "💬 Связаться с менеджером",
+              url: "https://t.me/elfduck_inpost",
             },
           ],
         ],
       },
-    }
+    },
+    { order }
   );
 
   /*
@@ -1289,7 +1525,7 @@ async function notifyClientAboutInpostPaymentConfirmed(
 }
 
 async function notifyClientAboutInpostShipment(order) {
-  if (!bot || !order) return false;
+  if (!order || !getActiveUserBots().length) return false;
 
   const deliveryType = String(order?.deliveryType || "")
     .trim()
@@ -1353,7 +1589,7 @@ async function notifyClientAboutInpostShipment(order) {
   lines.push("");
   lines.push("Спасибо за покупку ❤️");
 
-  await bot.telegram.sendMessage(
+  await sendClientTelegramMessage(
     clientTelegramId,
     lines.join("\n"),
     {
@@ -1370,7 +1606,8 @@ async function notifyClientAboutInpostShipment(order) {
           ],
         ],
       },
-    }
+    },
+    { order }
   );
 
   return true;
@@ -3081,7 +3318,14 @@ async function grantManualCashbackToUser(user, amountZl, meta = {}) {
 
 async function sendCashbackExpiringSoonNotification(user, expiringRows) {
   try {
-    if (!bot || !user?.telegramId || !Array.isArray(expiringRows) || !expiringRows.length) return;
+    if (
+      !user?.telegramId ||
+      !getActiveUserBots().length ||
+      !Array.isArray(expiringRows) ||
+      !expiringRows.length
+    ) {
+      return;
+    }
 
     const sorted = [...expiringRows].sort(
       (a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime()
@@ -3121,46 +3365,27 @@ async function sendCashbackExpiringSoonNotification(user, expiringRows) {
       nextRowsText,
     ].join("\n");
 
-    await bot.telegram.sendMessage(String(user.telegramId), text, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
+    await sendClientTelegramMessage(
+      user.telegramId,
+      text,
+      {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      },
+      { user }
+    );
 
     return {
   ok: true,
   skipped: false,
 };
 } catch (e) {
-  const errorCode = Number(
-    e?.response?.error_code || 0
-  );
-
-  const description = String(
-    e?.response?.description ||
-      e?.description ||
-      e?.message ||
-      ""
-  );
-
-  const isUnavailableChat =
-    (
-      errorCode === 400 &&
-      /chat not found/i.test(description)
-    ) ||
-    (
-      errorCode === 403 &&
-      /bot was blocked by the user/i.test(
-        description
-      )
-    ) ||
-    (
-      errorCode === 403 &&
-      /user is deactivated/i.test(
-        description
-      )
+  if (isUserChatUnavailableTelegramError(e)) {
+    const errorCode = Number(e?.response?.error_code || 0);
+    const description = String(
+      e?.response?.description || e?.description || e?.message || ""
     );
 
-  if (isUnavailableChat) {
     console.warn(
       "sendCashbackExpiringSoonNotification skipped: user chat unavailable",
       {
@@ -3207,7 +3432,14 @@ function formatCashbackExpireDate(date) {
 
 async function sendCashbackExpiredNotification(user, expiredRows) {
   try {
-    if (!bot || !user?.telegramId || !Array.isArray(expiredRows) || !expiredRows.length) return;
+    if (
+      !user?.telegramId ||
+      !getActiveUserBots().length ||
+      !Array.isArray(expiredRows) ||
+      !expiredRows.length
+    ) {
+      return;
+    }
 
     const sortedExpired = [...expiredRows].sort(
       (a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime()
@@ -3251,45 +3483,26 @@ async function sendCashbackExpiredNotification(user, expiredRows) {
       activeRowsText,
     ].join("\n");
 
-    await bot.telegram.sendMessage(String(user.telegramId), text, {
-      parse_mode: "HTML",
-      disable_web_page_preview: true,
-    });
+    await sendClientTelegramMessage(
+      user.telegramId,
+      text,
+      {
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+      },
+      { user }
+    );
     return {
       ok: true,
       skipped: false,
     };
 } catch (e) {
-  const errorCode = Number(
-    e?.response?.error_code || 0
-  );
-
-  const description = String(
-    e?.response?.description ||
-      e?.description ||
-      e?.message ||
-      ""
-  );
-
-  const isUnavailableChat =
-    (
-      errorCode === 400 &&
-      /chat not found/i.test(description)
-    ) ||
-    (
-      errorCode === 403 &&
-      /bot was blocked by the user/i.test(
-        description
-      )
-    ) ||
-    (
-      errorCode === 403 &&
-      /user is deactivated/i.test(
-        description
-      )
+  if (isUserChatUnavailableTelegramError(e)) {
+    const errorCode = Number(e?.response?.error_code || 0);
+    const description = String(
+      e?.response?.description || e?.description || e?.message || ""
     );
 
-  if (isUnavailableChat) {
     console.warn(
       "sendCashbackExpiredNotification skipped: user chat unavailable",
       {
@@ -4542,11 +4755,11 @@ async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
     await refreshManagerOrderMessage(freshOrder);
 
     try {
-      if (bot && freshOrder?.userTelegramId) {
+      if (freshOrder?.userTelegramId && getActiveUserBots().length) {
         const orderNo = escapeHtml(freshOrder?.orderNo || "—");
 
-        await bot.telegram.sendMessage(
-          String(freshOrder.userTelegramId),
+        await sendClientTelegramMessage(
+          freshOrder.userTelegramId,
           [
             `⌛️ <b>ЗАКАЗ АННУЛИРОВАН</b>`,
             ``,
@@ -4555,7 +4768,8 @@ async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
           {
             parse_mode: "HTML",
             disable_web_page_preview: true,
-          }
+          },
+          { order: freshOrder }
         );
       }
     } catch (notifyErr) {
@@ -4961,10 +5175,7 @@ async function processOrdersWithoutPaymentConfirm() {
           continue;
         }
 
-        if (
-          !bot ||
-          !freshOrder?.userTelegramId
-        ) {
+        if (!freshOrder?.userTelegramId) {
           console.warn(
             "processOrdersWithoutPaymentConfirm reminder skipped:",
             {
@@ -4976,11 +5187,22 @@ async function processOrdersWithoutPaymentConfirm() {
                 freshOrder?.orderNo || ""
               ),
 
-              reason:
-                "NO_BOT_OR_TELEGRAM_ID",
+              reason: "NO_TELEGRAM_ID",
             }
           );
 
+          continue;
+        }
+
+        if (!getActiveUserBots().length) {
+          console.warn(
+            "processOrdersWithoutPaymentConfirm reminder skipped:",
+            {
+              orderId: String(freshOrder?._id || ""),
+              orderNo: String(freshOrder?.orderNo || ""),
+              reason: "NO_USER_BOT",
+            }
+          );
           continue;
         }
 
@@ -5027,16 +5249,25 @@ async function processOrdersWithoutPaymentConfirm() {
           continue;
         }
 
-        await bot.telegram.sendMessage(
-          String(
-            stillUnpaidOrder.userTelegramId
-          ),
-          reminderText,
-          {
-            parse_mode: "HTML",
+        const reminderPreferredBotIndex = Number(
+          stillUnpaidOrder?.shopBotIndex
+        );
 
-            disable_web_page_preview:
-              true,
+        const reminderSend = await sendViaUserShopBot(
+          stillUnpaidOrder.userTelegramId,
+          (clientBot) =>
+            clientBot.telegram.sendMessage(
+              String(stillUnpaidOrder.userTelegramId),
+              reminderText,
+              {
+                parse_mode: "HTML",
+                disable_web_page_preview: true,
+              }
+            ),
+          {
+            preferredBotIndex: Number.isFinite(reminderPreferredBotIndex)
+              ? reminderPreferredBotIndex
+              : undefined,
           }
         );
 
@@ -5089,6 +5320,8 @@ async function processOrdersWithoutPaymentConfirm() {
             userTelegramId: String(
               stillUnpaidOrder?.userTelegramId || ""
             ),
+
+            shopBotIndex: reminderSend?.botIndex,
           }
         );
       } catch (orderError) {
@@ -5096,7 +5329,7 @@ async function processOrdersWithoutPaymentConfirm() {
           "processOrdersWithoutPaymentConfirm order error:",
           {
             orderId: String(
-              stillUnpaidOrder?._id || ""
+              order?._id || ""
             ),
 
             orderNo: String(
@@ -7835,16 +8068,18 @@ try {
       };
 
 if (!skipClientNotification) {
+  const clientNotifyContext = { order };
   if (clientOrderPhotoUrl) {
     try {
-      await bot.telegram.sendPhoto(
+      await sendClientTelegramPhoto(
         safeTelegramId,
         { url: clientOrderPhotoUrl },
         {
           caption: clientText,
           parse_mode: "HTML",
           reply_markup: clientReplyMarkup,
-        }
+        },
+        clientNotifyContext
       );
     } catch (clientPhotoErr) {
       console.error(
@@ -7863,7 +8098,7 @@ if (!skipClientNotification) {
         }
       );
 
-      await bot.telegram.sendMessage(
+      await sendClientTelegramMessage(
         safeTelegramId,
         clientText,
         {
@@ -7872,11 +8107,12 @@ if (!skipClientNotification) {
             true,
           reply_markup:
             clientReplyMarkup,
-        }
+        },
+        clientNotifyContext
       );
     }
   } else {
-    await bot.telegram.sendMessage(
+    await sendClientTelegramMessage(
       safeTelegramId,
       clientText,
       {
@@ -7885,7 +8121,8 @@ if (!skipClientNotification) {
           true,
         reply_markup:
           clientReplyMarkup,
-      }
+      },
+      clientNotifyContext
     );
   }
 }
@@ -8948,7 +9185,7 @@ try {
 
 async function sendClientOrderCreatedInfo(order) {
   try {
-    if (!bot || !order?.userTelegramId) return;
+    if (!order?.userTelegramId || !getActiveUserBots().length) return;
 
     const webAppBaseUrl = String(process.env.WEBAPP_URL || "")
       .trim()
@@ -8997,33 +9234,40 @@ async function sendClientOrderCreatedInfo(order) {
       };
     }
 
-    if (photoUrl) {
-      await bot.telegram.sendPhoto(
-        String(order.userTelegramId),
-        { url: photoUrl },
-        {
-          caption: lines.join("\n"),
-          ...extra,
-        }
-      );
-      return;
-    }
+    const preferredBotIndex = Number(order?.shopBotIndex);
 
-    await bot.telegram.sendMessage(
-      String(order.userTelegramId),
-      lines.join("\n"),
-      extra
+    await sendViaUserShopBot(
+      order.userTelegramId,
+      async (clientBot) => {
+        if (photoUrl) {
+          return clientBot.telegram.sendPhoto(
+            String(order.userTelegramId),
+            { url: photoUrl },
+            {
+              caption: lines.join("\n"),
+              ...extra,
+            }
+          );
+        }
+
+        return clientBot.telegram.sendMessage(
+          String(order.userTelegramId),
+          lines.join("\n"),
+          extra
+        );
+      },
+      {
+        preferredBotIndex: Number.isFinite(preferredBotIndex)
+          ? preferredBotIndex
+          : undefined,
+      }
     );
   } catch (e) {
-    const errorCode = Number(e?.response?.error_code || 0);
-    const description = String(
-      e?.response?.description || e?.description || e?.message || ""
-    );
-
-    if (
-      (errorCode === 403 && /bot was blocked by the user/i.test(description)) ||
-      (errorCode === 400 && /chat not found/i.test(description))
-    ) {
+    if (isUserChatUnavailableTelegramError(e)) {
+      const errorCode = Number(e?.response?.error_code || 0);
+      const description = String(
+        e?.response?.description || e?.description || e?.message || ""
+      );
       console.warn("sendClientOrderCreatedInfo skipped: user chat is unavailable", {
         orderNo: order?.orderNo,
         telegramId: String(order?.userTelegramId || ""),
@@ -9642,24 +9886,26 @@ app.post("/admin/courier/customer-message", requireAdmin, async (req, res) => {
     };
 
     if (photoUrl) {
-      await bot.telegram.sendPhoto(
-        String(user.telegramId),
+      await sendClientTelegramPhoto(
+        user.telegramId,
         { url: photoUrl },
         {
           caption: safeText.slice(0, 1024),
           parse_mode: "HTML",
           reply_markup: replyMarkup,
-        }
+        },
+        { user }
       );
     } else {
-      await bot.telegram.sendMessage(
-        String(user.telegramId),
+      await sendClientTelegramMessage(
+        user.telegramId,
         safeText,
         {
           parse_mode: "HTML",
           disable_web_page_preview: true,
           reply_markup: replyMarkup,
-        }
+        },
+        { user }
       );
     }
 
@@ -9711,6 +9957,10 @@ app.post("/register-user", async (req, res) => {
     if (firstName) set.firstName = firstName;
     if (lastName) set.lastName = lastName;
     if (photoUrl) set.photoUrl = photoUrl;
+    if (verified?.botToken) {
+      set.shopBotIndex = resolveShopBotIndexFromToken(verified.botToken);
+      set.shopBotKnown = true;
+    }
 
     let user = await User.findOneAndUpdate(
       { telegramId },
@@ -10456,6 +10706,8 @@ app.post("/admin/users/broadcast-photo", async (req, res) => {
         telegramId: 1,
         username: 1,
         firstName: 1,
+        shopBotIndex: 1,
+        shopBotKnown: 1,
       }
     )
       .sort({ createdAt: 1 })
@@ -10497,11 +10749,16 @@ app.post("/admin/users/broadcast-photo", async (req, res) => {
         if (!telegramId) continue;
 
         try {
-          await bot.telegram.sendPhoto(telegramId, photoUrl, {
-            caption: text,
-            parse_mode: "HTML",
-            reply_markup: replyMarkup,
-          });
+          await sendClientTelegramPhoto(
+            telegramId,
+            photoUrl,
+            {
+              caption: text,
+              parse_mode: "HTML",
+              reply_markup: replyMarkup,
+            },
+            { user }
+          );
 
           sent += 1;
           results.push({ telegramId, ok: true });
@@ -10663,6 +10920,8 @@ app.post("/admin/users/broadcast-photo-async", async (req, res) => {
         telegramId: 1,
         username: 1,
         firstName: 1,
+        shopBotIndex: 1,
+        shopBotKnown: 1,
       }
     )
       .sort({ createdAt: 1 })
@@ -10759,11 +11018,16 @@ app.post("/admin/users/broadcast-photo-async", async (req, res) => {
         if (!telegramId) continue;
 
         try {
-          await bot.telegram.sendPhoto(telegramId, photoUrl, {
-            caption: text,
-            parse_mode: "HTML",
-            reply_markup: replyMarkup,
-          });
+          await sendClientTelegramPhoto(
+            telegramId,
+            photoUrl,
+            {
+              caption: text,
+              parse_mode: "HTML",
+              reply_markup: replyMarkup,
+            },
+            { user }
+          );
 
           sent += 1;
         } catch (e) {
@@ -12784,6 +13048,15 @@ app.post("/orders/confirm", async (req, res) => {
     const telegramId = actor.telegramId;
     const isGuestOrder = Boolean(actor.isGuest);
 
+    if (!isGuestOrder) {
+      await persistShopBotIndexFromInitData(req, telegramId);
+    }
+
+    const orderShopBotIndex = !isGuestOrder
+      ? resolveShopBotIndexFromRequest(req) ??
+        (await resolveShopBotIndexForTelegramId(telegramId))
+      : 0;
+
   console.time("orders/confirm load cart+user");
 
   let cart;
@@ -13609,6 +13882,7 @@ app.post("/orders/confirm", async (req, res) => {
     console.time("orders/confirm create order")
     const created = await Order.create({
       userTelegramId: telegramId,
+      shopBotIndex: Number(orderShopBotIndex) || 0,
 
       orderNo,
       totalZl: Number(totalZl.toFixed(2)),
@@ -16948,7 +17222,7 @@ if (photoFileId) {
     order,
     managerTelegramId
   ) {
-    if (!bot || !order) {
+    if (!order || !getActiveUserBots().length) {
       return false;
     }
 
@@ -17104,7 +17378,7 @@ if (photoFileId) {
           }
         : undefined;
 
-    await bot.telegram.sendMessage(
+    await sendClientTelegramMessage(
       clientTelegramId,
       text,
       {
@@ -17119,7 +17393,8 @@ if (photoFileId) {
                 replyMarkup,
             }
           : {}),
-      }
+      },
+      { order }
     );
 
     return true;
@@ -17129,7 +17404,7 @@ if (photoFileId) {
     order,
     type
   ) {
-    if (!bot || !order) {
+    if (!order || !getActiveUserBots().length) {
       return false;
     }
 
@@ -17240,21 +17515,20 @@ if (photoFileId) {
           }
         : undefined;
 
-    await bot.telegram.sendMessage(
+    const preferredBotIndex = Number(order?.shopBotIndex);
+
+    await sendViaUserShopBot(
       clientTelegramId,
-      text,
+      (clientBot) =>
+        clientBot.telegram.sendMessage(clientTelegramId, text, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+        }),
       {
-        parse_mode: "HTML",
-
-        disable_web_page_preview:
-          true,
-
-        ...(replyMarkup
-          ? {
-              reply_markup:
-                replyMarkup,
-            }
-          : {}),
+        preferredBotIndex: Number.isFinite(preferredBotIndex)
+          ? preferredBotIndex
+          : undefined,
       }
     );
 
@@ -17556,39 +17830,49 @@ if (photoFileId) {
               "accepted"
             );
           } else if (isInpostOrder) {
-            await bot.telegram.sendMessage(
-              String(
-                freshPaidOrder?.userTelegramId ||
-                  ""
-              ),
-              [
-                "✅ <b>МЕНЕДЖЕР ПОДТВЕРДИЛ ВАШУ ТРАНЗАКЦИЮ!</b>",
-                "",
-                `Заказ <b>#${escapeHtml(
-                  freshPaidOrder?.orderNo || "—"
-                )}</b> оплачен.`,
-                "",
-                "Мы в процессе сбора вашего заказа и отправим его до конца рабочего дня.",
-                "",
-                "Ожидайте дальнейших сообщений.",
-              ].join("\n"),
-              {
-                parse_mode: "HTML",
-                disable_web_page_preview: true,
+            const inpostPaidText = [
+              "✅ <b>МЕНЕДЖЕР ПОДТВЕРДИЛ ВАШУ ТРАНЗАКЦИЮ!</b>",
+              "",
+              `Заказ <b>#${escapeHtml(
+                freshPaidOrder?.orderNo || "—"
+              )}</b> оплачен.`,
+              "",
+              "Мы в процессе сбора вашего заказа и отправим его до конца рабочего дня.",
+              "",
+              "Ожидайте дальнейших сообщений.",
+            ].join("\n");
 
-                reply_markup: {
-                  inline_keyboard: [
-                    [
-                      {
-                        text:
-                          "💬 Связаться с менеджером",
-
-                        url:
-                          "https://t.me/elfduck_inpost",
-                      },
-                    ],
+            const inpostPaidExtra = {
+              parse_mode: "HTML",
+              disable_web_page_preview: true,
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: "💬 Связаться с менеджером",
+                      url: "https://t.me/elfduck_inpost",
+                    },
                   ],
-                },
+                ],
+              },
+            };
+
+            const preferredBotIndex = Number(
+              freshPaidOrder?.shopBotIndex
+            );
+
+            await sendViaUserShopBot(
+              freshPaidOrder?.userTelegramId,
+              (clientBot) =>
+                clientBot.telegram.sendMessage(
+                  String(freshPaidOrder?.userTelegramId || ""),
+                  inpostPaidText,
+                  inpostPaidExtra
+                ),
+              {
+                preferredBotIndex: Number.isFinite(preferredBotIndex)
+                  ? preferredBotIndex
+                  : undefined,
               }
             );
           } else {
@@ -18528,22 +18812,9 @@ if (
             );
 
             try {
-              await bot.telegram.sendMessage(
-                String(
-                  clientMessageState.clientTelegramId
-                ),
-                [
-                  "💬 <b>Сообщение от менеджера</b>",
-                  "",
-                  `Заказ: <b>#${escapeHtml(
-                    clientMessageState.orderNo || "—"
-                  )}</b>`,
-                  "",
-                  escapeHtml(incomingText),
-                ].join("\n"),
-                {
-                  parse_mode: "HTML",
-                }
+              await sendManagerRelayToClient(
+                clientMessageState,
+                incomingText
               );
 
               managerClientMessageState.delete(
@@ -18886,7 +19157,7 @@ if (
     try {
       const safeTelegramId = String(order?.userTelegramId || "").trim();
 
-      if (bot && safeTelegramId) {
+      if (safeTelegramId && getActiveUserBots().length) {
 
         const orderNo = escapeHtml(order?.orderNo || "—");
         const notifyPoint = await resolveOrderNotificationPoint(freshDeliveredOrder || order).catch(() => null);
@@ -18929,7 +19200,7 @@ if (
               : `@${courierUsernameRaw}`)
           : "—";
 
-          await bot.telegram.sendMessage(
+          await sendClientTelegramMessage(
             safeTelegramId,
             [
               `🚚 <b>КУРЬЕР ПРИБЫЛ НА АДРЕС</b>`,
@@ -18941,11 +19212,12 @@ if (
             {
               parse_mode: "HTML",
               disable_web_page_preview: true,
-            }
+            },
+            { order: freshDeliveredOrder || order }
           );
         } else {
           console.warn("mgr_order_delivered client notify skipped:", {
-            hasBot: Boolean(bot),
+            hasBot: getActiveUserBots().length > 0,
             safeTelegramId,
             orderId: String(order?._id || ""),
             orderNo: String(order?.orderNo || ""),

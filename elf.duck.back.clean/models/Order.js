@@ -40,6 +40,9 @@ const orderSchema = new mongoose.Schema(
     // кто оформил
     userTelegramId: { type: String, required: true, index: true },
 
+    /** Shop bot index used when the order was placed (for client notifications) */
+    shopBotIndex: { type: Number, default: 0 },
+
     // доставка/самовывоз
     deliveryType: {
       type: String,

@@ -8,6 +8,11 @@ const userSchema = new mongoose.Schema(
     lastName: String,
     photoUrl: String,
 
+    /** Index in TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_TOKEN_2 — which shop bot the user opened */
+    shopBotIndex: { type: Number, default: 0 },
+    /** Set when shopBotIndex was saved from verified mini-app initData */
+    shopBotKnown: { type: Boolean, default: false },
+
     cashbackBalance: { type: Number, default: 0 },
 
     cashbackLedger: {
