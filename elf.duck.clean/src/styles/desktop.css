@@ -1,5 +1,11 @@
 /* Desktop / tablet landscape — mobile styles untouched below 1024px */
 
+@keyframes appRouteSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (min-width: 1024px) {
   html {
     background:
@@ -8,7 +14,10 @@
       #030304;
   }
 
-  body {
+  html,
+  body,
+  #root {
+    height: 100%;
     overflow: hidden;
   }
 
@@ -17,6 +26,7 @@
     grid-template-columns: 272px minmax(0, 1fr);
     width: min(1680px, 100%);
     height: 100dvh;
+    max-height: 100dvh;
     margin: 0 auto;
     box-sizing: border-box;
     padding: 16px 16px 16px 0;
@@ -169,29 +179,94 @@
   .desktopMainStage {
     min-width: 0;
     height: calc(100dvh - 32px);
+    max-height: calc(100dvh - 32px);
     border-radius: 24px;
     overflow: hidden;
     position: relative;
     border: 1px solid rgba(255, 255, 255, 0.07);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
     background: #000;
+    display: flex;
+    flex-direction: column;
+    /* fixed overlays (checkout, menu) clip to main stage, not full viewport */
+    transform: translateZ(0);
   }
 
-  .desktopMainStage .Main_Window,
-  .desktopMainStage > .CartApp,
-  .desktopMainStage .OrdersPageContainer,
-  .desktopMainStage .FavoritePageContainer,
-  .desktopMainStage .ManagersPageContainer,
-  .desktopMainStage .mainReferralPageContainer,
-  .desktopMainStage .mainRefferalPageContainer {
-    height: 100%;
+  .desktopMainStage > * {
+    flex: 1 1 auto;
     min-height: 0;
+    min-width: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .desktopMainStage .App,
+  .desktopMainStage .CartApp,
+  .desktopMainStage .ManagersApp,
+  .desktopMainStage .ReferralApp {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100%;
+    flex: 1 1 auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .desktopMainStage .Main_Window,
-  .desktopMainStage > .CartApp {
+  .desktopMainStage .Cart_Window,
+  .desktopMainStage .Orders_Window,
+  .desktopMainStage .Managers_Window,
+  .desktopMainStage .Referral_Window {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100%;
+    flex: 1 1 auto;
     border-radius: 24px;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .desktopMainStage .mainHomePageContainer,
+  .desktopMainStage .mainCartPageContainer,
+  .desktopMainStage .OrdersPageContainer,
+  .desktopMainStage .mainReferralPageContainer,
+  .desktopMainStage .mainRefferalPageContainer {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100%;
+    overflow: hidden !important;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .desktopMainStage .scrollContent,
+  .desktopMainStage .scrollCartContent,
+  .desktopMainStage .scrollReferralContent,
+  .desktopMainStage .ReferralScrollContent {
+    flex: 1 1 auto;
+    min-height: 0 !important;
+    height: auto !important;
+    max-height: none;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .desktopMainStage .headerContainer,
+  .desktopMainStage .CartHeaderContainer,
+  .desktopMainStage .ReferralHeaderContainer {
+    flex-shrink: 0;
+  }
+
+  .desktopMainStage .Managers_Window .mainHomePageContainer {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto !important;
   }
 
   /* Catalog grids */
@@ -213,14 +288,8 @@
     border-radius: 0;
   }
 
-  .desktopMainStage .Main_Window,
-  .desktopMainStage .CartApp {
-    height: 100%;
-    max-height: 100%;
-  }
-
-  .desktopMainStage .scrollContent {
-    height: calc(100% - 72px);
+  .desktopMainStage .scrollContent,
+  .desktopMainStage .scrollCartContent {
     padding-bottom: 24px;
   }
 
@@ -237,22 +306,45 @@
     margin-right: auto;
   }
 
-  /* Checkout overlay — centered panel on desktop */
-  .checkoutSheet {
+  /* Checkout overlay — centered panel inside main stage */
+  .desktopMainStage .checkoutBackdrop {
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(10px);
+  }
+
+  .desktopMainStage .checkoutSheet {
+    position: absolute;
     left: 50%;
     right: auto;
     width: min(520px, calc(100% - 48px));
     transform: translateX(-50%);
     border-radius: 28px 28px 0 0;
-    max-height: min(88dvh, 900px);
+    max-height: min(88%, 900px);
   }
 
-  .checkoutBackdrop {
-    backdrop-filter: blur(10px);
+  .desktopMainStage .sideMenu,
+  .desktopMainStage .sideMenuBackdrop {
+    position: absolute;
   }
 
-  .sideMenu {
-    width: min(400px, 42vw);
+  .desktopMainStage .sideMenu {
+    width: min(400px, 92%);
+    max-width: 420px;
+  }
+
+  .desktopMainStage .footerContainer {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+
+  .desktopMainStage .paymentInputOverlay,
+  .desktopMainStage .checkoutBackdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 2000;
   }
 
   .menuIcon {

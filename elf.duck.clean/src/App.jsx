@@ -35,11 +35,31 @@ if (typeof window !== "undefined") {
 }
 
 const routeFallbackStyle = {
-  position: "fixed",
-  inset: 0,
+  flex: 1,
+  minHeight: 0,
+  width: "100%",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
   backgroundColor: "#000",
-  zIndex: -1,
 };
+
+function RouteFallback() {
+  return (
+    <div style={routeFallbackStyle} aria-busy="true">
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          border: "3px solid rgba(255,255,255,0.08)",
+          borderTopColor: "rgba(255,255,255,0.55)",
+          borderRadius: "50%",
+          animation: "appRouteSpin 0.8s linear infinite",
+        }}
+      />
+    </div>
+  );
+}
 
 const App = () => {
   const location = useLocation();
@@ -73,7 +93,7 @@ const App = () => {
 
   return (
     <DesktopShell>
-      <Suspense fallback={<div style={routeFallbackStyle} />}>
+      <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<MainPage />} />
           <Route path="/referral" element={<ReferralPage />} />
