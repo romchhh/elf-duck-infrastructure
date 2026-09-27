@@ -71,6 +71,32 @@ const CART_AUTO_CLEAR_AFTER_MINUTES = Number(process.env.CART_AUTO_CLEAR_AFTER_M
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000);
 
 let bot = null;
+/** @type {import("telegraf").Telegraf[]} */
+let userBots = [];
+
+function getTelegramBotTokens() {
+  const seen = new Set();
+  const tokens = [];
+  const add = (raw) => {
+    const token = String(raw || "").trim();
+    if (!token || seen.has(token)) return;
+    seen.add(token);
+    tokens.push(token);
+  };
+
+  add(process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN);
+  add(process.env.TELEGRAM_BOT_TOKEN_2);
+  String(process.env.TELEGRAM_BOT_TOKENS || "")
+    .split(/[,;\n]+/)
+    .forEach(add);
+
+  return tokens;
+}
+
+function getActiveUserBots() {
+  if (userBots.length) return userBots;
+  return bot ? [bot] : [];
+}
 
 const inpostTrackingInputState = new Map();
 
@@ -966,11 +992,11 @@ function genOrderNo() {
   return out;
 }
 
-function verifyTelegramWebAppInitData(initDataRaw) {
+function verifyTelegramWebAppInitDataWithToken(initDataRaw, botToken) {
   const initData = String(initDataRaw || "").trim();
-  const botToken = String(process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN || "").trim();
+  const safeToken = String(botToken || "").trim();
 
-  if (!initData || !botToken) return null;
+  if (!initData || !safeToken) return null;
 
   const params = new URLSearchParams(initData);
   const hash = String(params.get("hash") || "").trim();
@@ -985,7 +1011,7 @@ function verifyTelegramWebAppInitData(initDataRaw) {
 
   const secretKey = crypto
     .createHmac("sha256", "WebAppData")
-    .update(botToken)
+    .update(safeToken)
     .digest();
 
   const calculatedHash = crypto
@@ -1008,10 +1034,25 @@ function verifyTelegramWebAppInitData(initDataRaw) {
     const user = JSON.parse(params.get("user") || "{}");
     const telegramId = String(user?.id || "").trim();
     if (!telegramId) return null;
-    return { telegramId, user };
+    return { telegramId, user, botToken: safeToken };
   } catch {
     return null;
   }
+}
+
+function verifyTelegramWebAppInitData(initDataRaw) {
+  const initData = String(initDataRaw || "").trim();
+  if (!initData) return null;
+
+  for (const botToken of getTelegramBotTokens()) {
+    const verified = verifyTelegramWebAppInitDataWithToken(
+      initData,
+      botToken
+    );
+    if (verified) return verified;
+  }
+
+  return null;
 }
 
 function getTrustedTelegramIdFromRequest(req) {
@@ -6995,9 +7036,20 @@ async function resolveManagerOrderClientContact(order) {
 
   let username = getOrderClientUsername(order, user);
 
-  if (!username && bot && telegramId) {
+  if (!username && telegramId) {
     try {
-      const chat = await bot.telegram.getChat(telegramId);
+      let chat = null;
+      for (const activeBot of getActiveUserBots()) {
+        try {
+          chat = await activeBot.telegram.getChat(telegramId);
+          break;
+        } catch {
+          /* try next bot */
+        }
+      }
+      if (!chat) {
+        throw new Error("GET_CHAT_FAILED");
+      }
       username = normalizeTelegramUsername(chat?.username || "");
       if (username) {
         await User.updateOne(
@@ -15826,12 +15878,13 @@ async function findOrderForManagerCallback(orderIdRaw, ctx) {
   return order;
 }
 
-const TG_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TG_BOT_TOKENS = getTelegramBotTokens();
 const WEBAPP_URL = process.env.WEBAPP_URL || "";
 const START_BANNER_URL = String(process.env.START_BANNER_URL || "").trim();
 
-if (TG_BOT_TOKEN) {
-  bot = new Telegraf(TG_BOT_TOKEN);
+if (TG_BOT_TOKENS.length) {
+  userBots = TG_BOT_TOKENS.map((token) => new Telegraf(token));
+  bot = userBots[0];
 
   app.locals.uploadCrmBroadcastPhoto =
   async ({
@@ -16633,7 +16686,8 @@ if (photoFileId) {
   }
 }
 
-  bot.use(handleManagerClientMessageText);
+  const registerUserBotHandlers = (activeBot) => {
+  activeBot.use(handleManagerClientMessageText);
 
   console.log(
 
@@ -16641,7 +16695,7 @@ if (photoFileId) {
 
   );
 
-  bot.start(async (ctx) => {
+  activeBot.start(async (ctx) => {
     try {
       const payload = String(ctx.startPayload || "").trim();
       const tgId = String(ctx.from?.id || "").trim();
@@ -17079,7 +17133,7 @@ if (photoFileId) {
     return true;
   }
 
-  bot.action(/mgr_courier_soon:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_courier_soon:(.+)/, async (ctx) => {
       try {
         const orderId = String(
           ctx.match?.[1] || ""
@@ -17166,7 +17220,7 @@ if (photoFileId) {
     }
   );
 
-  bot.action(/mgr_courier_arrived:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_courier_arrived:(.+)/, async (ctx) => {
       try {
         const orderId = String(
           ctx.match?.[1] || ""
@@ -17253,7 +17307,7 @@ if (photoFileId) {
     }
   );
 
-  bot.action(/mgr_pay_paid:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_pay_paid:(.+)/, async (ctx) => {
     try {
       const order = await findOrderForManagerCallback(
         ctx.match?.[1],
@@ -17511,7 +17565,7 @@ if (photoFileId) {
     }
   });
 
-  bot.action(/mgr_pay_unpaid:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_pay_unpaid:(.+)/, async (ctx) => {
     try {
       const order = await findOrderForManagerCallback(
         ctx.match?.[1],
@@ -17582,7 +17636,7 @@ if (photoFileId) {
     }
   });
 
-  bot.action(/mgr_order_shipped:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_order_shipped:(.+)/, async (ctx) => {
     try {
       const orderId = String(
         ctx.match?.[1] || ""
@@ -17815,7 +17869,7 @@ if (photoFileId) {
     }
   });
 
-  bot.action(/mgr_inpost_tracking_cancel:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_inpost_tracking_cancel:(.+)/, async (ctx) => {
       try {
         const orderId = String(
           ctx.match?.[1] || ""
@@ -17870,7 +17924,7 @@ if (photoFileId) {
     }
   );
 
-  bot.action(/mgr_inpost_tracking_confirm:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_inpost_tracking_confirm:(.+)/, async (ctx) => {
       try {
         const orderId = String(
           ctx.match?.[1] || ""
@@ -18124,7 +18178,7 @@ if (
     }
   );
 
-  bot.on("text", async (ctx, next) => {
+  activeBot.on("text", async (ctx, next) => {
 //       const managerTelegramId = String(
 //         ctx?.from?.id || ""
 //       ).trim();
@@ -18632,7 +18686,7 @@ if (
     }
   );
 
-  bot.action(/mgr_order_delivered:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_order_delivered:(.+)/, async (ctx) => {
     try {
       const order = await findOrderForManagerCallback(
         ctx.match?.[1],
@@ -18791,7 +18845,7 @@ if (
     }
   });
 
-  bot.action(/mgr_change_status:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_change_status:(.+)/, async (ctx) => {
       try {
         const order = await findOrderForManagerCallback(
           ctx.match?.[1],
@@ -18890,7 +18944,7 @@ if (
     }
   );
 
-  bot.action(
+  activeBot.action(
     /mgr_change_status_back:(.+)/,
     async (ctx) => {
       try {
@@ -18929,7 +18983,7 @@ if (
     }
   );
 
-  bot.action(
+  activeBot.action(
     /mgr_change_status_apply:(completed|canceled):(.+)/,
     async (ctx) => {
       try {
@@ -19003,7 +19057,7 @@ if (
     }
   );
 
-  bot.action(/mgr_order_completed:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_order_completed:(.+)/, async (ctx) => {
     try {
       const order = await findOrderForManagerCallback(
         ctx.match?.[1],
@@ -19058,13 +19112,13 @@ if (
     }
   });
 
-  bot.action(/mgr_done:(.+)/, async (ctx) => {
+  activeBot.action(/mgr_done:(.+)/, async (ctx) => {
     try {
       await ctx.answerCbQuery("Статус уже обновлён");
     } catch {}
   });
 
-  bot.action(/^manager_message_client:(.+)$/, async (ctx) => {
+  activeBot.action(/^manager_message_client:(.+)$/, async (ctx) => {
     try {
       const orderDoc = await findOrderForManagerCallback(
         ctx.match?.[1],
@@ -19217,48 +19271,56 @@ return instructionMessage;
   }
 );
 
+  };
+
+  for (const activeBot of userBots) {
+    registerUserBotHandlers(activeBot);
+  }
+
   async function launchUserBotPolling() {
-    try {
-      const webhookInfo = await bot.telegram.getWebhookInfo();
-      if (String(webhookInfo?.url || "").trim()) {
-        console.warn(
-          `[bot] Webhook was set (${webhookInfo.url}) — clearing for long polling`
+    const dbName =
+      mongoose.connection?.db?.databaseName || "unknown";
+
+    for (const activeBot of userBots) {
+      try {
+        const webhookInfo = await activeBot.telegram.getWebhookInfo();
+        if (String(webhookInfo?.url || "").trim()) {
+          console.warn(
+            `[bot] Webhook was set (${webhookInfo.url}) — clearing for long polling`
+          );
+          await activeBot.telegram.deleteWebhook({
+            drop_pending_updates: false,
+          });
+        }
+
+        const me = await activeBot.telegram.getMe();
+        console.log(
+          `[bot] Launching polling as @${me.username} (id ${me.id}), pid=${process.pid}, db=${dbName}`
         );
-        await bot.telegram.deleteWebhook({
-          drop_pending_updates: false,
-        });
+
+        await activeBot.launch();
+        console.log(`✅ User bot launched @${me.username}`);
+      } catch (e) {
+        console.error("❌ bot.launch error:", e);
       }
-
-      const me = await bot.telegram.getMe();
-      const dbName =
-        mongoose.connection?.db?.databaseName || "unknown";
-      console.log(
-        `[bot] Launching polling as @${me.username} (id ${me.id}), pid=${process.pid}, db=${dbName}`
-      );
-
-      await bot.launch();
-      console.log("✅ User bot launched");
-    } catch (e) {
-      console.error("❌ bot.launch error:", e);
     }
   }
 
   launchUserBotPolling();
 
-  process.once("SIGINT", () => {
-    try {
-      bot?.stop("SIGINT");
-    } catch {}
-  });
+  const stopAllUserBots = (signal) => {
+    for (const activeBot of userBots) {
+      try {
+        activeBot?.stop(signal);
+      } catch {}
+    }
+  };
 
-  process.once("SIGTERM", () => {
-    try {
-      bot?.stop("SIGTERM");
-    } catch {}
-  });
+  process.once("SIGINT", () => stopAllUserBots("SIGINT"));
+  process.once("SIGTERM", () => stopAllUserBots("SIGTERM"));
 
 } else {
-  console.warn("⚠️ TELEGRAM_BOT_TOKEN not set — bot disabled");
+  console.warn("⚠️ TELEGRAM_BOT_TOKEN(S) not set — bot disabled");
 }
 
 // старт сервера
