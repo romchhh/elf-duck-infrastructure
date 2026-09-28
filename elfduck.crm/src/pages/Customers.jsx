@@ -17,6 +17,8 @@ import {
 
   ArrowDown,
 
+  Download,
+
 } from 'lucide-react';
 import DataTable from '@/components/shared/DataTable';
 import Badge from '@/components/shared/Badge';
@@ -125,6 +127,10 @@ const [authError, setAuthError] = useState('');
 const [authLoading, setAuthLoading] = useState(false);
 
 const [pendingFavoriteRow, setPendingFavoriteRow] = useState(null);
+
+const [exportLoading, setExportLoading] = useState(false);
+
+const [exportError, setExportError] = useState('');
 
 const baseQueryString = useMemo(() => {
   const periodKey =
@@ -549,6 +555,45 @@ const summary = [
   },
 ];
 
+const handleExportUsers = async () => {
+  setExportLoading(true);
+  setExportError('');
+
+  try {
+    const response = await crmFetch('/crm/customers/export');
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload?.error || `HTTP_${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const disposition = String(
+      response.headers.get('content-disposition') || ''
+    );
+    const match = disposition.match(/filename="([^"]+)"/i);
+    const filename =
+      match?.[1] || `elfduck-users-${formatDateOnly(new Date())}.csv`;
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    setExportError(
+      error?.message === 'UNAUTHORIZED'
+        ? 'Нужна авторизация CRM'
+        : 'Не удалось выгрузить базу клиентов'
+    );
+  } finally {
+    setExportLoading(false);
+  }
+};
+
 const toggleSort = (key) => {
   if (sortKey === key) {
     setSortDirection(
@@ -754,16 +799,31 @@ const renderSortableHeader =
             </button>
           ))}
         </div>
-        <div className="relative w-full sm:w-auto">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Поиск клиента…"
-            className="h-9 w-full rounded-lg border border-border bg-[hsl(232_26%_7%)] pl-9 pr-3 text-[13px] outline-none focus:border-[hsl(255_100%_68%/0.4)] sm:w-64"
-          />
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+          <div className="relative w-full sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Поиск клиента…"
+              className="h-9 w-full rounded-lg border border-border bg-[hsl(232_26%_7%)] pl-9 pr-3 text-[13px] outline-none focus:border-[hsl(255_100%_68%/0.4)]"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleExportUsers}
+            disabled={exportLoading}
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] disabled:opacity-60"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exportLoading ? 'Выгрузка…' : 'CSV база'}
+          </button>
         </div>
       </div>
+
+      {exportError ? (
+        <p className="text-[13px] text-red-400">{exportError}</p>
+      ) : null}
 
       <div className="rounded-2xl surface-card p-2">
         <div className="hidden md:block">

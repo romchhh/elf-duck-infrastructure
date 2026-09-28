@@ -11,7 +11,7 @@ dotenv.config({
     "../.env"
   ),
 });
-import { Telegraf, Markup } from "telegraf";
+import { Telegraf, Markup, Input } from "telegraf";
 
 // =====================================================
 // ===================== CONFIG/ENV =====================
@@ -419,6 +419,7 @@ const superAdminMainMenu = () =>
     ["🎟 Промокоды", "📣 Рассылка"],
     ["🏪 Точки", "✏️ Категории"],
     ["📋 Список категорий"],
+    ["👥 Выгрузка базы"],
   ])
     .resize()
     .persistent();
@@ -437,6 +438,7 @@ const MAIN_MENU_TEXT_TO_CALLBACK = new Map([
   ["🏪 Точки", "pp_list"],
   ["✏️ Категории", "cat_edit_start"],
   ["📋 Список категорий", "cat_list"],
+  ["👥 Выгрузка базы", "users_export"],
 ]);
 
 bot.hears(
@@ -2782,6 +2784,60 @@ bot.start(async (ctx) => {
 
   return ctx.reply("🛠️ ELF DUCK — Admin Panel", mainMenu(ctx));
 });
+
+async function fetchUsersExportCsvBuffer(requesterTelegramId) {
+  const res = await fetch(`${API_URL}/admin/users/export`, {
+    headers: {
+      "x-admin-token": ADMIN_API_TOKEN,
+      "x-admin-telegram-id": String(requesterTelegramId || ""),
+    },
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data?.error || `HTTP ${res.status}`);
+  }
+
+  return Buffer.from(await res.arrayBuffer());
+}
+
+async function handleUsersExport(ctx) {
+  if (!isAdmin(ctx)) return;
+
+  if (!isSuperAdmin(ctx)) {
+    if (ctx.answerCbQuery) {
+      await ctx.answerCbQuery("Только для супер-админов", { show_alert: true }).catch(() => {});
+    }
+    return ctx.reply("⛔️ Выгрузка базы доступна только супер-админам.");
+  }
+
+  if (ctx.answerCbQuery) {
+    await ctx.answerCbQuery().catch(() => {});
+  }
+
+  const waitMsg = await ctx.reply("⏳ Готовлю CSV с базой клиентов…");
+
+  try {
+    const buffer = await fetchUsersExportCsvBuffer(ctx.from?.id);
+    const stamp = new Date().toISOString().slice(0, 10);
+
+    await ctx.replyWithDocument(
+      Input.fromBuffer(buffer, `elfduck-users-${stamp}.csv`),
+      {
+        caption: "✅ Выгрузка базы клиентов (CSV, UTF-8)",
+      }
+    );
+  } catch (e) {
+    console.error("users_export error:", e);
+    await ctx.reply(`❌ Ошибка выгрузки: ${String(e?.message || e)}`);
+  } finally {
+    try {
+      await ctx.deleteMessage(waitMsg.message_id);
+    } catch {}
+  }
+}
+
+bot.action("users_export", handleUsersExport);
 
 bot.action("cashback_grant_start", async (ctx) => {
   try {

@@ -9979,6 +9979,31 @@ if (
   }
 );
 
+router.get(
+  "/customers/export",
+  async (req, res) => {
+    try {
+      const {
+        buildUsersExportRows,
+        sendUsersExportCsvResponse,
+      } = await import("../lib/usersExport.js");
+
+      const rows = await buildUsersExportRows();
+      return sendUsersExportCsvResponse(res, rows);
+    } catch (error) {
+      console.error(
+        "GET /crm/customers/export error:",
+        error
+      );
+
+      return res.status(500).json({
+        ok: false,
+        error: "USERS_EXPORT_FAILED",
+      });
+    }
+  }
+);
+
 router.patch(
   "/customers/:telegramId/favorite",
   requireCrmPushAdmin,

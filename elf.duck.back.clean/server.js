@@ -10459,6 +10459,36 @@ app.post("/admin/pickup-points", requireAdmin, async (req, res) => {
   }
 });
 
+app.get("/admin/users/export", requireAdmin, async (req, res) => {
+  try {
+    const actorTelegramId = String(
+      req.headers["x-admin-telegram-id"] || ""
+    ).trim();
+
+    if (
+      actorTelegramId &&
+      !isServerSuperAdminTelegramId(actorTelegramId)
+    ) {
+      return res.status(403).json({
+        ok: false,
+        error: "SUPER_ADMIN_REQUIRED",
+      });
+    }
+
+    const { buildUsersExportRows, sendUsersExportCsvResponse } =
+      await import("./lib/usersExport.js");
+
+    const rows = await buildUsersExportRows();
+    return sendUsersExportCsvResponse(res, rows);
+  } catch (e) {
+    console.error("GET /admin/users/export error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: e.message || "SERVER_ERROR",
+    });
+  }
+});
+
 app.post("/admin/users/cashback/grant-by-username", async (req, res) => {
   try {
     const token = String(req.headers["x-admin-token"] || "").trim();
