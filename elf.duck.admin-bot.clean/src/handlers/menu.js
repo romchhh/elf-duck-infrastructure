@@ -40,7 +40,7 @@ export const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : man
 const MAIN_MENU_TEXT_TO_CALLBACK = new Map([
   ["📦 Наличие", "fl_quick_start"],
   ["🍓 Вкусы / наличие", "fl_quick_start"],
-  ["💰 Кэшбек", "cashback_grant_start"],
+  ["💰 Кэшбек", "cashback_menu_start"],
   ["🎟 Промокоды", "promo_codes_menu"],
   ["🏪 Самовывоз", "pp_list"],
   ["➕ Категория", "cat_builder_start"],

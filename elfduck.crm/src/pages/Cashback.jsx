@@ -10,6 +10,8 @@ import {
 
 import {
   useQuery,
+  useQueryClient,
+  useMutation,
 } from '@tanstack/react-query';
 
 import DataTable from '@/components/shared/DataTable';
@@ -23,7 +25,9 @@ import {
 import {
   cn,
 } from '@/lib/utils';
-import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
+import { crmFetch, crmFetchJson, CRM_API_URL } from '@/lib/crmFetch';
+import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/use-toast';
 
 const PAGE_SIZE = 50;
 
@@ -119,6 +123,239 @@ function formatExpireDate(value) {
       ''
     )
     .replace('.', '');
+}
+
+const adjustErrorText = (code) => {
+  const key = String(code || '').trim();
+  const map = {
+    USERNAME_REQUIRED: 'Укажите Telegram username',
+    USER_NOT_FOUND: 'Пользователь не найден',
+    INVALID_CASHBACK_AMOUNT: 'Сумма должна быть больше 0',
+    INSUFFICIENT_CASHBACK_BALANCE: 'Недостаточно кэшбэка на балансе',
+    CASHBACK_LOOKUP_FAILED: 'Не удалось проверить баланс',
+    CASHBACK_GRANT_FAILED: 'Не удалось начислить кэшбэк',
+    CASHBACK_DEDUCT_FAILED: 'Не удалось списать кэшбэк',
+  };
+  return map[key] || key || 'Ошибка операции';
+};
+
+function normalizeAdjustUsername(raw) {
+  return String(raw || '').trim().replace(/^@+/, '');
+}
+
+function CashbackAdjustPanel({ onAdjusted }) {
+  const [mode, setMode] = useState('lookup');
+  const [username, setUsername] = useState('');
+  const [amountZl, setAmountZl] = useState('');
+  const [lookup, setLookup] = useState(null);
+
+  const lookupMutation = useMutation({
+    mutationFn: async () => {
+      const u = normalizeAdjustUsername(username);
+      if (!u) throw new Error('USERNAME_REQUIRED');
+      return crmFetchJson(
+        `/crm/cashback/user?username=${encodeURIComponent(u)}`
+      );
+    },
+    onSuccess: (data) => {
+      setLookup(data);
+      toast({
+        title: 'Баланс получен',
+        description: `${formatMoney(data?.cashbackBalance)} · @${data?.user?.username || ''}`,
+      });
+    },
+    onError: (error) => {
+      setLookup(null);
+      toast({
+        variant: 'destructive',
+        title: 'Ошибка',
+        description: adjustErrorText(error?.message),
+      });
+    },
+  });
+
+  const grantMutation = useMutation({
+    mutationFn: async () => {
+      const u = normalizeAdjustUsername(username);
+      const amount = Number(String(amountZl).replace(',', '.'));
+      if (!u) throw new Error('USERNAME_REQUIRED');
+      if (!(amount > 0)) throw new Error('INVALID_CASHBACK_AMOUNT');
+      return crmFetchJson('/crm/cashback/grant', {
+        method: 'POST',
+        body: JSON.stringify({ username: u, amountZl: amount }),
+      });
+    },
+    onSuccess: (data) => {
+      setLookup({
+        user: data?.user,
+        cashbackBalance: data?.cashbackBalance,
+        activeLots: [],
+      });
+      onAdjusted?.();
+      toast({
+        title: 'Кэшбэк начислен',
+        description: `Новый баланс: ${formatMoney(data?.cashbackBalance)}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Ошибка начисления',
+        description: adjustErrorText(error?.message),
+      });
+    },
+  });
+
+  const deductMutation = useMutation({
+    mutationFn: async () => {
+      const u = normalizeAdjustUsername(username);
+      const amount = Number(String(amountZl).replace(',', '.'));
+      if (!u) throw new Error('USERNAME_REQUIRED');
+      if (!(amount > 0)) throw new Error('INVALID_CASHBACK_AMOUNT');
+      return crmFetchJson('/crm/cashback/deduct', {
+        method: 'POST',
+        body: JSON.stringify({ username: u, amountZl: amount }),
+      });
+    },
+    onSuccess: (data) => {
+      setLookup({
+        user: data?.user,
+        cashbackBalance: data?.cashbackBalance,
+        activeLots: [],
+      });
+      onAdjusted?.();
+      toast({
+        title: 'Кэшбэк списан',
+        description: `Новый баланс: ${formatMoney(data?.cashbackBalance)}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Ошибка списания',
+        description: adjustErrorText(error?.message),
+      });
+    },
+  });
+
+  const busy =
+    lookupMutation.isPending ||
+    grantMutation.isPending ||
+    deductMutation.isPending;
+
+  const runPrimary = () => {
+    if (mode === 'lookup') lookupMutation.mutate();
+    else if (mode === 'grant') grantMutation.mutate();
+    else deductMutation.mutate();
+  };
+
+  const primaryLabel =
+    mode === 'lookup'
+      ? 'Проверить'
+      : mode === 'grant'
+        ? 'Начислить'
+        : 'Списать';
+
+  return (
+    <div className="rounded-2xl surface-card p-6 space-y-4">
+      <div>
+        <h3 className="font-heading text-[15px] font-semibold text-foreground">
+          Управление балансом клиента
+        </h3>
+        <p className="mt-0.5 text-[12px] text-muted-foreground">
+          Начисление, списание и проверка по Telegram @username (как в админ-боте)
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {[
+          { key: 'lookup', label: 'Проверить' },
+          { key: 'grant', label: 'Начислить' },
+          { key: 'deduct', label: 'Списать' },
+        ].map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => {
+              setMode(item.key);
+              setLookup(null);
+            }}
+            className={cn(
+              'rounded-lg border px-3 py-1.5 text-[12px] transition-colors',
+              mode === item.key
+                ? 'border-[hsl(255_100%_68%/0.5)] bg-[hsl(255_100%_68%/0.12)] text-foreground'
+                : 'border-border-soft text-muted-foreground hover:text-foreground'
+            )}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block space-y-1.5">
+          <span className="text-[11px] uppercase tracking-wider text-muted-2">
+            Username
+          </span>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="@username"
+            className="h-9 w-full rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] outline-none focus:border-[hsl(255_100%_68%/0.4)]"
+          />
+        </label>
+
+        {mode !== 'lookup' && (
+          <label className="block space-y-1.5">
+            <span className="text-[11px] uppercase tracking-wider text-muted-2">
+              Сумма, zł
+            </span>
+            <input
+              value={amountZl}
+              onChange={(e) => setAmountZl(e.target.value)}
+              placeholder="25"
+              inputMode="decimal"
+              className="h-9 w-full rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] outline-none focus:border-[hsl(255_100%_68%/0.4)]"
+            />
+          </label>
+        )}
+      </div>
+
+      <Button
+        type="button"
+        disabled={busy}
+        onClick={runPrimary}
+        className="bg-[hsl(255_100%_68%)] text-[hsl(232_30%_6%)] hover:bg-[hsl(255_100%_72%)]"
+      >
+        {busy ? 'Выполняется…' : primaryLabel}
+      </Button>
+
+      {lookup?.user && (
+        <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-4 text-[13px] space-y-1">
+          <div className="font-medium text-foreground">
+            {[lookup.user.firstName, lookup.user.lastName].filter(Boolean).join(' ') ||
+              '—'}
+          </div>
+          <div className="text-muted-foreground">
+            @{lookup.user.username || '—'} · ID {lookup.user.telegramId || '—'}
+          </div>
+          <div className="pt-2 text-[hsl(255_100%_72%)] font-semibold">
+            Баланс: {formatMoney(lookup.cashbackBalance)}
+          </div>
+          {Array.isArray(lookup.activeLots) && lookup.activeLots.length > 0 && (
+            <ul className="mt-2 space-y-1 text-[12px] text-muted-2">
+              {lookup.activeLots.slice(0, 6).map((row, i) => (
+                <li key={i}>
+                  {formatMoney(row.remainingZl)} · сгорит{' '}
+                  {formatExpireDate(row.expiresAt)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function CashbackMobileRow({ r }) {
@@ -221,6 +458,8 @@ function CashbackMobileRow({ r }) {
 }
 
 export default function Cashback() {
+  const queryClient = useQueryClient();
+
   const {
     period,
     range,
@@ -758,6 +997,14 @@ export default function Cashback() {
           )
         )}
       </div>
+
+      <CashbackAdjustPanel
+        onAdjusted={() => {
+          queryClient.invalidateQueries({
+            queryKey: ['crm-cashback'],
+          });
+        }}
+      />
 
       <div className="rounded-2xl surface-card p-6">
         <h3 className="font-heading text-[15px] font-semibold text-foreground">

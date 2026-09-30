@@ -24,7 +24,13 @@ import {
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
 import { defaultCashbackGrantData } from "./wizardState.js";
-import { askCashbackGrantStep } from "./cashback.js";
+import {
+  askCashbackGrantStep,
+  askCashbackDeductStep,
+  askCashbackLookupStep,
+  cashbackMenuKeyboard,
+  runCashbackLookup,
+} from "./cashback.js";
 import { mainMenu } from "./menu.js";
 
 // =====================================================
@@ -116,6 +122,26 @@ async function handleUsersExport(ctx) {
 
 bot.action("users_export", handleUsersExport);
 
+bot.action("cashback_menu_start", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+    return ctx.reply("💰 Кэшбек — выберите действие:", cashbackMenuKeyboard());
+  } catch (e) {
+    console.error("cashback_menu_start error:", e);
+  }
+});
+
+bot.action("cashback_menu_close", async (ctx) => {
+  try {
+    await ctx.answerCbQuery("Закрыто");
+    if (!isAdmin(ctx)) return;
+    return ctx.reply("Меню кэшбека закрыто.", mainMenu(ctx));
+  } catch (e) {
+    console.error("cashback_menu_close error:", e);
+  }
+});
+
 bot.action("cashback_grant_start", async (ctx) => {
   try {
     await ctx.answerCbQuery();
@@ -201,6 +227,125 @@ bot.action("cashback_grant_confirm", async (ctx) => {
   } catch (e) {
     console.error("cashback_grant_confirm error:", e);
     return ctx.reply(`❌ Ошибка начисления: ${e.message}`);
+  }
+});
+
+bot.action("cashback_deduct_start", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    setState(ctx.chat.id, {
+      mode: "cashback_deduct",
+      step: 0,
+      data: defaultCashbackGrantData(),
+    });
+
+    return askCashbackDeductStep(ctx);
+  } catch (e) {
+    console.error("cashback_deduct_start error:", e);
+  }
+});
+
+bot.action("cashback_deduct_back", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "cashback_deduct") return;
+
+    st.step = Math.max(0, Number(st.step || 0) - 1);
+    setState(ctx.chat.id, st);
+    return askCashbackDeductStep(ctx);
+  } catch (e) {
+    console.error("cashback_deduct_back error:", e);
+  }
+});
+
+bot.action("cashback_deduct_cancel", async (ctx) => {
+  try {
+    await ctx.answerCbQuery("Отменено");
+    if (!isAdmin(ctx)) return;
+
+    clearState(ctx.chat.id);
+    return ctx.reply("Списание кэшбека отменено.", mainMenu(ctx));
+  } catch (e) {
+    console.error("cashback_deduct_cancel error:", e);
+  }
+});
+
+bot.action("cashback_deduct_confirm", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    const st = getState(ctx.chat.id);
+    if (!st || st.mode !== "cashback_deduct") return;
+
+    const username = String(st.data?.username || "").trim().replace(/^@+/, "");
+    const amountZl = Number(st.data?.amountZl || 0);
+
+    if (!username) return ctx.reply("❌ Укажи username пользователя.");
+    if (!(amountZl > 0)) return ctx.reply("❌ Сумма должна быть больше 0.");
+
+    const result = await api("/admin/users/cashback/deduct-by-username", {
+      method: "POST",
+      body: JSON.stringify({
+        username,
+        amountZl,
+        grantedByTelegramId: String(ctx.from?.id || ""),
+        grantedByUsername: String(ctx.from?.username || ""),
+      }),
+    });
+
+    clearState(ctx.chat.id);
+
+    return ctx.reply(
+      [
+        "✅ Кэшбек списан",
+        `username: @${username}`,
+        `сумма: ${amountZl.toFixed(2)} zł`,
+        `новый баланс: ${Number(result?.cashbackBalance || 0).toFixed(2)} zł`,
+      ].join("\n"),
+      mainMenu(ctx)
+    );
+  } catch (e) {
+    console.error("cashback_deduct_confirm error:", e);
+    const msg = String(e?.message || e);
+    if (msg === "INSUFFICIENT_CASHBACK_BALANCE") {
+      return ctx.reply("❌ Недостаточно кэшбека на балансе пользователя.");
+    }
+    return ctx.reply(`❌ Ошибка списания: ${msg}`);
+  }
+});
+
+bot.action("cashback_lookup_start", async (ctx) => {
+  try {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx)) return;
+
+    setState(ctx.chat.id, {
+      mode: "cashback_lookup",
+      step: 0,
+      data: defaultCashbackGrantData(),
+    });
+
+    return askCashbackLookupStep(ctx);
+  } catch (e) {
+    console.error("cashback_lookup_start error:", e);
+  }
+});
+
+bot.action("cashback_lookup_cancel", async (ctx) => {
+  try {
+    await ctx.answerCbQuery("Отменено");
+    if (!isAdmin(ctx)) return;
+
+    clearState(ctx.chat.id);
+    return ctx.reply("Проверка баланса отменена.", mainMenu(ctx));
+  } catch (e) {
+    console.error("cashback_lookup_cancel error:", e);
   }
 });
 

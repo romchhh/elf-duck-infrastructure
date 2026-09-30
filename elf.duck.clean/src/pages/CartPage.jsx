@@ -5,6 +5,7 @@ import { useUser } from "../UserContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
 import { fetchProductsCached } from "../utils/productsApiCache";
+import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp";
@@ -162,9 +163,8 @@ const CartPage = () => {
 
   const getStockRow = (flavor, pickupPointId) => {
     if (!flavor || !pickupPointId) return null;
-    return (flavor.stockByPickupPoint || []).find(
-      (s) => String(s.pickupPointId) === String(pickupPointId)
-    ) || null;
+    const agg = getAggregatedStockForFlavor(flavor, pickupPointId, pickupPoints);
+    return { totalQty: agg.total, reservedQty: agg.reserved };
   };
 
   const calcAvailableQty = (row) => {
@@ -1026,6 +1026,13 @@ const CartPage = () => {
   const [cartHydrated, setCartHydrated] = useState(false);
 
   const isSavingCartRef = useRef(false);
+
+  const waitForCartSaveIdle = async (maxMs = 4000) => {
+    const started = Date.now();
+    while (isSavingCartRef.current && Date.now() - started < maxMs) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  };
 
   // ===== Checkout selection state (persisted in cart) =====
   // IMPORTANT: these must be declared BEFORE any useEffect that references them in dependency arrays
@@ -5849,23 +5856,24 @@ if (pointBlob.includes("srodmiescie")) {
                           }
                         }
 
-                        // 1) Не подтверждаем заказ, пока корзина ещё синхронизируется
-                        if (isSavingCartRef?.current) {
-                          showTelegramWarning(
-                            t("⏳ Подождите", "⏳ Poczekaj"),
-                            t("Корзина ещё синхронизируется. Попробуйте подтвердить заказ через секунду.", "Koszyk nadal się synchronizuje. Spróbuj potwierdzić zamówienie za chwilę.")
-                          );
-                          return;
-                        }
+                        // 1) Дожидаемся фонового PUT /cart (debounce), иначе reservedQty на бэке отстаёт
+                        await waitForCartSaveIdle();
 
-                        // 2) Локальная проверка наличия
+                        // 2) Свежие остатки перед локальной проверкой (устраняет ложные «нет на складе»)
+                        await refreshProducts();
+
                         const contextId = getStockContextIdFor({
                           type: deliveryType,
                           method: deliveryType === "delivery" ? deliveryMethod : null,
                           pickupPointId: deliveryType === "pickup" ? checkoutPickupPointId : null,
                         });
 
-                        const availability = checkCartAvailability(contextId);
+                        let availability = checkCartAvailability(contextId);
+                        if (!availability.ok) {
+                          await new Promise((resolve) => setTimeout(resolve, 350));
+                          await refreshProducts();
+                          availability = checkCartAvailability(contextId);
+                        }
 
                         if (!availability.ok) {
                           showTelegramWarning(

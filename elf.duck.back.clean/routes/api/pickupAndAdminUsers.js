@@ -1,5 +1,9 @@
 import crypto from "crypto";
 import { bindApiGlobals } from "./bindApiGlobals.js";
+import {
+  grantManualCashbackToUser,
+  deductManualCashbackFromUser,
+} from "../../lib/cashback/manualAdmin.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -98,6 +102,115 @@ app.get("/admin/users/export", requireAdmin, async (req, res) => {
       ok: false,
       error: e.message || "SERVER_ERROR",
     });
+  }
+});
+
+app.get("/admin/users/cashback/by-username", async (req, res) => {
+  try {
+    const token = String(req.headers["x-admin-token"] || "").trim();
+    if (!token || token !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    const username = String(req.query?.username || "")
+      .trim()
+      .replace(/^@+/, "");
+
+    if (!username) {
+      return res.status(400).json({ ok: false, error: "USERNAME_REQUIRED" });
+    }
+
+    const user = await User.findOne(
+      { username },
+      {
+        telegramId: 1,
+        username: 1,
+        firstName: 1,
+        lastName: 1,
+        cashbackBalance: 1,
+        cashbackLedger: 1,
+      }
+    ).lean();
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+    }
+
+    const ledger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
+    const activeLots = ledger.filter(
+      (row) => !row?.expiredAt && Number(row?.remainingZl || 0) > 0
+    );
+
+    return res.json({
+      ok: true,
+      user: {
+        telegramId: String(user.telegramId || ""),
+        username: String(user.username || ""),
+        firstName: String(user.firstName || ""),
+        lastName: String(user.lastName || ""),
+      },
+      cashbackBalance: Number(user.cashbackBalance || 0),
+      activeLotsCount: activeLots.length,
+      activeLots: activeLots.slice(0, 20).map((row) => ({
+        remainingZl: Number(row?.remainingZl || 0),
+        expiresAt: row?.expiresAt || null,
+        source: String(row?.source || ""),
+      })),
+    });
+  } catch (e) {
+    console.error("GET /admin/users/cashback/by-username error:", e);
+    return res.status(500).json({ ok: false, error: e.message || "SERVER_ERROR" });
+  }
+});
+
+app.post("/admin/users/cashback/deduct-by-username", async (req, res) => {
+  try {
+    const token = String(req.headers["x-admin-token"] || "").trim();
+    if (!token || token !== process.env.ADMIN_API_TOKEN) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    const usernameRaw = String(req.body?.username || "").trim();
+    const username = usernameRaw.replace(/^@+/, "").trim();
+    const amountZl = Number(req.body?.amountZl || 0);
+    const grantedByTelegramId = String(req.body?.grantedByTelegramId || "").trim();
+    const grantedByUsername = String(req.body?.grantedByUsername || "").trim();
+
+    if (!username) {
+      return res.status(400).json({ ok: false, error: "USERNAME_REQUIRED" });
+    }
+
+    if (!(amountZl > 0)) {
+      return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_AMOUNT" });
+    }
+
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+    }
+
+    const result = await deductManualCashbackFromUser(user, amountZl, {
+      grantedByTelegramId,
+      grantedByUsername,
+    });
+
+    return res.json({
+      ok: true,
+      user: {
+        telegramId: String(user.telegramId || ""),
+        username: String(user.username || ""),
+        firstName: String(user.firstName || ""),
+      },
+      cashbackBalance: Number(result.cashbackBalance || 0),
+      deductedAmountZl: Number(result.deductedAmountZl || 0),
+    });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    if (msg === "INSUFFICIENT_CASHBACK_BALANCE") {
+      return res.status(409).json({ ok: false, error: msg });
+    }
+    console.error("POST /admin/users/cashback/deduct-by-username error:", e);
+    return res.status(500).json({ ok: false, error: msg || "SERVER_ERROR" });
   }
 });
 

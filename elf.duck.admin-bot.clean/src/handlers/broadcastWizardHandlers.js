@@ -36,7 +36,13 @@ import {
   askCourierMessageStep,
   defaultCourierMessageData,
 } from "./wizardState.js";
-import { askCashbackGrantStep } from "./cashback.js";
+import {
+  askCashbackGrantStep,
+  askCashbackDeductStep,
+  runCashbackLookup,
+  CASHBACK_GRANT_STEPS,
+  CASHBACK_DEDUCT_STEPS,
+} from "./cashback.js";
 import { loadBroadcastTemplates, getBroadcastTemplateById } from "./broadcastTemplates.js";
 import {
   FL_BUILDER_STEPS,
@@ -504,6 +510,52 @@ bot.on("text", async (ctx) => {
         st.step = 2;
         setState(ctx.chat.id, st);
         return askCashbackGrantStep(ctx);
+      }
+    }
+
+    if (st?.mode === "cashback_deduct") {
+      const step = CASHBACK_DEDUCT_STEPS[st.step];
+      if (text.startsWith("/")) return;
+
+      if (step === "username") {
+        const username = text.replace(/^@+/, "").trim();
+        if (!username || username.includes(" ")) {
+          return ctx.reply("❌ Введи username в формате @username или username без пробелов.");
+        }
+
+        st.data.username = `@${username}`;
+        st.step = 1;
+        setState(ctx.chat.id, st);
+        return askCashbackDeductStep(ctx);
+      }
+
+      if (step === "amount") {
+        const normalized = text.replace(",", ".");
+        const amountZl = Number(normalized);
+        if (!Number.isFinite(amountZl) || amountZl <= 0) {
+          return ctx.reply("❌ Введи корректную сумму больше 0. Пример: 10 или 12.5");
+        }
+
+        st.data.amountZl = Number(amountZl.toFixed(2));
+        st.step = 2;
+        setState(ctx.chat.id, st);
+        return askCashbackDeductStep(ctx);
+      }
+    }
+
+    if (st?.mode === "cashback_lookup") {
+      if (text.startsWith("/")) return;
+
+      const username = text.replace(/^@+/, "").trim();
+      if (!username || username.includes(" ")) {
+        return ctx.reply("❌ Введи username в формате @username или username без пробелов.");
+      }
+
+      clearState(ctx.chat.id);
+      try {
+        return await runCashbackLookup(ctx, username);
+      } catch (e) {
+        return ctx.reply(`❌ Ошибка: ${e.message}`, mainMenu(ctx));
       }
     }
 

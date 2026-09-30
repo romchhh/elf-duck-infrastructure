@@ -545,6 +545,28 @@ body {
   justify-content: center;
 }
 
+.catalogSearchWrap {
+  width: 75%;
+  margin: 10px auto 4px auto;
+}
+
+.catalogSearchInput {
+  width: 100%;
+  box-sizing: border-box;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  font-size: 14px;
+  outline: none;
+}
+
+.catalogSearchInput::placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
 .catalogButton {
   flex: 1; /* 🔥 обе кнопки одинаковой ширины */
 

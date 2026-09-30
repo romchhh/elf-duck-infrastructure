@@ -7,6 +7,7 @@ import { haptic } from "../utils/haptics";
 import { preloadImage, preloadImages } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
+import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
 
 
@@ -1559,6 +1560,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
   const initialCatalogView = location.state?.openCatalogView === "all" ? "all" : "categories";
   const [catalogView, setCatalogView] = useState(initialCatalogView);
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState("");
   const [activeCategoryFilter, setActiveCategoryFilter] = useState(
     initialCategoryFilter?.key ? initialCategoryFilter : null
   );
@@ -1807,26 +1809,7 @@ const headerPingConfig = headerPingFlags.cart
   const addCurrentOrderToCart = async () => {
     if (addToCartSubmitting) return;
     if (!activeProduct) return;
-
-    const linesToAdd = orderFlavors.length
-      ? orderFlavors
-      : selectedFlavor
-        ? [{ flavor: selectedFlavor, qty: 1 }]
-        : (() => {
-            const fallbackFlavor = pickFirstInStockFlavor();
-            return fallbackFlavor ? [{ flavor: fallbackFlavor, qty: 1 }] : [];
-          })();
-
-    if (!linesToAdd.length) {
-      haptic.heavy();
-      showTgAlert(
-        t(
-          "Выберите вкус или проверьте наличие на выбранном способе получения.",
-          "Wybierz smak lub sprawdź dostępność dla wybranego sposobu odbioru."
-        )
-      );
-      return;
-    }
+    if (!orderFlavors.length) return;
 
     setAddToCartSubmitting(true);
 
@@ -1835,20 +1818,16 @@ const headerPingConfig = headerPingFlags.cart
         haptic.heavy();
         showTgAlert(
           t(
-            "Сейчас нет доступного склада для этого способа получения.",
-            "Brak dostępnego magazynu dla tego sposobu odbioru."
+            "Сначала выберите точку самовывоза или склад доставки.",
+            "Najpierw wybierz punkt odbioru lub magazyn dostawy."
           )
         );
         return;
       }
 
-      if (deliveryType === "pickup" && resolvedPickupPoint && !pickupPoint) {
-        setPickupPoint(resolvedPickupPoint);
-      }
-
       if (deliveryType === "pickup") {
         const todayKey = getWarsawDateKey();
-        const selectedPickupPoint = resolvedPickupPoint || null;
+        const selectedPickupPoint = pickupPoint || null;
         const todaySchedule = selectedPickupPoint?.scheduleByDate?.[todayKey] || null;
 
         if (!todaySchedule || todaySchedule?.isOpen !== true) {
@@ -1878,7 +1857,7 @@ const headerPingConfig = headerPingFlags.cart
       }
 
       const shortages = [];
-      for (const row of linesToAdd) {
+      for (const row of orderFlavors) {
         const fl = row?.flavor;
         if (!fl) continue;
 
@@ -1926,8 +1905,8 @@ const headerPingConfig = headerPingFlags.cart
           ? String(cart.checkoutPickupPointId)
           : null;
 
-        const currentPickupId = resolvedPickupPoint?._id
-          ? String(resolvedPickupPoint._id)
+        const currentPickupId = pickupPoint?._id
+          ? String(pickupPoint._id)
           : null;
 
         const typeChanged = deliveryType !== lockedType;
@@ -1953,7 +1932,7 @@ const headerPingConfig = headerPingFlags.cart
         }
       }
 
-      const selectedPickupPointId = resolvedPickupPoint?._id || null;
+      const selectedPickupPointId = pickupPoint?._id || null;
       const cartPickupPointId = cart?.checkoutPickupPointId || null;
 
       const nextCheckoutDeliveryType = hasExistingItems
@@ -1976,7 +1955,7 @@ const headerPingConfig = headerPingFlags.cart
 
       const prodKey = String(activeProduct.productKey || "");
 
-      const newItems = linesToAdd.map(({ flavor, qty }) => {
+      const newItems = orderFlavors.map(({ flavor, qty }) => {
         const flavorKey = String(flavor?.flavorKey || "");
         return {
           productKey: prodKey,
@@ -2333,16 +2312,18 @@ navigate("/cart");
   //   );
   // };
 
-  const commitFlavorToOrder = async (flavor) => {
+  const addSelectedFlavorToOrder = async () => {
     haptic.light();
-    if (!flavor) return;
+    if (!selectedFlavor) return;
+
+    const flavor = selectedFlavor;
 
     if (!stockContextId) {
       haptic.heavy();
       showTgAlert(
         t(
-          "Сейчас нет доступного склада для проверки наличия.",
-          "Brak dostępnego magazynu do sprawdzenia stanu."
+          "Сначала выберите точку самовывоза или способ доставки.",
+          "Najpierw wybierz punkt odbioru lub sposób dostawy."
         )
       );
       return;
@@ -2889,57 +2870,22 @@ navigate("/cart");
   const courierWarehouse = pickupPoints.find((p) => normKey(p?.key) === "delivery");
   const inpostWarehouse  = pickupPoints.find((p) => normKey(p?.key) === "delivery-2");
 
-  const defaultPickupPoint =
-    visiblePickupPoints.find((p) => p?.isActive !== false) ||
-    visiblePickupPoints[0] ||
-    null;
-
-  const resolvedPickupPoint =
-    deliveryType === "pickup"
-      ? pickupPoint || defaultPickupPoint
-      : null;
-
-  // Контекст склада: для самовывоза не требуем явного клика по точке — берём выбранную или первую доступную
   const stockContextId =
     deliveryType === "pickup"
-      ? resolvedPickupPoint?._id
+      ? pickupPoint?._id
       : deliveryMethod === "inpost"
         ? inpostWarehouse?._id
         : courierWarehouse?._id;
 
   // ================= STOCK HELPERS (context-aware availability) =================
-  const getStockRowForContext = (flavor, contextId) => {
-    if (!contextId) return null;
-    const rows = Array.isArray(flavor?.stockByPickupPoint) ? flavor.stockByPickupPoint : [];
-    return rows.find((s) => String(s.pickupPointId) === String(contextId)) || null;
-  };
-
   const getAvailableQtyForContext = (flavor, contextId) => {
-    const row = getStockRowForContext(flavor, contextId);
-    if (!row) return 0;
-    const total = Number(row?.totalQty || 0);
-    const reserved = Number(row?.reservedQty || 0);
-    return Math.max(0, total - reserved);
+    if (!contextId) return 0;
+    const agg = getAggregatedStockForFlavor(flavor, contextId, pickupPoints);
+    return agg.available;
   };
 
   const getActiveProductFlavors = () =>
     (activeProduct?.flavors || []).filter((flavor) => flavor?.isActive !== false);
-
-  const pickFirstInStockFlavor = () => {
-    if (!stockContextId) return null;
-
-    return (
-      getActiveProductFlavors().find(
-        (flavor) => getAvailableQtyForContext(flavor, stockContextId) > 0
-      ) || null
-    );
-  };
-
-  const hasSelectableFlavor = Boolean(
-    orderFlavors.length ||
-      selectedFlavor ||
-      pickFirstInStockFlavor()
-  );
 
   const showTgAlert = (text) => {
     try {
@@ -3022,6 +2968,28 @@ navigate("/cart");
     )
   : products;
 
+  const catalogSearchNorm = String(catalogSearchQuery || "").trim().toLowerCase();
+
+  const displayedProducts = useMemo(() => {
+    if (!catalogSearchNorm) return visibleProducts;
+
+    const productMatchesQuery = (p) => {
+      const titleBits = [p?.title1, p?.title2, p?.titleModal, p?.productKey]
+        .map((s) => String(s || "").trim().toLowerCase())
+        .filter(Boolean);
+
+      if (titleBits.some((t) => t.includes(catalogSearchNorm))) return true;
+
+      return (Array.isArray(p?.flavors) ? p.flavors : []).some((f) => {
+        const label = String(f?.label || "").trim().toLowerCase();
+        const key = String(f?.flavorKey || "").trim().toLowerCase();
+        return label.includes(catalogSearchNorm) || key.includes(catalogSearchNorm);
+      });
+    };
+
+    return products.filter(productMatchesQuery);
+  }, [catalogSearchNorm, visibleProducts, products]);
+
   // ✅ Prefill типа/метода/точки из корзины (то есть из "первого товара")
   useEffect(() => {
     (async () => {
@@ -3068,22 +3036,6 @@ navigate("/cart");
       }
     })();
   }, [isCheckoutOpen, pickupPoints]);
-
-  useEffect(() => {
-    if (!isCheckoutOpen || deliveryType !== "pickup" || pickupPoint) return;
-    if (!defaultPickupPoint) return;
-    setPickupPoint(defaultPickupPoint);
-  }, [isCheckoutOpen, deliveryType, pickupPoint, defaultPickupPoint]);
-
-  useEffect(() => {
-    if (!isCheckoutOpen || !activeProduct) return;
-    if (selectedFlavor || orderFlavors.length) return;
-
-    const flavors = getActiveProductFlavors();
-    if (flavors.length !== 1) return;
-
-    setSelectedFlavor(flavors[0]);
-  }, [isCheckoutOpen, activeProduct, selectedFlavor, orderFlavors.length]);
 
   /* ================= SIDE MENU STATE ================= */
 
@@ -4039,6 +3991,23 @@ navigate("/cart");
             </button>
           </div>
 
+          <div className={`catalogSearchWrap reveal delay-4 ${mounted ? "visible" : ""}`}>
+            <input
+              type="search"
+              className="catalogSearchInput"
+              value={catalogSearchQuery}
+              onChange={(e) => {
+                const v = e.target.value;
+                setCatalogSearchQuery(v);
+                if (String(v || "").trim() && catalogView !== "all") {
+                  switchCatalog("all");
+                }
+              }}
+              placeholder={t("Поиск модели или вкуса…", "Szukaj modelu lub smaku…")}
+              aria-label={t("Поиск", "Szukaj")}
+            />
+          </div>
+
           <div className="catalogContent">
             {!catalogReady && (categoriesLoading || productsLoading) && (
               <div className="loadingSpinner">
@@ -4122,7 +4091,12 @@ navigate("/cart");
                 key={`${catalogView}__${activeCategoryFilter?.key || "all"}`}
                 className={`categoriesGrid productsGrid ${!initialEnterPlayed ? "initial-enter" : ""}`}
               >
-                {visibleProducts.map((product, idx) => (
+                {displayedProducts.length === 0 && catalogSearchNorm && (
+                  <p className="catalogEmptyHint" role="status">
+                    {t("Ничего не найдено. Попробуйте другое название или вкус.", "Nic nie znaleziono. Spróbuj innej nazwy lub smaku.")}
+                  </p>
+                )}
+                {displayedProducts.map((product, idx) => (
                   <MainPageProductCard
                     key={product._id}
                     product={product}
@@ -4430,6 +4404,74 @@ navigate("/cart");
                           </div>
                         </div>
 
+                        {deliveryType === "pickup" && (
+                          <>
+                            <button
+                              type="button"
+                              className={`checkoutSelect pickup ${isPickupOpen ? "open" : ""}`}
+                              onClick={() => {
+                                haptic.light();
+                                setIsPickupOpen(v => !v);
+                              }}
+                            >
+                              <div className="checkoutSelectLeft">
+                                <img
+                                  className="checkoutSelectIcon"
+                                  src={pickupIcon}
+                                  alt=""
+                                />
+                                <span className="checkoutSelectText">
+                                  {pickupPoint
+                                    ? (pickupPoint.address || t("Без адреса", "Bez adresu"))
+                                    : t("Выбрать точку самовывоза", "Wybierz punkt odbioru")}
+                                </span>
+                              </div>
+
+                              <span className={`checkoutSelectCaret ${isPickupOpen ? "up" : ""}`} />
+                            </button>
+
+                        {isPickupOpen && (
+                          <div className="pickupDropdown">
+                            {visiblePickupPoints.map((point) => {
+                              const isPointActive = point.isActive !== false;
+                              const available = isPointActive;
+                              const label = point.address || t("Без адреса", "Bez adresu");
+                              const isSelected =
+                                pickupPoint &&
+                                String(pickupPoint._id) === String(point._id);
+
+                              return (
+                                <div
+                                  key={point._id}
+                                  className={`pickupItem ${!available ? "disabled" : ""}`}
+                                  onClick={() => {
+                                    if (!available) return;
+                                    haptic.light();
+                                    setPickupPoint(point);
+                                    setIsPickupOpen(false);
+                                  }}
+                                >
+                                  <span className="pickupLabel">{label}</span>
+
+                                  <button
+                                    type="button"
+                                    className={`pickupAction ${!available ? "disabled" : ""} ${isSelected ? "selected" : ""}`}
+                                    disabled={!available}
+                                  >
+                                    {!available
+                                      ? t("нет в наличии", "brak w magazynie")
+                                      : isSelected
+                                        ? t("выбран", "wybrano")
+                                        : t("выбрать", "wybierz")}
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        </>
+                        )}
+
                         <button
                           type="button"
                           className={`checkoutSelect ${isFlavorOpen ? "open" : ""}`}
@@ -4474,127 +4516,87 @@ navigate("/cart");
 
                         {isFlavorOpen && (
                           <div className="flavorDropdown">
-                            {getActiveProductFlavors().map((flavor) => {
-                              const fid = getFlavorId(flavor);
-                              const isOutOfStock = stockContextId
-                                ? isFlavorOutOfStockForCurrentContext(flavor)
-                                : false;
-                              const flavorLabelText = flavor.label;
-                              const inOrder = orderFlavors.some(
-                                (row) => getFlavorId(row?.flavor) === fid
-                              );
-
-                              return (
-                                <div
-                                  key={fid}
-                                  className={`flavorItem ${isOutOfStock ? "flavorOptionDisabled" : ""}`}
-                                  onClick={() => {
-                                    if (isOutOfStock) return;
-                                    setIsFlavorOpen(false);
-                                    commitFlavorToOrder(flavor);
-                                  }}
-                                >
-                                  <div className="flavorLeft">
-                                    <span
-                                      className="flavorBar"
-                                      style={{
-                                        background: `linear-gradient(
-                                          180deg,
-                                          ${flavor.gradient?.[0] || "#000"} 0%,
-                                          ${flavor.gradient?.[1] || "#000"} 100%
-                                        )`,
-                                      }}
-                                    />
-
-                                    <span className="flavorLabel">{flavorLabelText}</span>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    className={`flavorAction ${
-                                      inOrder ? "selected" : ""
-                                    } ${isOutOfStock ? "disabled" : ""}`}
-                                    disabled={isOutOfStock}
-                                  >
-                                    {isOutOfStock
-                                      ? t("нет в наличии", "brak w magazynie")
-                                      : inOrder
-                                        ? t("добавлен", "dodano")
-                                        : t("добавить", "dodaj")}
-                                  </button>
+                            {!stockContextId ? (
+                              <div className="flavorItem disabled">
+                                <div className="flavorLeft">
+                                  <span className="flavorLabel">
+                                    {deliveryType === "pickup"
+                                      ? t(
+                                          "Сначала выберите точку самовывоза!",
+                                          "Najpierw wybierz punkt odbioru!"
+                                        )
+                                      : t(
+                                          "Сначала выберите способ доставки!",
+                                          "Najpierw wybierz sposób dostawy!"
+                                        )}
+                                  </span>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {deliveryType === "pickup" && (
-                          <>
-                            <button
-                              type="button"
-                              className={`checkoutSelect pickup ${isPickupOpen ? "open" : ""}`}
-                              onClick={() => {
-                                haptic.light();
-                                setIsPickupOpen(v => !v);
-                              }}
-                            >
-                              <div className="checkoutSelectLeft">
-                                <img
-                                  className="checkoutSelectIcon"
-                                  src={pickupIcon}
-                                  alt=""
-                                />
-                                <span className="checkoutSelectText">
-                                  {resolvedPickupPoint
-                                    ? (resolvedPickupPoint.address || t("Без адреса", "Bez adresu"))
-                                    : t("Точка самовывоза", "Punkt odbioru")}
-                                </span>
                               </div>
+                            ) : (
+                              getActiveProductFlavors().map((flavor) => {
+                                const fid = getFlavorId(flavor);
+                                const isOutOfStock =
+                                  isFlavorOutOfStockForCurrentContext(flavor);
+                                const flavorLabelText = flavor.label;
 
-                              <span className={`checkoutSelectCaret ${isPickupOpen ? "up" : ""}`} />
-                            </button>
-
-                        {isPickupOpen && (
-                          <div className="pickupDropdown">
-                            {visiblePickupPoints.map((point) => {
-                              const isPointActive = point.isActive !== false;
-                              const available = isPointActive;
-                              const label = point.address || t("Без адреса", "Bez adresu");
-                              const isSelected =
-                                resolvedPickupPoint &&
-                                String(resolvedPickupPoint._id) === String(point._id);
-
-                              return (
-                                <div
-                                  key={point._id}
-                                  className={`pickupItem ${!available ? "disabled" : ""}`}
-                                  onClick={() => {
-                                    if (!available) return;
-                                    haptic.light();
-                                    setPickupPoint(point);
-                                    setIsPickupOpen(false);
-                                  }}
-                                >
-                                  <span className="pickupLabel">{label}</span>
-
-                                  <button
-                                    type="button"
-                                    className={`pickupAction ${!available ? "disabled" : ""} ${isSelected ? "selected" : ""}`}
-                                    disabled={!available}
+                                return (
+                                  <div
+                                    key={fid}
+                                    className={`flavorItem ${isOutOfStock ? "flavorOptionDisabled" : ""}`}
+                                    onClick={() => {
+                                      haptic.light();
+                                      if (isOutOfStock) return;
+                                      setSelectedFlavor(flavor);
+                                      setIsFlavorOpen(false);
+                                    }}
                                   >
-                                    {!available
-                                      ? t("нет в наличии", "brak w magazynie")
-                                      : isSelected
-                                        ? t("выбран", "wybrano")
-                                        : t("выбрать", "wybierz")}
-                                  </button>
-                                </div>
-                              );
-                            })}
+                                    <div className="flavorLeft">
+                                      <span
+                                        className="flavorBar"
+                                        style={{
+                                          background: `linear-gradient(
+                                            180deg,
+                                            ${flavor.gradient?.[0] || "#000"} 0%,
+                                            ${flavor.gradient?.[1] || "#000"} 100%
+                                          )`,
+                                        }}
+                                      />
+
+                                      <span className="flavorLabel">{flavorLabelText}</span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      className={`flavorAction ${
+                                        getFlavorId(selectedFlavor) === fid ? "selected" : ""
+                                      } ${isOutOfStock ? "disabled" : ""}`}
+                                      disabled={isOutOfStock}
+                                    >
+                                      {isOutOfStock
+                                        ? t("нет в наличии", "brak w magazynie")
+                                        : getFlavorId(selectedFlavor) === fid
+                                          ? t("выбран", "wybrano")
+                                          : t("выбрать", "wybierz")}
+                                    </button>
+                                  </div>
+                                );
+                              })
+                            )}
                           </div>
                         )}
-                        </>
-                        )}
+
+                        <button
+                          type="button"
+                          className={`checkoutActionBtn ${selectedFlavor ? "active" : ""}`}
+                          disabled={!selectedFlavor}
+                          onClick={addSelectedFlavorToOrder}
+                        >
+                          {isCartridgeProduct(activeProduct)
+                            ? t("ДОБАВИТЬ КАРТРИДЖ", "DODAJ KARTRIDŻ")
+                            : isPodProduct(activeProduct)
+                              ? t("ДОБАВИТЬ ЦВЕТ", "DODAJ KOLOR")
+                              : t("ДОБАВИТЬ ВКУС", "DODAJ SMAK")}
+                        </button>
 
                         {orderFlavors.length > 0 && (
                           <div className="addedFlavorsList">
@@ -4629,14 +4631,20 @@ navigate("/cart");
 
                         <button
                           type="button"
-                          className={`checkoutActionBtn ${hasSelectableFlavor ? "active" : ""} ${addToCartSubmitting ? "submitting" : ""} pressableScale`}
-                          disabled={!hasSelectableFlavor || addToCartSubmitting}
+                          className={`checkoutActionBtn ${orderFlavors.length > 0 ? "active" : ""} ${addToCartSubmitting ? "submitting" : ""} pressableScale`}
+                          disabled={orderFlavors.length === 0 || addToCartSubmitting}
                           onClick={() => {
                             haptic.light();
                             addCurrentOrderToCart();
                           }}
                         >
-                          {addToCartButtonText}
+                          {addToCartSubmitting
+                            ? t("ДОБАВЛЕНИЕ...", "DODAWANIE...")
+                            : isCartridgeProduct(activeProduct)
+                              ? t("ДОБАВИТЬ КАРТРИДЖ В КОРЗИНУ", "DODAJ KARTRIDŻ DO KOSZYKA")
+                              : isPodProduct(activeProduct)
+                                ? t("ДОБАВИТЬ ЦВЕТ В КОРЗИНУ", "DODAJ KOLOR DO KOSZYKA")
+                                : t("ДОБАВИТЬ ЗАКАЗ В КОРЗИНУ", "DODAJ ZAMÓWIENIE DO KOSZYKA")}
                           </button>
                           </div>
 

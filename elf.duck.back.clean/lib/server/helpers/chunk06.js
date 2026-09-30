@@ -393,54 +393,17 @@ export function daysUntilDate(dateLike) {
   return Math.ceil(ms / (24 * 60 * 60 * 1000));
 }
 
-export function recalcUserCashbackBalanceFromLedger(user) {
-  const ledger = Array.isArray(user?.cashbackLedger) ? user.cashbackLedger : [];
-  const total = ledger.reduce((sum, row) => {
-    if (row?.expiredAt) return sum;
-    return sum + Math.max(0, Number(row?.remainingZl || 0));
-  }, 0);
+import {
+  recalcUserCashbackBalanceFromLedger,
+  grantManualCashbackToUser,
+  deductManualCashbackFromUser,
+} from "../../cashback/manualAdmin.js";
 
-  user.cashbackBalance = Number(total.toFixed(2));
-  return user.cashbackBalance;
-}
-
-export async function grantManualCashbackToUser(user, amountZl, meta = {}) {
-  if (!user) throw new Error("USER_NOT_FOUND");
-
-  const safeAmount = Number(amountZl || 0);
-  if (!(safeAmount > 0)) {
-    throw new Error("INVALID_CASHBACK_AMOUNT");
-  }
-
-  user.cashbackLedger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
-
-  const now = new Date();
-  const expiresAt = addDays(now, 30);
-
-  user.cashbackLedger.push({
-    source: "manual_admin_grant",
-    amountZl: Number(safeAmount.toFixed(2)),
-    remainingZl: Number(safeAmount.toFixed(2)),
-    earnedAt: now,
-    expiresAt,
-    orderId: null,
-    // note: String(meta?.note || "").trim(),
-    grantedByTelegramId: String(meta?.grantedByTelegramId || "").trim(),
-    grantedByUsername: String(meta?.grantedByUsername || "").trim(),
-    warnedAt: null,
-    expiredAt: null,
-    expiredAmountZl: 0,
-  });
-
-  recalcUserCashbackBalanceFromLedger(user);
-  await user.save();
-
-  return {
-    cashbackBalance: Number(user.cashbackBalance || 0),
-    grantedAmountZl: Number(safeAmount.toFixed(2)),
-    expiresAt,
-  };
-}
+export {
+  recalcUserCashbackBalanceFromLedger,
+  grantManualCashbackToUser,
+  deductManualCashbackFromUser,
+};
 
 export async function sendCashbackExpiringSoonNotification(user, expiringRows) {
   try {
