@@ -32,6 +32,7 @@ import { setCrmSessionToken } from '@/lib/crmSession';
 
 const statusFilters = [
   { key: 'all', label: 'Все' },
+  { key: 'favorites', label: 'Избранные' },
   { key: 'active', label: 'Активные' },
   { key: 'sleeping', label: 'Спящие' },
   { key: 'new', label: 'Новые' },

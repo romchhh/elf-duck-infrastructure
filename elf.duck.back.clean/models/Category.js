@@ -38,4 +38,6 @@ const categorySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+categorySchema.index({ isActive: 1, sortOrder: 1 });
+
 export default mongoose.model("Category", categorySchema);

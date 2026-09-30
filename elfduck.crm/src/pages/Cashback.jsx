@@ -426,10 +426,28 @@ export default function Cashback() {
         0
     );
 
+  const activeFilterLabel =
+    filters.find(
+      (f) => f.key === filter
+    )?.label || 'Все';
+
   const summary = [
+    ...(filter !== 'all'
+      ? [
+          {
+            label: 'Клиентов в выборке',
+            value: String(
+              summaryData.clients ??
+                total
+            ),
+          },
+        ]
+      : []),
     {
       label:
-        'Начислено',
+        filter === 'all'
+          ? 'Начислено'
+          : `Начислено (${activeFilterLabel})`,
 
       value:
         formatMoney(

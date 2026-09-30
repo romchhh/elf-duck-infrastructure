@@ -18,7 +18,14 @@ import ProductMobileRow from '@/components/shared/ProductMobileRow';
 import {
   usePeriod,
 } from '@/lib/PeriodContext';
+import { cn } from '@/lib/utils';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
+
+const productSegments = [
+  { key: 'all', label: 'Все' },
+  { key: 'bestsellers', label: 'Бестселлеры' },
+  { key: 'slow', label: 'Медленные' },
+];
 
 const PAGE_SIZE = 10;
 
@@ -113,6 +120,11 @@ export default function Products() {
     setPage,
   ] = useState(1);
 
+  const [
+    segment,
+    setSegment,
+  ] = useState('all');
+
   const baseQueryString =
     useMemo(
       () => {
@@ -183,6 +195,10 @@ export default function Products() {
           )
         );
 
+        if (segment !== 'all') {
+          params.set('segment', segment);
+        }
+
         return (
           params.toString()
         );
@@ -190,6 +206,7 @@ export default function Products() {
       [
         baseQueryString,
         page,
+        segment,
       ]
     );
 
@@ -199,6 +216,7 @@ export default function Products() {
     },
     [
       baseQueryString,
+      segment,
     ]
   );
 
@@ -303,63 +321,16 @@ export default function Products() {
 
   const summary = [
     {
-      label:
-        'выручка',
-
-      value:
-        formatMoney(
-          summaryData.revenue
-        ),
+      label: 'продано',
+      value: formatNumber(summaryData.sold),
     },
-
     {
-      label:
-        'продано',
-
-      value:
-        formatNumber(
-          summaryData.sold
-        ),
+      label: 'бестселлеры',
+      value: formatNumber(summaryData.bestsellers),
     },
-
     {
-      label:
-        'бестселлеры',
-
-      value:
-        formatNumber(
-          summaryData.bestsellers
-        ),
-    },
-
-    {
-      label:
-        'медленные',
-
-      value:
-        formatNumber(
-          summaryData.slow
-        ),
-    },
-
-    {
-      label:
-        'заканчиваются',
-
-      value:
-        formatNumber(
-          summaryData.ending
-        ),
-    },
-
-    {
-      label:
-        'стоимость остатков',
-
-      value:
-        formatMoney(
-          summaryData.stockValue
-        ),
+      label: 'медленные',
+      value: formatNumber(summaryData.slow),
     },
   ];
 
@@ -590,7 +561,7 @@ export default function Products() {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-4">
         {summary.map(
           (item) => (
             <KpiCard
@@ -606,6 +577,32 @@ export default function Products() {
             />
           )
         )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5 no-scrollbar">
+          {productSegments.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => {
+                setSegment(item.key);
+                setPage(1);
+              }}
+              className={cn(
+                'shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-medium transition-all',
+                segment === item.key
+                  ? 'bg-[hsl(255_100%_68%/0.14)] text-foreground shadow-[inset_0_0_0_1px_hsl(255_100%_68%/0.22)]'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-[12px] text-muted-2">
+          Найдено: {total}
+        </div>
       </div>
 
       <div className="rounded-2xl surface-card p-2">

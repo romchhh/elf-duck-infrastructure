@@ -4,7 +4,7 @@ import "../styles/CartPage.css";
 import { useUser } from "../UserContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
-import { preloadImages } from "../utils/preloadImage";
+import { fetchProductsCached } from "../utils/productsApiCache";
 
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp";
@@ -1001,9 +1001,7 @@ const CartPage = () => {
     productsRefreshInFlightRef.current = true;
 
     try {
-      const r = await fetch(`${API_URL}/products?active=0`);
-      const data = await r.json().catch(() => ({}));
-      const list = Array.isArray(data) ? data : (data.products || []);
+      const list = await fetchProductsCached(API_URL, { active: "0" });
 
       const map = {};
       for (const p of list) {
@@ -1026,25 +1024,6 @@ const CartPage = () => {
   // Prevent initial empty autosave before we hydrate cart from backend
   const cartHydratedRef = useRef(false);
   const [cartHydrated, setCartHydrated] = useState(false);
-
-  const preloadCartVisuals = (items, productsMap = productsByKey) => {
-    const sources = (Array.isArray(items) ? items : []).flatMap((item) => {
-      const productKey = String(item?.productKey || "").trim();
-      const product = productKey ? productsMap?.[productKey] || null : null;
-      const snapshot = item?.__snapshot || item?.snapshot || null;
-
-      return [
-        product?.cardBgUrl,
-        product?.cardDuckUrl,
-        product?.orderImgUrl,
-        snapshot?.cardBgUrl,
-        snapshot?.cardDuckUrl,
-        snapshot?.orderImgUrl,
-      ];
-    });
-
-    preloadImages(sources);
-  };
 
   const isSavingCartRef = useRef(false);
 
@@ -1498,13 +1477,6 @@ useEffect(() => {
   }, []);
 
   useEffect(() => {
-    if (isOrderDetailsMode) return;
-    if (!Array.isArray(cartItems) || cartItems.length === 0) return;
-
-    preloadCartVisuals(cartItems, productsByKey);
-  }, [cartItems, productsByKey, isOrderDetailsMode]);
-
-  useEffect(() => {
     setMounted(true);
   }, []);
 
@@ -1517,7 +1489,6 @@ useEffect(() => {
         const seededItems = Array.isArray(pending?.items) ? pending.items : null;
         if (seededItems) {
           setCartItems(seededItems);
-          preloadCartVisuals(seededItems);
           syncedCartQtyRef.current = sumCartQty(seededItems);
         }
         if (pending?.savePromise) {
@@ -1537,7 +1508,6 @@ useEffect(() => {
 
           const loadedItems = Array.isArray(cart?.items) ? cart.items : [];
           setCartItems(loadedItems);
-          preloadCartVisuals(loadedItems);
           setCourierAddress(String(cart?.courierAddress || ""));
           setDeliveryTimeWindow(String(cart?.deliveryTimeWindow || ""));
           setOrderComment(String(cart?.comment || "").slice(0, 500));
@@ -1587,7 +1557,6 @@ useEffect(() => {
       const seededItems = Array.isArray(pending?.items) ? pending.items : null;
       if (seededItems) {
         setCartItems(seededItems);
-        preloadCartVisuals(seededItems);
         syncedCartQtyRef.current = sumCartQty(seededItems);
         if (pending.checkoutPickupPointId !== null && pending.checkoutPickupPointId !== undefined) {
           setCheckoutPickupPointId(pending.checkoutPickupPointId || null);
@@ -1661,7 +1630,6 @@ useEffect(() => {
 
         const loadedItems = Array.isArray(cart?.items) ? cart.items : [];
         setCartItems(loadedItems);
-        preloadCartVisuals(loadedItems);
         setReferralFirstOrderDiscount(referralDiscount);
         setArrivalTime(cart?.arrivalTime || "");
         setOrderComment(String(cart?.comment || "").slice(0, 500));
@@ -4125,9 +4093,10 @@ if (pointBlob.includes("srodmiescie")) {
                 </div>
               ) : (
               <div className={`cartGrid reveal delay-4 ${mounted ? "visible" : ""}`}>
-                {renderItems.map((item) => {
+                {renderItems.map((item, cartVisualIndex) => {
                   const r = resolveProduct(item);
                   const isRight = String(r.classCardDuck || "").includes("Right");
+                  const priorityVisuals = cartVisualIndex < 4;
 
                   return (
                     <div
@@ -4145,8 +4114,8 @@ if (pointBlob.includes("srodmiescie")) {
                             className="cartCardBg"
                             src={r.cardBgUrl}
                             alt=""
-                            loading="eager"
-                            fetchpriority="high"
+                            loading={priorityVisuals ? "eager" : "lazy"}
+                            fetchpriority={priorityVisuals ? "high" : "low"}
                             decoding="async"
                           />
                         ) : null}
@@ -4157,8 +4126,8 @@ if (pointBlob.includes("srodmiescie")) {
                             data-side={isRight ? "right" : "left"}
                             src={r.cardDuckUrl}
                             alt=""
-                            loading="eager"
-                            fetchpriority="high"
+                            loading={priorityVisuals ? "eager" : "lazy"}
+                            fetchpriority={priorityVisuals ? "high" : "low"}
                             decoding="async"
                           />
                         ) : null}

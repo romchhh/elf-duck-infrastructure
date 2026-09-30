@@ -15,6 +15,7 @@ import {
   getGuestProfile,
 } from "./utils/guestLocalStore";
 import { isGuestShopping } from "./utils/shoppingSession";
+import { API_URL } from "./api.js";
 
 const UserContext = createContext(null);
 
@@ -78,16 +79,10 @@ useEffect(() => {
   setUser(optimisticUser);
   setUserLoading(false);
 
-  const apiBase = String(import.meta.env.VITE_API_URL || "").trim();
-  if (!apiBase) {
-    console.error("VITE_API_URL is not configured");
-    return;
-  }
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-  fetch(`${apiBase}/register-user`, {
+  fetch(`${API_URL}/register-user`, {
     method: "POST",
     signal: controller.signal,
     headers: {

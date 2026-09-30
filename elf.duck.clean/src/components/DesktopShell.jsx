@@ -12,6 +12,7 @@ import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
 import managerDuckIMG from "../assets/managerDuckIMG.webp";
 import categoriesIcon from "../assets/categoriesIcon.webp";
 import "../styles/desktop.css";
+import "../styles/desktopPages.css";
 
 function t(ru, pl) {
   return getCurrentLanguage() === "pl" ? pl : ru;
@@ -98,8 +99,8 @@ export default function DesktopShell({ children }) {
 
         <p className="desktopSidebarHint">
           {t(
-            "Полная версия для компьютера. В Telegram на телефоне всё как раньше.",
-            "Wersja na komputer. W Telegramie na telefonie bez zmian."
+            "ELF DUCK · desktop",
+            "ELF DUCK · desktop"
           )}
         </p>
       </aside>

@@ -1,0 +1,38 @@
+import express from "express";
+import authRouter from "./auth.js";
+import crmAuthMiddleware from "./middleware.js";
+import pushMediaRouter from "./pushMedia.js";
+import pushMetaRouter from "./pushMeta.js";
+import pushTemplatesRouter from "./pushTemplates.js";
+import pushSendRouter from "./pushSend.js";
+import pushCampaignsRouter from "./pushCampaigns.js";
+import ordersRouter from "./orders.js";
+import debugRouter from "./debug.js";
+import cashbackRouter from "./cashback.js";
+import locationsRouter from "./locations.js";
+import productsRouter from "./products.js";
+import partnersRouter from "./partners.js";
+import leadsRouter from "./leads.js";
+import customersRouter from "./customers.js";
+import dashboardRouter from "./dashboard.js";
+
+const router = express.Router();
+
+router.use(authRouter);
+router.use(crmAuthMiddleware);
+router.use(pushMediaRouter);
+router.use(pushMetaRouter);
+router.use(pushTemplatesRouter);
+router.use(pushSendRouter);
+router.use(pushCampaignsRouter);
+router.use(ordersRouter);
+router.use(debugRouter);
+router.use(cashbackRouter);
+router.use(locationsRouter);
+router.use(productsRouter);
+router.use(partnersRouter);
+router.use(leadsRouter);
+router.use(customersRouter);
+router.use(dashboardRouter);
+
+export default router;

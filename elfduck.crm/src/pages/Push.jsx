@@ -44,88 +44,20 @@ import {
   clearCrmSessionToken,
   setCrmSessionToken,
 } from '@/lib/crmSession';
+import {
+  buildPeriodQuery,
+  getPeriodPayload,
+} from '@/pages/push/pushPeriod';
+import {
+  Section,
+  Chip,
+  Field,
+} from '@/pages/push/pushFormUi';
 
 const TPL_PAGE_SIZE = 5;
 const CAMPAIGN_PAGE_SIZE = 10;
 
-const PERIOD_MAP = {
-  Сегодня: 'today',
-  Неделя: 'week',
-  Месяц: 'month',
-  '3 мес': '3m',
-  '3 месяца': '3m',
-  '6 мес': '6m',
-  '6 месяцев': '6m',
-  Всё: 'all',
-  'Все время': 'all',
-  'Всё время': 'all',
-};
-
 const crmFetch = crmFetchJson;
-
-function toDateOnly(value) {
-  const date = new Date(value);
-
-  const year =
-    date.getFullYear();
-
-  const month = String(
-    date.getMonth() + 1
-  ).padStart(2, '0');
-
-  const day = String(
-    date.getDate()
-  ).padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-}
-
-function getPeriodPayload(
-  period,
-  range
-) {
-  const standardPeriod =
-    PERIOD_MAP[
-      String(period || '')
-    ];
-
-  if (standardPeriod) {
-    return {
-      period: standardPeriod,
-    };
-  }
-
-  if (
-    range?.start &&
-    range?.end
-  ) {
-    return {
-      from: toDateOnly(
-        range.start
-      ),
-
-      to: toDateOnly(
-        range.end
-      ),
-    };
-  }
-
-  return {
-    period: 'month',
-  };
-}
-
-function buildPeriodQuery(
-  period,
-  range
-) {
-  return new URLSearchParams(
-    getPeriodPayload(
-      period,
-      range
-    )
-  ).toString();
-}
 
 function CampaignMobileRow({
   r,
@@ -295,6 +227,11 @@ export default function Push() {
     favProduct,
     setFavProduct,
   ] = useState('');
+
+  const [
+    cashbackExpiringSoon,
+    setCashbackExpiringSoon,
+  ] = useState(false);
 
   const [
     telegram,
@@ -669,6 +606,8 @@ onSuccess: (data) => {
             telegram ||
               ''
           ).trim(),
+
+        cashbackExpiringSoon,
       }),
 
       [
@@ -680,8 +619,12 @@ onSuccess: (data) => {
         minCashback,
         favProduct,
         telegram,
+        cashbackExpiringSoon,
       ]
     );
+
+  const audienceIsLeads =
+    audience === 'leads';
 
   const [
     debouncedAudiencePayload,
@@ -1267,6 +1210,8 @@ const deleteTemplate =
 
                     telegram:
                       telegram.trim(),
+
+                    cashbackExpiringSoon,
 
                     title:
                       title.trim(),
@@ -1854,8 +1799,22 @@ const confirmCreateTpl = () => {
               </div>
             </Section>
 
+            {audienceIsLeads && (
+              <p className="text-[12px] leading-relaxed text-muted-foreground">
+                Для аудитории «Лиды» доступны только базовые фильтры: у лидов нет
+                истории покупок, поэтому статус, категории и «любимый товар» не
+                применяются.
+              </p>
+            )}
+
             <Section label="Статус клиента">
-              <div className="flex flex-wrap gap-2">
+              <div
+                className={cn(
+                  'flex flex-wrap gap-2',
+                  audienceIsLeads &&
+                    'pointer-events-none opacity-40'
+                )}
+              >
                 {pushMeta
                   .statuses
                   .map(
@@ -1887,7 +1846,13 @@ const confirmCreateTpl = () => {
             </Section>
 
             <Section label="Категория">
-              <div className="flex flex-wrap gap-2">
+              <div
+                className={cn(
+                  'flex flex-wrap gap-2',
+                  audienceIsLeads &&
+                    'pointer-events-none opacity-40'
+                )}
+              >
                 {pushMeta
                   .categories
                   .map(
@@ -1951,6 +1916,19 @@ const confirmCreateTpl = () => {
             </Section>
 
             <Section label="Доп. фильтры">
+              <div className="mb-2 flex flex-wrap gap-2">
+                <Chip
+                  active={cashbackExpiringSoon}
+                  onClick={() =>
+                    setCashbackExpiringSoon(
+                      (value) => !value
+                    )
+                  }
+                >
+                  Кешбэк скоро сгорит
+                </Chip>
+              </div>
+
               <div className="grid grid-cols-2 gap-2">
                 <input
                   value={
@@ -1965,7 +1943,12 @@ const confirmCreateTpl = () => {
                     )
                   }
                   placeholder="Ср. чек >"
-                  className="input-base"
+                  className={cn(
+                    'input-base',
+                    audienceIsLeads &&
+                      'pointer-events-none opacity-40'
+                  )}
+                  disabled={audienceIsLeads}
                 />
 
                 <input
@@ -1997,7 +1980,13 @@ const confirmCreateTpl = () => {
                     )
                   }
                   placeholder="Любимый товар"
-                  className="input-base"
+                  title="Товар, который клиент купил больше всего штук за всю историю заказов"
+                  className={cn(
+                    'input-base col-span-2 sm:col-span-1',
+                    audienceIsLeads &&
+                      'pointer-events-none opacity-40'
+                  )}
+                  disabled={audienceIsLeads}
                 />
 
                 <input
@@ -2016,6 +2005,12 @@ const confirmCreateTpl = () => {
                   className="input-base"
                 />
               </div>
+
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                «Любимый товар» — позиция с максимальным количеством купленных
+                штук по всем успешным заказам клиента (при равенстве подходят
+                все такие товары).
+              </p>
             </Section>
           </div>
         </div>
@@ -2594,62 +2589,6 @@ const confirmCreateTpl = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function Section({
-  label,
-  children,
-}) {
-  return (
-    <div>
-      <div className="mb-2 text-[11px] uppercase tracking-wider text-muted-2">
-        {label}
-      </div>
-
-      {children}
-    </div>
-  );
-}
-
-function Chip({
-  active,
-  onClick,
-  children,
-}) {
-  return (
-    <button
-      type="button"
-      onClick={
-        onClick
-      }
-      className={cn(
-        'rounded-full border px-3 py-1 text-[12px] transition-all',
-
-        active
-          ? 'border-[hsl(255_100%_68%/0.4)] bg-[hsl(255_100%_68%/0.14)] text-foreground'
-          : 'border-border text-muted-foreground hover:text-foreground'
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Field({
-  label,
-  children,
-}) {
-  return (
-    <div>
-      <label className="text-[11px] uppercase tracking-wider text-muted-2">
-        {label}
-      </label>
-
-      <div className="mt-1.5">
-        {children}
-      </div>
     </div>
   );
 }

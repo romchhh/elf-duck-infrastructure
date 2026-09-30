@@ -77,6 +77,10 @@ services:
         required: false
     environment:
       API_URL: http://api:3000
+      ADMIN_BOT_TOKEN: ${ADMIN_BOT_TOKEN:-}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
+      ADMIN_IDS: ${ADMIN_IDS:-}
+      SUPER_ADMIN_IDS: ${SUPER_ADMIN_IDS:-}
     depends_on:
       - api
 

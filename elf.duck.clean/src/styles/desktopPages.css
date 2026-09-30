@@ -1,0 +1,312 @@
+/**
+ * Desktop layout for every route inside .desktopMainStage.
+ * Fixes 100dvh shells, hides burger menus, grids for catalog/orders/favorites.
+ */
+
+html.layout-desktop .desktopMainStage .Main_Window {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+html.layout-desktop .desktopMainStage .Main_Window,
+html.layout-desktop .desktopMainStage .Cart_Window,
+html.layout-desktop .desktopMainStage .Orders_Window,
+html.layout-desktop .desktopMainStage .Managers_Window,
+html.layout-desktop .desktopMainStage .Referral_Window {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+}
+
+html.layout-desktop .desktopMainStage .App,
+html.layout-desktop .desktopMainStage .CartApp,
+html.layout-desktop .desktopMainStage .ManagersApp,
+html.layout-desktop .desktopMainStage .ReferralApp,
+html.layout-desktop .desktopMainStage .PromoReferralApp {
+  width: 100%;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html.layout-desktop .desktopMainStage .mainHomePageContainer,
+html.layout-desktop .desktopMainStage .mainCartPageContainer,
+html.layout-desktop .desktopMainStage .mainReferralPageContainer,
+html.layout-desktop .desktopMainStage .mainRefferalPageContainer,
+html.layout-desktop .desktopMainStage .OrdersPageContainer {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100%;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+
+html.layout-desktop .desktopMainStage .scrollContent,
+html.layout-desktop .desktopMainStage .scrollCartContent,
+html.layout-desktop .desktopMainStage .scrollReferralContent,
+html.layout-desktop .desktopMainStage .ReferralScrollContent {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* MainPage: один скролл у scrollContent, не 100dvh (інакше каталог «порожній») */
+html.layout-desktop .desktopMainStage .mainHomePageContainer {
+  overflow: hidden !important;
+  overflow-y: hidden !important;
+}
+
+html.layout-desktop .desktopMainStage .mainHomePageContainer > .scrollContent {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+}
+
+html.layout-desktop .desktopMainStage .catalogContent {
+  flex: 0 0 auto;
+  min-height: min(60vh, 480px);
+  width: 100%;
+}
+
+html.layout-desktop .desktopMainStage .categoriesGrid.initial-enter > * {
+  opacity: 1;
+  transform: none;
+  animation: cardSlideUpIn 520ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+html.layout-desktop .desktopMainStage .headerContainer,
+html.layout-desktop .desktopMainStage .CartHeaderContainer,
+html.layout-desktop .desktopMainStage .ReferralHeaderContainer {
+  flex-shrink: 0;
+  height: 72px;
+  padding-left: 24px;
+  padding-right: 24px;
+  box-sizing: border-box;
+}
+
+/* Sidebar replaces drawer menu */
+html.layout-desktop .desktopMainStage .menuIcon,
+html.layout-desktop .desktopMainStage .CartMenuIcon,
+html.layout-desktop .desktopMainStage .ReferralMenuIcon {
+  display: none !important;
+}
+
+html.layout-desktop .desktopMainStage .ReferralHeaderLeft > .PromoHeaderButton:first-child {
+  display: none !important;
+}
+
+html.layout-desktop .desktopMainStage .headerLeft,
+html.layout-desktop .desktopMainStage .CartHeaderLeft,
+html.layout-desktop .desktopMainStage .ReferralHeaderLeft {
+  gap: 12px;
+}
+
+/* ——— Catalog (main) ——— */
+html.layout-desktop .desktopMainStage .mainHomePageContainer {
+  max-width: 1320px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+html.layout-desktop .categoriesGrid:not(.productsGrid) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 94%;
+  gap: 16px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+html.layout-desktop .categoriesGrid.productsGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  width: 94%;
+  gap: 16px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 1024px) {
+  html.layout-desktop .categoriesGrid:not(.productsGrid) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  html.layout-desktop .categoriesGrid.productsGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1440px) {
+  html.layout-desktop .categoriesGrid.productsGrid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+html.layout-desktop .desktopMainStage .bannerSection,
+html.layout-desktop .desktopMainStage .mainActiveOrderSection,
+html.layout-desktop .desktopMainStage .mainHeroLoadingSection {
+  max-width: 960px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 94%;
+}
+
+/* ——— Cart ——— */
+html.layout-desktop .desktopMainStage .mainCartPageContainer {
+  max-width: 1040px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+html.layout-desktop .desktopMainStage .cartPageContainer,
+html.layout-desktop .desktopMainStage .cartContentWrapper {
+  max-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+html.layout-desktop .desktopMainStage .footerBar {
+  position: sticky;
+  bottom: 0;
+  z-index: 120;
+  max-width: 1040px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* ——— Orders ——— */
+html.layout-desktop .desktopMainStage .OrdersPageContainer {
+  max-width: 1200px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+html.layout-desktop .desktopMainStage .ordersList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  width: 94%;
+  max-width: 100%;
+  align-self: center;
+}
+
+@media (min-width: 1280px) {
+  html.layout-desktop .desktopMainStage .ordersList {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ——— Favorites ——— */
+html.layout-desktop .desktopMainStage .favoritesCardsGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  width: 94%;
+  max-width: 1120px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 1280px) {
+  html.layout-desktop .desktopMainStage .favoritesCardsGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1440px) {
+  html.layout-desktop .desktopMainStage .favoritesCardsGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+/* ——— Referral & Promo ——— */
+html.layout-desktop .desktopMainStage .mainReferralPageContainer,
+html.layout-desktop .desktopMainStage .PromoReferralApp .Referral_Window {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+html.layout-desktop .desktopMainStage .refInviteCard,
+html.layout-desktop .desktopMainStage .PromoInviteCard {
+  max-width: 100%;
+}
+
+/* ——— Managers / support ——— */
+html.layout-desktop .desktopMainStage .Managers_Window .mainHomePageContainer {
+  max-width: 880px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+html.layout-desktop .desktopMainStage .managersList {
+  width: 94%;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ——— Overlays scoped to main stage ——— */
+html.layout-desktop .desktopMainStage .sideMenu,
+html.layout-desktop .desktopMainStage .sideMenuBackdrop {
+  position: absolute !important;
+  z-index: 3000;
+}
+
+html.layout-desktop .desktopMainStage .checkoutBackdrop,
+html.layout-desktop .desktopMainStage .paymentInputOverlay {
+  position: absolute !important;
+  inset: 0;
+  z-index: 2000;
+}
+
+html.layout-desktop .desktopMainStage .checkoutSheet {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  right: auto !important;
+  bottom: auto !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(560px, calc(100% - 40px)) !important;
+  border-radius: 24px !important;
+  max-height: min(88%, 900px) !important;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.55);
+}
+
+html.layout-desktop .desktopMainStage .paymentSheet.checkoutSheet {
+  top: 50% !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+/* Pointer-friendly */
+html.layout-desktop .desktopMainStage .categoryCard,
+html.layout-desktop .desktopMainStage .productCard,
+html.layout-desktop .desktopMainStage .orderCard,
+html.layout-desktop .desktopMainStage .cartItemRow,
+html.layout-desktop .desktopMainStage .favoriteAddCard {
+  cursor: pointer;
+}
+
+html.layout-desktop .desktopMainStage .categoryCard:hover,
+html.layout-desktop .desktopMainStage .productCard:hover {
+  transform: translateY(-2px);
+  transition: transform 0.2s ease;
+}

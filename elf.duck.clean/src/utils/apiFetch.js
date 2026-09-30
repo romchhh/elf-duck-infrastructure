@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL;
+import { API_URL } from "../api.js";
 
 export async function apiFetch(path, options = {}) {
   const initData = window?.Telegram?.WebApp?.initData || "";

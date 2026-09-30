@@ -162,7 +162,29 @@ const ReferralPage = () => {
         setInviteGenerating(true);
 
         const tg = window.Telegram?.WebApp;
-    const refCode = user?.referral?.code || user?.id || "";
+
+        let status = referralStatus;
+        if (!status?.inviteDeepLink) {
+            try {
+                const fresh = await apiFetch(`/referral/status`);
+                status = fresh?.referralStatus || status;
+                if (status) setReferralStatus(status);
+            } catch (e) {
+                console.warn("referral status refresh before invite", e);
+            }
+        }
+
+    const refCode =
+      status?.code ||
+      user?.referral?.code ||
+      user?.id ||
+      "";
+
+    const deepLink =
+      status?.inviteDeepLink ||
+      (status?.shopBotUsername && refCode
+        ? `https://t.me/${status.shopBotUsername}?startapp=${encodeURIComponent(`ref_${refCode}`)}`
+        : "");
 
     // 1) Пытаемся сделать prepared share (как Gorilla Case)
     if (tg?.shareMessage) {
@@ -196,8 +218,19 @@ const ReferralPage = () => {
         }
     }
 
-    // 2) fallback: всегда откроется обычный share-url, если prepared share не сработал
-    const deepLink = `https://t.me/elfduck_shop_bot?startapp=${encodeURIComponent(`ref_${refCode}`)}`;
+    // 2) fallback: share-url (бот = тот, з якого відкрили mini app)
+    if (!deepLink) {
+        showPopupMessage(
+            t("Приглашение", "Zaproszenie"),
+            t(
+                "Не удалось построить ссылку. Откройте магазин через Telegram-бота и попробуйте снова.",
+                "Nie udało się utworzyć linku. Otwórz sklep przez bota Telegram i spróbuj ponownie."
+            )
+        );
+        setInviteGenerating(false);
+        return;
+    }
+
     const text = `🦆 ELF DUCK\n${t("Залетай по моей ссылке и получи бонус 👇", "Wejdź z mojego linku i odbierz bonus 👇")}`;
     const shareLink = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(text)}`;
 

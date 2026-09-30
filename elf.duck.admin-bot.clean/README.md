@@ -1,25 +1,28 @@
-# ELF DUCK — admin Telegram bot
+# Admin Telegram bot
 
-Управление каталогом, точками, рассылками и кэшбеком.
+## Структура
 
-## Доступ
+| Файл | Роль |
+|------|------|
+| `index.js` | env + `launchAdminBot()` (~15 рядків) |
+| `src/launchAdminBot.js` | підключення handler-модулів, launch |
+| `src/bot/single.js` | один екземпляр Telegraf |
+| `src/config.js`, `api.js`, `auth.js`, `state.js` | спільна інфраструктура |
+| `src/handlers/*.js` | меню, wizard-и, actions (див. таблицю нижче) |
 
-1. В корневом `.env` задайте:
-   - `ADMIN_BOT_TOKEN` — токен **отдельного** admin-бота (@BotFather).
-   - `ADMIN_API_TOKEN` — тот же секрет, что у API.
-   - `ADMIN_IDS` — Telegram ID пользователей с доступом (через запятую).
-   - `SUPER_ADMIN_IDS` — супер-админы (полное меню, выгрузка базы клиентов).
+### Handlers (за порядком завантаження)
 
-2. Запустите сервис `admin-bot` (Docker: `docker compose up -d admin-bot`).
+1. `menu.js` — клавіатура, reply → callback  
+2. `wizardState.js` — promo / broadcast / courier wizard helpers  
+3. `broadcastTemplates.js` — шаблони розсилки з API  
+4. `cashback.js` — начисление кэшбека  
+5. `categoryProductDefs.js` — константи категорій і товарів  
+6. `flavorFlow.js` / `flavorActions.js` — вкусы и наличие  
+7. `productFlow.js` / `productActions.js` — конструктор товара  
+8. `pickupFlow.js` / `pickupCrud.js` — точки самовывоза  
+9. `commands.js` — /start, /id, export  
+10. `categoryEdit.js` / `categoryWizard.js`  
+11. `promoAndBroadcast.js` — промокоды, рассылка, общий `text`  
+12. `mediaHandlers.js` — photo для courier message  
 
-3. В Telegram откройте **вашего admin-бота** и отправьте `/start`.
-
-Если ID есть в `ADMIN_IDS`, появится меню «ELF DUCK — Admin Panel». Супер-админы видят кнопку **«👥 Выгрузка базы»** — бот пришлёт CSV со всеми пользователями.
-
-## Локально
-
-```bash
-cd elf.duck.admin-bot.clean
-npm install
-API_URL=http://localhost:3000 npm start
-```
+Запуск: `npm start` (потрібні `ADMIN_BOT_TOKEN`, `API_URL`, `ADMIN_API_TOKEN`).

@@ -63,5 +63,7 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ "referral.usedCode": 1 });
+userSchema.index({ "referral.code": 1 }, { sparse: true });
+userSchema.index({ username: 1 }, { sparse: true });
 
 export default mongoose.model("User", userSchema);

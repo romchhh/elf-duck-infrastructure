@@ -2,6 +2,7 @@ import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import React, { useEffect, Suspense } from "react";
 import MainPage from "./pages/MainPage";
 import DesktopShell from "./components/DesktopShell.jsx";
+import { subscribeDesktopLayout } from "./utils/desktopLayout.js";
 
 const ReferralPage = React.lazy(() => import("./pages/ReferralPage"));
 const CartPage = React.lazy(() => import("./pages/CartPage"));
@@ -11,26 +12,14 @@ const ManagersPage = React.lazy(() => import("./pages/ManagersPage"));
 const PromoPage = React.lazy(() => import("./pages/PromoPage"));
 
 if (typeof window !== "undefined") {
-  const warmup = () => {
+  const warmupCart = () => {
     import("./pages/CartPage");
-    import("./pages/OrdersPage");
-    import("./pages/FavoritePage");
-    import("./pages/ReferralPage");
-    import("./pages/ManagersPage");
-    import("./pages/PromoPage");
   };
-  // Запускаем warmup как можно раньше: сначала через rAF (мгновенно после paint),
-  // потом через requestIdleCallback как fallback с timeout 500ms
-  if (typeof requestAnimationFrame !== "undefined") {
-    requestAnimationFrame(() => {
-      if ("requestIdleCallback" in window) {
-        window.requestIdleCallback(warmup, { timeout: 500 });
-      } else {
-        setTimeout(warmup, 0);
-      }
-    });
+
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(warmupCart, { timeout: 4000 });
   } else {
-    setTimeout(warmup, 300);
+    setTimeout(warmupCart, 2500);
   }
 }
 
@@ -64,6 +53,8 @@ function RouteFallback() {
 const App = () => {
   const location = useLocation();
   const navigate = useNavigate();
+
+  useEffect(() => subscribeDesktopLayout(), []);
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;

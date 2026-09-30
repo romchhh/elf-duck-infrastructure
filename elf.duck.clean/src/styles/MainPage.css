@@ -955,6 +955,21 @@ body {
   flex-shrink: 0;
 }
 
+.catalogEmptyHint {
+  width: 92%;
+  max-width: 520px;
+  margin: 24px auto 32px;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+  box-sizing: border-box;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .categoriesGrid { animation: none; }
   .categoriesGrid.initial-enter > * { animation: none; opacity: 1; transform: none; }

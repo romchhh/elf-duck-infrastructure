@@ -3,6 +3,9 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import { UserProvider } from "./UserContext.jsx";
+import { applyDesktopLayoutClass } from "./utils/desktopLayout.js";
+
+applyDesktopLayoutClass();
 
 console.log("🚀 React загружается...");
 

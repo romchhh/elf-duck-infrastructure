@@ -1,6 +1,34 @@
-export const API_URL =
-  import.meta.env.VITE_API_URL ||
-  "https://elfduck-api.telebots.site";
+const PROD_API_DEFAULT = "https://elfduck-api.telebots.site";
+
+function isLocalApiUrl(url) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
+    String(url || "").trim()
+  );
+}
+
+/**
+ * Dev: Vite proxies `/api` → backend (no CORS). Prod: VITE_API_URL or telebots API.
+ */
+export function resolveApiUrl() {
+  const fromEnv = String(import.meta.env.VITE_API_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+
+  if (fromEnv) {
+    if (import.meta.env.DEV && isLocalApiUrl(fromEnv)) {
+      return "/api";
+    }
+    return fromEnv;
+  }
+
+  if (import.meta.env.DEV) {
+    return "/api";
+  }
+
+  return PROD_API_DEFAULT;
+}
+
+export const API_URL = resolveApiUrl();
 
 export const getTelegramInitData = () => {
   try {

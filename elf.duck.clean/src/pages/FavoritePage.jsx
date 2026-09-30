@@ -7,6 +7,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
 import { preloadImage } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
+import { fetchProductsCached } from "../utils/productsApiCache";
 
 import {
 
@@ -247,12 +248,10 @@ const FavoritePage = () => {
 
         (async () => {
             try {
-                const r = await fetch(`${API_URL}/products`);
-                const data = await r.json().catch(() => ({}));
+                const list = await fetchProductsCached(API_URL, { active: "1" });
 
                 if (!alive) return;
 
-                const list = Array.isArray(data) ? data : (data.products || []);
                 setProducts(list);
                 writeProductVisualCache(list);
             } catch (e) {
@@ -849,7 +848,14 @@ const FavoritePage = () => {
                     <div className="cardBg" />
 
                     {product.cardBgUrl ? (
-                    <img src={product.cardBgUrl} className="cardImageFull" alt="" />
+                    <img
+                      src={product.cardBgUrl}
+                      className="cardImageFull"
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      fetchpriority="low"
+                    />
                     ) : null}
 
                     {product.cardDuckUrl ? (
@@ -857,6 +863,9 @@ const FavoritePage = () => {
                         src={product.cardDuckUrl}
                         className={product.classCardDuck || "productCardImageRight"}
                         alt=""
+                        loading="lazy"
+                        decoding="async"
+                        fetchpriority="low"
                     />
                     ) : null}
 
