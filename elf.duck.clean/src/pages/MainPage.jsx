@@ -2907,6 +2907,21 @@ navigate("/cart");
         ? inpostWarehouse?._id
         : courierWarehouse?._id;
 
+  // ================= STOCK HELPERS (context-aware availability) =================
+  const getStockRowForContext = (flavor, contextId) => {
+    if (!contextId) return null;
+    const rows = Array.isArray(flavor?.stockByPickupPoint) ? flavor.stockByPickupPoint : [];
+    return rows.find((s) => String(s.pickupPointId) === String(contextId)) || null;
+  };
+
+  const getAvailableQtyForContext = (flavor, contextId) => {
+    const row = getStockRowForContext(flavor, contextId);
+    if (!row) return 0;
+    const total = Number(row?.totalQty || 0);
+    const reserved = Number(row?.reservedQty || 0);
+    return Math.max(0, total - reserved);
+  };
+
   const getActiveProductFlavors = () =>
     (activeProduct?.flavors || []).filter((flavor) => flavor?.isActive !== false);
 
@@ -2925,28 +2940,13 @@ navigate("/cart");
       selectedFlavor ||
       pickFirstInStockFlavor()
   );
-  
-  // ================= STOCK HELPERS (context-aware availability) =================
+
   const showTgAlert = (text) => {
     try {
       const tg = window?.Telegram?.WebApp;
       if (tg?.showAlert) return tg.showAlert(String(text));
     } catch (_) {}
     alert(String(text));
-  };
-
-  const getStockRowForContext = (flavor, contextId) => {
-    if (!contextId) return null;
-    const rows = Array.isArray(flavor?.stockByPickupPoint) ? flavor.stockByPickupPoint : [];
-    return rows.find((s) => String(s.pickupPointId) === String(contextId)) || null;
-  };
-
-  const getAvailableQtyForContext = (flavor, contextId) => {
-    const row = getStockRowForContext(flavor, contextId);
-    if (!row) return 0;
-    const total = Number(row?.totalQty || 0);
-    const reserved = Number(row?.reservedQty || 0);
-    return Math.max(0, total - reserved);
   };
 
   const productLabelForAlert = () =>
