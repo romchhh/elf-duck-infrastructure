@@ -1,8 +1,8 @@
-import { getServerContext } from "../../lib/server/context.js";
 import { getAdminBotAnalytics } from "../../lib/crm/adminBotAnalytics.js";
+import { bindApiGlobals } from "./bindApiGlobals.js";
 
 export function registerRoutes(app) {
-  Object.assign(globalThis, getServerContext());
+  bindApiGlobals();
 
   app.get("/admin/analytics/summary", requireAdmin, async (req, res) => {
     try {

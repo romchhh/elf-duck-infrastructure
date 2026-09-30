@@ -1,7 +1,7 @@
-import { getServerContext } from "../../lib/server/context.js";
+import { bindApiGlobals } from "./bindApiGlobals.js";
 
 export function registerRoutes(app) {
-  Object.assign(globalThis, getServerContext());
+  bindApiGlobals();
 
 app.post("/orders/confirm", async (req, res) => {
   console.time("orders/confirm total");

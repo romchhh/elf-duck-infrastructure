@@ -10,7 +10,6 @@ dotenv.config({
 });
 
 import express from "express";
-import mongoose from "mongoose";
 import cors from "cors";
 import compression from "compression";
 
@@ -24,11 +23,14 @@ import BroadcastCampaign from "./models/BroadcastCampaign.js";
 import DailyStatsDispatch from "./models/DailyStatsDispatch.js";
 import crmRouter from "./routes/crm.js";
 
+import mongoose from "mongoose";
 import helpers from "./lib/server/helpers/index.js";
 import { setServerContext } from "./lib/server/context.js";
+import { bindApiGlobals } from "./routes/api/bindApiGlobals.js";
 import { registerShopApiRoutes } from "./routes/api/index.js";
 import { bootstrapShopTelegramBots } from "./lib/telegram/shopBots.js";
 import { startServerIntervals } from "./lib/server/intervals.js";
+import { bot, getActiveUserBots } from "./lib/server/botRegistry.js";
 
 const APP_URL = String(
   process.env.APP_URL ||
@@ -36,8 +38,23 @@ const APP_URL = String(
     "https://elfduck.telebots.site"
 ).trim();
 
-setServerContext(helpers);
-Object.assign(globalThis, helpers);
+const serverRuntime = {
+  ...helpers,
+  mongoose,
+  bot,
+  getActiveUserBots,
+  User,
+  Product,
+  Category,
+  PickupPoint,
+  Cart,
+  Order,
+  BroadcastCampaign,
+  DailyStatsDispatch,
+};
+
+setServerContext(serverRuntime);
+bindApiGlobals();
 
 const {
   ensurePromoCodeIndexes,

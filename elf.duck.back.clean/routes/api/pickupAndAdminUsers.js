@@ -1,7 +1,8 @@
-import { getServerContext } from "../../lib/server/context.js";
+import crypto from "crypto";
+import { bindApiGlobals } from "./bindApiGlobals.js";
 
 export function registerRoutes(app) {
-  Object.assign(globalThis, getServerContext());
+  bindApiGlobals();
 
 // ===== Public: pickup points =====
 app.get("/pickup-points", async (req, res) => {

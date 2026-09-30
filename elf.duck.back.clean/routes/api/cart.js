@@ -1,7 +1,7 @@
-import { getServerContext } from "../../lib/server/context.js";
+import { bindApiGlobals } from "./bindApiGlobals.js";
 
 export function registerRoutes(app) {
-  Object.assign(globalThis, getServerContext());
+  bindApiGlobals();
 
 // ===== Public: get cart by telegramId =====
 app.get("/cart", async (req, res) => {
