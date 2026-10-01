@@ -31,6 +31,15 @@ const HANDLER_MODULES = [
 
 export async function launchAdminBot() {
   initBot();
+
+  // Reply-keyboard menu emulates callback_query; fake ids break answerCbQuery().
+  bot.use(async (ctx, next) => {
+    if (ctx.update?.__fromReplyKeyboard) {
+      ctx.answerCbQuery = async () => undefined;
+    }
+    return next();
+  });
+
   registerMainMenuHandlers(bot);
 
   for (const mod of HANDLER_MODULES) {

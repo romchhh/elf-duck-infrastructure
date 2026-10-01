@@ -92,7 +92,7 @@ app.get("/admin/users/export", requireAdmin, async (req, res) => {
     }
 
     const { buildUsersExportRows, sendUsersExportCsvResponse } =
-      await import("./lib/usersExport.js");
+      await import("../../lib/usersExport.js");
 
     const rows = await buildUsersExportRows();
     return sendUsersExportCsvResponse(res, rows);
