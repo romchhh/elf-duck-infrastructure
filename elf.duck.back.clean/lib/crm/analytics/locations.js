@@ -45,8 +45,14 @@ export function getLocationIdentity(order) {
 }
 
 export function collectLocationSales(
-  orders = []
+  orders = [],
+  options = {}
 ) {
+  const getRevenue =
+    typeof options.getRevenue === "function"
+      ? options.getRevenue
+      : (order) => Number(order?.totalZl || 0);
+
   const map = new Map();
 
   for (const order of orders) {
@@ -65,7 +71,7 @@ export function collectLocationSales(
       map.get(identity);
 
     row.revenue += Number(
-      order?.totalZl || 0
+      getRevenue(order) || 0
     );
 
     row.orders += 1;

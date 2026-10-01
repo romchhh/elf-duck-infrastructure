@@ -51,9 +51,8 @@ export default function ProductMobileRow({ p }) {
           { label: 'Дн. запаса', value: p.days, className: lowStock ? 'text-[hsl(36_90%_62%)]' : 'text-muted-foreground' },
         ]} />
         <div className="mt-2.5">
-          <MetricGrid cols={2} items={[
+          <MetricGrid cols={1} items={[
             { label: 'Повторные', value: `${p.repeat}%` },
-            { label: 'Стоимость остатка', value: currency(p.stockValue) },
           ]} />
         </div>
       </div>

@@ -682,6 +682,8 @@ export const askBroadcastStep = async (ctx) => {
   }
 
   if (step === "templateChoice") {
+    await loadBroadcastTemplates();
+
     return ctx.reply(
       "🗂 *Выберите шаблон или создайте уведомление вручную*",
       {

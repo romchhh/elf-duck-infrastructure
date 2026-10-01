@@ -5,7 +5,8 @@
 | `constants.js` | TZ, cookie, push limits |
 | `session.js` | CRM cookie/session, `requireCrmPushAdmin` |
 | `datetime.js` | Warsaw timezone, `getPeriodRange` |
-| `sales.js` | завершені продажі, скасування |
+| `sales.js` | завершені продажі, `buildSalesByCustomerMap`, скасування |
+| `inventoryStock.js` | оновлення залишків вкусу по точці (CRM + cache) |
 | `analytics/` | dashboard, продукти, точки, партнери, клієнти, push-аналітика |
 | `analytics.js` | re-export `./analytics/index.js` |
 | `orderFormatters.js` | рядки для таблиці замовлень |

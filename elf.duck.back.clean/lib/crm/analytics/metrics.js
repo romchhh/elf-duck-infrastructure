@@ -69,15 +69,21 @@ export function buildMetrics(
   from,
   to,
   canceledCount,
-  firstSaleByUser
+  firstSaleByUser,
+  options = {}
 ) {
+  const getRevenue =
+    typeof options.getRevenue === "function"
+      ? options.getRevenue
+      : (order) => Number(order?.totalZl || 0);
+
   const ordersCount = orders.length;
 
   const revenue = Number(
     orders
       .reduce(
         (sum, order) =>
-          sum + Number(order?.totalZl || 0),
+          sum + Number(getRevenue(order) || 0),
         0
       )
       .toFixed(2)

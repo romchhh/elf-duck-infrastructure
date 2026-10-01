@@ -161,6 +161,8 @@ docker compose run --rm --no-deps api node scripts/sync-xros-oxva-catalog.mjs
 Усі webhook-и, що били на Railway, переключити на публічний API, напр.:  
 `https://elfduck-api.telebots.site/...` (шлях як у ваших скриптах).
 
+**Синхронізація залишків з таблиці в магазин:** [`docs/GOOGLE_SHEET_STOCK_SYNC.md`](GOOGLE_SHEET_STOCK_SYNC.md) — `POST /admin/products/manual-sheet-stock-sync` + `x-admin-token`.
+
 ### 7. Безпека
 
 - `CRM_ADMIN_PASSWORD`, `CRM_SESSION_SECRET`, `ADMIN_API_TOKEN` — задані в `.env`.

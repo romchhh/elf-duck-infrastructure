@@ -859,6 +859,45 @@ export function shouldCountOrderInDailyStats(order) {
   return false;
 }
 
+/** PLN amount managers see as «Касса» in daily warehouse stats (may differ from order.totalZl). */
+export function getOrderKasaPlnZl(order) {
+  const payment = order?.payment || {};
+
+  const managerDisplayCurrency = String(payment?.managerDisplayCurrency || "PLN")
+    .trim()
+    .toUpperCase();
+
+  const managerDisplayAmount = Number(payment?.managerDisplayAmount || 0);
+  const managerDisplayRate = Number(payment?.managerDisplayRate || 0);
+  const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
+  const totalZl = Number(order?.totalZl || 0);
+
+  if (cashbackRemainingToPayZl > 0) {
+    return cashbackRemainingToPayZl;
+  }
+
+  if (managerDisplayCurrency === "PLN") {
+    if (managerDisplayAmount > 0) return managerDisplayAmount;
+    return totalZl;
+  }
+
+  if (managerDisplayCurrency === "UAH") {
+    if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
+      return Number((managerDisplayAmount / managerDisplayRate).toFixed(2));
+    }
+    return totalZl;
+  }
+
+  if (managerDisplayCurrency === "USDT") {
+    if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
+      return Number((managerDisplayAmount * managerDisplayRate).toFixed(2));
+    }
+    return totalZl;
+  }
+
+  return totalZl;
+}
+
 export function allocateCashbackBySubtotal(orderTotal, orderCashback, itemSubtotal) {
   const total = Number(orderTotal || 0);
   const cashback = Number(orderCashback || 0);

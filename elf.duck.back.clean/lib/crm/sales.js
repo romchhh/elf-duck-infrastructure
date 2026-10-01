@@ -98,6 +98,7 @@ export async function loadSales(
         $project: {
             userTelegramId: 1,
             totalZl: 1,
+            payment: 1,
             crmSaleDate: 1,
             items: 1,
             deliveryType: 1,
@@ -106,6 +107,96 @@ export async function loadSales(
         },
     },
   ]);
+}
+
+/**
+ * Завершені продажі по клієнтах (групування в Mongo, без завантаження всіх orders у Node).
+ * @param {Date} to — верхня межа crmSaleDate (не включно)
+ * @param {{ telegramIds?: string[] }} [options] — обмежити вибірку (напр. «Избранные»)
+ */
+export async function buildSalesByCustomerMap(
+  to,
+  options = {}
+) {
+  const telegramIds = Array.isArray(
+    options?.telegramIds
+  )
+    ? options.telegramIds
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    : null;
+
+  const pipeline = [
+    {
+      $match: getCompletedOrderMatch(),
+    },
+    {
+      $addFields: {
+        crmSaleDate: getSaleDateExpression(),
+      },
+    },
+    {
+      $match: {
+        crmSaleDate: {
+          $lt: to,
+        },
+      },
+    },
+  ];
+
+  if (telegramIds?.length) {
+    pipeline.push({
+      $match: {
+        userTelegramId: {
+          $in: telegramIds,
+        },
+      },
+    });
+  }
+
+  pipeline.push(
+    {
+      $project: {
+        userTelegramId: 1,
+        totalZl: 1,
+        crmSaleDate: 1,
+      },
+    },
+    {
+      $sort: {
+        crmSaleDate: 1,
+      },
+    },
+    {
+      $group: {
+        _id: "$userTelegramId",
+        orders: {
+          $push: {
+            userTelegramId: "$userTelegramId",
+            totalZl: "$totalZl",
+            crmSaleDate: "$crmSaleDate",
+          },
+        },
+      },
+    }
+  );
+
+  const grouped = await Order.aggregate(pipeline);
+  const map = new Map();
+
+  for (const row of grouped) {
+    const telegramId = String(row?._id || "").trim();
+    if (!telegramId) {
+      continue;
+    }
+
+    map.set(
+      telegramId,
+      Array.isArray(row?.orders) ? row.orders : []
+    );
+  }
+
+  return map;
 }
 
 export async function loadSalesHistory(to) {
@@ -134,6 +225,7 @@ export async function loadSalesHistory(to) {
     $project: {
         userTelegramId: 1,
         totalZl: 1,
+        payment: 1,
         crmSaleDate: 1,
         items: 1,
         deliveryType: 1,

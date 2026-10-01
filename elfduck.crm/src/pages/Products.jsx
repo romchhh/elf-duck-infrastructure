@@ -538,25 +538,6 @@ export default function Products() {
         ),
     },
 
-    {
-      key:
-        'stockValue',
-
-      header:
-        'Стоимость остатка',
-
-      align:
-        'right',
-
-      render:
-        (row) => (
-          <span className="whitespace-nowrap text-muted-foreground">
-            {formatMoney(
-              row.stockValue
-            )}
-          </span>
-        ),
-    },
   ];
 
   return (

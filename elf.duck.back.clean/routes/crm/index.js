@@ -15,6 +15,7 @@ import partnersRouter from "./partners.js";
 import leadsRouter from "./leads.js";
 import customersRouter from "./customers.js";
 import dashboardRouter from "./dashboard.js";
+import inventoryRouter from "./inventory.js";
 
 const router = express.Router();
 
@@ -34,5 +35,6 @@ router.use(partnersRouter);
 router.use(leadsRouter);
 router.use(customersRouter);
 router.use(dashboardRouter);
+router.use(inventoryRouter);
 
 export default router;

@@ -157,7 +157,7 @@ app.get("/products", async (req, res) => {
     });
 
     const payload = { ok: true, products: withTotals };
-    cacheSet(cacheKey, payload, 30 * 1000);
+    cacheSet(cacheKey, payload, 60 * 1000);
     res.json(payload);
   } catch (e) {
     console.error("GET /products error:", e);

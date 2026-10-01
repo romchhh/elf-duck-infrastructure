@@ -17,6 +17,11 @@ import {
   resolveManagerAnalyticsScope,
   filterOrdersForAnalyticsScope,
 } from "./adminBotAnalyticsScope.js";
+import { getOrderKasaPlnZl } from "../server/helpers/chunk08.js";
+
+const adminBotRevenueOptions = {
+  getRevenue: getOrderKasaPlnZl,
+};
 
 const PERIOD_LABELS = {
   today: "Сегодня",
@@ -129,7 +134,8 @@ export async function getAdminBotAnalytics(
     range.from,
     range.to,
     scopedCurrentCanceled,
-    firstSaleByUser
+    firstSaleByUser,
+    adminBotRevenueOptions
   );
 
   const previousMetrics = buildMetrics(
@@ -137,7 +143,8 @@ export async function getAdminBotAnalytics(
     range.previousFrom,
     range.previousTo,
     scopedPreviousCanceled,
-    firstSaleByUser
+    firstSaleByUser,
+    adminBotRevenueOptions
   );
 
   const productSales = collectProductSales(currentOrders);
@@ -151,7 +158,10 @@ export async function getAdminBotAnalytics(
     }));
 
   const locationLabels = await resolveLocationLabels();
-  const locationSales = collectLocationSales(currentOrders);
+  const locationSales = collectLocationSales(
+    currentOrders,
+    adminBotRevenueOptions
+  );
   const topLocations = Array.from(locationSales.entries())
     .map(([identity, row]) => ({
       title: locationLabel(identity, locationLabels),

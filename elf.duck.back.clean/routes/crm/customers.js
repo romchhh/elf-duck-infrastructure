@@ -7,10 +7,10 @@ import {
   CRM_FAVORITE_CUSTOMERS_COLLECTION,
   requireCrmPushAdmin,
   getPeriodRange,
-  loadSalesHistory,
   mongoose,
   User,
 } from "./deps.js";
+import { buildSalesByCustomerMap } from "../../lib/crm/sales.js";
 
 const router = express.Router();
 
@@ -111,54 +111,22 @@ const sortDirection =
             .filter(Boolean)
         );
 
-      const salesHistory =
-        await loadSalesHistory(
-          range.to
-        );
-
-      const salesByCustomer =
-        new Map();
-
       const onlyFavorites =
         statusFilter === "favorites";
 
-      for (
-        const order of salesHistory
-      ) {
-        const telegramId =
-          String(
-            order?.userTelegramId ||
-              ""
-          ).trim();
-
-        if (!telegramId) {
-          continue;
-        }
-
-        if (
+      const salesByCustomer =
+        await buildSalesByCustomerMap(
+          range.to,
           onlyFavorites &&
-          !favoriteCustomerIds.has(
-            telegramId
-          )
-        ) {
-          continue;
-        }
-
-        if (
-          !salesByCustomer.has(
-            telegramId
-          )
-        ) {
-          salesByCustomer.set(
-            telegramId,
-            []
-          );
-        }
-
-        salesByCustomer
-          .get(telegramId)
-          .push(order);
-      }
+            favoriteCustomerIds.size > 0
+            ? {
+                telegramIds:
+                  Array.from(
+                    favoriteCustomerIds
+                  ),
+              }
+            : {}
+        );
 
       const telegramIds =
         onlyFavorites

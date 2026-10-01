@@ -705,57 +705,10 @@ function getStatsTierQtyForProductRow(order, productRow) {
       .filter(Boolean)
   ).size;
 
-  const toPlnFromOrder = (order) => {
-    const payment = order?.payment || {};
-
-    const managerDisplayCurrency = String(payment?.managerDisplayCurrency || "PLN")
-      .trim()
-      .toUpperCase();
-
-    const managerDisplayAmount = Number(payment?.managerDisplayAmount || 0);
-    const managerDisplayRate = Number(payment?.managerDisplayRate || 0);
-    const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
-    const totalZl = Number(order?.totalZl || 0);
-
-    // 1) Если есть остаток к оплате в PLN после кэшбека — это самый надёжный вариант
-    if (cashbackRemainingToPayZl > 0) {
-      return cashbackRemainingToPayZl;
-    }
-
-    // 2) Если валюта отображения PLN
-    if (managerDisplayCurrency === "PLN") {
-      if (managerDisplayAmount > 0) return managerDisplayAmount;
-      return totalZl;
-    }
-
-    // 3) Если валюта отображения UAH
-    // managerDisplayAmount = PLN * rate
-    // значит обратно в PLN => UAH / rate
-    if (managerDisplayCurrency === "UAH") {
-      if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
-        return Number((managerDisplayAmount / managerDisplayRate).toFixed(2));
-      }
-      return totalZl;
-    }
-
-    // 4) Если валюта отображения USDT
-    // managerDisplayAmount = PLN / rate
-    // значит обратно в PLN => USDT * rate
-    if (managerDisplayCurrency === "USDT") {
-      if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
-        return Number((managerDisplayAmount * managerDisplayRate).toFixed(2));
-      }
-      return totalZl;
-    }
-
-    // 5) fallback
-    return totalZl;
-  };
-
     const kasaTotalZl = Number(
       (Array.isArray(orders) ? orders : [])
         .reduce((sum, order) => {
-          return sum + toPlnFromOrder(order);
+          return sum + __chunk08.getOrderKasaPlnZl(order);
         }, 0)
         .toFixed(2)
     );
