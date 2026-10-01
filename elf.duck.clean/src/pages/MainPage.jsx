@@ -121,18 +121,15 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
       ) : null}
 
       <div className="productTop">
-        <div
-          className={`productTitle ${
-            product.title2 ? "" : "productTitleSingleLine"
-          }`}
-        >
-          {product.title1}
+        <div className="productTitle">
+          <span className="productTitleLine">{product.title1}</span>
           {product.title2 ? (
-            <>
-              <br />
-              {product.title2}
-            </>
-          ) : null}
+            <span className="productTitleLine">{product.title2}</span>
+          ) : (
+            <span className="productTitleLine productTitleLinePlaceholder" aria-hidden="true">
+              &nbsp;
+            </span>
+          )}
         </div>
 
         <div className="priceBadge">

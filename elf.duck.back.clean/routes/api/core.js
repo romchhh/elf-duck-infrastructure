@@ -5,7 +5,11 @@ export function registerRoutes(app) {
 
 // ==== API ====
 
-app.get("/ping", (_, res) => res.json({ ok: true }));
+app.get("/ping", (_, res) => {
+  const dbName = mongoose.connection?.db?.databaseName || null;
+  const ready = mongoose.connection?.readyState === 1;
+  res.json({ ok: true, mongoReady: ready, db: dbName });
+});
 
 // регистрируем юзера из mini-app
 app.post("/register-user", async (req, res) => {

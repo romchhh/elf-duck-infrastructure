@@ -16,6 +16,7 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import Product from "../models/Product.js";
+import { describeMongoUri } from "../lib/mongoTarget.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config();
@@ -254,7 +255,7 @@ function oxvaLiquidMedia() {
     cardBgUrl: url,
     cardDuckUrl: "",
     orderImgUrl: url,
-    classCardBg: "cardImageProductHero",
+    classCardBg: "productCardCatalogVisual",
     classCardDuck: "",
   };
 }
@@ -375,7 +376,7 @@ function xros6MediaForKey(productKey) {
     cardBgUrl: url,
     cardDuckUrl: "",
     orderImgUrl: url,
-    classCardBg: "cardImageProductHero",
+    classCardBg: "productCardCatalogVisual",
     classCardDuck: "",
   };
 }
@@ -387,7 +388,19 @@ async function main() {
     process.exit(1);
   }
 
+  const target = describeMongoUri(uri);
+  console.log(
+    `[catalog-sync] mongo kind=${target.kind} host=${target.host} db=${target.db}`
+  );
+  if (target.kind === "docker-local") {
+    console.warn(
+      "⚠️ MONGODB_URI вказує на локальний Docker mongo — міні-додаток на telebots.site це НЕ побачить, поки API на VPS читає іншу базу."
+    );
+  }
+
   await mongoose.connect(uri);
+  const liveDb = mongoose.connection?.db?.databaseName || target.db;
+  console.log(`[catalog-sync] connected database=${liveDb}`);
   console.log(dryRun ? "=== DRY RUN ===" : "=== APPLY ===");
 
   await updatePriceOnly("xros-5-mini-pod", 100);
@@ -406,8 +419,8 @@ async function main() {
   await upsertProduct({
     productKey: "xros-6-mini-pod",
     price: 120,
-    title1: "XROS 6 MINI POD",
-    title2: "",
+    title1: "XROS 6",
+    title2: "MINI POD",
     titleModal: "XROS 6 MINI POD",
     categoryKey: mini5?.categoryKey || pod5?.categoryKey || "pods",
     flavorLabels: XROS_6_MINI_FLAVORS,
@@ -419,8 +432,8 @@ async function main() {
   await upsertProduct({
     productKey: "xros-6-pod",
     price: 140,
-    title1: "XROS 6 POD",
-    title2: "",
+    title1: "XROS 6",
+    title2: "POD",
     titleModal: "XROS 6 POD",
     categoryKey: pod5?.categoryKey || "pods",
     flavorLabels: XROS_6_POD_FLAVORS,

@@ -80,8 +80,11 @@ services:
       - path: .env
         required: false
     environment:
+      # Без MONGODB_URI у кореневому .env на VPS синк пишe в контейнер mongo — НЕ Atlas з замовленнями.
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/elfduck}
       PRODUCT_IMAGE_BASE_URL: ${PRODUCT_IMAGE_BASE_URL:-https://elfduck.telebots.site}
+      API_URL: ${API_URL:-http://api:3000}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-}
       CRM_URL: ${CRM_URL:-https://elfduck-crm.telebots.site}
     entrypoint: ["node", "scripts/sync-xros-oxva-catalog.mjs"]
     depends_on:

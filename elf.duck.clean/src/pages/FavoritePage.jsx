@@ -872,13 +872,17 @@ const FavoritePage = () => {
 
                     <div className="productTop">
                     <div className="productTitle">
-                        {product.title1}
+                        <span className="productTitleLine">{product.title1}</span>
                         {product.title2 ? (
-                          <>
-                            <br />
-                            {product.title2}
-                          </>
-                        ) : null}
+                          <span className="productTitleLine">{product.title2}</span>
+                        ) : (
+                          <span
+                            className="productTitleLine productTitleLinePlaceholder"
+                            aria-hidden="true"
+                          >
+                            &nbsp;
+                          </span>
+                        )}
                     </div>
 
                     <div className="priceBadge">

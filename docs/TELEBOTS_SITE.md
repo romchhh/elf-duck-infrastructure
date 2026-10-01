@@ -99,6 +99,24 @@ Admin-бот: токен у `.env` як `ADMIN_BOT_TOKEN`; з VPS ходить �
 
 ### 5.1. Обновление каталога (XROS / OXVA) на VPS
 
+**Чому міні-додаток «нічого не міняє»:** він бере товари з **prod API** (`VITE_API_URL`), а не з твоєї Mongo на ноутбуці.  
+`npm run catalog:sync` / `catalog-sync` з ноута оновлює лише те, що в **твоєму** `MONGODB_URI` (часто Atlas).  
+На VPS у `docker-compose` за замовчуванням `MONGODB_URI=mongodb://mongo:27017/elfduck` — **окрема** база в Docker, якщо в `.env` на сервері не прописаний Atlas.
+
+Перевірка з ноута (після `git pull`):
+
+```bash
+cd elf.duck.back.clean && node scripts/diagnose-catalog-mongo.mjs
+```
+
+Якщо `MISMATCH _id` — синк на ноуті **не та база**. На VPS:
+
+```bash
+grep MONGODB_URI .env   # має бути mongodb+srv://.../elfduck (той самий кластер, що й замовлення)
+curl -s https://elfduck-api.telebots.site/ping   # після деплою: db=elfduck, mongoReady=true
+docker compose logs api 2>&1 | grep 'MongoDB connected'
+```
+
 На сервере **не нужен** `node` на хосте — скрипт лежит в образе `api`.
 
 ```bash
@@ -114,18 +132,22 @@ docker compose build api
 # проверка (читает MONGODB_URI из .env)
 docker compose --profile tools run --rm --no-deps catalog-sync --dry-run
 
-# записать в Mongo
+# записать в Mongo (той самий MONGODB_URI, що й api) + скинути кеш API
 docker compose --profile tools run --rm --no-deps catalog-sync
+docker compose restart api
+docker compose build shop && docker compose up -d shop
 ```
 
-В `.env` желательно:
+В `.env` на VPS обовʼязково:
 
 ```env
-CRM_URL=https://elfduck-crm.telebots.site
-PRODUCT_IMAGE_BASE_URL=https://elfduck-crm.telebots.site
+MONGODB_URI=mongodb+srv://USER:PASS@cluster.mongodb.net/elfduck
+PRODUCT_IMAGE_BASE_URL=https://elfduck.telebots.site
+API_URL=https://elfduck-api.telebots.site
+ADMIN_API_TOKEN=...   # для cache invalidate після catalog-sync
 ```
 
-Картинки в магазине: `https://elfduck-crm.telebots.site/products/xros-6-mini-pod.png` и `xros-6-pod.png`.
+Картинки в магазине: `https://elfduck.telebots.site/products/...` (збірка `shop` + файли в `elf.duck.clean/public/products/`).
 
 Альтернатива без profile (тот же образ `api`):
 
