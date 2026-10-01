@@ -23,6 +23,39 @@ dotenv.config({ path: path.join(scriptDir, "..", "..", ".env") });
 
 const dryRun = process.argv.includes("--dry-run");
 
+async function bustApiCatalogCache() {
+  const apiUrl = String(
+    process.env.CATALOG_SYNC_API_URL || process.env.API_URL || ""
+  ).replace(/\/+$/, "");
+  const token = String(process.env.ADMIN_API_TOKEN || "").trim();
+  if (!apiUrl || !token) {
+    console.log(
+      "ℹ️ skip API cache bust (set API_URL + ADMIN_API_TOKEN to invalidate /products cache)"
+    );
+    return;
+  }
+  for (const prefix of ["products:", "categories:"]) {
+    try {
+      const res = await fetch(`${apiUrl}/admin/cache/invalidate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": token,
+        },
+        body: JSON.stringify({ prefix }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.warn("⚠️ cache invalidate", prefix, res.status, body);
+      } else {
+        console.log("✅ cache invalidated", prefix);
+      }
+    } catch (e) {
+      console.warn("⚠️ cache invalidate failed", prefix, e?.message || e);
+    }
+  }
+}
+
 function slugFlavor(label) {
   return String(label || "")
     .trim()
@@ -392,6 +425,11 @@ async function main() {
   await restoreOxvaPod();
 
   await mongoose.disconnect();
+
+  if (!dryRun) {
+    await bustApiCatalogCache();
+  }
+
   console.log("Готово.");
 }
 

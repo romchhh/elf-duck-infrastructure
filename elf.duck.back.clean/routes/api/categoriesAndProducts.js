@@ -108,6 +108,16 @@ app.patch("/admin/categories/:id", requireAdmin, async (req, res) => {
   }
 });
 
+// ===== Admin: сброс in-memory кеша (после catalog-sync) =====
+app.post("/admin/cache/invalidate", requireAdmin, (req, res) => {
+  const prefix = String(req.body?.prefix || "").trim();
+  if (!prefix) {
+    return res.status(400).json({ ok: false, error: "prefix is required" });
+  }
+  cacheInvalidate(prefix);
+  return res.json({ ok: true, prefix });
+});
+
 // ===== Public: получить товары (с фильтром по categoryKey) =====
 
 app.get("/products", async (req, res) => {
