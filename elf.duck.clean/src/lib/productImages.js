@@ -1,9 +1,18 @@
 import { applyFlavorGradientsToProduct } from "./flavorGradients.js";
+import { resolveProductActionsClass } from "./productCardLayout.js";
 
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
-export const PRODUCT_CARD_ASSET_VERSION = "4";
+export const PRODUCT_CARD_ASSET_VERSION = "5";
 
-const CATALOG_SMOKE_BG = "catalog-smoke-bg.png";
+/** Фони карток як у вже доданих товарів (IPFS), без catalog-smoke. */
+const CARD_BG_REF = {
+  "xros-6-mini-pod":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreiadl2zshbsy52wm5aaskodzrcjsdsjmbz3alnm5tt5rjgqwxlwfaa",
+  "xros-6-pod":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreidcqyy44a3zkf3ag2fnvopn5syqzct6notpayx5hpeokdhxe3nk34",
+  "oxva-30-ml-20-mg":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreig3wqn55dlr5uo4uvwng4xxzygh3proyxx553zsbeizk5tbotj3qa",
+};
 
 const FLAVOR_GRADIENT_PRODUCT_KEYS = new Set([
   "xros-6-mini-pod",
@@ -18,34 +27,34 @@ function cardAsset(file) {
 /** Локальні превʼю (дизайн) + назви для окремих productKey. */
 export const productVisualByKey = {
   "xros-6-mini-pod": {
-    cardBgUrl: cardAsset(CATALOG_SMOKE_BG),
+    cardBgUrl: CARD_BG_REF["xros-6-mini-pod"],
     cardDuckUrl: cardAsset("xros-6-mini-pod-card.png"),
-    orderImgUrl: cardAsset("xros-6-mini-pod-card.png"),
+    orderImgUrl: cardAsset("xros-6-mini-pod-order.png"),
     classCardBg: "",
     classCardDuck: "productCardImageRight",
-    classActions: "productActionsLeft",
+    classActions: "productActionsRight",
     title1: "XROS 6",
     title2: "MINI POD",
     titleModal: "XROS 6 MINI POD",
   },
   "xros-6-pod": {
-    cardBgUrl: cardAsset(CATALOG_SMOKE_BG),
+    cardBgUrl: CARD_BG_REF["xros-6-pod"],
     cardDuckUrl: cardAsset("xros-6-pod-card.png"),
-    orderImgUrl: cardAsset("xros-6-pod-card.png"),
+    orderImgUrl: cardAsset("xros-6-pod-order.png"),
     classCardBg: "",
     classCardDuck: "productCardImageLeft",
-    classActions: "productActionsRight",
+    classActions: "productActionsLeft",
     title1: "XROS 6",
     title2: "POD",
     titleModal: "XROS 6 POD",
   },
   "oxva-30-ml-20-mg": {
-    cardBgUrl: cardAsset(CATALOG_SMOKE_BG),
+    cardBgUrl: CARD_BG_REF["oxva-30-ml-20-mg"],
     cardDuckUrl: cardAsset("oxva-30-ml-20-mg-card.png"),
-    orderImgUrl: cardAsset("oxva-30-ml-20-mg-card.png"),
+    orderImgUrl: cardAsset("oxva-30-ml-20-mg-order.png"),
     classCardBg: "",
     classCardDuck: "productCardImageRight",
-    classActions: "productActionsLeft",
+    classActions: "productActionsRight",
     title1: "OXVA",
     title2: "30 ML / 20 MG",
     titleModal: "OXVA 30 ML / 20 MG",
@@ -80,6 +89,8 @@ export function enrichProductVisuals(product) {
   if (FLAVOR_GRADIENT_PRODUCT_KEYS.has(productKey)) {
     next = applyFlavorGradientsToProduct(next);
   }
+
+  next = { ...next, classActions: resolveProductActionsClass(next) };
 
   return next;
 }

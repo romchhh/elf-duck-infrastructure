@@ -10,6 +10,7 @@ import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { hexToRgbTriplet } from "../lib/flavorGradients.js";
 import { isCompactCatalogDuck } from "../lib/productCategories.js";
+import { resolveProductActionsClass } from "../lib/productCardLayout.js";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
 
@@ -142,7 +143,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
         </div>
       </div>
 
-      <div className={product.classActions}>
+      <div className={resolveProductActionsClass(product)}>
         <div className={product.classNewBadge}>{product.newBadge}</div>
 
         <button

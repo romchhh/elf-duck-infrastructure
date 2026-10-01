@@ -252,7 +252,7 @@ const OXVA_FLAVORS = [
 ];
 
 const PRODUCT_CARD_ASSET_VERSION = String(
-  process.env.PRODUCT_IMAGE_CACHE_VERSION || "4"
+  process.env.PRODUCT_IMAGE_CACHE_VERSION || "5"
 );
 
 function publicProductUrl(file) {
@@ -260,7 +260,21 @@ function publicProductUrl(file) {
   return `${base}/products/${file}?v=${PRODUCT_CARD_ASSET_VERSION}`;
 }
 
-const CATALOG_SMOKE_BG = "catalog-smoke-bg.png";
+/** Фони карток — ті самі URL, що в xros-5-mini / xros-5-pod / puffy-30-ml. */
+const CARD_BG_REF = {
+  "xros-6-mini-pod":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreiadl2zshbsy52wm5aaskodzrcjsdsjmbz3alnm5tt5rjgqwxlwfaa",
+  "xros-6-pod":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreidcqyy44a3zkf3ag2fnvopn5syqzct6notpayx5hpeokdhxe3nk34",
+  "oxva-30-ml-20-mg":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreig3wqn55dlr5uo4uvwng4xxzygh3proyxx553zsbeizk5tbotj3qa",
+};
+
+const ORDER_IMAGE_FILES = {
+  "xros-6-mini-pod": "xros-6-mini-pod-order.png",
+  "xros-6-pod": "xros-6-pod-order.png",
+  "oxva-30-ml-20-mg": "oxva-30-ml-20-mg-order.png",
+};
 
 const CATALOG_CARD_KEYS = new Set([
   "xros-6-mini-pod",
@@ -272,15 +286,15 @@ const CATALOG_CARD_KEYS = new Set([
 const CATALOG_CARD_LAYOUT = {
   "xros-6-mini-pod": {
     classCardDuck: "productCardImageRight",
-    classActions: "productActionsLeft",
+    classActions: "productActionsRight",
   },
   "xros-6-pod": {
     classCardDuck: "productCardImageLeft",
-    classActions: "productActionsRight",
+    classActions: "productActionsLeft",
   },
   "oxva-30-ml-20-mg": {
     classCardDuck: "productCardImageRight",
-    classActions: "productActionsLeft",
+    classActions: "productActionsRight",
   },
 };
 
@@ -296,12 +310,13 @@ function catalogCardMedia(productKey, cardFile) {
       classActions: "",
     };
   }
+  const orderFile = ORDER_IMAGE_FILES[productKey] || cardFile;
   return {
-    cardBgUrl: publicProductUrl(CATALOG_SMOKE_BG),
+    cardBgUrl: CARD_BG_REF[productKey] || "",
     cardDuckUrl: cardUrl,
-    orderImgUrl: cardUrl,
+    orderImgUrl: publicProductUrl(orderFile),
     classCardDuck: layout.classCardDuck || "productCardImageRight",
-    classActions: layout.classActions || "productActionsLeft",
+    classActions: layout.classActions || "productActionsRight",
   };
 }
 

@@ -10,6 +10,7 @@ import { preloadImage } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { isCompactCatalogDuck } from "../lib/productCategories.js";
+import { resolveProductActionsClass } from "../lib/productCardLayout.js";
 
 import {
 
@@ -894,7 +895,7 @@ const FavoritePage = () => {
                     </div>
                     </div>
 
-                    <div className={product.classActions || "productActionsLeft"}>
+                    <div className={resolveProductActionsClass(product)}>
                     {product.newBadge ? (
                         <div className={product.classNewBadge || "actionBadge sale"}>
                         {product.newBadge}
