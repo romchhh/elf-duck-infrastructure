@@ -89,14 +89,3 @@ export function enrichProductList(products) {
   return products.map(enrichProductVisuals);
 }
 
-/** Шари hero в checkout: дим на фоні + товар на всю ширину блоку. */
-export function getCheckoutHeroVisual(product) {
-  if (!product || typeof product !== "object") {
-    return { bgUrl: "", imgUrl: "" };
-  }
-  const bgUrl = String(product.cardBgUrl || "").trim();
-  const imgUrl = String(
-    product.cardDuckUrl || product.orderImgUrl || ""
-  ).trim();
-  return { bgUrl, imgUrl };
-}

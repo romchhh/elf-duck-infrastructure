@@ -9,7 +9,6 @@ import { preloadImage, preloadImages } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { hexToRgbTriplet } from "../lib/flavorGradients.js";
-import { getCheckoutHeroVisual } from "../lib/productImages.js";
 import { isCompactCatalogDuck } from "../lib/productCategories.js";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
@@ -4333,40 +4332,15 @@ navigate("/cart");
                   <div className="checkoutContent">
                     <div className="checkoutCard">
 
-                      <div
-                        className={`checkoutHero${
-                          isCompactCatalogDuck(activeProduct)
-                            ? " checkoutHero--compactDuck"
-                            : ""
-                        }`}
-                      >
-                        {(() => {
-                          const hero = getCheckoutHeroVisual(activeProduct);
-                          return (
-                            <>
-                              {hero.bgUrl ? (
-                                <img
-                                  src={hero.bgUrl}
-                                  className="checkoutHeroBg"
-                                  decoding="async"
-                                  loading="lazy"
-                                  fetchpriority="low"
-                                  alt=""
-                                />
-                              ) : null}
-                              {hero.imgUrl ? (
-                                <img
-                                  src={hero.imgUrl}
-                                  className="checkoutHeroImg"
-                                  decoding="async"
-                                  loading="lazy"
-                                  fetchpriority="low"
-                                  alt=""
-                                />
-                              ) : null}
-                            </>
-                          );
-                        })()}
+                      <div className="checkoutHero">
+                        <img
+                          src={activeProduct.orderImgUrl}
+                          className="checkoutHeroImg"
+                          decoding="async"
+                          loading="lazy"
+                          fetchpriority="low"
+                          alt=""
+                        />
 
                         {showPostAddOverlay && orderFlavors.length > 0 && (
                           <div className="heroPostAddOverlay">
