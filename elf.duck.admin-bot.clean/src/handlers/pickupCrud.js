@@ -30,6 +30,7 @@ import {
   mainMenu,
 } from "./menu.js";
 import { askStep, nextStep, ppListKeyboard } from "./pickupFlow.js";
+import { fetchMyPickupPoints } from "./flavorFlow.js";
 
 // =====================================================
 // =================== PICKUP POINTS CRUD ==============
