@@ -24,6 +24,7 @@ import {
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
 import { mainMenu } from "./menu.js";
+import { fetchMyPickupPoints } from "./pickupPointHelpers.js";
 
 // =====================================================
 // =================== FLAVOR BUILDER ==================
@@ -116,21 +117,7 @@ const renderFlavorBuilderPreview = (d = {}) => {
   return lines.join("\n");
 };
 
-// Доступные точки для менеджера:
-// - супер-админ видит все
-// - обычный менеджер видит только точки где его telegramId в allowedAdminTelegramIds
-export const fetchMyPickupPoints = async (ctx) => {
-  const r = await fetch(`${API_URL}/pickup-points?active=0&_ts=${Date.now()}`);
-  const data = await r.json().catch(() => ({}));
-  const points = data.pickupPoints || [];
-  const myId = String(ctx.from?.id || "");
-
-  if (isSuperAdmin(ctx)) return points;
-
-  return points.filter((p) =>
-    Array.isArray(p.allowedAdminTelegramIds) && p.allowedAdminTelegramIds.includes(myId)
-  );
-};
+export { fetchMyPickupPoints } from "./pickupPointHelpers.js";
 
 export const nextQuickStockStep = async (ctx) => {
   const st = getState(ctx.chat.id);

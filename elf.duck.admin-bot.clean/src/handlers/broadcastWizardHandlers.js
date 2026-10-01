@@ -23,7 +23,15 @@ import {
 } from "../broadcastPolling.js";
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
-import { mainMenu, isDelegatedReplyKeyboardText } from "./menu.js";
+import {
+  mainMenu,
+  isDelegatedReplyKeyboardText,
+  pickupPointManagerMenu,
+} from "./menu.js";
+import {
+  ppMenuKeyboard,
+  renderPickupPointPreview,
+} from "./pickupPointHelpers.js";
 import {
   defaultPromoCodeData,
   PROMO_CODE_STEPS,
