@@ -9,7 +9,10 @@ import { haptic } from "../utils/haptics";
 import { preloadImage } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
-import { isCompactCatalogDuck } from "../lib/productCategories.js";
+import {
+  isCartridgesCategory,
+  isCompactCatalogDuck,
+} from "../lib/productCategories.js";
 import { resolveProductActionsClass } from "../lib/productCardLayout.js";
 
 import {
@@ -837,6 +840,10 @@ const FavoritePage = () => {
                     key={product._id}
                     className={`productCard${
                       isCompactCatalogDuck(product) ? " productCard--compactDuck" : ""
+                    }${
+                      isCartridgesCategory(product)
+                        ? " productCard--cartridgeDuck"
+                        : ""
                     }`}
                     onClick={() => {
                       haptic.heavy();

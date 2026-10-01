@@ -1023,6 +1023,23 @@ body {
   transform-origin: right bottom;
 }
 
+/* Картриджі — трохи менше PNG на картці */
+.productCard--cartridgeDuck .cardImageLeft,
+.productCard--cartridgeDuck .cardImageLeft2,
+.productCard--cartridgeDuck .productCardImageLeft {
+  height: 52%;
+  transform: scale(0.84);
+  transform-origin: left bottom;
+}
+
+.productCard--cartridgeDuck .cardImageRight,
+.productCard--cartridgeDuck .cardImageRight2,
+.productCard--cartridgeDuck .productCardImageRight {
+  height: 52%;
+  transform: scale(0.84);
+  transform-origin: right bottom;
+}
+
 .catalogContent {
   min-height: 60vh;
   flex-shrink: 0;

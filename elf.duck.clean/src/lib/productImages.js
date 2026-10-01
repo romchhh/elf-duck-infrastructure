@@ -3,7 +3,7 @@ import {
   hexToRgbTriplet,
 } from "./flavorGradients.js";
 import {
-  normalizeCardDuckClass,
+  resolveCatalogDuckClass,
   resolveProductActionsClass,
 } from "./productCardLayout.js";
 
@@ -111,10 +111,10 @@ export function enrichProductVisuals(product) {
     next = { ...next, pageAccentRgb: preset.pageAccentRgb };
   }
 
-  const duckClass = normalizeCardDuckClass(next.classCardDuck);
-  if (duckClass) {
-    next = { ...next, classCardDuck: duckClass };
-  }
+  next = {
+    ...next,
+    classCardDuck: resolveCatalogDuckClass(next),
+  };
 
   next = { ...next, classActions: resolveProductActionsClass(next) };
 

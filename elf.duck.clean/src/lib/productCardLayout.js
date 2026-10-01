@@ -1,11 +1,28 @@
+function sideFromLayoutClass(className) {
+  const low = String(className || "").trim().toLowerCase();
+  if (low.includes("left")) return "left";
+  if (low.includes("right")) return "right";
+  return "";
+}
+
 /** Єдині класи якоря PNG: left/right у назві = сторона на картці. */
 export function normalizeCardDuckClass(classCardDuck) {
   const raw = String(classCardDuck || "").trim();
   if (!raw) return "";
-  const low = raw.toLowerCase();
-  if (low.includes("left")) return "productCardImageLeft";
-  if (low.includes("right")) return "productCardImageRight";
+  const side = sideFromLayoutClass(raw);
+  if (side === "left") return "productCardImageLeft";
+  if (side === "right") return "productCardImageRight";
   return raw;
+}
+
+/** PNG якориться на тій же стороні, що й макет картки (bg або duck з Mongo). */
+export function resolveCatalogDuckClass(product) {
+  const bgSide = sideFromLayoutClass(product?.classCardBg);
+  const duckSide = sideFromLayoutClass(product?.classCardDuck);
+  const side = bgSide || duckSide || "left";
+  return side === "right"
+    ? "productCardImageRight"
+    : "productCardImageLeft";
 }
 
 /**

@@ -9,7 +9,10 @@ import { preloadImage, preloadImages } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { hexToRgbTriplet } from "../lib/flavorGradients.js";
-import { isCompactCatalogDuck } from "../lib/productCategories.js";
+import {
+  isCartridgesCategory,
+  isCompactCatalogDuck,
+} from "../lib/productCategories.js";
 import { resolveProductActionsClass } from "../lib/productCardLayout.js";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
@@ -93,10 +96,13 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
   console.count("[PERF][MainPageProductCard] render");
 
   const compactDuck = isCompactCatalogDuck(product);
+  const cartridgeDuck = isCartridgesCategory(product);
 
   return (
     <div
-      className={`productCard${compactDuck ? " productCard--compactDuck" : ""}`}
+      className={`productCard${compactDuck ? " productCard--compactDuck" : ""}${
+        cartridgeDuck ? " productCard--cartridgeDuck" : ""
+      }`}
       onClick={() => {
         onOpenProduct(product);
       }}

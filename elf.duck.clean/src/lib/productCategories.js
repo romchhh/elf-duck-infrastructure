@@ -8,6 +8,11 @@ export function isLiquidsCategory(product) {
   return key === "liquids" || key === "liquid";
 }
 
+export function isCartridgesCategory(product) {
+  const key = String(product?.categoryKey || "").trim().toLowerCase();
+  return key === "cartridges" || key === "cartridge";
+}
+
 /** Жижі та одноразки — трохи менший PNG на картці (як було до збільшення Xros). */
 export function isCompactCatalogDuck(product) {
   return isDisposablesCategory(product) || isLiquidsCategory(product);
