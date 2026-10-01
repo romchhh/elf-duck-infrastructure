@@ -100,12 +100,11 @@ const corsOptions = {
         return cb(null, true);
       }
 
-      const isLocalDev =
-        process.env.NODE_ENV !== "production" &&
-        (url.hostname === "localhost" ||
-          url.hostname === "127.0.0.1");
-
-      if (isLocalDev) {
+      // Local shop/CRM (Docker or Vite) — even when NODE_ENV=production in container.
+      if (
+        url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1"
+      ) {
         return cb(null, true);
       }
     } catch {}

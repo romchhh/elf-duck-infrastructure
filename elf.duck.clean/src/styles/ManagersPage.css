@@ -66,7 +66,7 @@
 }
 
 .managerCard.managerCardDayOff .managerScheduleBtn {
-  color: rgba(255, 200, 120, 0.95);
+  color: #fff;
 }
 
 .managerCard.managerCardDayOff .managerActionBtn:disabled {
@@ -134,6 +134,7 @@
   min-width: 118px;
   background: rgba(217,217,217,0.5);
   font-size: 11px;
+  text-transform: none;
 }
 
 .managerCardDuck {

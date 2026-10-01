@@ -108,7 +108,9 @@ const ManagersPage = () => {
         if (!raw) return "";
 
         if (raw === "закрыто") return t("закрыто", "zamknięte");
-        if (raw === "выходной") return t("выходной", "dzień wolny");
+        if (raw === "выходной" || raw.includes("выходн")) {
+            return t("выходной", "dzień wolny");
+        }
         if (raw === "график не указан") return t("график не указан", "brak grafiku");
 
         return String(value || "").trim();

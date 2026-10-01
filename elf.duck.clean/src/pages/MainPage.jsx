@@ -98,29 +98,41 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
     >
       <div className="cardBg" />
 
-      <img
-        src={product.cardBgUrl}
-        className="cardImageFull"
-        alt=""
-        loading={eager ? "eager" : "lazy"}
-        decoding="async"
-        fetchpriority={eager ? "high" : "low"}
-      />
+      {product.cardBgUrl ? (
+        <img
+          src={product.cardBgUrl}
+          className={product.classCardBg || "cardImageFull"}
+          alt=""
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+          fetchpriority={eager ? "high" : "low"}
+        />
+      ) : null}
 
-      <img
-        src={product.cardDuckUrl}
-        className={product.classCardDuck}
-        alt=""
-        loading={eager ? "eager" : "lazy"}
-        decoding="async"
-        fetchpriority={eager ? "high" : "low"}
-      />
+      {product.cardDuckUrl ? (
+        <img
+          src={product.cardDuckUrl}
+          className={product.classCardDuck || "cardImageLeft"}
+          alt=""
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+          fetchpriority={eager ? "high" : "low"}
+        />
+      ) : null}
 
       <div className="productTop">
-        <div className="productTitle">
+        <div
+          className={`productTitle ${
+            product.title2 ? "" : "productTitleSingleLine"
+          }`}
+        >
           {product.title1}
-          <br />
-          {product.title2}
+          {product.title2 ? (
+            <>
+              <br />
+              {product.title2}
+            </>
+          ) : null}
         </div>
 
         <div className="priceBadge">
@@ -4397,7 +4409,14 @@ navigate("/cart");
                       <div className="checkoutCardBody">
                         <div className="checkoutMetaRow">
 
-                        <div className="checkoutName">{activeProduct.titleModal}</div>
+                        <div className="checkoutName">
+                          {String(
+                            activeProduct.titleModal ||
+                              [activeProduct.title1, activeProduct.title2]
+                                .filter(Boolean)
+                                .join(" ")
+                          ).trim()}
+                        </div>
 
                           <div className="checkoutPriceBadge" aria-label="Price">
                             <span className="checkoutPriceValue">{getCheckoutUnitPrice()}</span>

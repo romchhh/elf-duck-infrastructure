@@ -851,7 +851,7 @@ const FavoritePage = () => {
                     {product.cardBgUrl ? (
                     <img
                       src={product.cardBgUrl}
-                      className="cardImageFull"
+                      className={product.classCardBg || "cardImageFull"}
                       alt=""
                       loading="lazy"
                       decoding="async"
@@ -873,8 +873,12 @@ const FavoritePage = () => {
                     <div className="productTop">
                     <div className="productTitle">
                         {product.title1}
-                        <br />
-                        {product.title2}
+                        {product.title2 ? (
+                          <>
+                            <br />
+                            {product.title2}
+                          </>
+                        ) : null}
                     </div>
 
                     <div className="priceBadge">

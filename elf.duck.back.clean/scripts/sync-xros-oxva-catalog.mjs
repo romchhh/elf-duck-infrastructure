@@ -88,6 +88,7 @@ async function upsertProduct({
   price,
   title1,
   title2,
+  titleModal,
   categoryKey,
   flavorLabels,
   cloneFromKey,
@@ -111,6 +112,9 @@ async function upsertProduct({
     price: Number(price),
     title1,
     title2: title2 || "",
+    titleModal:
+      String(titleModal || "").trim() ||
+      [title1, title2].filter(Boolean).join(" ").trim(),
     isActive: true,
     sortOrder: Number.isFinite(Number(sortOrder))
       ? Number(sortOrder)
@@ -202,26 +206,35 @@ const OXVA_FLAVORS = [
   "Blackberry ice",
 ];
 
-async function syncOxvaLiquid() {
-  const candidates = await Product.find({
-    $or: [
-      { productKey: /oxva/i },
-      { title1: /oxva/i },
-      { title2: /oxva/i },
-      { titleModal: /oxva/i },
-    ],
-  }).lean();
+function oxvaLiquidMedia() {
+  const base = productImageBaseUrl();
+  const url = `${base}/products/oxva-30-ml-20-mg-card.png`;
+  return {
+    cardBgUrl: url,
+    cardDuckUrl: "",
+    orderImgUrl: url,
+    classCardBg: "cardImageProductHero",
+  };
+}
 
+async function syncOxvaLiquid() {
+  const productKey = "oxva-30-ml-20-mg";
   const liquid =
-    candidates.find((p) => String(p.categoryKey || "").toLowerCase() === "liquids") ||
-    candidates[0];
+    (await Product.findOne({ productKey }).lean()) ||
+    (await Product.findOne({
+      categoryKey: "liquids",
+      productKey: { $regex: /oxva/i },
+    }).lean());
 
   const clone =
     liquid ||
     (await Product.findOne({ categoryKey: "liquids" }).sort({ sortOrder: 1 }).lean());
 
-  const productKey = liquid?.productKey || "oxva-30-ml-20-mg";
-  const flavors = buildFlavors(OXVA_FLAVORS, liquid?.flavors || [], clone?.flavors?.[0]?.gradient);
+  const flavors = buildFlavors(
+    OXVA_FLAVORS,
+    liquid?.flavors || [],
+    clone?.flavors?.[0]?.gradient
+  );
 
   const payload = {
     productKey,
@@ -229,30 +242,66 @@ async function syncOxvaLiquid() {
     price: 55,
     title1: "OXVA",
     title2: "30 ML / 20 MG",
+    titleModal: "OXVA 30 ML / 20 MG",
     isActive: true,
     sortOrder: Number(liquid?.sortOrder ?? clone?.sortOrder ?? 0),
     flavors,
     ...pickMedia(liquid || clone || {}),
+    ...oxvaLiquidMedia(),
   };
 
   if (dryRun) {
-    console.log("[dry-run] OXVA", productKey, payload.price, "flavors", flavors.length);
+    console.log("[dry-run] OXVA liquid", productKey, payload.price, "flavors", flavors.length);
     return;
   }
 
   await Product.findOneAndUpdate({ productKey }, { $set: payload }, { upsert: true });
-  console.log("✅ OXVA", productKey, "base 55 zł (smart: 55/50/45/40)");
+  console.log("✅ OXVA liquid", productKey, "base 55 zł (smart: 55/50/45/40)");
+}
+
+async function restoreOxvaPod() {
+  const productKey = "oxva-pod";
+  const existing = await Product.findOne({ productKey }).lean();
+  const podTemplate =
+    (await Product.findOne({ productKey: "cartridge-oxva" }).lean()) ||
+    (await Product.findOne({ categoryKey: "pods", productKey: "xros-5-pod" }).lean());
+
+  const podLooksValid =
+    existing &&
+    String(existing.categoryKey || "").toLowerCase() === "pods" &&
+    !/30\s*ml/i.test(String(existing.title2 || existing.titleModal || "")) &&
+    (Array.isArray(existing.flavors) ? existing.flavors.length : 0) < 12;
+
+  const flavors =
+    podLooksValid && Array.isArray(existing.flavors) && existing.flavors.length
+      ? existing.flavors
+      : podTemplate?.flavors || [];
+
+  const payload = {
+    productKey,
+    categoryKey: "pods",
+    price: 100,
+    title1: "OXVA",
+    title2: "POD",
+    titleModal: "OXVA POD",
+    isActive: true,
+    sortOrder: Number(existing?.sortOrder ?? podTemplate?.sortOrder ?? 0),
+    flavors,
+    ...pickMedia(podLooksValid ? existing : podTemplate || existing || {}),
+  };
+
+  if (dryRun) {
+    console.log("[dry-run] OXVA pod restore", productKey, payload.price);
+    return;
+  }
+
+  await Product.findOneAndUpdate({ productKey }, { $set: payload }, { upsert: true });
+  console.log("✅ OXVA pod", productKey, "price=100 zł (pods)");
 }
 
 const XROS_6_ASSETS = {
-  "xros-6-mini-pod": {
-    bg: "xros-6-mini-pod-bg.svg",
-    duck: "xros-6-mini-pod-duck.png",
-  },
-  "xros-6-pod": {
-    bg: "xros-6-pod-bg.svg",
-    duck: "xros-6-pod-duck.png",
-  },
+  "xros-6-mini-pod": "xros-6-mini-pod-card.png",
+  "xros-6-pod": "xros-6-pod-card.png",
 };
 
 function productImageBaseUrl() {
@@ -267,17 +316,16 @@ function productImageBaseUrl() {
   ).replace(/\/+$/, "");
 }
 
-function xros6MediaForKey(productKey, template = {}) {
-  const assets = XROS_6_ASSETS[productKey];
-  if (!assets) return {};
+function xros6MediaForKey(productKey) {
+  const file = XROS_6_ASSETS[productKey];
+  if (!file) return {};
   const base = productImageBaseUrl();
-  const abs = (file) => `${base}/products/${file}`;
-  const duckUrl = abs(assets.duck);
+  const url = `${base}/products/${file}`;
   return {
-    cardBgUrl: abs(assets.bg),
-    cardDuckUrl: duckUrl,
-    orderImgUrl: duckUrl,
-    classCardDuck: String(template.classCardDuck || "cardImageRight"),
+    cardBgUrl: url,
+    cardDuckUrl: "",
+    orderImgUrl: url,
+    classCardBg: "cardImageProductHero",
   };
 }
 
@@ -297,20 +345,19 @@ async function main() {
   const mini5 = await Product.findOne({ productKey: "xros-5-mini-pod" }).lean();
   const pod5 = await Product.findOne({ productKey: "xros-5-pod" }).lean();
 
-  const miniMedia = xros6MediaForKey("xros-6-mini-pod", mini5);
-  const podMedia = xros6MediaForKey("xros-6-pod", pod5);
+  const miniMedia = xros6MediaForKey("xros-6-mini-pod");
+  const podMedia = xros6MediaForKey("xros-6-pod");
   console.log("Xros 6 media:", {
     mini: miniMedia.cardBgUrl,
     pod: podMedia.cardBgUrl,
-    duckMini: miniMedia.cardDuckUrl,
-    duckPod: podMedia.cardDuckUrl,
   });
 
   await upsertProduct({
     productKey: "xros-6-mini-pod",
     price: 120,
-    title1: "XROS 6",
-    title2: "MINI POD",
+    title1: "XROS 6 MINI POD",
+    title2: "",
+    titleModal: "XROS 6 MINI POD",
     categoryKey: mini5?.categoryKey || pod5?.categoryKey || "pods",
     flavorLabels: XROS_6_MINI_FLAVORS,
     cloneFromKey: "xros-5-mini-pod",
@@ -321,8 +368,9 @@ async function main() {
   await upsertProduct({
     productKey: "xros-6-pod",
     price: 140,
-    title1: "XROS 6",
-    title2: "POD",
+    title1: "XROS 6 POD",
+    title2: "",
+    titleModal: "XROS 6 POD",
     categoryKey: pod5?.categoryKey || "pods",
     flavorLabels: XROS_6_POD_FLAVORS,
     cloneFromKey: "xros-5-pod",
@@ -330,6 +378,7 @@ async function main() {
     sortOrder: (pod5?.sortOrder ?? 0) + 1,
   });
 
+  await restoreOxvaPod();
   await syncOxvaLiquid();
 
   await mongoose.disconnect();
