@@ -53,3 +53,13 @@ CRM_ALLOWED_ORIGINS=https://crm.example.com
 Перезбери frontends: `docker compose build shop crm && docker compose up -d`.
 
 Зовні nginx + TLS на 443; порти 3000–3004 лишай на `127.0.0.1` або за firewall.
+
+## Синхронизация каталога в Mongo (без Node на хосте)
+
+```bash
+docker compose build api
+docker compose --profile tools run --rm --no-deps catalog-sync --dry-run
+docker compose --profile tools run --rm --no-deps catalog-sync
+```
+
+Подробнее prod URL: [`TELEBOTS_SITE.md`](TELEBOTS_SITE.md) §5.1.

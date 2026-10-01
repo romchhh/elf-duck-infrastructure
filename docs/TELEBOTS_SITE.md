@@ -97,6 +97,43 @@ Admin-бот: токен у `.env` як `ADMIN_BOT_TOKEN`; з VPS ходить �
 - Network Access: **IP VPS** (або тимчасово для тесту).
 - `MONGODB_URI` у `.env` без змін, якщо вже Atlas + база `elfduck`.
 
+### 5.1. Обновление каталога (XROS / OXVA) на VPS
+
+На сервере **не нужен** `node` на хосте — скрипт лежит в образе `api`.
+
+```bash
+cd ~/elf-duck-infrastructure   # каталог с docker-compose.yml и .env
+git pull
+
+# картинки Xros 6 в CRM (если ещё не деплоил)
+docker compose build crm && docker compose up -d crm
+
+# пересобрать api, чтобы внутри был scripts/sync-xros-oxva-catalog.mjs
+docker compose build api
+
+# проверка (читает MONGODB_URI из .env)
+docker compose --profile tools run --rm --no-deps catalog-sync --dry-run
+
+# записать в Mongo
+docker compose --profile tools run --rm --no-deps catalog-sync
+```
+
+В `.env` желательно:
+
+```env
+CRM_URL=https://elfduck-crm.telebots.site
+PRODUCT_IMAGE_BASE_URL=https://elfduck-crm.telebots.site
+```
+
+Картинки в магазине: `https://elfduck-crm.telebots.site/products/xros-6-mini-pod.png` и `xros-6-pod.png`.
+
+Альтернатива без profile (тот же образ `api`):
+
+```bash
+docker compose run --rm --no-deps api node scripts/sync-xros-oxva-catalog.mjs --dry-run
+docker compose run --rm --no-deps api node scripts/sync-xros-oxva-catalog.mjs
+```
+
 ### 6. Google Apps Script / таблиці
 
 Усі webhook-и, що били на Railway, переключити на публічний API, напр.:  

@@ -3,7 +3,8 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "catalog:sync": "node scripts/sync-xros-oxva-catalog.mjs"
   },
   "engines": {
     "node": ">=18"

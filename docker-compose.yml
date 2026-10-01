@@ -67,6 +67,28 @@ services:
     depends_on:
       - api
 
+  # Одноразовое обновление каталога в Mongo (Node на хосте не нужен):
+  #   docker compose build api
+  #   docker compose --profile tools run --rm --no-deps catalog-sync --dry-run
+  #   docker compose --profile tools run --rm --no-deps catalog-sync
+  catalog-sync:
+    profiles: ["tools"]
+    build:
+      context: ./elf.duck.back.clean
+      dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/elfduck}
+      PRODUCT_IMAGE_BASE_URL: ${PRODUCT_IMAGE_BASE_URL:-https://elfduck-crm.telebots.site}
+      CRM_URL: ${CRM_URL:-https://elfduck-crm.telebots.site}
+    entrypoint: ["node", "scripts/sync-xros-oxva-catalog.mjs"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+        required: false
+
   admin-bot:
     build:
       context: .
