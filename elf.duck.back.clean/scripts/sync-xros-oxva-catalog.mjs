@@ -285,12 +285,12 @@ const CATALOG_CARD_KEYS = new Set([
 /** Позиція PNG на картці (як у решти каталогу — в край, не по центру). */
 const CATALOG_CARD_LAYOUT = {
   "xros-6-mini-pod": {
-    classCardDuck: "productCardImageRight",
-    classActions: "productActionsRight",
-  },
-  "xros-6-pod": {
     classCardDuck: "productCardImageLeft",
     classActions: "productActionsLeft",
+  },
+  "xros-6-pod": {
+    classCardDuck: "productCardImageRight",
+    classActions: "productActionsRight",
   },
   "oxva-30-ml-20-mg": {
     classCardDuck: "productCardImageRight",
