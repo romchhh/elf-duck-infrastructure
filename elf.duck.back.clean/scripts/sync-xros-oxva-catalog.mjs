@@ -260,18 +260,34 @@ function publicProductUrl(file) {
   return `${base}/products/${file}?v=${PRODUCT_CARD_ASSET_VERSION}`;
 }
 
-function catalogCardMedia(file) {
-  const url = publicProductUrl(file);
+const CATALOG_CARD_BG = {
+  "xros-6-mini-pod": "xros-6-mini-pod-bg.svg",
+  "xros-6-pod": "xros-6-pod-bg.svg",
+  "oxva-30-ml-20-mg": "oxva-30-ml-20-mg-bg.svg",
+};
+
+/** Фон (градієнт SVG) + окремо PNG товару — без дубля того ж файлу. */
+function catalogCardMedia(productKey, cardFile) {
+  const cardUrl = publicProductUrl(cardFile);
+  const bgFile = CATALOG_CARD_BG[productKey];
+  if (!bgFile) {
+    return {
+      cardBgUrl: cardUrl,
+      cardDuckUrl: "",
+      orderImgUrl: cardUrl,
+      classCardDuck: "",
+    };
+  }
   return {
-    cardBgUrl: url,
-    cardDuckUrl: "",
-    orderImgUrl: url,
-    classCardDuck: "",
+    cardBgUrl: publicProductUrl(bgFile),
+    cardDuckUrl: cardUrl,
+    orderImgUrl: cardUrl,
+    classCardDuck: "productCardCatalogVisual",
   };
 }
 
 function oxvaLiquidMedia() {
-  return catalogCardMedia("oxva-30-ml-20-mg-card.png");
+  return catalogCardMedia("oxva-30-ml-20-mg", "oxva-30-ml-20-mg-card.png");
 }
 
 async function syncOxvaLiquid() {
@@ -386,7 +402,7 @@ function productImageBaseUrl() {
 function xros6MediaForKey(productKey) {
   const file = XROS_6_ASSETS[productKey];
   if (!file) return {};
-  return catalogCardMedia(file);
+  return catalogCardMedia(productKey, file);
 }
 
 async function main() {

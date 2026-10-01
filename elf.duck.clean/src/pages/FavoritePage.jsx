@@ -9,10 +9,6 @@ import { haptic } from "../utils/haptics";
 import { preloadImage } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
-import {
-  catalogSmokeCardStyle,
-  usesCatalogSmoke,
-} from "../lib/catalogCardSmoke.js";
 
 import {
 
@@ -834,13 +830,10 @@ const FavoritePage = () => {
                 </div>
                 </button>
 
-                {favoriteProducts.map((product) => {
-                  const catalogSmoke = usesCatalogSmoke(product);
-                  return (
+                {favoriteProducts.map((product) => (
                 <div
                     key={product._id}
-                    className={`productCard${catalogSmoke ? " productCard--catalogSmoke" : ""}`}
-                    style={catalogSmoke ? catalogSmokeCardStyle(product) : undefined}
+                    className="productCard"
                     onClick={() => {
                       haptic.heavy();
                       if (product.orderImgUrl) preloadImage(product.orderImgUrl);
@@ -854,10 +847,6 @@ const FavoritePage = () => {
                     }}
                   >
                     <div className="cardBg" />
-
-                    {catalogSmoke ? (
-                      <div className="productCardCatalogSmoke" aria-hidden="true" />
-                    ) : null}
 
                     {product.cardBgUrl ? (
                     <img
@@ -944,8 +933,7 @@ const FavoritePage = () => {
                     </button>
                     </div>
                 </div>
-                  );
-                })}
+                ))}
             </div>
             )}
             </div>

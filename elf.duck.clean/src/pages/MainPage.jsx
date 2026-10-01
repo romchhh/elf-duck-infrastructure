@@ -8,10 +8,6 @@ import { haptic } from "../utils/haptics";
 import { preloadImage, preloadImages } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
-import {
-  catalogSmokeCardStyle,
-  usesCatalogSmoke,
-} from "../lib/catalogCardSmoke.js";
 import { hexToRgbTriplet } from "../lib/flavorGradients.js";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
@@ -94,21 +90,14 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 }) {
   console.count("[PERF][MainPageProductCard] render");
 
-  const catalogSmoke = usesCatalogSmoke(product);
-
   return (
     <div
-      className={`productCard${catalogSmoke ? " productCard--catalogSmoke" : ""}`}
-      style={catalogSmoke ? catalogSmokeCardStyle(product) : undefined}
+      className="productCard"
       onClick={() => {
         onOpenProduct(product);
       }}
     >
       <div className="cardBg" />
-
-      {catalogSmoke ? (
-        <div className="productCardCatalogSmoke" aria-hidden="true" />
-      ) : null}
 
       {product.cardBgUrl ? (
         <img
