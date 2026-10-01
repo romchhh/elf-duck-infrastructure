@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="400" height="520" viewBox="0 0 400 520" fill="none">
   <defs>
     <linearGradient id="bg" x1="20%" y1="0%" x2="80%" y2="100%">
-      <stop offset="0%" stop-color="#2A6B5C"/>
-      <stop offset="38%" stop-color="#1A3D45"/>
-      <stop offset="72%" stop-color="#101820"/>
+      <stop offset="0%" stop-color="#5A58B8"/>
+      <stop offset="38%" stop-color="#3F3E83"/>
+      <stop offset="72%" stop-color="#101220"/>
       <stop offset="100%" stop-color="#050608"/>
     </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="28%" r="55%">
-      <stop offset="0%" stop-color="#5EC4A8" stop-opacity="0.32"/>
-      <stop offset="100%" stop-color="#5EC4A8" stop-opacity="0"/>
+    <radialGradient id="glow" cx="50%" cy="26%" r="55%">
+      <stop offset="0%" stop-color="#7A9AE8" stop-opacity="0.34"/>
+      <stop offset="100%" stop-color="#7A9AE8" stop-opacity="0"/>
     </radialGradient>
   </defs>
   <rect width="400" height="520" rx="20" fill="url(#bg)"/>
