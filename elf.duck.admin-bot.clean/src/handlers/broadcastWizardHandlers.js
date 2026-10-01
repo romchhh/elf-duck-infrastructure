@@ -23,7 +23,7 @@ import {
 } from "../broadcastPolling.js";
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
-import { mainMenu } from "./menu.js";
+import { mainMenu, isDelegatedReplyKeyboardText } from "./menu.js";
 import {
   defaultPromoCodeData,
   PROMO_CODE_STEPS,
@@ -55,11 +55,16 @@ import { BUILDER_STEPS } from "./categoryProductDefs.js";
 import { PRODUCT_BUILDER_STEPS } from "./categoryProductDefs.js";
 import { nextProductStep } from "./productFlow.js";
 // ----- text inputs for steps -----
-bot.on("text", async (ctx) => {
+bot.on("text", async (ctx, next) => {
   if (!isAdmin(ctx)) return;
 
   const text = String(ctx.message?.text || "").trim();
-  if (text.startsWith("/")) return;
+  if (text.startsWith("/")) return next();
+
+  if (isDelegatedReplyKeyboardText(text)) {
+    clearState(ctx.chat.id);
+    return next();
+  }
 
   const broadcastState = getState(ctx.chat.id);
 

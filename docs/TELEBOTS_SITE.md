@@ -155,6 +155,20 @@ curl -s -o /dev/null -w "%{http_code}" https://elfduck-crm.telebots.site/
 CRM: `/crm/orders` без авторизації → **401**.  
 Mini App: відкрити з Telegram, оформити тестовий запит.
 
+### 8.1. Admin-бот: выгрузка базы и кнопки меню
+
+Ошибка выгрузки `Cannot find module '/app/routes/api/lib/usersExport.js'` — на VPS **старый контейнер `api`**. После `git pull`:
+
+```bash
+docker compose build api && docker compose up -d api
+```
+
+Если часть кнопок reply-клавиатуры не отвечает (особенно после «✏️ Категории») — пересобери admin-бот:
+
+```bash
+docker compose build admin-bot && docker compose up -d admin-bot
+```
+
 ### 9. Кнопки менеджера в боті: «Заказ не найден»
 
 Inline-кнопки (**Ожидаю**, **Отклонить**, **Изменить статус** тощо) обробляє **той самий процес**, що й API (`docker compose` сервіс `api`), через long polling `TELEGRAM_BOT_TOKEN`.

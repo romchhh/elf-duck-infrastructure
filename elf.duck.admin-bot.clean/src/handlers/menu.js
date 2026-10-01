@@ -49,7 +49,22 @@ const MAIN_MENU_TEXT_TO_CALLBACK = new Map([
   ["✏️ Категории", "cat_edit_start"],
   ["📋 Список категорий", "cat_list"],
   ["👥 Выгрузка базы", "users_export"],
+  ["👨‍💻 Админ-панель", "admin_panel"],
 ]);
+
+/** Тексты reply-клавиатуры, которые не должны перехватываться wizard `bot.on("text")`. */
+export const DELEGATED_REPLY_KEYBOARD_TEXTS = new Set([
+  ...MAIN_MENU_TEXT_TO_CALLBACK.keys(),
+  "🏠 Операционное меню",
+  "📣 Рассылка",
+  "📊 Статистика",
+  "📈 Аналитика",
+  "🔄 Обновить данные",
+]);
+
+export function isDelegatedReplyKeyboardText(text) {
+  return DELEGATED_REPLY_KEYBOARD_TEXTS.has(String(text || "").trim());
+}
 
 export function registerMainMenuHandlers(bot) {
   bot.hears(

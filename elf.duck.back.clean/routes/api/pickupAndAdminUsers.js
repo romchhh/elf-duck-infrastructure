@@ -4,6 +4,10 @@ import {
   grantManualCashbackToUser,
   deductManualCashbackFromUser,
 } from "../../lib/cashback/manualAdmin.js";
+import {
+  buildUsersExportRows,
+  sendUsersExportCsvResponse,
+} from "../../lib/usersExport.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -90,9 +94,6 @@ app.get("/admin/users/export", requireAdmin, async (req, res) => {
         error: "SUPER_ADMIN_REQUIRED",
       });
     }
-
-    const { buildUsersExportRows, sendUsersExportCsvResponse } =
-      await import("../../lib/usersExport.js");
 
     const rows = await buildUsersExportRows();
     return sendUsersExportCsvResponse(res, rows);

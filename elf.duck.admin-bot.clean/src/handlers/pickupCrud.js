@@ -23,7 +23,12 @@ import {
 } from "../broadcastPolling.js";
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
-import { pickupPointManagerMenu, isPickupPointManager, isCourierManager } from "./menu.js";
+import {
+  pickupPointManagerMenu,
+  isPickupPointManager,
+  isCourierManager,
+  mainMenu,
+} from "./menu.js";
 import { askStep, nextStep } from "./pickupFlow.js";
 
 // =====================================================

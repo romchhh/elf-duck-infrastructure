@@ -25,6 +25,7 @@ import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
 import { BUILDER_STEPS } from "./categoryProductDefs.js";
 import { CATEGORY_VARIANTS } from "./productFlow.js";
+import { mainMenu } from "./menu.js";
 
 // ==================== CATEGORY EDIT ===================
 
