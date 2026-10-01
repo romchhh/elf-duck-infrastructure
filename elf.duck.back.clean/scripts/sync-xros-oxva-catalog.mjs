@@ -219,20 +219,24 @@ function oxvaLiquidMedia() {
 
 async function syncOxvaLiquid() {
   const productKey = "oxva-30-ml-20-mg";
-  const liquid =
-    (await Product.findOne({ productKey }).lean()) ||
-    (await Product.findOne({
-      categoryKey: "liquids",
-      productKey: { $regex: /oxva/i },
-    }).lean());
+
+  const existingLiquid = await Product.findOne({ productKey }).lean();
+  // Раніше жижу помилково тримали в oxva-pod (liquids) — переносимо на oxva-30-ml-20-mg.
+  const legacyLiquidOnPod = await Product.findOne({
+    productKey: "oxva-pod",
+    categoryKey: "liquids",
+  }).lean();
 
   const clone =
-    liquid ||
+    existingLiquid ||
+    legacyLiquidOnPod ||
     (await Product.findOne({ categoryKey: "liquids" }).sort({ sortOrder: 1 }).lean());
 
   const flavors = buildFlavors(
     OXVA_FLAVORS,
-    liquid?.flavors || [],
+    existingLiquid?.flavors ||
+      legacyLiquidOnPod?.flavors ||
+      [],
     clone?.flavors?.[0]?.gradient
   );
 
@@ -244,9 +248,14 @@ async function syncOxvaLiquid() {
     title2: "30 ML / 20 MG",
     titleModal: "OXVA 30 ML / 20 MG",
     isActive: true,
-    sortOrder: Number(liquid?.sortOrder ?? clone?.sortOrder ?? 0),
+    sortOrder: Number(
+      existingLiquid?.sortOrder ??
+        legacyLiquidOnPod?.sortOrder ??
+        clone?.sortOrder ??
+        0
+    ),
     flavors,
-    ...pickMedia(liquid || clone || {}),
+    ...pickMedia(existingLiquid || legacyLiquidOnPod || clone || {}),
     ...oxvaLiquidMedia(),
   };
 
@@ -378,8 +387,9 @@ async function main() {
     sortOrder: (pod5?.sortOrder ?? 0) + 1,
   });
 
-  await restoreOxvaPod();
+  // Спочатку жижа (oxva-30-ml-20-mg), потім pod (oxva-pod) — інакше втрачаються вкуси з legacy oxva-pod.
   await syncOxvaLiquid();
+  await restoreOxvaPod();
 
   await mongoose.disconnect();
   console.log("Готово.");
