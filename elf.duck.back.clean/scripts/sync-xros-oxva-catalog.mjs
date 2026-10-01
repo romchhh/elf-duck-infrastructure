@@ -244,13 +244,28 @@ async function syncOxvaLiquid() {
   console.log("✅ OXVA", productKey, "base 55 zł (smart: 55/50/45/40)");
 }
 
+const XROS_6_IMAGE_FILES = {
+  "xros-6-mini-pod": "xros-6-mini-pod.png",
+  "xros-6-pod": "xros-6-pod.png",
+};
+
 function productImageBaseUrl() {
   return String(
     process.env.PRODUCT_IMAGE_BASE_URL ||
+      process.env.APP_URL ||
+      process.env.WEBAPP_URL ||
+      process.env.WEB_APP_URL ||
       process.env.CRM_URL ||
       process.env.CRM_ALLOWED_ORIGINS?.split(",")[0]?.trim() ||
-      ""
+      "https://elfduck.telebots.site"
   ).replace(/\/+$/, "");
+}
+
+function xros6MediaForKey(productKey) {
+  const file = XROS_6_IMAGE_FILES[productKey];
+  if (!file) return {};
+  const url = `${productImageBaseUrl()}/products/${file}`;
+  return { cardBgUrl: url, orderImgUrl: url };
 }
 
 async function main() {
@@ -269,19 +284,9 @@ async function main() {
   const mini5 = await Product.findOne({ productKey: "xros-5-mini-pod" }).lean();
   const pod5 = await Product.findOne({ productKey: "xros-5-pod" }).lean();
 
-  const miniMedia = {};
-  const podMedia = {};
-  const staticBase = productImageBaseUrl();
-  if (staticBase) {
-    miniMedia.cardBgUrl = `${staticBase}/products/xros-6-mini-pod.png`;
-    miniMedia.orderImgUrl = miniMedia.cardBgUrl;
-    podMedia.cardBgUrl = `${staticBase}/products/xros-6-pod.png`;
-    podMedia.orderImgUrl = podMedia.cardBgUrl;
-  } else {
-    console.warn(
-      "⚠️ PRODUCT_IMAGE_BASE_URL / CRM_URL не задан — картинки Xros 6 в БД не обновятся (пересобери crm и задай URL CRM)"
-    );
-  }
+  const miniMedia = xros6MediaForKey("xros-6-mini-pod");
+  const podMedia = xros6MediaForKey("xros-6-pod");
+  console.log("Xros 6 images:", miniMedia.cardBgUrl, podMedia.cardBgUrl);
 
   await upsertProduct({
     productKey: "xros-6-mini-pod",
@@ -291,7 +296,7 @@ async function main() {
     categoryKey: mini5?.categoryKey || pod5?.categoryKey || "pods",
     flavorLabels: XROS_6_MINI_FLAVORS,
     cloneFromKey: "xros-5-mini-pod",
-    mediaOverride: miniMedia.cardBgUrl ? miniMedia : {},
+    mediaOverride: miniMedia,
     sortOrder: (mini5?.sortOrder ?? 0) + 1,
   });
 
@@ -303,7 +308,7 @@ async function main() {
     categoryKey: pod5?.categoryKey || "pods",
     flavorLabels: XROS_6_POD_FLAVORS,
     cloneFromKey: "xros-5-pod",
-    mediaOverride: podMedia.cardBgUrl ? podMedia : {},
+    mediaOverride: podMedia,
     sortOrder: (pod5?.sortOrder ?? 0) + 1,
   });
 

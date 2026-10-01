@@ -1,3 +1,5 @@
+import { enrichProductList } from "../lib/productImages.js";
+
 const CACHE_MS = 45_000;
 
 /** @type {Map<string, { at: number, data: unknown[] | null, promise: Promise<unknown[]> | null }>} */
@@ -39,9 +41,10 @@ export async function fetchProductsCached(apiUrl, options = {}) {
           data?.error || data?.message || `HTTP ${r.status}`
         );
       }
-      const list = Array.isArray(data)
+      const raw = Array.isArray(data)
         ? data
         : data?.products || [];
+      const list = enrichProductList(raw);
       store.set(key, { at: Date.now(), data: list, promise: null });
       inflight.delete(key);
       return list;

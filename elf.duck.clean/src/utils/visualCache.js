@@ -1,7 +1,11 @@
-const STORAGE_KEY = "product_visual_cache_v1";
+import { enrichProductVisuals } from "../lib/productImages.js";
+
+const STORAGE_KEY = "product_visual_cache_v2";
 
 const pickVisualFields = (product) => {
   if (!product || typeof product !== "object") return null;
+
+  product = enrichProductVisuals(product);
 
   const productKey = String(product.productKey || "").trim();
   if (!productKey) return null;
@@ -23,7 +27,14 @@ export function readProductVisualCache() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object") return {};
+
+    const next = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      const visual = pickVisualFields(value);
+      if (visual) next[key] = visual;
+    }
+    return next;
   } catch {
     return {};
   }
