@@ -244,9 +244,15 @@ async function syncOxvaLiquid() {
   console.log("✅ OXVA", productKey, "base 55 zł (smart: 55/50/45/40)");
 }
 
-const XROS_6_IMAGE_FILES = {
-  "xros-6-mini-pod": "xros-6-mini-pod.png",
-  "xros-6-pod": "xros-6-pod.png",
+const XROS_6_ASSETS = {
+  "xros-6-mini-pod": {
+    bg: "xros-6-mini-pod-bg.svg",
+    duck: "xros-6-mini-pod-duck.png",
+  },
+  "xros-6-pod": {
+    bg: "xros-6-pod-bg.svg",
+    duck: "xros-6-pod-duck.png",
+  },
 };
 
 function productImageBaseUrl() {
@@ -261,11 +267,18 @@ function productImageBaseUrl() {
   ).replace(/\/+$/, "");
 }
 
-function xros6MediaForKey(productKey) {
-  const file = XROS_6_IMAGE_FILES[productKey];
-  if (!file) return {};
-  const url = `${productImageBaseUrl()}/products/${file}`;
-  return { cardBgUrl: url, orderImgUrl: url };
+function xros6MediaForKey(productKey, template = {}) {
+  const assets = XROS_6_ASSETS[productKey];
+  if (!assets) return {};
+  const base = productImageBaseUrl();
+  const abs = (file) => `${base}/products/${file}`;
+  const duckUrl = abs(assets.duck);
+  return {
+    cardBgUrl: abs(assets.bg),
+    cardDuckUrl: duckUrl,
+    orderImgUrl: duckUrl,
+    classCardDuck: String(template.classCardDuck || "cardImageRight"),
+  };
 }
 
 async function main() {
@@ -284,9 +297,14 @@ async function main() {
   const mini5 = await Product.findOne({ productKey: "xros-5-mini-pod" }).lean();
   const pod5 = await Product.findOne({ productKey: "xros-5-pod" }).lean();
 
-  const miniMedia = xros6MediaForKey("xros-6-mini-pod");
-  const podMedia = xros6MediaForKey("xros-6-pod");
-  console.log("Xros 6 images:", miniMedia.cardBgUrl, podMedia.cardBgUrl);
+  const miniMedia = xros6MediaForKey("xros-6-mini-pod", mini5);
+  const podMedia = xros6MediaForKey("xros-6-pod", pod5);
+  console.log("Xros 6 media:", {
+    mini: miniMedia.cardBgUrl,
+    pod: podMedia.cardBgUrl,
+    duckMini: miniMedia.cardDuckUrl,
+    duckPod: podMedia.cardDuckUrl,
+  });
 
   await upsertProduct({
     productKey: "xros-6-mini-pod",

@@ -1,37 +1,32 @@
-/** Локальні превʼю (public/products) — fallback, якщо в API порожній або старий cardBgUrl. */
-export const productImageByKey = {
-  "xros-6-mini-pod": "/products/xros-6-mini-pod.png",
-  "xros-6-pod": "/products/xros-6-pod.png",
+/** Локальні превʼю Xros 6: нейтральний фон + PNG з качкою окремо. */
+export const productVisualByKey = {
+  "xros-6-mini-pod": {
+    cardBgUrl: "/products/xros-6-mini-pod-bg.svg",
+    cardDuckUrl: "/products/xros-6-mini-pod-duck.png",
+    orderImgUrl: "/products/xros-6-mini-pod-duck.png",
+    classCardDuck: "cardImageRight",
+  },
+  "xros-6-pod": {
+    cardBgUrl: "/products/xros-6-pod-bg.svg",
+    cardDuckUrl: "/products/xros-6-pod-duck.png",
+    orderImgUrl: "/products/xros-6-pod-duck.png",
+    classCardDuck: "cardImageRight",
+  },
 };
-
-export function resolveProductCardBgUrl(productKey, cardBgUrl) {
-  const key = String(productKey || "").trim();
-  const fromApi = String(cardBgUrl || "").trim();
-  const local = productImageByKey[key];
-  if (local) return local;
-  return fromApi;
-}
 
 export function enrichProductVisuals(product) {
   if (!product || typeof product !== "object") return product;
 
   const productKey = String(product.productKey || "").trim();
-  const cardBgUrl = resolveProductCardBgUrl(productKey, product.cardBgUrl);
-  const orderImgUrl = productImageByKey[productKey]
-    ? cardBgUrl
-    : String(product.orderImgUrl || product.cardBgUrl || "").trim();
-
-  if (
-    cardBgUrl === product.cardBgUrl &&
-    orderImgUrl === product.orderImgUrl
-  ) {
-    return product;
-  }
+  const preset = productVisualByKey[productKey];
+  if (!preset) return product;
 
   return {
     ...product,
-    cardBgUrl,
-    orderImgUrl: orderImgUrl || cardBgUrl,
+    cardBgUrl: preset.cardBgUrl,
+    cardDuckUrl: preset.cardDuckUrl,
+    orderImgUrl: preset.orderImgUrl,
+    classCardDuck: product.classCardDuck || preset.classCardDuck,
   };
 }
 
