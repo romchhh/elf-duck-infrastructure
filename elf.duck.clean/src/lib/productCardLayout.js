@@ -26,6 +26,22 @@ export function resolveCatalogDuckClass(product) {
 }
 
 /**
+ * Мобільний каталог (2 колонки): ліва клітинка ряду — PNG зліва, права — справа.
+ * @param {number} gridIndex — позиція в сітці (0-based, з урахуванням усіх карток у grid)
+ * @param {number} columns — кількість колонок (на телефоні 2)
+ */
+export function resolveCatalogGridDuckClass(gridIndex, columns = 2) {
+  const cols = Math.max(1, Number(columns) || 2);
+  const col = ((Number(gridIndex) || 0) % cols + cols) % cols;
+  return col === 0 ? "productCardImageLeft" : "productCardImageRight";
+}
+
+export function resolveCatalogGridActionsClass(gridIndex, columns = 2) {
+  const duckClass = resolveCatalogGridDuckClass(gridIndex, columns);
+  return resolveProductActionsClass({ classCardDuck: duckClass });
+}
+
+/**
  * Кнопки (кошик / сердечко) — на протилежному боці від PNG товару.
  * productActionsRight → CSS left:14px (утка справа)
  * productActionsLeft  → CSS right:14px (утка зліва)

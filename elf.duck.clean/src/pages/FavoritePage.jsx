@@ -13,7 +13,10 @@ import {
   isCartridgesCategory,
   isCompactCatalogDuck,
 } from "../lib/productCategories.js";
-import { resolveProductActionsClass } from "../lib/productCardLayout.js";
+import {
+  resolveCatalogGridActionsClass,
+  resolveCatalogGridDuckClass,
+} from "../lib/productCardLayout.js";
 
 import {
 
@@ -835,7 +838,18 @@ const FavoritePage = () => {
                 </div>
                 </button>
 
-                {favoriteProducts.map((product) => (
+                {favoriteProducts.map((product, favIdx) => {
+                  const catalogGridIndex = favIdx + 1;
+                  const gridDuckClass = resolveCatalogGridDuckClass(
+                    catalogGridIndex,
+                    2
+                  );
+                  const gridActionsClass = resolveCatalogGridActionsClass(
+                    catalogGridIndex,
+                    2
+                  );
+
+                  return (
                 <div
                     key={product._id}
                     className={`productCard${
@@ -873,7 +887,7 @@ const FavoritePage = () => {
                     {product.cardDuckUrl ? (
                     <img
                         src={product.cardDuckUrl}
-                        className={product.classCardDuck || "cardImageLeft"}
+                        className={gridDuckClass}
                         alt=""
                         loading="lazy"
                         decoding="async"
@@ -902,7 +916,7 @@ const FavoritePage = () => {
                     </div>
                     </div>
 
-                    <div className={resolveProductActionsClass(product)}>
+                    <div className={gridActionsClass}>
                     {product.newBadge ? (
                         <div className={product.classNewBadge || "actionBadge sale"}>
                         {product.newBadge}
@@ -944,7 +958,8 @@ const FavoritePage = () => {
                     </button>
                     </div>
                 </div>
-                ))}
+                  );
+                })}
             </div>
             )}
             </div>

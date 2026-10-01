@@ -13,7 +13,10 @@ import {
   isCartridgesCategory,
   isCompactCatalogDuck,
 } from "../lib/productCategories.js";
-import { resolveProductActionsClass } from "../lib/productCardLayout.js";
+import {
+  resolveCatalogGridActionsClass,
+  resolveCatalogGridDuckClass,
+} from "../lib/productCardLayout.js";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
 
@@ -82,8 +85,12 @@ import {
 
 } from "../utils/i18n";
 
+const CATALOG_GRID_COLUMNS_MOBILE = 2;
+
 const MainPageProductCard = React.memo(function MainPageProductCard({
   product,
+  catalogGridIndex = 0,
+  catalogGridColumns = CATALOG_GRID_COLUMNS_MOBILE,
   eager = false,
   zlotyIcon,
   buyIcon,
@@ -97,6 +104,14 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 
   const compactDuck = isCompactCatalogDuck(product);
   const cartridgeDuck = isCartridgesCategory(product);
+  const gridDuckClass = resolveCatalogGridDuckClass(
+    catalogGridIndex,
+    catalogGridColumns
+  );
+  const gridActionsClass = resolveCatalogGridActionsClass(
+    catalogGridIndex,
+    catalogGridColumns
+  );
 
   return (
     <div
@@ -123,7 +138,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
       {product.cardDuckUrl ? (
         <img
           src={product.cardDuckUrl}
-          className={product.classCardDuck || "cardImageLeft"}
+          className={gridDuckClass}
           alt=""
           loading={eager ? "eager" : "lazy"}
           decoding="async"
@@ -149,7 +164,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
         </div>
       </div>
 
-      <div className={resolveProductActionsClass(product)}>
+      <div className={gridActionsClass}>
         <div className={product.classNewBadge}>{product.newBadge}</div>
 
         <button
@@ -4132,6 +4147,8 @@ navigate("/cart");
                   <MainPageProductCard
                     key={product._id}
                     product={product}
+                    catalogGridIndex={idx}
+                    catalogGridColumns={CATALOG_GRID_COLUMNS_MOBILE}
                     eager={idx < 4}
                     zlotyIcon={zlotyIcon}
                     buyIcon={buyIcon}

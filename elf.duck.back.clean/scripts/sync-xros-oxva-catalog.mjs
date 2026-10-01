@@ -474,19 +474,9 @@ async function main() {
     pod: podMedia.cardBgUrl,
   });
 
-  await upsertProduct({
-    productKey: "xros-6-mini-pod",
-    price: 120,
-    title1: "XROS 6",
-    title2: "MINI POD",
-    titleModal: "XROS 6 MINI POD",
-    categoryKey: mini5?.categoryKey || pod5?.categoryKey || "pods",
-    flavorLabels: XROS_6_MINI_FLAVORS,
-    cloneFromKey: "xros-5-mini-pod",
-    mediaOverride: miniMedia,
-    sortOrder: (mini5?.sortOrder ?? 0) + 1,
-  });
+  const xros6SortBase = Number(pod5?.sortOrder ?? mini5?.sortOrder ?? 0);
 
+  // У сітці 2 колонки: POD справа, MINI зліва в одному ряду — POD раніше в sortOrder.
   await upsertProduct({
     productKey: "xros-6-pod",
     price: 140,
@@ -497,7 +487,20 @@ async function main() {
     flavorLabels: XROS_6_POD_FLAVORS,
     cloneFromKey: "xros-5-pod",
     mediaOverride: podMedia,
-    sortOrder: (pod5?.sortOrder ?? 0) + 1,
+    sortOrder: xros6SortBase + 1,
+  });
+
+  await upsertProduct({
+    productKey: "xros-6-mini-pod",
+    price: 120,
+    title1: "XROS 6",
+    title2: "MINI POD",
+    titleModal: "XROS 6 MINI POD",
+    categoryKey: mini5?.categoryKey || pod5?.categoryKey || "pods",
+    flavorLabels: XROS_6_MINI_FLAVORS,
+    cloneFromKey: "xros-5-mini-pod",
+    mediaOverride: miniMedia,
+    sortOrder: xros6SortBase + 2,
   });
 
   // Спочатку жижа (oxva-30-ml-20-mg), потім pod (oxva-pod) — інакше втрачаються вкуси з legacy oxva-pod.
