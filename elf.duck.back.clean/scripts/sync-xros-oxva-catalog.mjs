@@ -260,11 +260,14 @@ function publicProductUrl(file) {
   return `${base}/products/${file}?v=${PRODUCT_CARD_ASSET_VERSION}`;
 }
 
-/** Локальні градієнти — відтінок як на order hero (синій / зелений / червоний). */
-const CARD_BG_FILES = {
-  "xros-6-mini-pod": "xros-6-mini-pod-bg.svg",
-  "xros-6-pod": "xros-6-pod-bg.svg",
-  "oxva-30-ml-20-mg": "oxva-30-ml-20-mg-bg.svg",
+/** Фони карток — як xros-5-mini / xros-5-pod / puffy-30-ml. */
+const CARD_BG_REF = {
+  "xros-6-mini-pod":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreiadl2zshbsy52wm5aaskodzrcjsdsjmbz3alnm5tt5rjgqwxlwfaa",
+  "xros-6-pod":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreidcqyy44a3zkf3ag2fnvopn5syqzct6notpayx5hpeokdhxe3nk34",
+  "oxva-30-ml-20-mg":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreig3wqn55dlr5uo4uvwng4xxzygh3proyxx553zsbeizk5tbotj3qa",
 };
 
 const ORDER_IMAGE_FILES = {
@@ -309,9 +312,7 @@ function catalogCardMedia(productKey, cardFile) {
   }
   const orderFile = ORDER_IMAGE_FILES[productKey] || cardFile;
   return {
-    cardBgUrl: CARD_BG_FILES[productKey]
-      ? publicProductUrl(CARD_BG_FILES[productKey])
-      : "",
+    cardBgUrl: CARD_BG_REF[productKey] || "",
     cardDuckUrl: cardUrl,
     orderImgUrl: publicProductUrl(orderFile),
     classCardDuck: layout.classCardDuck || "productCardImageRight",

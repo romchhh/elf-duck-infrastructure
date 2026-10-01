@@ -1480,13 +1480,16 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     : "right";
 
   const checkoutAccentRgb = useMemo(() => {
+    const pageTint = String(activeProduct?.pageAccentRgb || "").trim();
+    if (pageTint) return pageTint;
+
     if (selectedFlavor?.gradient?.[0]) {
       return hexToRgbTriplet(selectedFlavor.gradient[0]);
     }
     const fromProduct = String(activeProduct?.accentColor || "").trim();
     if (fromProduct) return fromProduct;
     return "137, 117, 201";
-  }, [selectedFlavor, activeProduct?.accentColor]);
+  }, [selectedFlavor, activeProduct?.pageAccentRgb, activeProduct?.accentColor]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
