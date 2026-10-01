@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import "../styles/ManagersPage.css";
+import "../styles/sideMenuLanguage.css";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext";
 import { haptic } from "../utils/haptics";
@@ -120,14 +121,18 @@ const ManagersPage = () => {
             point?.scheduleByDate?.[todayKey] ||
             null;
 
-        if (
-            !todaySchedule ||
-            todaySchedule?.isOpen !== true
-        ) {
-            return t(
-                "закрыто",
-                "zamknięte"
+        if (!todaySchedule || todaySchedule?.isOpen !== true) {
+            const closedLabel = translateScheduleStatus(
+                todaySchedule?.label ||
+                todaySchedule?.status ||
+                todaySchedule?.text ||
+                todaySchedule?.note ||
+                ""
             );
+
+            if (closedLabel) return closedLabel;
+
+            return t("выходной", "dzień wolny");
         }
 
         const periods = Array.isArray(
@@ -225,9 +230,14 @@ const ManagersPage = () => {
         return "pickupCheckoutReadonly";
     };
 
+  const isKnownManagerPoint = (point) => {
+    if (!point || point?.isActive === false) return false;
+    return Boolean(getManagerDuckByPoint(point));
+  };
+
   const filteredManagers = useMemo(() => {
     const all = (Array.isArray(pickupPoints) ? pickupPoints : []).filter(
-      isPickupPointOpenToday
+      isKnownManagerPoint
     );
 
     if (managerTab === "delivery") {
@@ -251,7 +261,7 @@ const ManagersPage = () => {
     });
   }, [pickupPoints, managerTab]);
 
-  const hasAvailablePickupManagers = pickupPoints.some((point) => {
+  const hasPickupManagersTab = pickupPoints.some((point) => {
     const key = String(point?.key || "")
       .trim()
       .toLowerCase()
@@ -260,11 +270,11 @@ const ManagersPage = () => {
     return (
       key !== "delivery" &&
       key !== "delivery-2" &&
-      isPickupPointOpenToday(point)
+      isKnownManagerPoint(point)
     );
   });
 
-  const hasAvailableDeliveryManagers = pickupPoints.some((point) => {
+  const hasDeliveryManagersTab = pickupPoints.some((point) => {
     const key = String(point?.key || "")
       .trim()
       .toLowerCase()
@@ -272,23 +282,20 @@ const ManagersPage = () => {
 
     return (
       (key === "delivery" || key === "delivery-2") &&
-      isPickupPointOpenToday(point)
+      isKnownManagerPoint(point)
     );
   });
 
   useEffect(() => {
-    if (!hasAvailablePickupManagers && hasAvailableDeliveryManagers) {
+    if (!hasPickupManagersTab && hasDeliveryManagersTab) {
       setManagerTab("delivery");
       return;
     }
 
-    if (!hasAvailableDeliveryManagers && hasAvailablePickupManagers) {
+    if (!hasDeliveryManagersTab && hasPickupManagersTab) {
       setManagerTab("pickup");
     }
-  }, [
-    hasAvailablePickupManagers,
-    hasAvailableDeliveryManagers,
-  ]);
+  }, [hasPickupManagersTab, hasDeliveryManagersTab]);
 
   const isDeliveryManagerPoint = (point) => {
     const key = String(point?.key || "").trim().toLowerCase().replace(/,+$/, "");
@@ -921,7 +928,7 @@ const ManagersPage = () => {
           </div>
 
           <div className="checkoutTabs managersTabs">
-            {hasAvailablePickupManagers && (
+            {hasPickupManagersTab && (
               <button
                 type="button"
                 className={`checkoutTab ${
@@ -937,7 +944,7 @@ const ManagersPage = () => {
               </button>
             )}
 
-            {hasAvailableDeliveryManagers && (
+            {hasDeliveryManagersTab && (
               <button
                 type="button"
                 className={`checkoutTab ${
@@ -965,7 +972,11 @@ const ManagersPage = () => {
                   <div className="sectionLine" />
                 </div>
 
-                <div className={`${getManagerCardClassName(point)} managerCard`}>
+                <div
+                  className={`${getManagerCardClassName(point)} managerCard ${
+                    isPickupPointOpenToday(point) ? "" : "managerCardDayOff"
+                  }`}
+                >
                   <div className="pickupCheckoutLeft">
                     <div className="managerCardButtons">
                       {!isDeliveryManagerPoint(point) && (
@@ -982,10 +993,15 @@ const ManagersPage = () => {
                       <button
                         type="button"
                         className="managerActionBtn"
+                        disabled={!isPickupPointOpenToday(point)}
                         onClick={() => openManagerTelegram(point)}
                       >
                         <img src={managerTgIcon} alt="" />
-                        <span>{t("связаться с менеджером", "skontaktuj się z menedżerem")}</span>
+                        <span>
+                          {isPickupPointOpenToday(point)
+                            ? t("связаться с менеджером", "skontaktuj się z menedżerem")
+                            : t("сегодня выходной", "dzisiaj dzień wolny")}
+                        </span>
                       </button>
                     </div>
 

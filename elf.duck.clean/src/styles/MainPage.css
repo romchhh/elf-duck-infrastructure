@@ -21,6 +21,8 @@
   to { transform: rotate(360deg); }
 }
 
+@import "./sideMenuLanguage.css";
+
 /* ✅ Глобальные настройки */
 html, body {
   height: 100%;
@@ -553,18 +555,31 @@ body {
 .catalogSearchInput {
   width: 100%;
   box-sizing: border-box;
-  height: 38px;
+  height: 35px;
   padding: 0 14px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 1);
+  background: rgba(0, 0, 0, 0.85);
   color: #fff;
-  font-size: 14px;
+  font-size: 13px;
+  font-family: Unbounded-Medium;
   outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 4px 10px rgba(0, 0, 0, 0.25);
 }
 
 .catalogSearchInput::placeholder {
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.55);
+  font-family: Unbounded-Regular;
+  font-size: 12px;
+}
+
+.catalogSearchInput:focus {
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .catalogButton {
@@ -3849,6 +3864,10 @@ body {
 
 @media (max-width: 320px) {
   .catalogButtons {
+    width: 95%;
+  }
+
+  .catalogSearchWrap {
     width: 95%;
   }
 

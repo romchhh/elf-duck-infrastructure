@@ -360,31 +360,51 @@ useEffect(() => {
         }
     };
 
+    const paymentAutoOpenHandledRef = useRef("");
+
+    useEffect(() => {
+        const seedOrder = location.state?.seedOrder;
+        if (!seedOrder?._id) return;
+
+        setOrders((prev) => {
+            const id = String(seedOrder._id);
+            if (prev.some((o) => String(o?._id || "") === id)) return prev;
+            return [seedOrder, ...prev];
+        });
+        setOrdersLoading(false);
+    }, [location.state?.seedOrder]);
+
     useEffect(() => {
         const orderId = String(
-            location.state?.openPaymentOrderId || ""
+            location.state?.openPaymentOrderId ||
+            location.state?.justCreatedOrderId ||
+            ""
         ).trim();
 
-        if (!orderId || !orders.length) return;
+        if (!orderId) return;
+        if (paymentAutoOpenHandledRef.current === orderId) return;
 
-        const targetOrder = orders.find(
-            (order) =>
-            String(order?._id || "") === orderId
-        );
+        const seedOrder = location.state?.seedOrder;
+        const targetOrder =
+            orders.find((order) => String(order?._id || "") === orderId) ||
+            (seedOrder && String(seedOrder?._id || "") === orderId ? seedOrder : null);
 
         if (!targetOrder) return;
 
+        paymentAutoOpenHandledRef.current = orderId;
         openPaymentRoll(targetOrder);
 
-        // Очищаем state, чтобы модалка повторно
-        // не открылась после обновления orders.
         navigate(location.pathname, {
             replace: true,
             state: {},
         });
-        }, [
+    }, [
         location.state?.openPaymentOrderId,
+        location.state?.justCreatedOrderId,
+        location.state?.seedOrder,
         orders,
+        navigate,
+        location.pathname,
     ]);
 
     const closePaymentRoll = () => {
@@ -1768,6 +1788,12 @@ useEffect(() => {
 
         {isPaymentOpen && activePaymentOrder && (
         <>
+            <div
+                className="checkoutBackdrop"
+                onClick={closePaymentRoll}
+                aria-hidden="true"
+            />
+
             {isCashAmountEditing && (
                 <div className="paymentInputOverlay" onClick={closeCashAmountEditor}>
                     <div

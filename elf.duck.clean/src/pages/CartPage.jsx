@@ -6164,8 +6164,8 @@ if (pointBlob.includes("srodmiescie")) {
                           replace: true,
                           state: createdOrder
                             ? {
-                                justCreatedOrderId: String(createdOrder?._id || ""),
-                                justCreatedOrderNo: String(createdOrder?.orderNo || ""),
+                                openPaymentOrderId: String(createdOrder?._id || ""),
+                                seedOrder: createdOrder,
                               }
                             : undefined,
                         });

@@ -61,6 +61,19 @@
   margin: 6px 0 8px;
 }
 
+.managerCard.managerCardDayOff {
+  opacity: 0.92;
+}
+
+.managerCard.managerCardDayOff .managerScheduleBtn {
+  color: rgba(255, 200, 120, 0.95);
+}
+
+.managerCard.managerCardDayOff .managerActionBtn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .managerCard {
   width: 87%;
   align-self: center;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef} from "react";
 import "../styles/ReferralPage.css";
+import "../styles/sideMenuLanguage.css";
 import { useUser } from "../UserContext";
 import { useNavigate } from "react-router-dom";
 import { haptic } from "../utils/haptics";

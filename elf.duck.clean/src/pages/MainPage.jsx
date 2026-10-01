@@ -3279,7 +3279,7 @@ navigate("/cart");
                                             selectLanguage("ru")
                                         }
                                     >
-                                        <span></span>
+                                        <span aria-hidden="true">🇷🇺</span>
                                         <span>Русский</span>
                                     </button>
 
@@ -3294,7 +3294,7 @@ navigate("/cart");
                                             selectLanguage("pl")
                                         }
                                     >
-                                        <span></span>
+                                        <span aria-hidden="true">🇵🇱</span>
                                         <span>Polski</span>
                                     </button>
                                 </div>
