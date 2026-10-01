@@ -60,7 +60,7 @@ export const PRODUCT_BUILDER_STEPS = [
 // =================== PRODUCT BUILDER (WIZARD) ===================
 
 // ===== Product builder: presets for layout =====
-const PRODUCT_LAYOUTS = [
+export const PRODUCT_LAYOUTS = [
   {
     id: 1,
     label: "Вариант 1 — утка справа / кнопки справа",

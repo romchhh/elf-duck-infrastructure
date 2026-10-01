@@ -23,6 +23,13 @@ import {
 } from "../broadcastPolling.js";
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
+import { BUILDER_STEPS } from "./categoryProductDefs.js";
+import {
+  CAT_STEP_IMAGES,
+  renderCategoryPreview,
+  getDuckLabel,
+  getTitleLabel,
+} from "./productFlow.js";
 import {
   renderPickupPointPreview,
   ppListKeyboard,
@@ -33,15 +40,6 @@ export { ppListKeyboard } from "./pickupPointHelpers.js";
 // =====================================================
 // =================== PICKUP POINTS ===================
 // ====================================================
-
-const ppPaymentMenuKeyboard = (id) =>
-  Markup.inlineKeyboard([
-    [Markup.button.callback("BLIK", `pp_pay_prompt:${id}:blik`)],
-    [Markup.button.callback("Криптовалюта", `pp_pay_prompt:${id}:crypto`)],
-    [Markup.button.callback("Укр. карта", `pp_pay_prompt:${id}:ua_card`)],
-    [Markup.button.callback("Наличные", `pp_pay_prompt:${id}:cash`)],
-    [Markup.button.callback("⬅️ К точке", `pp_open:${id}`)],
-  ]);
 
 export const askPickupCreateStep = async (ctx) => {
   const st = getState(ctx.chat.id);
@@ -153,7 +151,7 @@ const editMenuKeyboard = () =>
     ],
   ]);
 
-const sendEditMenu = async (ctx) => {
+export const sendEditMenu = async (ctx) => {
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "cat_edit_menu") return;
 

@@ -23,6 +23,12 @@ import {
 } from "../broadcastPolling.js";
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
+import {
+  BROADCAST_STEPS,
+  defaultBroadcastData,
+  askBroadcastStep,
+  askCourierMessageStep,
+} from "./wizardState.js";
 
 bot.on("photo", async (ctx, next) => {
   try {

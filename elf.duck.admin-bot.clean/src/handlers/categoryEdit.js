@@ -26,6 +26,8 @@ import { sendStepCard } from "../ui/sendStepCard.js";
 import { BUILDER_STEPS } from "./categoryProductDefs.js";
 import { CATEGORY_VARIANTS } from "./productFlow.js";
 import { mainMenu } from "./menu.js";
+import { askStep, nextStep, sendEditMenu } from "./pickupFlow.js";
+import { DUCK_CLASS_OPTIONS, TITLE_CLASS_OPTIONS } from "./productFlow.js";
 
 // ==================== CATEGORY EDIT ===================
 

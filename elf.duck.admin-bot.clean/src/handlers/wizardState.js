@@ -200,7 +200,7 @@ export const defaultCourierMessageData = () => ({
   photoUrl: "",
 });
 
-const BROADCAST_STEPS = [
+export const BROADCAST_STEPS = [
   "audienceType",
   "segmentType",
   "segmentValue",

@@ -242,10 +242,10 @@ export const CATEGORY_VARIANTS = [
 const getVariantLabel = (v) =>
   CATEGORY_VARIANTS.find((x) => x.id === v)?.label || (v ? `ВАРИАНТ ${v}` : "—");
 
-const getDuckLabel = (value) =>
+export const getDuckLabel = (value) =>
   DUCK_CLASS_OPTIONS.find((o) => o.value === value)?.label || value || "—";
 
-const getTitleLabel = (value) =>
+export const getTitleLabel = (value) =>
   TITLE_CLASS_OPTIONS.find((o) => o.value === value)?.label || value || "—";
 
 // ----- render preview text -----
