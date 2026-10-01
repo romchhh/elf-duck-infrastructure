@@ -239,14 +239,23 @@ const OXVA_FLAVORS = [
   "Blackberry ice",
 ];
 
-function oxvaLiquidMedia() {
+const PRODUCT_CARD_ASSET_VERSION = String(
+  process.env.PRODUCT_IMAGE_CACHE_VERSION || "3"
+);
+
+function publicProductUrl(file) {
   const base = productImageBaseUrl();
-  const url = `${base}/products/oxva-30-ml-20-mg-card.png`;
+  return `${base}/products/${file}?v=${PRODUCT_CARD_ASSET_VERSION}`;
+}
+
+function oxvaLiquidMedia() {
+  const url = publicProductUrl("oxva-30-ml-20-mg-card.png");
   return {
     cardBgUrl: url,
     cardDuckUrl: "",
     orderImgUrl: url,
     classCardBg: "cardImageProductHero",
+    classCardDuck: "",
   };
 }
 
@@ -361,13 +370,13 @@ function productImageBaseUrl() {
 function xros6MediaForKey(productKey) {
   const file = XROS_6_ASSETS[productKey];
   if (!file) return {};
-  const base = productImageBaseUrl();
-  const url = `${base}/products/${file}`;
+  const url = publicProductUrl(file);
   return {
     cardBgUrl: url,
     cardDuckUrl: "",
     orderImgUrl: url,
     classCardBg: "cardImageProductHero",
+    classCardDuck: "",
   };
 }
 

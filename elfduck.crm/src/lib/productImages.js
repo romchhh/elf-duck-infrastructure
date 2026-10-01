@@ -26,9 +26,9 @@ export const productImageByKey = {
   'ethereum-30-ml': '/products/ethereum-30-ml.webp',
   'puffy-30-ml-70-mg': '/products/puffy-30-ml-70-mg.webp',
   'xros-5-pod': '/products/xros-5-pod.webp',
-  'xros-6-mini-pod': '/products/xros-6-mini-pod-card.png',
-  'xros-6-pod': '/products/xros-6-pod-card.png',
-  'oxva-30-ml-20-mg': '/products/oxva-30-ml-20-mg-card.png',
+  'xros-6-mini-pod': '/products/xros-6-mini-pod-card.png?v=3',
+  'xros-6-pod': '/products/xros-6-pod-card.png?v=3',
+  'oxva-30-ml-20-mg': '/products/oxva-30-ml-20-mg-card.png?v=3',
   'yami-30ml': '/products/yami-30ml.webp',
   'elfx-pod': '/products/elfx-pod.webp',
 };
