@@ -986,36 +986,47 @@ body {
   position: absolute;
   bottom: 0;
   right: 0;
-  left: auto;
 
   width: auto;
-  height: 88%;
-  max-width: 92%;
-
-  object-fit: contain;
-  object-position: right bottom;
+  height: 60%;
 
   border-bottom-right-radius: 19px;
 
-  z-index: 4;
+  z-index: 3;
 }
 
 .productCardImageLeft {
   position: absolute;
   bottom: 0;
   left: 0;
-  right: auto;
 
   width: auto;
-  height: 88%;
-  max-width: 92%;
-
-  object-fit: contain;
-  object-position: left bottom;
+  height: 60%;
 
   border-bottom-left-radius: 19px;
 
-  z-index: 4;
+  z-index: 3;
+}
+
+/* Жижі + одноразки — трохи менше (базові 60%/70%/90% як у решти каталогу) */
+.productCard--compactDuck .cardImageLeft,
+.productCard--compactDuck .cardImageLeft2,
+.productCard--compactDuck .productCardImageLeft {
+  transform: scale(0.88);
+  transform-origin: left bottom;
+}
+
+.productCard--compactDuck .cardImageRight,
+.productCard--compactDuck .cardImageRight2,
+.productCard--compactDuck .productCardImageRight {
+  transform: scale(0.88);
+  transform-origin: right bottom;
+}
+
+.checkoutHero--compactDuck .checkoutHeroImg {
+  height: clamp(168px, 40vw, 232px);
+  transform: scale(0.92);
+  transform-origin: center bottom;
 }
 
 .catalogContent {
@@ -1357,10 +1368,26 @@ body {
 
 .checkoutHero {
   position: relative;
-  width: 99.6%;
+  width: 100%;
+  min-height: clamp(200px, 48vw, 280px);
   border-radius: 22px;
   overflow: hidden;
   border: 1px solid rgba(206, 206, 206, 1);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.checkoutHeroBg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  opacity: 0.5;
+  z-index: 1;
+  pointer-events: none;
 }
 
 /* ===== HERO POST-ADD OVERLAY (cashback) ===== */
@@ -1846,17 +1873,18 @@ body {
 
 
 .checkoutHeroImg {
+  position: relative;
+  z-index: 2;
+  display: block;
   width: 100%;
-  max-width: 280px;
-  margin: 0 auto;
-  height: 200px;
-  max-height: 200px;
+  max-width: 100%;
+  height: clamp(200px, 48vw, 280px);
+  margin: 0;
+  padding: 0 4px 4px;
+  box-sizing: border-box;
   object-fit: contain;
   object-position: center bottom;
-
-  border-radius: 22px;
-
-  display: block;
+  border-radius: 0;
 }
 
 .checkoutMetaRow {

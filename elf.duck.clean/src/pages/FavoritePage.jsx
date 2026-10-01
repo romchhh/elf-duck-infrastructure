@@ -9,6 +9,7 @@ import { haptic } from "../utils/haptics";
 import { preloadImage } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
+import { isCompactCatalogDuck } from "../lib/productCategories.js";
 
 import {
 
@@ -833,7 +834,9 @@ const FavoritePage = () => {
                 {favoriteProducts.map((product) => (
                 <div
                     key={product._id}
-                    className="productCard"
+                    className={`productCard${
+                      isCompactCatalogDuck(product) ? " productCard--compactDuck" : ""
+                    }`}
                     onClick={() => {
                       haptic.heavy();
                       if (product.orderImgUrl) preloadImage(product.orderImgUrl);
