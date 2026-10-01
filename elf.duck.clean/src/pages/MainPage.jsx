@@ -14,8 +14,8 @@ import {
   isCompactCatalogDuck,
 } from "../lib/productCategories.js";
 import {
-  resolveCatalogGridActionsClass,
-  resolveCatalogGridDuckClass,
+  orderProductsForTwoColumnGrid,
+  resolveProductActionsClass,
 } from "../lib/productCardLayout.js";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
@@ -85,12 +85,8 @@ import {
 
 } from "../utils/i18n";
 
-const CATALOG_GRID_COLUMNS_MOBILE = 2;
-
 const MainPageProductCard = React.memo(function MainPageProductCard({
   product,
-  catalogGridIndex = 0,
-  catalogGridColumns = CATALOG_GRID_COLUMNS_MOBILE,
   eager = false,
   zlotyIcon,
   buyIcon,
@@ -104,14 +100,6 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 
   const compactDuck = isCompactCatalogDuck(product);
   const cartridgeDuck = isCartridgesCategory(product);
-  const gridDuckClass = resolveCatalogGridDuckClass(
-    catalogGridIndex,
-    catalogGridColumns
-  );
-  const gridActionsClass = resolveCatalogGridActionsClass(
-    catalogGridIndex,
-    catalogGridColumns
-  );
 
   return (
     <div
@@ -138,7 +126,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
       {product.cardDuckUrl ? (
         <img
           src={product.cardDuckUrl}
-          className={gridDuckClass}
+          className={product.classCardDuck || "cardImageLeft"}
           alt=""
           loading={eager ? "eager" : "lazy"}
           decoding="async"
@@ -164,7 +152,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
         </div>
       </div>
 
-      <div className={gridActionsClass}>
+      <div className={resolveProductActionsClass(product)}>
         <div className={product.classNewBadge}>{product.newBadge}</div>
 
         <button
@@ -3018,7 +3006,8 @@ navigate("/cart");
   const catalogSearchNorm = String(catalogSearchQuery || "").trim().toLowerCase();
 
   const displayedProducts = useMemo(() => {
-    if (!catalogSearchNorm) return visibleProducts;
+    const baseList = (() => {
+      if (!catalogSearchNorm) return visibleProducts;
 
     const productMatchesQuery = (p) => {
       const titleBits = [p?.title1, p?.title2, p?.titleModal, p?.productKey]
@@ -3035,6 +3024,9 @@ navigate("/cart");
     };
 
     return products.filter(productMatchesQuery);
+    })();
+
+    return orderProductsForTwoColumnGrid(baseList, 2);
   }, [catalogSearchNorm, visibleProducts, products]);
 
   // ✅ Prefill типа/метода/точки из корзины (то есть из "первого товара")
@@ -4147,8 +4139,6 @@ navigate("/cart");
                   <MainPageProductCard
                     key={product._id}
                     product={product}
-                    catalogGridIndex={idx}
-                    catalogGridColumns={CATALOG_GRID_COLUMNS_MOBILE}
                     eager={idx < 4}
                     zlotyIcon={zlotyIcon}
                     buyIcon={buyIcon}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef} from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import "../styles/FavoritePage.css";
 import "../styles/sideMenuLanguage.css";
 import "../styles/MainPage.css";
@@ -14,8 +14,8 @@ import {
   isCompactCatalogDuck,
 } from "../lib/productCategories.js";
 import {
-  resolveCatalogGridActionsClass,
-  resolveCatalogGridDuckClass,
+  orderProductsForTwoColumnGrid,
+  resolveProductActionsClass,
 } from "../lib/productCardLayout.js";
 
 import {
@@ -281,8 +281,13 @@ const FavoritePage = () => {
         loadFavorites();
     }, [user?.telegramId, debugTgid, userLoading, isGuestBrowser]);
 
-    const favoriteProducts = products.filter((product) =>
+    const favoriteProductsRaw = products.filter((product) =>
         favoriteProductKeys.includes(String(product?.productKey || "").trim())
+    );
+
+    const favoriteProducts = useMemo(
+        () => orderProductsForTwoColumnGrid(favoriteProductsRaw, 2, 1),
+        [favoriteProductsRaw]
     );
 
     /* ================= BANNER DOTS SECTION ================= */
@@ -838,18 +843,7 @@ const FavoritePage = () => {
                 </div>
                 </button>
 
-                {favoriteProducts.map((product, favIdx) => {
-                  const catalogGridIndex = favIdx + 1;
-                  const gridDuckClass = resolveCatalogGridDuckClass(
-                    catalogGridIndex,
-                    2
-                  );
-                  const gridActionsClass = resolveCatalogGridActionsClass(
-                    catalogGridIndex,
-                    2
-                  );
-
-                  return (
+                {favoriteProducts.map((product) => (
                 <div
                     key={product._id}
                     className={`productCard${
@@ -887,7 +881,7 @@ const FavoritePage = () => {
                     {product.cardDuckUrl ? (
                     <img
                         src={product.cardDuckUrl}
-                        className={gridDuckClass}
+                        className={product.classCardDuck || "cardImageLeft"}
                         alt=""
                         loading="lazy"
                         decoding="async"
@@ -916,7 +910,7 @@ const FavoritePage = () => {
                     </div>
                     </div>
 
-                    <div className={gridActionsClass}>
+                    <div className={resolveProductActionsClass(product)}>
                     {product.newBadge ? (
                         <div className={product.classNewBadge || "actionBadge sale"}>
                         {product.newBadge}
@@ -958,8 +952,7 @@ const FavoritePage = () => {
                     </button>
                     </div>
                 </div>
-                  );
-                })}
+                ))}
             </div>
             )}
             </div>
