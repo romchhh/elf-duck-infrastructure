@@ -2,10 +2,13 @@ import {
   applyFlavorGradientsToProduct,
   hexToRgbTriplet,
 } from "./flavorGradients.js";
-import { resolveProductActionsClass } from "./productCardLayout.js";
+import {
+  normalizeCardDuckClass,
+  resolveProductActionsClass,
+} from "./productCardLayout.js";
 
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
-export const PRODUCT_CARD_ASSET_VERSION = "7";
+export const PRODUCT_CARD_ASSET_VERSION = "8";
 
 /** Фони карток як у xros-5 / puffy (IPFS), без catalog-smoke. */
 const CARD_BG_REF = {
@@ -38,7 +41,7 @@ function cardAsset(file) {
 export const productVisualByKey = {
   "xros-6-mini-pod": {
     cardBgUrl: CARD_BG_REF["xros-6-mini-pod"],
-    cardDuckUrl: cardAsset("xros-6-pod-card.png"),
+    cardDuckUrl: cardAsset("xros-6-mini-pod-card.png"),
     orderImgUrl: cardAsset("xros-6-mini-pod-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["xros-6-mini-pod"]),
     classCardBg: "",
@@ -50,7 +53,7 @@ export const productVisualByKey = {
   },
   "xros-6-pod": {
     cardBgUrl: CARD_BG_REF["xros-6-pod"],
-    cardDuckUrl: cardAsset("xros-6-mini-pod-card.png"),
+    cardDuckUrl: cardAsset("xros-6-pod-card.png"),
     orderImgUrl: cardAsset("xros-6-pod-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["xros-6-pod"]),
     classCardBg: "",
@@ -106,6 +109,11 @@ export function enrichProductVisuals(product) {
 
   if (preset?.pageAccentRgb) {
     next = { ...next, pageAccentRgb: preset.pageAccentRgb };
+  }
+
+  const duckClass = normalizeCardDuckClass(next.classCardDuck);
+  if (duckClass) {
+    next = { ...next, classCardDuck: duckClass };
   }
 
   next = { ...next, classActions: resolveProductActionsClass(next) };

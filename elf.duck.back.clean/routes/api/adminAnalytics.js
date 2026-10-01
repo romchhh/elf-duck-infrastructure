@@ -13,7 +13,13 @@ export function registerRoutes(app) {
       const allowed = new Set(["today", "week", "month"]);
       const safePeriod = allowed.has(period) ? period : "today";
 
-      const payload = await getAdminBotAnalytics(safePeriod);
+      const telegramId = String(
+        req.header("x-admin-telegram-id") || ""
+      ).trim();
+
+      const payload = await getAdminBotAnalytics(safePeriod, {
+        telegramId,
+      });
 
       res.json({
         ok: true,

@@ -3,6 +3,7 @@ import PickupPoint from "../../models/PickupPoint.js";
 import {
   loadSales,
   loadCanceledCount,
+  loadCanceledOrders,
 } from "./sales.js";
 import { getPeriodRange } from "./datetime.js";
 import {
@@ -12,6 +13,10 @@ import {
 } from "./analytics/metrics.js";
 import { collectProductSales } from "./analytics/products.js";
 import { collectLocationSales } from "./analytics/locations.js";
+import {
+  resolveManagerAnalyticsScope,
+  filterOrdersForAnalyticsScope,
+} from "./adminBotAnalyticsScope.js";
 
 const PERIOD_LABELS = {
   today: "Сегодня",
@@ -48,7 +53,13 @@ function locationLabel(identity, labels) {
   return labels[identity] || identity;
 }
 
-export async function getAdminBotAnalytics(period = "today") {
+export async function getAdminBotAnalytics(
+  period = "today",
+  options = {}
+) {
+  const telegramId = String(options?.telegramId || "").trim();
+  const scope = await resolveManagerAnalyticsScope(telegramId);
+
   const range = getPeriodRange(period, "", "");
   const periodKey = range.key || String(period || "today").toLowerCase();
 
@@ -81,11 +92,43 @@ export async function getAdminBotAnalytics(period = "today") {
     }),
   ]);
 
+  let scopedCurrentCanceled = currentCanceled;
+  let scopedPreviousCanceled = previousCanceled;
+
+  if (scope) {
+    currentOrders = filterOrdersForAnalyticsScope(
+      currentOrders,
+      scope
+    );
+    previousOrders = filterOrdersForAnalyticsScope(
+      previousOrders,
+      scope
+    );
+
+    const [canceledCurrentRows, canceledPreviousRows] =
+      await Promise.all([
+        loadCanceledOrders(range.from, range.to),
+        loadCanceledOrders(
+          range.previousFrom,
+          range.previousTo
+        ),
+      ]);
+
+    scopedCurrentCanceled = filterOrdersForAnalyticsScope(
+      canceledCurrentRows,
+      scope
+    ).length;
+    scopedPreviousCanceled = filterOrdersForAnalyticsScope(
+      canceledPreviousRows,
+      scope
+    ).length;
+  }
+
   const metrics = buildMetrics(
     currentOrders,
     range.from,
     range.to,
-    currentCanceled,
+    scopedCurrentCanceled,
     firstSaleByUser
   );
 
@@ -93,7 +136,7 @@ export async function getAdminBotAnalytics(period = "today") {
     previousOrders,
     range.previousFrom,
     range.previousTo,
-    previousCanceled,
+    scopedPreviousCanceled,
     firstSaleByUser
   );
 
@@ -121,14 +164,26 @@ export async function getAdminBotAnalytics(period = "today") {
   return {
     period: periodKey,
     periodLabel: PERIOD_LABELS[periodKey] || PERIOD_LABELS.month,
+    scope: scope
+      ? {
+          labels: scope.labels,
+          scopedToManager: true,
+        }
+      : null,
     range: {
       from: range.from.toISOString(),
       to: range.to.toISOString(),
     },
-    users: {
-      total: usersTotal,
-      newInPeriod: usersNewInPeriod,
-    },
+    users: scope
+      ? {
+          total: null,
+          newInPeriod: null,
+          scopedToManager: true,
+        }
+      : {
+          total: usersTotal,
+          newInPeriod: usersNewInPeriod,
+        },
     metrics,
     previousMetrics,
     deltas: {

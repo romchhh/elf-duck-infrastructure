@@ -68,6 +68,12 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;");
 }
 
+function formatScopeLine(data) {
+  const labels = data?.scope?.labels;
+  if (!Array.isArray(labels) || !labels.length) return "";
+  return `📍 <b>Только ваша точка:</b> ${escapeHtml(labels.join(", "))}`;
+}
+
 function formatStatsMessage(data) {
   const m = data.metrics || {};
   const p = data.previousMetrics || {};
@@ -76,16 +82,31 @@ function formatStatsMessage(data) {
   const stamp = new Date().toLocaleString("ru-RU", {
     timeZone: "Europe/Warsaw",
   });
+  const scopeLine = formatScopeLine(data);
+  const title = data?.scope?.scopedToManager
+    ? "<b>📊 СТАТИСТИКА ТОЧКИ</b>"
+    : "<b>📊 СТАТИСТИКА МАГАЗИНА</b>";
+
+  const userLines = users.scopedToManager
+    ? [
+        "<b>👥 База бота</b>",
+        "<i>Общая база магазина не показывается — отчёт только по вашей точке.</i>",
+      ]
+    : [
+        "<b>👥 База бота</b>",
+        `Всего пользователей: <b>${users.total ?? "—"}</b>`,
+        `Новых за период: <b>${users.newInPeriod ?? 0}</b>`,
+      ];
 
   const lines = [
-    "<b>📊 СТАТИСТИКА МАГАЗИНА</b>",
+    title,
     "",
+    scopeLine,
+    scopeLine ? "" : null,
     `Период: <b>${escapeHtml(data.periodLabel || "—")}</b>`,
     `🕐 ${escapeHtml(stamp)} (Warsaw)`,
     "",
-    "<b>👥 База бота</b>",
-    `Всего пользователей: <b>${users.total ?? "—"}</b>`,
-    `Новых за период: <b>${users.newInPeriod ?? 0}</b>`,
+    ...userLines,
     "",
     "<b>🛒 Продажи (завершённые заказы)</b>",
     formatDeltaLine(
@@ -141,42 +162,57 @@ function formatAnalyticsMessage(data) {
           .join("\n")
       : "— нет продаж за период";
 
-  const locationLines =
-    locations.length
-      ? locations
-          .map(
-            (row, i) =>
-              `${i + 1}. ${escapeHtml(row.title)} — <b>${row.orders}</b> зак. (${row.revenue} zł)`
-          )
-          .join("\n")
-      : "— нет данных";
+  const locationBlock = data?.scope?.scopedToManager
+    ? []
+    : [
+        "",
+        "<b>📍 Топ точек / способов</b>",
+        locations.length
+          ? locations
+              .map(
+                (row, i) =>
+                  `${i + 1}. ${escapeHtml(row.title)} — <b>${row.orders}</b> зак. (${row.revenue} zł)`
+              )
+              .join("\n")
+          : "— нет данных",
+      ];
 
   return [
     statsBlock,
     "",
     "<b>🏆 Топ товаров</b>",
     productLines,
+    ...locationBlock,
     "",
-    "<b>📍 Топ точек / способов</b>",
-    locationLines,
-    "",
-    "<i>Подробная аналитика — в веб-CRM.</i>",
-    crmLinkLine(),
+    data?.scope?.scopedToManager
+      ? "<i>Сводка только по заказам вашей точки.</i>"
+      : "<i>Подробная аналитика — в веб-CRM.</i>",
+    data?.scope?.scopedToManager ? "" : crmLinkLine(),
   ]
     .filter(Boolean)
     .join("\n");
 }
 
-async function fetchAnalytics(period) {
+function managerTelegramId(ctx) {
+  return String(ctx?.from?.id || "").trim();
+}
+
+async function fetchAnalytics(period, ctx) {
+  const telegramId = managerTelegramId(ctx);
   return api(
-    `/admin/analytics/summary?period=${encodeURIComponent(period)}`
+    `/admin/analytics/summary?period=${encodeURIComponent(period)}`,
+    {
+      headers: telegramId
+        ? { "x-admin-telegram-id": telegramId }
+        : {},
+    }
   );
 }
 
 async function sendStats(ctx, period = "today") {
   const wait = await ctx.reply("⏳ Считаю статистику…");
   try {
-    const data = await fetchAnalytics(period);
+    const data = await fetchAnalytics(period, ctx);
     await ctx.telegram.editMessageText(
       ctx.chat.id,
       wait.message_id,
@@ -204,7 +240,7 @@ async function sendStats(ctx, period = "today") {
 async function sendAnalytics(ctx, period = "today") {
   const wait = await ctx.reply("⏳ Готовлю аналитику…");
   try {
-    const data = await fetchAnalytics(period);
+    const data = await fetchAnalytics(period, ctx);
     await ctx.telegram.editMessageText(
       ctx.chat.id,
       wait.message_id,

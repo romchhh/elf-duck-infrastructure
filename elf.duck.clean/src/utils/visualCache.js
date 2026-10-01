@@ -1,6 +1,6 @@
 import { enrichProductVisuals } from "../lib/productImages.js";
 
-const STORAGE_KEY = "product_visual_cache_v20";
+const STORAGE_KEY = "product_visual_cache_v21";
 
 const pickVisualFields = (product) => {
   if (!product || typeof product !== "object") return null;

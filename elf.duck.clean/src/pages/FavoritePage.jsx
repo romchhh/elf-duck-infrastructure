@@ -866,7 +866,7 @@ const FavoritePage = () => {
                     {product.cardDuckUrl ? (
                     <img
                         src={product.cardDuckUrl}
-                        className={product.classCardDuck || "productCardImageRight"}
+                        className={product.classCardDuck || "cardImageLeft"}
                         alt=""
                         loading="lazy"
                         decoding="async"

@@ -252,7 +252,7 @@ const OXVA_FLAVORS = [
 ];
 
 const PRODUCT_CARD_ASSET_VERSION = String(
-  process.env.PRODUCT_IMAGE_CACHE_VERSION || "7"
+  process.env.PRODUCT_IMAGE_CACHE_VERSION || "8"
 );
 
 function publicProductUrl(file) {
@@ -417,8 +417,8 @@ async function restoreOxvaPod() {
 }
 
 const XROS_6_ASSETS = {
-  "xros-6-mini-pod": "xros-6-pod-card.png",
-  "xros-6-pod": "xros-6-mini-pod-card.png",
+  "xros-6-mini-pod": "xros-6-mini-pod-card.png",
+  "xros-6-pod": "xros-6-pod-card.png",
 };
 
 function productImageBaseUrl() {
