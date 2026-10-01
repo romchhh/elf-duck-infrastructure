@@ -101,7 +101,7 @@ async function main() {
       "Міні-додаток читає prod API. Ваш MONGODB_URI — інша база (Atlas на ноуті vs mongo:27017 на VPS)."
     );
     console.log(
-      "На VPS: grep MONGODB_URI .env → Atlas /elfduck; catalog-sync на сервері; docker compose restart api"
+      "На VPS і в локальному .env має бути однаковий шлях БД (.../test або .../elfduck); потім catalog-sync; docker compose restart api"
     );
     process.exit(2);
   }

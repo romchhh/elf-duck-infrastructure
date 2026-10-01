@@ -249,15 +249,18 @@ function publicProductUrl(file) {
   return `${base}/products/${file}?v=${PRODUCT_CARD_ASSET_VERSION}`;
 }
 
-function oxvaLiquidMedia() {
-  const url = publicProductUrl("oxva-30-ml-20-mg-card.png");
+function catalogCardMedia(file) {
+  const url = publicProductUrl(file);
   return {
     cardBgUrl: url,
-    cardDuckUrl: "",
+    cardDuckUrl: url,
     orderImgUrl: url,
-    classCardBg: "productCardCatalogVisual",
-    classCardDuck: "",
+    classCardDuck: "productCardCatalogVisual",
   };
+}
+
+function oxvaLiquidMedia() {
+  return catalogCardMedia("oxva-30-ml-20-mg-card.png");
 }
 
 async function syncOxvaLiquid() {
@@ -371,14 +374,7 @@ function productImageBaseUrl() {
 function xros6MediaForKey(productKey) {
   const file = XROS_6_ASSETS[productKey];
   if (!file) return {};
-  const url = publicProductUrl(file);
-  return {
-    cardBgUrl: url,
-    cardDuckUrl: "",
-    orderImgUrl: url,
-    classCardBg: "productCardCatalogVisual",
-    classCardDuck: "",
-  };
+  return catalogCardMedia(file);
 }
 
 async function main() {

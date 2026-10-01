@@ -95,7 +95,7 @@ Admin-бот: токен у `.env` як `ADMIN_BOT_TOKEN`; з VPS ходить �
 ### 5. MongoDB Atlas
 
 - Network Access: **IP VPS** (або тимчасово для тесту).
-- `MONGODB_URI` у `.env` без змін, якщо вже Atlas + база `elfduck`.
+- `MONGODB_URI` у `.env` на VPS і в локальному `.env` — **одна й та сама база** (напр. `.../test` або `.../elfduck`). Синк з ноута оновлює лише ту БД, що в URI.
 
 ### 5.1. Обновление каталога (XROS / OXVA) на VPS
 
@@ -112,8 +112,8 @@ cd elf.duck.back.clean && node scripts/diagnose-catalog-mongo.mjs
 Якщо `MISMATCH _id` — синк на ноуті **не та база**. На VPS:
 
 ```bash
-grep MONGODB_URI .env   # має бути mongodb+srv://.../elfduck (той самий кластер, що й замовлення)
-curl -s https://elfduck-api.telebots.site/ping   # після деплою: db=elfduck, mongoReady=true
+grep MONGODB_URI .env   # mongodb+srv://.../test (або /elfduck) — те саме ім'я, що в локальному .env
+curl -s https://elfduck-api.telebots.site/ping   # після деплою: db=test, mongoReady=true
 docker compose logs api 2>&1 | grep 'MongoDB connected'
 ```
 
@@ -141,7 +141,7 @@ docker compose build shop && docker compose up -d shop
 В `.env` на VPS обовʼязково:
 
 ```env
-MONGODB_URI=mongodb+srv://USER:PASS@cluster.mongodb.net/elfduck
+MONGODB_URI=mongodb+srv://USER:PASS@cluster.mongodb.net/test?appName=elf-duck-shop
 PRODUCT_IMAGE_BASE_URL=https://elfduck.telebots.site
 API_URL=https://elfduck-api.telebots.site
 ADMIN_API_TOKEN=...   # для cache invalidate після catalog-sync
@@ -200,7 +200,7 @@ Inline-кнопки (**Ожидаю**, **Отклонить**, **Изменит�
 1. **Зупини старий хост** (Railway, PM2 на іншому сервері, локальний `node server.js`) з **тим самим** `TELEGRAM_BOT_TOKEN`. Має лишитися **один** `api` на VPS.
 2. Після деплою в логах має бути рядок на кшталт:  
    `[bot] Launching polling as @elfduck_shop_bot ... db=elfduck`  
-   Якщо `db=mongo` або інша база — перевір `MONGODB_URI` у кореневому `.env` на VPS (Atlas `/elfduck`, не локальний `mongo`, якщо дані в Atlas).
+   Якщо `db=mongo` — у `.env` на VPS не підхопився Atlas URI (лишився fallback `mongodb://mongo:27017/elfduck`).
 3. При промаху в логах з’явиться `[manager-bot] order not found for callback` з `orderId`, `dbName`, `callbackData` — зніми шматок логу для діагностики.
 
 Перезапуск після оновлення коду:

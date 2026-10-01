@@ -4,7 +4,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "catalog:sync": "node scripts/sync-xros-oxva-catalog.mjs"
+    "catalog:sync": "node scripts/sync-xros-oxva-catalog.mjs",
+    "catalog:copy-to-test": "node scripts/copy-catalog-elfduck-to-test.mjs"
   },
   "engines": {
     "node": ">=18"
