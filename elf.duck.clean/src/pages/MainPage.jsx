@@ -8,6 +8,11 @@ import { haptic } from "../utils/haptics";
 import { preloadImage, preloadImages } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
+import {
+  catalogSmokeCardStyle,
+  usesCatalogSmoke,
+} from "../lib/catalogCardSmoke.js";
+import { hexToRgbTriplet } from "../lib/flavorGradients.js";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { API_URL } from "../api.js";
 
@@ -89,14 +94,21 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 }) {
   console.count("[PERF][MainPageProductCard] render");
 
+  const catalogSmoke = usesCatalogSmoke(product);
+
   return (
     <div
-      className="productCard"
+      className={`productCard${catalogSmoke ? " productCard--catalogSmoke" : ""}`}
+      style={catalogSmoke ? catalogSmokeCardStyle(product) : undefined}
       onClick={() => {
         onOpenProduct(product);
       }}
     >
       <div className="cardBg" />
+
+      {catalogSmoke ? (
+        <div className="productCardCatalogSmoke" aria-hidden="true" />
+      ) : null}
 
       {product.cardBgUrl ? (
         <img
@@ -1474,6 +1486,14 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     ? "left"
     : "right";
 
+  const checkoutAccentRgb = useMemo(() => {
+    if (selectedFlavor?.gradient?.[0]) {
+      return hexToRgbTriplet(selectedFlavor.gradient[0]);
+    }
+    const fromProduct = String(activeProduct?.accentColor || "").trim();
+    if (fromProduct) return fromProduct;
+    return "137, 117, 201";
+  }, [selectedFlavor, activeProduct?.accentColor]);
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -4185,7 +4205,7 @@ navigate("/cart");
                 }`}
 
                 style={{
-                  "--accent-color": activeProduct.accentColor,
+                  "--accent-color": checkoutAccentRgb,
                   transform: `translateY(${checkoutDragOffset}px)`,
                   transition: isCheckoutDragging
                     ? "none"

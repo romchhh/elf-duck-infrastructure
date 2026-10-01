@@ -1,5 +1,13 @@
+import { applyFlavorGradientsToProduct } from "./flavorGradients.js";
+
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
 export const PRODUCT_CARD_ASSET_VERSION = "3";
+
+const FLAVOR_GRADIENT_PRODUCT_KEYS = new Set([
+  "xros-6-mini-pod",
+  "xros-6-pod",
+  "oxva-30-ml-20-mg",
+]);
 
 function cardAsset(file) {
   return `/products/${file}?v=${PRODUCT_CARD_ASSET_VERSION}`;
@@ -9,30 +17,30 @@ function cardAsset(file) {
 export const productVisualByKey = {
   "xros-6-mini-pod": {
     cardBgUrl: cardAsset("xros-6-mini-pod-card.png"),
-    cardDuckUrl: cardAsset("xros-6-mini-pod-card.png"),
+    cardDuckUrl: "",
     orderImgUrl: cardAsset("xros-6-mini-pod-card.png"),
-    classCardBg: "",
-    classCardDuck: "productCardCatalogVisual",
+    classCardBg: "productCardCatalogVisual",
+    classCardDuck: "",
     title1: "XROS 6",
     title2: "MINI POD",
     titleModal: "XROS 6 MINI POD",
   },
   "xros-6-pod": {
     cardBgUrl: cardAsset("xros-6-pod-card.png"),
-    cardDuckUrl: cardAsset("xros-6-pod-card.png"),
+    cardDuckUrl: "",
     orderImgUrl: cardAsset("xros-6-pod-card.png"),
-    classCardBg: "",
-    classCardDuck: "productCardCatalogVisual",
+    classCardBg: "productCardCatalogVisual",
+    classCardDuck: "",
     title1: "XROS 6",
     title2: "POD",
     titleModal: "XROS 6 POD",
   },
   "oxva-30-ml-20-mg": {
     cardBgUrl: cardAsset("oxva-30-ml-20-mg-card.png"),
-    cardDuckUrl: cardAsset("oxva-30-ml-20-mg-card.png"),
+    cardDuckUrl: "",
     orderImgUrl: cardAsset("oxva-30-ml-20-mg-card.png"),
-    classCardBg: "",
-    classCardDuck: "productCardCatalogVisual",
+    classCardBg: "productCardCatalogVisual",
+    classCardDuck: "",
     title1: "OXVA",
     title2: "30 ML / 20 MG",
     titleModal: "OXVA 30 ML / 20 MG",
@@ -61,9 +69,13 @@ export function enrichProductVisuals(product) {
 
   const productKey = String(product.productKey || "").trim();
   const preset = productVisualByKey[productKey];
-  if (!preset) return product;
+  let next = preset ? applyPreset(product, preset) : product;
 
-  return applyPreset(product, preset);
+  if (FLAVOR_GRADIENT_PRODUCT_KEYS.has(productKey)) {
+    next = applyFlavorGradientsToProduct(next);
+  }
+
+  return next;
 }
 
 export function enrichProductList(products) {

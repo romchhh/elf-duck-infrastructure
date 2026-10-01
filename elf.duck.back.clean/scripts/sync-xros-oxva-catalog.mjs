@@ -17,6 +17,10 @@ import dotenv from "dotenv";
 import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import { describeMongoUri } from "../lib/mongoTarget.js";
+import {
+  accentColorFromGradient,
+  gradientForFlavorLabel,
+} from "../lib/flavorGradients.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config();
@@ -67,7 +71,12 @@ function slugFlavor(label) {
     .replace(/^-+|-+$/g, "");
 }
 
-function buildFlavors(labels, existingFlavors = [], fallbackGradient = ["#6b5b95", "#3d3352"]) {
+function buildFlavors(
+  labels,
+  existingFlavors = [],
+  fallbackGradient = ["#6b5b95", "#3d3352"],
+  { colorFromLabel = true } = {}
+) {
   const byKey = new Map(
     (Array.isArray(existingFlavors) ? existingFlavors : []).map((f) => [
       String(f.flavorKey || "").trim(),
@@ -92,10 +101,11 @@ function buildFlavors(labels, existingFlavors = [], fallbackGradient = ["#6b5b95
       flavorKey: fk,
       label: String(label).trim(),
       isActive: true,
-      gradient:
-        Array.isArray(prev?.gradient) && prev.gradient.length === 2
+      gradient: colorFromLabel
+        ? gradientForFlavorLabel(label)
+        : Array.isArray(prev?.gradient) && prev.gradient.length === 2
           ? prev.gradient
-          : fallbackGradient,
+          : gradientForFlavorLabel(label) || fallbackGradient,
       stockByPickupPoint: Array.isArray(prev?.stockByPickupPoint)
         ? prev.stockByPickupPoint
         : [],
@@ -154,6 +164,7 @@ async function upsertProduct({
       ? Number(sortOrder)
       : Number(existing?.sortOrder ?? template?.sortOrder ?? 0),
     flavors,
+    accentColor: accentColorFromGradient(flavors[0]?.gradient),
     ...pickMedia(template || existing || {}),
     ...mediaOverride,
   };
@@ -253,9 +264,9 @@ function catalogCardMedia(file) {
   const url = publicProductUrl(file);
   return {
     cardBgUrl: url,
-    cardDuckUrl: url,
+    cardDuckUrl: "",
     orderImgUrl: url,
-    classCardDuck: "productCardCatalogVisual",
+    classCardDuck: "",
   };
 }
 
@@ -301,6 +312,7 @@ async function syncOxvaLiquid() {
         0
     ),
     flavors,
+    accentColor: accentColorFromGradient(flavors[0]?.gradient),
     ...pickMedia(existingLiquid || legacyLiquidOnPod || clone || {}),
     ...oxvaLiquidMedia(),
   };
