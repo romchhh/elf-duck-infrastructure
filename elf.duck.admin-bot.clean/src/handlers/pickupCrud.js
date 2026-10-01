@@ -29,7 +29,7 @@ import {
   isCourierManager,
   mainMenu,
 } from "./menu.js";
-import { askStep, nextStep } from "./pickupFlow.js";
+import { askStep, nextStep, ppListKeyboard } from "./pickupFlow.js";
 
 // =====================================================
 // =================== PICKUP POINTS CRUD ==============

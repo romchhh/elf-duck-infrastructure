@@ -113,7 +113,7 @@ const ppPaymentMenuKeyboard = (id) =>
     [Markup.button.callback("⬅️ К точке", `pp_open:${id}`)],
   ]);
 
-const ppListKeyboard = (points = [], ctx = null) =>
+export const ppListKeyboard = (points = [], ctx = null) =>
   Markup.inlineKeyboard([
     ...points
       .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
