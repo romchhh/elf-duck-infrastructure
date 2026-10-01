@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import "../styles/sideMenuLanguage.css";
 import "../styles/MainPage.css";
 import "../styles/CartPage.css";
 import { useUser } from "../UserContext";

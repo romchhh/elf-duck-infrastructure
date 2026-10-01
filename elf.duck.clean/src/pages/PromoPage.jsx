@@ -4,6 +4,7 @@ import { useUser } from "../UserContext";
 import { haptic } from "../utils/haptics";
 
 import "../styles/ReferralPage.css";
+import "../styles/sideMenuLanguage.css";
 import "../styles/PromoPage.css";
 import "../styles/MainPage.css";
 

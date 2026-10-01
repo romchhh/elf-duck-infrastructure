@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef} from "react";
 import "../styles/FavoritePage.css";
+import "../styles/sideMenuLanguage.css";
 import "../styles/MainPage.css";
 import "../styles/OrdersPage.css";
 import { useUser } from "../UserContext";

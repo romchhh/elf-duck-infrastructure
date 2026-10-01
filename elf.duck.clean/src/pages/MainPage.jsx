@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Lottie from "lottie-react";
+import "../styles/sideMenuLanguage.css";
 import "../styles/MainPage.css";
 import { useUser } from "../UserContext";
 import { useNavigate, useLocation } from "react-router-dom";
