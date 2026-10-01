@@ -252,7 +252,7 @@ const OXVA_FLAVORS = [
 ];
 
 const PRODUCT_CARD_ASSET_VERSION = String(
-  process.env.PRODUCT_IMAGE_CACHE_VERSION || "3"
+  process.env.PRODUCT_IMAGE_CACHE_VERSION || "4"
 );
 
 function publicProductUrl(file) {
@@ -260,29 +260,48 @@ function publicProductUrl(file) {
   return `${base}/products/${file}?v=${PRODUCT_CARD_ASSET_VERSION}`;
 }
 
-const CATALOG_CARD_BG = {
-  "xros-6-mini-pod": "xros-6-mini-pod-bg.svg",
-  "xros-6-pod": "xros-6-pod-bg.svg",
-  "oxva-30-ml-20-mg": "oxva-30-ml-20-mg-bg.svg",
+const CATALOG_SMOKE_BG = "catalog-smoke-bg.png";
+
+const CATALOG_CARD_KEYS = new Set([
+  "xros-6-mini-pod",
+  "xros-6-pod",
+  "oxva-30-ml-20-mg",
+]);
+
+/** Позиція PNG на картці (як у решти каталогу — в край, не по центру). */
+const CATALOG_CARD_LAYOUT = {
+  "xros-6-mini-pod": {
+    classCardDuck: "productCardImageRight",
+    classActions: "productActionsLeft",
+  },
+  "xros-6-pod": {
+    classCardDuck: "productCardImageLeft",
+    classActions: "productActionsRight",
+  },
+  "oxva-30-ml-20-mg": {
+    classCardDuck: "productCardImageRight",
+    classActions: "productActionsLeft",
+  },
 };
 
-/** Фон (градієнт SVG) + окремо PNG товару — без дубля того ж файлу. */
 function catalogCardMedia(productKey, cardFile) {
   const cardUrl = publicProductUrl(cardFile);
-  const bgFile = CATALOG_CARD_BG[productKey];
-  if (!bgFile) {
+  const layout = CATALOG_CARD_LAYOUT[productKey] || {};
+  if (!CATALOG_CARD_KEYS.has(productKey)) {
     return {
       cardBgUrl: cardUrl,
       cardDuckUrl: "",
       orderImgUrl: cardUrl,
       classCardDuck: "",
+      classActions: "",
     };
   }
   return {
-    cardBgUrl: publicProductUrl(bgFile),
+    cardBgUrl: publicProductUrl(CATALOG_SMOKE_BG),
     cardDuckUrl: cardUrl,
     orderImgUrl: cardUrl,
-    classCardDuck: "productCardCatalogVisual",
+    classCardDuck: layout.classCardDuck || "productCardImageRight",
+    classActions: layout.classActions || "productActionsLeft",
   };
 }
 
