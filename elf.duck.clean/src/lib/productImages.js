@@ -8,7 +8,7 @@ import {
 } from "./productCardLayout.js";
 
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
-export const PRODUCT_CARD_ASSET_VERSION = "8";
+export const PRODUCT_CARD_ASSET_VERSION = "9";
 
 /** Фони карток як у xros-5 / puffy (IPFS), без catalog-smoke. */
 const CARD_BG_REF = {

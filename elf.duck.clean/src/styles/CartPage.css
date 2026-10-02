@@ -1088,6 +1088,8 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
+  min-height: 86px;
+  padding-right: 46%;
 
   z-index: 1; 
 }
@@ -1096,13 +1098,16 @@ body {
 .sideRefferalCardDuck {
   height: 100%;
   width: auto;
+  max-width: 52%;
 
   position: absolute;
   right: 0;
   bottom: 0;
 
-  z-index: 3;
+  z-index: 2;
   pointer-events: none;
+  object-fit: contain;
+  object-position: right bottom;
 }
 
 .sideRefferalCardInfo {
@@ -1111,17 +1116,20 @@ body {
   align-items: flex-start;
   gap: 18px;
   flex: 1;
+  max-width: 100%;
 }
 
-.sideRefferalCardTitleCard {
+.sideRefferalCardTitleCard,
+.sideRefferalCardTitle {
   position: relative;
   font-size: 15px;
   font-family: Unbounded-Medium;
   color: #fff;
+  line-height: 1.25;
 
   text-align: left;
 
-  margin-right: -3px;
+  margin-left: -3px;
 }
 
 /* фиолетовый индикатор справа */
