@@ -147,6 +147,16 @@ API_URL=https://elfduck-api.telebots.site
 ADMIN_API_TOKEN=...   # для cache invalidate після catalog-sync
 ```
 
+Google Sheets (продажі в таблицях точок):
+
+```bash
+# JSON у корені репо (поруч з docker-compose.yml), не в git
+ls -la telebots-e-commerce-bc2114cbc876.json
+
+docker compose build api && docker compose up -d api
+docker compose exec api node scripts/verify-google-sheets-server.mjs
+```
+
 Картинки в магазине: `https://elfduck.telebots.site/products/...` (збірка `shop` + файли в `elf.duck.clean/public/products/`).
 
 Після заміни PNG на картках: покласти файли як `{productKey}-card.png` у `elf.duck.clean/public/products/`, збільшити `PRODUCT_CARD_ASSET_VERSION` у `productImages.js`, `docker compose build shop && docker compose up -d shop`, перевірка:

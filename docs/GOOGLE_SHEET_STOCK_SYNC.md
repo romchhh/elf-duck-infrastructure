@@ -29,6 +29,24 @@
 
 Файл ключа лежить у корені репозиторію (не комітити; див. `.gitignore`). ID таблиць за замовчуванням у `lib/googleSheets/config.js`; перекриття — у `spreadsheetOverrides` по `pointKey`.
 
+### Docker (VPS)
+
+У `docker-compose.yml` для сервісу `api`:
+
+- volume: `./telebots-e-commerce-bc2114cbc876.json` → `/app/telebots-e-commerce-bc2114cbc876.json`
+- `GOOGLE_SERVICE_ACCOUNT_JSON=/app/telebots-e-commerce-bc2114cbc876.json`
+
+Після `git pull` і `docker compose up -d api`:
+
+```bash
+docker compose exec api node scripts/verify-google-sheets-server.mjs
+docker compose exec api node scripts/google-sheets-e2e-test.mjs
+```
+
+Продажі в таблиці з’являються **після підтвердження оплати менеджером** (списання складу). Помилки: `docker compose logs api | grep googleSheets`.
+
+Тестовий ±1 продаж (без Mongo): `node scripts/google-sheets-mark-test-sale.mjs --point praga` / `--reverse`.
+
 ## Було (Apps Script) → стало (API)
 
 | Що | Раніше | Зараз |
