@@ -62,6 +62,40 @@ async function findOrderForManagerCallback(orderIdRaw, ctx) {
   return order;
 }
 
+async function answerManagerCallbackQuery(ctx, text, extra) {
+  try {
+    if (text) {
+      await ctx.answerCbQuery(text, extra);
+    } else {
+      await ctx.answerCbQuery(extra);
+    }
+  } catch (_) {}
+}
+
+function getCallbackMessageIds(ctx) {
+  const msg = ctx?.callbackQuery?.message;
+  const chatId = msg?.chat?.id;
+  const messageId = msg?.message_id;
+  if (chatId == null || messageId == null) return null;
+  return { chatId, messageId };
+}
+
+async function editManagerCallbackKeyboard(ctx, inlineKeyboard) {
+  const ids = getCallbackMessageIds(ctx);
+  if (!ids) {
+    throw new Error("CALLBACK_MESSAGE_MISSING");
+  }
+
+  const replyMarkup = { inline_keyboard: inlineKeyboard };
+
+  await ctx.telegram.editMessageReplyMarkup(
+    ids.chatId,
+    ids.messageId,
+    undefined,
+    replyMarkup
+  );
+}
+
 const TG_BOT_TOKENS = getTelegramBotTokens();
 const WEBAPP_URL = process.env.WEBAPP_URL || "";
 const START_BANNER_URL = getStartBannerUrl();
@@ -2882,104 +2916,72 @@ if (
     }
   });
 
-  activeBot.action(/mgr_change_status:(.+)/, async (ctx) => {
-      try {
-        const order = await findOrderForManagerCallback(
-          ctx.match?.[1],
-          ctx
-        );
+  activeBot.action(/^mgr_change_status:(.+)$/, async (ctx) => {
+    const orderIdRaw = ctx.match?.[1];
 
-        if (!order) {
-          return;
-        }
-
-        const deliveryType = String(
-          order?.deliveryType || ""
-        )
-          .trim()
-          .toLowerCase();
-
-        const deliveryMethod = String(
-          order?.deliveryMethod || ""
-        )
-          .trim()
-          .toLowerCase();
-
-        const canManagerChangeStatus =
-
-          deliveryType === "pickup" ||
-
-          (
-
-            deliveryType === "delivery" &&
-
-            ["inpost", "courier"].includes(
-
-              deliveryMethod
-
-            )
-
-          );
-
-        if (!canManagerChangeStatus) {
-          await ctx.answerCbQuery(
-            "Изменение статуса недоступно для этого заказа",
-            {
-              show_alert: true,
-            }
-          );
-
-          return;
-        }
-
-        await ctx.answerCbQuery();
-
-        await ctx.editMessageReplyMarkup({
-          inline_keyboard: [
-            [
-              {
-                text:
-                  "✅ Заказ выполнен",
-
-                callback_data:
-                  `mgr_change_status_apply:completed:${order._id}`,
-              },
-            ],
-
-            [
-              {
-                text:
-                  "❌ Заказ отменён",
-
-                callback_data:
-                  `mgr_change_status_apply:canceled:${order._id}`,
-              },
-            ],
-
-            [
-              {
-                text: "⬅️ Назад",
-
-                callback_data:
-                  `mgr_change_status_back:${order._id}`,
-              },
-            ],
-          ],
-        });
-      } catch (error) {
-        console.error(
-          "mgr_change_status error:",
-          error
-        );
-
-        try {
-          await ctx.answerCbQuery(
-            "Не удалось открыть смену статуса"
-          );
-        } catch {}
+    try {
+      const order = await findOrderForManagerCallback(orderIdRaw, ctx);
+      if (!order) {
+        return;
       }
+
+      const deliveryType = String(order?.deliveryType || "")
+        .trim()
+        .toLowerCase();
+      const deliveryMethod = String(order?.deliveryMethod || "")
+        .trim()
+        .toLowerCase();
+
+      const canManagerChangeStatus =
+        deliveryType === "pickup" ||
+        (deliveryType === "delivery" &&
+          ["inpost", "courier"].includes(deliveryMethod));
+
+      if (!canManagerChangeStatus) {
+        await answerManagerCallbackQuery(ctx, "Изменение статуса недоступно для этого заказа", {
+          show_alert: true,
+        });
+        return;
+      }
+
+      const orderKey = String(order._id || orderIdRaw || "").trim();
+
+      await editManagerCallbackKeyboard(ctx, [
+        [
+          {
+            text: "✅ Заказ выполнен",
+            callback_data: `mgr_change_status_apply:completed:${orderKey}`,
+          },
+        ],
+        [
+          {
+            text: "❌ Заказ отменён",
+            callback_data: `mgr_change_status_apply:canceled:${orderKey}`,
+          },
+        ],
+        [
+          {
+            text: "⬅️ Назад",
+            callback_data: `mgr_change_status_back:${orderKey}`,
+          },
+        ],
+      ]);
+
+      await answerManagerCallbackQuery(ctx);
+    } catch (error) {
+      console.error("mgr_change_status error:", {
+        error: error?.response?.description || error?.message || error,
+        callbackData: ctx?.callbackQuery?.data,
+        from: ctx?.from?.id,
+        chatId: ctx?.callbackQuery?.message?.chat?.id,
+        messageId: ctx?.callbackQuery?.message?.message_id,
+      });
+
+      await answerManagerCallbackQuery(ctx, "Не удалось открыть смену статуса", {
+        show_alert: true,
+      });
     }
-  );
+  });
 
   activeBot.action(
     /mgr_change_status_back:(.+)/,
@@ -3312,6 +3314,22 @@ return instructionMessage;
 
   for (const activeBot of userBots) {
     registerUserBotHandlers(activeBot);
+
+    activeBot.catch((err, ctx) => {
+      console.error("[bot] unhandled error:", {
+        updateType: ctx?.updateType,
+        callbackData: ctx?.callbackQuery?.data,
+        error: err?.response?.description || err?.message || err,
+      });
+
+      if (ctx?.callbackQuery) {
+        answerManagerCallbackQuery(
+          ctx,
+          "Внутренняя ошибка бота. Проверьте docker compose logs api",
+          { show_alert: true }
+        );
+      }
+    });
   }
 
   async function launchUserBotPolling() {

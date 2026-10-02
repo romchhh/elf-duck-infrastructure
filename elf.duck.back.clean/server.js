@@ -153,11 +153,15 @@ app.options("*", cors(corsOptions));
 
 app.use(compression());
 
+const CRM_MEDIA_JSON_LIMIT = "14mb";
+
 app.use(
   "/crm/push/upload-media",
-  express.json({
-    limit: "14mb",
-  })
+  express.json({ limit: CRM_MEDIA_JSON_LIMIT })
+);
+app.use(
+  "/crm/catalog/upload-media",
+  express.json({ limit: CRM_MEDIA_JSON_LIMIT })
 );
 
 app.use(express.json());

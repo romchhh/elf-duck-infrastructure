@@ -89,12 +89,11 @@ export async function deleteFlavor(productId, flavorId) {
 }
 
 export async function uploadCatalogImage(file) {
-  const dataUrl = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
+  const { prepareCatalogImageFile, fileToDataUrl } = await import(
+    '@/lib/imageUploadPrep'
+  );
+  const prepared = await prepareCatalogImageFile(file);
+  const dataUrl = await fileToDataUrl(prepared);
 
   const res = await crmFetch('/crm/catalog/upload-media', {
     method: 'POST',

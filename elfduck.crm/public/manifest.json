@@ -1,0 +1,9 @@
+{
+  "name": "ElfDuck CRM",
+  "short_name": "ElfDuck CRM",
+  "display": "standalone",
+  "start_url": "/",
+  "background_color": "#0a0b12",
+  "theme_color": "#0a0b12",
+  "icons": []
+}

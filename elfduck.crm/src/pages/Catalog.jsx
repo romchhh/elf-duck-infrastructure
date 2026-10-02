@@ -56,10 +56,15 @@ function ImageUrlField({ label, value, onChange, compact }) {
       onChange(url);
       toast({ title: 'Загружено' });
     } catch (err) {
+      const msg = String(err?.message || err);
+      const hint =
+        msg.includes('413') || msg.includes('FILE_TOO_LARGE')
+          ? 'Файл слишком большой. Попробуйте PNG/WebP до ~8 МБ или уменьшите разрешение.'
+          : msg;
       toast({
         variant: 'destructive',
         title: 'Ошибка загрузки',
-        description: String(err?.message || err),
+        description: hint,
       });
     } finally {
       setUploading(false);
