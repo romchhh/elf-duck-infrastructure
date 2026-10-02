@@ -393,6 +393,15 @@ export async function commitOrderStock(order) {
     }
   }
 
+  try {
+    const { queueGoogleSheetApplyForOrder } = await import(
+      "../../googleSheets/orderSync.js"
+    );
+    queueGoogleSheetApplyForOrder(order);
+  } catch (e) {
+    console.error("commitOrderStock googleSheets hook error:", e);
+  }
+
   return true;
 }
 

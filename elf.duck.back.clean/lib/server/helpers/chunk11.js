@@ -83,6 +83,7 @@ import * as __chunk07 from "./chunk07.js";
 import * as __chunk08 from "./chunk08.js";
 import * as __chunk09 from "./chunk09.js";
 import * as __chunk10 from "./chunk10.js";
+import { resolveTelegramMediaUrl } from "../../config/rootConfig.js";
 Object.assign(globalThis, { ...__chunk00, ...__chunk01, ...__chunk02, ...__chunk03, ...__chunk04, ...__chunk05, ...__chunk06, ...__chunk07, ...__chunk08, ...__chunk09, ...__chunk10 });
 
 export function getOrderClientUsername(
@@ -674,8 +675,8 @@ const managerOrderPhotoUrl = "";
 let clientOrderPhotoUrl = firstNonEmptyString(
   getCustomerOrderPhotoByPickupPoint(order, photoPoint),
   getManagerOrderPhotoByPickupPoint(order, photoPoint),
-  process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-  process.env.TG_ORDER_PHOTO_DEFAULT
+  resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+  resolveTelegramMediaUrl("orderPhotoDefault")
 );
 
 const pointKeyRaw = String(
@@ -697,18 +698,18 @@ if (String(order?.deliveryType || "").trim().toLowerCase() === "delivery") {
 
   if (deliveryMethodNorm.includes("courier")) {
     clientOrderPhotoUrl = firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_COURIER,
-      process.env.TG_ORDER_PHOTO_COURIER,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.courier"),
+      resolveTelegramMediaUrl("orderPhoto.courier"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
     clientPhotoSource = "courier";
   } else if (deliveryMethodNorm.includes("inpost")) {
     clientOrderPhotoUrl = firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_INPOST,
-      process.env.TG_ORDER_PHOTO_INPOST,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.inpost"),
+      resolveTelegramMediaUrl("orderPhoto.inpost"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
     clientPhotoSource = "inpost";
   }
@@ -717,34 +718,34 @@ if (String(order?.deliveryType || "").trim().toLowerCase() === "delivery") {
 if (!clientOrderPhotoUrl) {
   if (pointKeyNormalized.includes("praga")) {
     clientOrderPhotoUrl = firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_PRAGA,
-      process.env.TG_ORDER_PHOTO_PRAGA,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.praga"),
+      resolveTelegramMediaUrl("orderPhoto.praga"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
     clientPhotoSource = "praga";
   } else if (pointKeyNormalized.includes("mokotow")) {
     clientOrderPhotoUrl = firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_MOKOTOW,
-      process.env.TG_ORDER_PHOTO_MOKOTOW,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.mokotow"),
+      resolveTelegramMediaUrl("orderPhoto.mokotow"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
     clientPhotoSource = "mokotow";
   } else if (pointKeyNormalized.includes("wola")) {
     clientOrderPhotoUrl = firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_WOLA,
-      process.env.TG_ORDER_PHOTO_WOLA,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.wola"),
+      resolveTelegramMediaUrl("orderPhoto.wola"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
     clientPhotoSource = "wola";
   } else if (pointKeyNormalized.includes("srodmiescie")) {
     clientOrderPhotoUrl = firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_SRODMIESCIE,
-      process.env.TG_ORDER_PHOTO_SRODMIESCIE,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.srodmiescie"),
+      resolveTelegramMediaUrl("orderPhoto.srodmiescie"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
     clientPhotoSource = "srodmiescie";
   }
@@ -752,8 +753,8 @@ if (!clientOrderPhotoUrl) {
 
 if (!clientOrderPhotoUrl) {
   clientOrderPhotoUrl = firstNonEmptyString(
-    process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-    process.env.TG_ORDER_PHOTO_DEFAULT,
+    resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+    resolveTelegramMediaUrl("orderPhotoDefault"),
     managerOrderPhotoUrl
   );
   clientPhotoSource = clientPhotoSource || "default";
@@ -1996,8 +1997,8 @@ export async function sendClientOrderCreatedInfo(order) {
     const photoUrl = firstNonEmptyString(
       getCustomerOrderPhotoByPickupPoint(order, photoPoint),
       getManagerOrderPhotoByPickupPoint(order, photoPoint),
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
 
     const lines = [

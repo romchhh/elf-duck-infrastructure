@@ -1072,6 +1072,18 @@ export async function restoreCommittedOrderStock(
 
   cacheInvalidate("products:");
 
+  try {
+    const { queueGoogleSheetReverseForOrder } = await import(
+      "../../googleSheets/orderSync.js"
+    );
+    queueGoogleSheetReverseForOrder(order);
+  } catch (e) {
+    console.error(
+      "restoreCommittedOrderStock googleSheets hook error:",
+      e
+    );
+  }
+
   return true;
 }
 

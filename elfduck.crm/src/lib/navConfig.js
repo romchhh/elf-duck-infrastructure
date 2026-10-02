@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ShoppingCart, Users, UserPlus, Handshake, Gift, Send,
-  Package, MapPin, Boxes
+  Package, MapPin, Boxes, LayoutGrid
 } from 'lucide-react';
 
 export const groups = [
@@ -15,6 +15,7 @@ export const groups = [
       { to: '/sales/customers', label: 'Клиенты', icon: Users },
       { to: '/sales/leads', label: 'Лиды', icon: UserPlus },
       { to: '/sales/stock', label: 'Остатки', icon: Boxes },
+      { to: '/catalog', label: 'Каталог', icon: LayoutGrid },
     ],
   },
   {

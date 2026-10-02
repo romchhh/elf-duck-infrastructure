@@ -29,7 +29,7 @@ GitHub: [romchhh/elf-duck-infrastructure](https://github.com/romchhh/elf-duck-in
 ```text
 Клієнт (Mini App) → Backend API → MongoDB
                  ↘ Telegram (група замовлень, канал статистики)
-Google Таблиці (склад / звіти) ↔ Backend (webhook Apps Script)
+Google Таблиці (склад / звіти) ↔ Backend (service account API; Apps Script лише опційно)
 Admin bot / CRM → Backend (`x-admin-token` або CRM-сесія)
 ```
 

@@ -29,44 +29,6 @@ const APP_URL = String(
     process.env.WEBAPP_URL ||
     "https://elfduck.telebots.site"
 ).trim();
-// const GOOGLE_STATS_WEBHOOK_URL = String(process.env.GOOGLE_STATS_WEBHOOK_URL || "").trim();
-
-const GOOGLE_STATS_WEBHOOK_URL_PRAGA = String(
-
-  process.env.GOOGLE_STATS_WEBHOOK_URL_PRAGA ||  ""
-
-).trim();
-
-const GOOGLE_STATS_WEBHOOK_URL_MOKOTOW = String(
-
-  process.env.GOOGLE_STATS_WEBHOOK_URL_MOKOTOW || ""
-
-).trim();
-
-const GOOGLE_STATS_WEBHOOK_URL_WOLA = String(
-
-  process.env.GOOGLE_STATS_WEBHOOK_URL_WOLA || ""
-
-).trim();
-
-const GOOGLE_STATS_WEBHOOK_URL_SRODMIESCIE = String(
-
-  process.env.GOOGLE_STATS_WEBHOOK_URL_SRODMIESCIE || ""
-
-).trim();
-
-const GOOGLE_STATS_WEBHOOK_URL_COURIER = String(
-
-  process.env.GOOGLE_STATS_WEBHOOK_URL_COURIER || ""
-
-).trim();
-
-const GOOGLE_STATS_WEBHOOK_URL_INPOST = String(
-
-  process.env.GOOGLE_STATS_WEBHOOK_URL_INPOST || ""
-
-).trim();
-
 const CART_AUTO_CLEAR_AFTER_MINUTES = Number(process.env.CART_AUTO_CLEAR_AFTER_MINUTES || 10);
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000);
 
@@ -100,6 +62,16 @@ export function getStatsSheetTierKeyFromQty(qty) {
   return "tier1";
 }
 
+const GOOGLE_SHEET_POINT_KEYS = new Set([
+  "praga",
+  "mokot-w",
+  "wola",
+  "wola-inpost",
+  "r-dmie-cie",
+  "delivery",
+  "delivery-2",
+]);
+
 export async function sendDailyPointStatsToGoogleSheet(point, orders, dayKey) {
   const pointSearchText = normalizePhotoLookupText(
     [point?.key, point?.title, point?.address, point?.name, point?.label]
@@ -112,33 +84,7 @@ export async function sendDailyPointStatsToGoogleSheet(point, orders, dayKey) {
     .toLowerCase()
     .replace(/,+$/, "");
 
-  const googleStatsWebhookUrlByPointKey = {
-
-    praga: GOOGLE_STATS_WEBHOOK_URL_PRAGA,
-
-    "mokot-w": GOOGLE_STATS_WEBHOOK_URL_MOKOTOW,
-
-    wola: GOOGLE_STATS_WEBHOOK_URL_WOLA,
-
-    "wola-inpost": GOOGLE_STATS_WEBHOOK_URL_WOLA,
-
-    "r-dmie-cie": GOOGLE_STATS_WEBHOOK_URL_SRODMIESCIE,
-
-    delivery: GOOGLE_STATS_WEBHOOK_URL_COURIER,
-
-    "delivery-2": GOOGLE_STATS_WEBHOOK_URL_INPOST,
-
-  };
-
-  const googleStatsWebhookUrl =
-    googleStatsWebhookUrlByPointKey[pointKey] || "";
-
-  if (
-    !Object.prototype.hasOwnProperty.call(
-      googleStatsWebhookUrlByPointKey,
-      pointKey
-    )
-  ) {
+  if (!GOOGLE_SHEET_POINT_KEYS.has(pointKey)) {
     return {
       ok: false,
       reason: "SKIP_NO_GOOGLE_SHEET_FOR_POINT",
@@ -147,201 +93,35 @@ export async function sendDailyPointStatsToGoogleSheet(point, orders, dayKey) {
     };
   }
 
-  if (!googleStatsWebhookUrl) {
-    return {
-      ok: false,
-      reason: "NO_GOOGLE_STATS_WEBHOOK_URL",
-      pointKey,
-      pointSearchText,
-    };
-  }
-
-  const productMap = new Map();
-  const assortmentItems = [];
-
-  for (const order of Array.isArray(orders) ? orders : []) {
-    for (const row of Array.isArray(order?.items) ? order.items : []) {
-      const model =
-        [row?.productTitle1, row?.productTitle2]
-          .filter(Boolean)
-          .join(" ")
-          .trim() ||
-        String(
-          row?.productTitle ||
-            row?.title ||
-            row?.productKey ||
-            "Товар"
-        );
-
-      const flavorRows = Array.isArray(row?.flavors)
-        ? row.flavors
-        : [];
-
-      for (const flavor of flavorRows) {
-        const flavorQty = Math.max(
-          0,
-          Number(flavor?.qty || flavor?.quantity || 0)
-        );
-
-        if (flavorQty <= 0) continue;
-
-        assortmentItems.push({
-          model,
-          productKey: String(row?.productKey || "").trim(),
-          flavorKey: String(
-            flavor?.flavorKey || flavor?.key || ""
-          ).trim(),
-          flavorLabel: String(
-            flavor?.flavorLabel ||
-              flavor?.label ||
-              flavor?.name ||
-              flavor?.flavorKey ||
-              ""
-          ).trim(),
-          qty: flavorQty,
-        });
-      }
-
-      const modelKey = normalizeStatsSheetModelName(model);
-      if (!modelKey) continue;
-
-      if (!productMap.has(modelKey)) {
-        productMap.set(modelKey, {
-          model: modelKey,
-          tier1: 0,
-          tier2: 0,
-          tier34: 0,
-          tier5: 0,
-        });
-      }
-
-      const item = productMap.get(modelKey);
-
-      const soldQty = getStatsSheetProductQty(row);
-      const tierQty = getStatsSheetTierQty(order, row);
-      const tierKey = getStatsSheetTierKeyFromQty(tierQty);
-
-      item[tierKey] =
-        Number(item[tierKey] || 0) + soldQty;
-    }
-  }
-
-  const discounts = Number(
-    (Array.isArray(orders) ? orders : [])
-      .reduce((sum, order) => {
-        return (
-          sum +
-          Number(order?.payment?.cashbackAppliedZl || 0) +
-          Number(
-            order?.payment
-              ?.referralFirstOrderDiscountTotalZl || 0
-          )
-        );
-      }, 0)
-      .toFixed(2)
+  const { isGoogleSheetsEnabled } = await import(
+    "../../googleSheets/config.js"
+  );
+  const { sendDailyPointStatsToGoogleSheetsApi } = await import(
+    "../../googleSheets/dailyStatsSync.js"
   );
 
-  // const clientsCount = new Set(
-  //   (Array.isArray(orders) ? orders : [])
-  //     .filter((order) =>
-  //       shouldCountOrderInDailyStats(order)
-  //     )
-  //     .map((order) =>
-  //       String(
-  //         order?.userTelegramId ||
-  //           order?.telegramId ||
-  //           order?.user?.telegramId ||
-  //           order?.userSnapshot?.telegramId ||
-  //           order?.customerTelegramId ||
-  //           order?._id ||
-  //           ""
-  //       ).trim()
-  //     )
-  //     .filter(Boolean)
-  // ).size;
-
-  const payload = {
-    date: String(dayKey || ""),
-    point: String(
-      point?.title ||
-        point?.address ||
-        point?.key ||
-        ""
-    ),
-    products: Array.from(productMap.values()),
-    assortmentItems,
-    totals: {
-      discounts,
-      // clients: clientsCount,
-      // clientsCount,
-    },
-  };
+  if (!isGoogleSheetsEnabled()) {
+    return { ok: false, reason: "SHEETS_DISABLED", pointKey };
+  }
 
   try {
-    const r = await fetch(googleStatsWebhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await r.json().catch(() => ({}));
-
-    console.log(
-      "[GOOGLE SHEET][STATS RESPONSE]",
-      JSON.stringify(
-        {
-          httpOk: r.ok,
-          status: r.status,
-          pointKey,
-          point: String(
-            point?.title ||
-              point?.address ||
-              point?.key ||
-              ""
-          ),
-          dayKey: String(dayKey || ""),
-          productsCount: Array.isArray(payload?.products)
-            ? payload.products.length
-            : 0,
-          assortmentItemsCount: Array.isArray(
-            payload?.assortmentItems
-          )
-            ? payload.assortmentItems.length
-            : 0,
-          totals: payload?.totals || {},
-          response: data,
-        },
-        null,
-        2
-      )
+    const apiResult = await sendDailyPointStatsToGoogleSheetsApi(
+      point,
+      orders,
+      dayKey
     );
 
-    if (!r.ok || data?.ok === false) {
-      console.error(
-        "sendDailyPointStatsToGoogleSheet failed",
-        data
-      );
-
-      return {
-        ok: false,
-        response: data,
-      };
+    if (!apiResult?.ok) {
+      console.warn("[GOOGLE SHEET] daily sync failed", apiResult);
     }
 
-    return {
-      ok: true,
-      response: data,
-    };
+    return apiResult;
   } catch (e) {
-    console.error(
-      "sendDailyPointStatsToGoogleSheet error:",
-      e
-    );
-
+    console.error("[GOOGLE SHEET] service-account daily sync error:", e);
     return {
       ok: false,
+      reason: "SHEETS_API_ERROR",
+      pointKey,
       error: String(e?.message || e),
     };
   }
@@ -1081,6 +861,18 @@ export async function processDailyPointStats() {
   dailyStatsState.running = true;
 
   try {
+    try {
+      const { processEnsureNextMonthReportTabs } = await import(
+        "../../googleSheets/monthReportScheduler.js"
+      );
+      await processEnsureNextMonthReportTabs();
+    } catch (nextMonthErr) {
+      console.error(
+        "processEnsureNextMonthReportTabs error:",
+        nextMonthErr
+      );
+    }
+
     const now = new Date();
     const nowHHMM = getWarsawTimeHHMM(now);
     const dayKey = getWarsawDayKey(now);

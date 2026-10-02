@@ -12,6 +12,7 @@ import { setUserBots, bot, userBots } from "../server/botRegistry.js";
 import { getTelegramBotTokens } from "./botTokens.js";
 import { createShopBotClient } from "./shopBotClient.js";
 import { setShopBotUsername } from "./shopBotReferralLink.js";
+import { getStartBannerUrl } from "../config/rootConfig.js";
 
 export async function bootstrapShopTelegramBots(app) {
   Object.assign(globalThis, getServerContext());
@@ -63,7 +64,7 @@ async function findOrderForManagerCallback(orderIdRaw, ctx) {
 
 const TG_BOT_TOKENS = getTelegramBotTokens();
 const WEBAPP_URL = process.env.WEBAPP_URL || "";
-const START_BANNER_URL = String(process.env.START_BANNER_URL || "").trim();
+const START_BANNER_URL = getStartBannerUrl();
 
 if (TG_BOT_TOKENS.length) {
   const __botInstances = TG_BOT_TOKENS.map((token) => new Telegraf(token));

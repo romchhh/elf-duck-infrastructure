@@ -2,6 +2,8 @@
 **/.DS_Store
 
 # Secrets (single root .env for all services)
+telebots-e-commerce-*.json
+telebots-e-commerce-bc2114cbc876.json
 .env
 **/.env
 **/.env.*

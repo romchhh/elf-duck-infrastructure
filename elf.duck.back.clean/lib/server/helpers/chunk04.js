@@ -76,6 +76,7 @@ import * as __chunk00 from "./chunk00.js";
 import * as __chunk01 from "./chunk01.js";
 import * as __chunk02 from "./chunk02.js";
 import * as __chunk03 from "./chunk03.js";
+import { resolveTelegramMediaUrl } from "../../config/rootConfig.js";
 Object.assign(globalThis, { ...__chunk00, ...__chunk01, ...__chunk02, ...__chunk03 });
 
 export function getManagerOrderPhotoByPickupPoint(order, pickupPoint) {
@@ -84,15 +85,15 @@ export function getManagerOrderPhotoByPickupPoint(order, pickupPoint) {
 
   if (deliveryType === "delivery" && deliveryMethod.includes("courier")) {
     return firstNonEmptyString(
-      process.env.TG_ORDER_PHOTO_COURIER,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("orderPhoto.courier"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (deliveryType === "delivery" && deliveryMethod.includes("inpost")) {
     return firstNonEmptyString(
-      process.env.TG_ORDER_PHOTO_INPOST,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("orderPhoto.inpost"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
@@ -100,33 +101,33 @@ export function getManagerOrderPhotoByPickupPoint(order, pickupPoint) {
 
   if (pointKey.includes("praga")) {
     return firstNonEmptyString(
-      process.env.TG_ORDER_PHOTO_PRAGA,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("orderPhoto.praga"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (pointKey.includes("mokotow")) {
     return firstNonEmptyString(
-      process.env.TG_ORDER_PHOTO_MOKOTOW,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("orderPhoto.mokotow"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (pointKey.includes("wola")) {
     return firstNonEmptyString(
-      process.env.TG_ORDER_PHOTO_WOLA,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("orderPhoto.wola"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (isSrodmiesciePoint(buildOrderPointSearchBlob(order, pickupPoint))) {
     return firstNonEmptyString(
-      process.env.TG_ORDER_PHOTO_SRODMIESCIE,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("orderPhoto.srodmiescie"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
-  return firstNonEmptyString(process.env.TG_ORDER_PHOTO_DEFAULT);
+  return firstNonEmptyString(resolveTelegramMediaUrl("orderPhotoDefault"));
 }
 
 export function getCustomerOrderPhotoByPickupPoint(order, pickupPoint) {
@@ -135,19 +136,19 @@ export function getCustomerOrderPhotoByPickupPoint(order, pickupPoint) {
 
   if (deliveryType === "delivery" && deliveryMethod.includes("courier")) {
     return firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_COURIER,
-      process.env.TG_ORDER_PHOTO_COURIER,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.courier"),
+      resolveTelegramMediaUrl("orderPhoto.courier"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (deliveryType === "delivery" && deliveryMethod.includes("inpost")) {
     return firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_INPOST,
-      process.env.TG_ORDER_PHOTO_INPOST,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.inpost"),
+      resolveTelegramMediaUrl("orderPhoto.inpost"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
@@ -155,43 +156,43 @@ export function getCustomerOrderPhotoByPickupPoint(order, pickupPoint) {
 
   if (pointKey.includes("praga")) {
     return firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_PRAGA,
-      process.env.TG_ORDER_PHOTO_PRAGA,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.praga"),
+      resolveTelegramMediaUrl("orderPhoto.praga"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (pointKey.includes("mokotow")) {
     return firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_MOKOTOW,
-      process.env.TG_ORDER_PHOTO_MOKOTOW,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.mokotow"),
+      resolveTelegramMediaUrl("orderPhoto.mokotow"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (pointKey.includes("wola")) {
     return firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_WOLA,
-      process.env.TG_ORDER_PHOTO_WOLA,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.wola"),
+      resolveTelegramMediaUrl("orderPhoto.wola"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   if (isSrodmiesciePoint(buildOrderPointSearchBlob(order, pickupPoint))) {
     return firstNonEmptyString(
-      process.env.TG_CLIENT_ORDER_PHOTO_SRODMIESCIE,
-      process.env.TG_ORDER_PHOTO_SRODMIESCIE,
-      process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-      process.env.TG_ORDER_PHOTO_DEFAULT
+      resolveTelegramMediaUrl("clientOrderPhoto.srodmiescie"),
+      resolveTelegramMediaUrl("orderPhoto.srodmiescie"),
+      resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+      resolveTelegramMediaUrl("orderPhotoDefault")
     );
   }
 
   return firstNonEmptyString(
-    process.env.TG_CLIENT_ORDER_PHOTO_DEFAULT,
-    process.env.TG_ORDER_PHOTO_DEFAULT
+    resolveTelegramMediaUrl("clientOrderPhotoDefault"),
+    resolveTelegramMediaUrl("orderPhotoDefault")
   );
 }
 

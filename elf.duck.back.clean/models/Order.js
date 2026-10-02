@@ -211,6 +211,11 @@ const orderSchema = new mongoose.Schema(
     cashbackPercent: { type: Number, default: 0 },
     cashbackZl: { type: Number, default: 0 },
 
+    googleSheetSync: {
+      appliedAt: { type: Date, default: null },
+      reversedAt: { type: Date, default: null },
+      lastError: { type: String, default: "" },
+    },
 
   },
   { timestamps: true }
