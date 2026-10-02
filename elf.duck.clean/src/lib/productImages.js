@@ -8,7 +8,7 @@ import {
 } from "./productCardLayout.js";
 
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
-export const PRODUCT_CARD_ASSET_VERSION = "10";
+export const PRODUCT_CARD_ASSET_VERSION = "13";
 
 /** Фони карток як у xros-5 / puffy (IPFS), без catalog-smoke. */
 const CARD_BG_REF = {
@@ -41,13 +41,9 @@ function cardAsset(file) {
  * Локальні duck-PNG у `public/products/`.
  * Конвенція: `{productKey}-card.png` (див. scripts/update-product-card-images.mjs).
  */
-const LOCAL_PRODUCT_CARD_FILE = {
-  "puffy-30-ml": "puffy-30-ml-70-mg-card.png",
-};
-
 const LOCAL_PRODUCT_CARD_KEYS = new Set([
-  "puffy-30-ml-70-mg",
   "puffy-30-ml",
+  "puffy-30-ml-70-mg",
   "elf-duck-bc-45000",
   "yami-30ml",
   "elf-duck-d3-25k",
@@ -61,11 +57,7 @@ function resolveLocalProductCardDuckUrl(productKey) {
     return null;
   }
 
-  const file =
-    LOCAL_PRODUCT_CARD_FILE[productKey] ||
-    `${productKey}-card.png`;
-
-  return cardAsset(file);
+  return cardAsset(`${productKey}-card.png`);
 }
 
 /** Локальні превʼю (дизайн) + назви для окремих productKey. */

@@ -15,7 +15,7 @@ dotenv.config({ path: path.join(__dir, "../../.env") });
 import Product from "../models/Product.js";
 
 const dryRun = process.argv.includes("--dry-run");
-const CARD_VERSION = "10";
+const CARD_VERSION = "13";
 const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||
@@ -28,7 +28,6 @@ function cardUrl(filename) {
 
 const CARD_BY_KEY = {
   "puffy-30-ml-70-mg": "puffy-30-ml-70-mg-card.png",
-  "puffy-30-ml": "puffy-30-ml-70-mg-card.png",
   "elf-duck-bc-45000": "elf-duck-bc-45000-card.png",
   "yami-30ml": "yami-30ml-card.png",
   "oxva-30-ml-20-mg": "oxva-30-ml-20-mg-card.png",
@@ -39,7 +38,6 @@ const CARD_BY_KEY = {
 
 const SALE_LIQUID_KEYS = new Set([
   "ethereum-30-ml",
-  "chaser-for-pods-30-ml",
   "chaser-special-30-ml",
   "chaser-black-30-ml",
 ]);
@@ -60,6 +58,23 @@ async function runForDb(dbName) {
   );
 
   console.log(`[${dbName}] cleared NEW badges:`, cleared.modifiedCount);
+
+  if (!dryRun) {
+    await Product.updateOne(
+      { productKey: "puffy-30-ml" },
+      {
+        $set: {
+          title2: "30ML / 50MG",
+          cardDuckUrl: cardUrl("puffy-30-ml-card.png"),
+        },
+      }
+    );
+  } else {
+    console.log(`[${dbName}] puffy-30-ml`, {
+      title2: "30ML / 50MG",
+      cardDuckUrl: cardUrl("puffy-30-ml-card.png"),
+    });
+  }
 
   for (const [productKey, filename] of Object.entries(CARD_BY_KEY)) {
     const $set = {
