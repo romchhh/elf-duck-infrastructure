@@ -29,7 +29,7 @@ export const groups = [
   {
     label: 'Аналитика',
     items: [
-      { to: '/analytics/products', label: 'Товары', icon: Package },
+      { to: '/analytics/products', label: 'Аналитика товаров', icon: Package },
       { to: '/analytics/locations', label: 'Точки', icon: MapPin },
     ],
   },

@@ -13,7 +13,7 @@ const meta = {
   '/marketing/partners': { title: 'Партнёры', subtitle: 'Партнёрская программа' },
   '/marketing/cashback': { title: 'Кэшбэк', subtitle: 'Программа лояльности' },
   '/marketing/push': { title: 'Push-рассылки', subtitle: 'Создание и аналитика кампаний' },
-  '/analytics/products': { title: 'Товары', subtitle: 'Продажи и состояние склада' },
+  '/analytics/products': { title: 'Аналитика товаров', subtitle: 'Выручка и динамика продаж (не каталог)' },
   '/analytics/locations': { title: 'Точки', subtitle: 'Сравнение точек продаж' },
 };
 

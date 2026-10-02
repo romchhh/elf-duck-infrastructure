@@ -18,6 +18,7 @@ import ProductMobileRow from '@/components/shared/ProductMobileRow';
 import {
   usePeriod,
 } from '@/lib/PeriodContext';
+import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
 
@@ -542,6 +543,14 @@ export default function Products() {
 
   return (
     <div className="space-y-5">
+      <div className="rounded-xl border border-[hsl(255_100%_68%/0.25)] bg-[hsl(255_100%_68%/0.08)] px-4 py-3 text-[13px] text-foreground">
+        Редактирование категорий, цен, фото и плашек — в разделе{' '}
+        <Link to="/catalog" className="font-medium text-[hsl(255_100%_68%)] underline-offset-2 hover:underline">
+          Продажи → Каталог
+        </Link>
+        . Здесь только аналитика продаж.
+      </div>
+
       <div className="grid grid-cols-3 gap-4">
         {summary.map(
           (item) => (
