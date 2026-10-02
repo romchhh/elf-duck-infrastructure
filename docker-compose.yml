@@ -32,9 +32,11 @@ services:
     volumes:
       # Service account для Google Sheets (файл у корені репо, не в git)
       - ./telebots-e-commerce-bc2114cbc876.json:/app/telebots-e-commerce-bc2114cbc876.json:ro
+      - ./elf.duck.back.clean/data/catalog-uploads:/app/data/catalog-uploads
     environment:
       PORT: "3000"
       GOOGLE_SERVICE_ACCOUNT_JSON: /app/telebots-e-commerce-bc2114cbc876.json
+      CATALOG_MEDIA_PUBLIC_BASE_URL: ${CATALOG_MEDIA_PUBLIC_BASE_URL:-https://elfduck-api.telebots.site}
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/elfduck}
       APP_URL: ${APP_URL:-http://localhost:3001}
       WEBAPP_URL: ${WEBAPP_URL:-http://localhost:3001}

@@ -3,7 +3,8 @@ import { crmFetch } from '@/lib/crmFetch';
 async function parseJson(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json?.ok === false) {
-    throw new Error(json?.error || `HTTP_${res.status}`);
+    const detail = String(json?.message || json?.error || `HTTP_${res.status}`);
+    throw new Error(detail);
   }
   return json;
 }

@@ -13,6 +13,7 @@ import {
   slugifyFlavorLabel,
   translitRuToLat,
 } from "../../lib/server/helpers/chunk12.js";
+import { saveCatalogMediaBuffer } from "../../lib/crm/catalogMediaStorage.js";
 
 const router = express.Router();
 
@@ -389,13 +390,26 @@ router.post(
         return res.status(400).json({ ok: false, error: "FILE_TOO_LARGE" });
       }
 
-      const upload = req.app.locals.uploadCrmBroadcastPhoto;
-      if (typeof upload !== "function") {
-        return res.status(503).json({ ok: false, error: "UPLOAD_UNAVAILABLE" });
+      let photoPreviewUrl = "";
+
+      try {
+        const saved = await saveCatalogMediaBuffer({ buffer, contentType });
+        photoPreviewUrl = String(saved?.url || "").trim();
+      } catch (diskErr) {
+        console.warn(
+          "POST /crm/catalog/upload-media disk save failed:",
+          diskErr?.message || diskErr
+        );
+
+        const upload = req.app.locals.uploadCrmBroadcastPhoto;
+        if (typeof upload !== "function") {
+          throw diskErr;
+        }
+
+        const result = await upload({ buffer, contentType });
+        photoPreviewUrl = String(result?.photoPreviewUrl || "").trim();
       }
 
-      const result = await upload({ buffer, contentType });
-      const photoPreviewUrl = String(result?.photoPreviewUrl || "").trim();
       if (!photoPreviewUrl) {
         return res.status(500).json({ ok: false, error: "UPLOAD_FAILED" });
       }
@@ -404,11 +418,18 @@ router.post(
         ok: true,
         url: photoPreviewUrl,
         photoPreviewUrl,
-        fileId: result?.fileId || "",
+        fileId: "",
       });
     } catch (e) {
+      const message = String(
+        e?.response?.description || e?.message || e || "SERVER_ERROR"
+      );
       console.error("POST /crm/catalog/upload-media error:", e);
-      return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+      return res.status(500).json({
+        ok: false,
+        error: "SERVER_ERROR",
+        message,
+      });
     }
   }
 );

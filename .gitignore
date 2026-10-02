@@ -22,3 +22,7 @@ dist/
 # Logs
 **/npm-debug.log*
 **/.vite/
+
+# CRM catalog uploads (served from API /catalog-media)
+elf.duck.back.clean/data/catalog-uploads/*
+!elf.duck.back.clean/data/catalog-uploads/.gitkeep

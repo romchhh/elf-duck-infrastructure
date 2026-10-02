@@ -9,9 +9,11 @@ dotenv.config({
   ),
 });
 
+import fs from "fs";
 import express from "express";
 import cors from "cors";
 import compression from "compression";
+import { getCatalogUploadDir } from "./lib/crm/catalogMediaStorage.js";
 
 import Product from "./models/Product.js";
 import Order from "./models/Order.js";
@@ -152,6 +154,16 @@ app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 app.use(compression());
+
+const catalogUploadDir = getCatalogUploadDir();
+fs.mkdirSync(catalogUploadDir, { recursive: true });
+app.use(
+  "/catalog-media",
+  express.static(catalogUploadDir, {
+    maxAge: "7d",
+    fallthrough: true,
+  })
+);
 
 const CRM_MEDIA_JSON_LIMIT = "14mb";
 
