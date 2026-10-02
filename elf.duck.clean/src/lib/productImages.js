@@ -100,21 +100,47 @@ export const productVisualByKey = {
   },
 };
 
+function hasCatalogVisual(value) {
+  return Boolean(String(value || "").trim());
+}
+
+/** Пресети лише доповнюють порожні поля — URL з CRM/Mongo завжди важливіші. */
 function applyPreset(product, preset) {
   const next = { ...product };
 
-  if (preset.cardBgUrl) next.cardBgUrl = preset.cardBgUrl;
-  if (preset.cardDuckUrl !== undefined) next.cardDuckUrl = preset.cardDuckUrl;
-  if (preset.orderImgUrl) next.orderImgUrl = preset.orderImgUrl;
-  if (preset.classCardBg) next.classCardBg = preset.classCardBg;
-  if (preset.classCardDuck !== undefined) {
+  if (preset.cardBgUrl && !hasCatalogVisual(product.cardBgUrl)) {
+    next.cardBgUrl = preset.cardBgUrl;
+  }
+  if (
+    preset.cardDuckUrl !== undefined &&
+    !hasCatalogVisual(product.cardDuckUrl)
+  ) {
+    next.cardDuckUrl = preset.cardDuckUrl;
+  }
+  if (preset.orderImgUrl && !hasCatalogVisual(product.orderImgUrl)) {
+    next.orderImgUrl = preset.orderImgUrl;
+  }
+  if (preset.classCardBg && !hasCatalogVisual(product.classCardBg)) {
+    next.classCardBg = preset.classCardBg;
+  }
+  if (preset.classCardDuck !== undefined && !hasCatalogVisual(product.classCardDuck)) {
     next.classCardDuck = preset.classCardDuck;
   }
-  if (preset.classActions) next.classActions = preset.classActions;
-  if (preset.title1) next.title1 = preset.title1;
-  if (preset.title2 !== undefined) next.title2 = preset.title2;
-  if (preset.titleModal) next.titleModal = preset.titleModal;
-  if (preset.pageAccentRgb) next.pageAccentRgb = preset.pageAccentRgb;
+  if (preset.classActions && !hasCatalogVisual(product.classActions)) {
+    next.classActions = preset.classActions;
+  }
+  if (preset.title1 && !hasCatalogVisual(product.title1)) {
+    next.title1 = preset.title1;
+  }
+  if (preset.title2 !== undefined && !hasCatalogVisual(product.title2)) {
+    next.title2 = preset.title2;
+  }
+  if (preset.titleModal && !hasCatalogVisual(product.titleModal)) {
+    next.titleModal = preset.titleModal;
+  }
+  if (preset.pageAccentRgb && !hasCatalogVisual(product.pageAccentRgb)) {
+    next.pageAccentRgb = preset.pageAccentRgb;
+  }
 
   return next;
 }
@@ -142,7 +168,7 @@ export function enrichProductVisuals(product) {
   next = { ...next, classActions: resolveProductActionsClass(next) };
 
   const localCardDuckUrl = resolveLocalProductCardDuckUrl(productKey);
-  if (localCardDuckUrl) {
+  if (localCardDuckUrl && !hasCatalogVisual(next.cardDuckUrl)) {
     next = { ...next, cardDuckUrl: localCardDuckUrl };
   }
 
