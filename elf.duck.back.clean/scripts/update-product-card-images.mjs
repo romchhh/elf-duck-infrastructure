@@ -64,14 +64,16 @@ async function runForDb(dbName) {
       { productKey: "puffy-30-ml" },
       {
         $set: {
-          title2: "30ML / 50MG",
+          title1: "PUFFY",
+          title2: "30ML/50MG",
           cardDuckUrl: cardUrl("puffy-30-ml-card.png"),
         },
       }
     );
   } else {
     console.log(`[${dbName}] puffy-30-ml`, {
-      title2: "30ML / 50MG",
+      title1: "PUFFY",
+      title2: "30ML/50MG",
       cardDuckUrl: cardUrl("puffy-30-ml-card.png"),
     });
   }
