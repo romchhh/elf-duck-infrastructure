@@ -252,7 +252,7 @@ const OXVA_FLAVORS = [
 ];
 
 const PRODUCT_CARD_ASSET_VERSION = String(
-  process.env.PRODUCT_IMAGE_CACHE_VERSION || "9"
+  process.env.PRODUCT_IMAGE_CACHE_VERSION || "10"
 );
 
 function publicProductUrl(file) {

@@ -149,6 +149,13 @@ ADMIN_API_TOKEN=...   # для cache invalidate після catalog-sync
 
 Картинки в магазине: `https://elfduck.telebots.site/products/...` (збірка `shop` + файли в `elf.duck.clean/public/products/`).
 
+Після заміни PNG на картках: покласти файли як `{productKey}-card.png` у `elf.duck.clean/public/products/`, збільшити `PRODUCT_CARD_ASSET_VERSION` у `productImages.js`, `docker compose build shop && docker compose up -d shop`, перевірка:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}" "https://elfduck.telebots.site/products/puffy-30-ml-70-mg-card.png?v=10"
+# очікується 200, не 404
+```
+
 Альтернатива без profile (тот же образ `api`):
 
 ```bash

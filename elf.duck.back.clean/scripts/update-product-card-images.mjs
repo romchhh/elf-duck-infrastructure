@@ -15,7 +15,7 @@ dotenv.config({ path: path.join(__dir, "../../.env") });
 import Product from "../models/Product.js";
 
 const dryRun = process.argv.includes("--dry-run");
-const CARD_VERSION = "9";
+const CARD_VERSION = "10";
 const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||
