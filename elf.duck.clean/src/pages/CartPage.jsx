@@ -7,6 +7,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
+import { isSalePromoProduct } from "../utils/smartPricing";
 
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp";
@@ -1081,18 +1082,22 @@ const selectedPickupPoint = checkoutPickupPointId
       const qty = Math.max(1, Number(item?.qty || 1));
       const basePrice = Number(product?.price || item?.unitPrice || 0);
       const currentUnitPrice = Number(item?.unitPrice || 0);
-      const currentItemSavings = Math.max(0, (basePrice - currentUnitPrice) * qty);
+      const saleFixedPrice = isSalePromoProduct(product);
+      const currentItemSavings = saleFixedPrice
+        ? 0
+        : Math.max(0, (basePrice - currentUnitPrice) * qty);
 
-      if (LIQUIDS_CATEGORY_KEYS.has(categoryKey)) {
+      if (LIQUIDS_CATEGORY_KEYS.has(categoryKey) && !saleFixedPrice) {
         bucket.liquids.qty += qty;
         bucket.liquids.currentSavings += currentItemSavings;
       } else if (
         DISPOSABLES_CATEGORY_KEYS.has(categoryKey) &&
-        !DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS.has(productKey)
+        !DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS.has(productKey) &&
+        !saleFixedPrice
       ) {
         bucket.disposables.qty += qty;
         bucket.disposables.currentSavings += currentItemSavings;
-      } else if (CARTRIDGES_CATEGORY_KEYS.has(categoryKey)) {
+      } else if (CARTRIDGES_CATEGORY_KEYS.has(categoryKey) && !saleFixedPrice) {
         bucket.cartridges.qty += qty;
         bucket.cartridges.currentSavings += currentItemSavings;
       }

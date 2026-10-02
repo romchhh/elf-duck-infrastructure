@@ -30,6 +30,7 @@ import {
   toggleGuestFavorite,
 } from "../utils/guestLocalStore";
 import { setPendingCart } from "../pendingCart";
+import { isSalePromoProduct } from "../utils/smartPricing";
 
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
@@ -1211,6 +1212,9 @@ const MainPage = () => {
 
   const getCheckoutUnitPrice = () => {
     const basePrice = Number(activeProduct?.price || 0);
+    if (isSalePromoProduct(activeProduct)) {
+      return Number(basePrice.toFixed(2));
+    }
     const projectedQty = getProjectedSmartQtyForActiveProduct();
 
     if (isLiquidProduct(activeProduct)) {
@@ -2174,6 +2178,7 @@ navigate("/cart");
 
       const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
       if (categoryKey !== "liquids") return sum;
+      if (isSalePromoProduct(product)) return sum;
 
       return sum + Math.max(0, Number(item?.qty || 0));
     }, 0);
@@ -2185,6 +2190,7 @@ navigate("/cart");
       );
 
       if (!isDisposableSmartPriceProduct(product)) return sum;
+      if (isSalePromoProduct(product)) return sum;
 
       return sum + Math.max(0, Number(item?.qty || 0));
     }, 0);
@@ -2196,6 +2202,7 @@ navigate("/cart");
       );
 
       if (!isCartridgeSmartPriceProduct(product)) return sum;
+      if (isSalePromoProduct(product)) return sum;
 
       return sum + Math.max(0, Number(item?.qty || 0));
     }, 0);
@@ -2378,9 +2385,12 @@ navigate("/cart");
 
     // const isFirstAdd = orderFlavors.length === 0;
 
-    const shouldShowLiquidSmartPriceWarning = isLiquidProduct(activeProduct);
-    const shouldShowDisposableSmartPriceWarning = isDisposableSmartPriceProduct(activeProduct);
-    const shouldShowCartridgeSmartPriceWarning = isCartridgeSmartPriceProduct(activeProduct);
+    const shouldShowLiquidSmartPriceWarning =
+      isLiquidProduct(activeProduct) && !isSalePromoProduct(activeProduct);
+    const shouldShowDisposableSmartPriceWarning =
+      isDisposableSmartPriceProduct(activeProduct) && !isSalePromoProduct(activeProduct);
+    const shouldShowCartridgeSmartPriceWarning =
+      isCartridgeSmartPriceProduct(activeProduct) && !isSalePromoProduct(activeProduct);
 
     let latestBaseCartLiquidQty = Number(baseCartLiquidQtyForSmartPrice || 0);
     let latestBaseCartDisposableQty = 0;
@@ -2556,9 +2566,12 @@ navigate("/cart");
       return;
     }
 
-    const shouldShowLiquidSmartPriceWarning = isLiquidProduct(activeProduct);
-    const shouldShowDisposableSmartPriceWarning = isDisposableSmartPriceProduct(activeProduct);
-    const shouldShowCartridgeSmartPriceWarning = isCartridgeSmartPriceProduct(activeProduct);
+    const shouldShowLiquidSmartPriceWarning =
+      isLiquidProduct(activeProduct) && !isSalePromoProduct(activeProduct);
+    const shouldShowDisposableSmartPriceWarning =
+      isDisposableSmartPriceProduct(activeProduct) && !isSalePromoProduct(activeProduct);
+    const shouldShowCartridgeSmartPriceWarning =
+      isCartridgeSmartPriceProduct(activeProduct) && !isSalePromoProduct(activeProduct);
 
     let latestBaseCartLiquidQty = Number(baseCartLiquidQtyForSmartPrice || 0);
     let latestBaseCartDisposableQty = 0;

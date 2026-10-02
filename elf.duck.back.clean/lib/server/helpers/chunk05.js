@@ -273,6 +273,11 @@ const DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS = new Set([
   "elf-duck-1500-2",
 ]);
 
+/** Товари з бейджем SALE — одна ціна з каталогу (напр. 30 zł), без smart price */
+export function isSalePromoProduct(product) {
+  return String(product?.newBadge || "").trim().toUpperCase() === "SALE";
+}
+
 export function getSmartDiscountPerItem(unitsQty) {
   const qty = Math.max(0, Number(unitsQty || 0));
   if (qty >= 5) return 15;
@@ -317,18 +322,21 @@ export function repriceCartItemsWithSmartPricing(items, products) {
   const liquidUnitsQty = (items || []).reduce((sum, it) => {
     const product = prodByKey.get(String(it?.productKey || "").trim());
     if (!isLiquidSmartPriceProduct(product)) return sum;
+    if (isSalePromoProduct(product)) return sum;
     return sum + Math.max(1, Number(it?.qty || 1));
   }, 0);
 
   const disposableUnitsQty = (items || []).reduce((sum, it) => {
     const product = prodByKey.get(String(it?.productKey || "").trim());
     if (!isDisposableSmartPriceProduct(product)) return sum;
+    if (isSalePromoProduct(product)) return sum;
     return sum + Math.max(1, Number(it?.qty || 1));
   }, 0);
 
   const cartridgeUnitsQty = (items || []).reduce((sum, it) => {
     const product = prodByKey.get(String(it?.productKey || "").trim());
     if (!isCartridgeSmartPriceProduct(product)) return sum;
+    if (isSalePromoProduct(product)) return sum;
     return sum + Math.max(1, Number(it?.qty || 1));
   }, 0);
 
@@ -339,6 +347,14 @@ export function repriceCartItemsWithSmartPricing(items, products) {
   const repricedItems = (items || []).map((it) => {
     const product = prodByKey.get(String(it?.productKey || "").trim());
     const fallbackBasePrice = Number(product?.price || it?.unitPrice || 0);
+
+    if (isSalePromoProduct(product)) {
+      return {
+        ...it,
+        baseUnitPrice: Number(fallbackBasePrice.toFixed(2)),
+        unitPrice: Number(fallbackBasePrice.toFixed(2)),
+      };
+    }
 
     if (isLiquidSmartPriceProduct(product)) {
       return {

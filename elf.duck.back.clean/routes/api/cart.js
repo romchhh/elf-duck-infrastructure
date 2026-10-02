@@ -329,7 +329,7 @@ app.put("/cart", async (req, res) => {
     const pricingProducts = pricingProductKeys.length
       ? await Product.find(
           { productKey: { $in: pricingProductKeys } },
-          { productKey: 1, categoryKey: 1, price: 1, title1: 1, title2: 1 }
+          { productKey: 1, categoryKey: 1, price: 1, title1: 1, title2: 1, newBadge: 1 }
         ).lean()
       : [];
 
