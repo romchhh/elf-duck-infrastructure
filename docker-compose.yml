@@ -29,8 +29,12 @@ services:
     env_file:
       - path: .env
         required: false
+    volumes:
+      # Service account для Google Sheets (файл у корені репо, не в git)
+      - ./telebots-e-commerce-bc2114cbc876.json:/app/telebots-e-commerce-bc2114cbc876.json:ro
     environment:
       PORT: "3000"
+      GOOGLE_SERVICE_ACCOUNT_JSON: /app/telebots-e-commerce-bc2114cbc876.json
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/elfduck}
       APP_URL: ${APP_URL:-http://localhost:3001}
       WEBAPP_URL: ${WEBAPP_URL:-http://localhost:3001}

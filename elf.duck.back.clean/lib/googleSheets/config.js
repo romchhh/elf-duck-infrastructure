@@ -1,11 +1,13 @@
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { getGoogleSheetsConfig } from "../config/rootConfig.js";
 
-const rootDir = path.resolve(
+const backendRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
-  "../../.."
+  "../.."
 );
+const monorepoRoot = path.resolve(backendRoot, "..");
 
 export const ASSORTMENT_SHEET_TITLE = "АССОРТИМЕНТ";
 export const SYNC_ERRORS_SHEET_TITLE = "SYNC_ERRORS";
@@ -15,7 +17,7 @@ export const STATS_LOG_SHEET_TITLE = "STATS_LOG";
 export const REPORT_DAY_BLOCK_WIDTH = 11;
 
 export const DEFAULT_SERVICE_ACCOUNT_PATH = path.join(
-  rootDir,
+  monorepoRoot,
   "telebots-e-commerce-bc2114cbc876.json"
 );
 
@@ -53,13 +55,36 @@ export function resolveSpreadsheetIdForPointKey(pointKey) {
 }
 
 export function resolveServiceAccountPath() {
+  const fromEnv = String(
+    process.env.GOOGLE_SERVICE_ACCOUNT_JSON ||
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      ""
+  ).trim();
+  if (fromEnv && fs.existsSync(fromEnv)) {
+    return fromEnv;
+  }
+
   const rel = String(
     getGoogleSheetsConfig().serviceAccountJsonPath || ""
   ).trim();
+  const fileName = rel
+    ? path.basename(rel)
+    : path.basename(DEFAULT_SERVICE_ACCOUNT_PATH);
 
-  if (rel) {
-    return path.isAbsolute(rel) ? rel : path.resolve(rootDir, rel);
+  const candidates = [
+    rel && path.isAbsolute(rel) ? rel : "",
+    rel ? path.join(backendRoot, rel) : "",
+    path.join(backendRoot, fileName),
+    rel ? path.join(monorepoRoot, rel) : "",
+    path.join(monorepoRoot, fileName),
+    DEFAULT_SERVICE_ACCOUNT_PATH,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
 
-  return DEFAULT_SERVICE_ACCOUNT_PATH;
+  return candidates[candidates.length - 1] || DEFAULT_SERVICE_ACCOUNT_PATH;
 }

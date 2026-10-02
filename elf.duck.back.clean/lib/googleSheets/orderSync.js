@@ -277,6 +277,15 @@ export function queueGoogleSheetApplyForOrder(order) {
       .then((fresh) => applyOrderToGoogleSheets(fresh))
       .catch((e) => {
         console.error("[googleSheets] applyOrder error:", e);
+      })
+      .then((result) => {
+        if (result && result.ok === false) {
+          console.error("[googleSheets] applyOrder failed:", {
+            orderId: String(order._id || ""),
+            orderNo: String(order?.orderNo || ""),
+            result,
+          });
+        }
       });
   });
 }
