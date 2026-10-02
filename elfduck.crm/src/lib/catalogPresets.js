@@ -62,6 +62,20 @@ export const PRODUCT_BADGE_PRESETS = [
   { label: 'NEW', newBadge: 'NEW', classNewBadge: 'actionBadge new' },
 ];
 
+/** Быстрые цвета для палитры в каталоге (hex) */
+export const CATALOG_SWATCH_PRESETS = [
+  '#2082e7',
+  '#5ec4a8',
+  '#ff6b4a',
+  '#a855f7',
+  '#f59e0b',
+  '#22c55e',
+  '#ec4899',
+  '#1a1a2e',
+  '#4a4a6a',
+  '#ffffff',
+];
+
 export const defaultCategoryForm = () => ({
   title: '',
   key: '',

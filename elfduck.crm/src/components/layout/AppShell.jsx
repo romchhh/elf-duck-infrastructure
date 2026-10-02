@@ -9,7 +9,7 @@ const meta = {
   '/sales/orders': { title: 'Заказы', subtitle: 'Операционная таблица заказов' },
   '/sales/customers': { title: 'Клиенты', subtitle: 'База клиентов и сегментация' },
   '/sales/leads': { title: 'Лиды', subtitle: 'Воронка продаж' },
-  '/catalog': { title: 'Каталог', subtitle: 'Категории, товары, медиа и плашки' },
+  '/catalog': { title: 'Каталог', subtitle: 'Карточки товаров и категорий с превью' },
   '/marketing/partners': { title: 'Партнёры', subtitle: 'Партнёрская программа' },
   '/marketing/cashback': { title: 'Кэшбэк', subtitle: 'Программа лояльности' },
   '/marketing/push': { title: 'Push-рассылки', subtitle: 'Создание и аналитика кампаний' },
