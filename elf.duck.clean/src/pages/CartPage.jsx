@@ -4782,7 +4782,7 @@ if (pointBlob.includes("srodmiescie")) {
                       {showPickupTab && (
                         <button
                           type="button"
-                          className={`checkoutTab ${deliveryType === "pickup" ? "active" : ""} ${!hasOpenPickupNow ? "scheduleDimmed" : ""}`}
+                          className={`checkoutTab ${deliveryType === "pickup" ? "active" : ""} ${!hasAvailablePickup ? "scheduleDimmed" : ""}`}
                           onPointerDown={(e) => {
                             if (isAddressEditing || isSavingAddressRef.current) {
                               e.preventDefault();
@@ -6195,6 +6195,7 @@ if (pointBlob.includes("srodmiescie")) {
                           await saveCart(null, [], null, null, null, true);
                         }
 
+                        await import("./OrdersPage").catch(() => null);
                         navigate("/orders", {
                           replace: true,
                           state: createdOrder

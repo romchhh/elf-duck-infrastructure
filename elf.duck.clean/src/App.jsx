@@ -12,14 +12,15 @@ const ManagersPage = React.lazy(() => import("./pages/ManagersPage"));
 const PromoPage = React.lazy(() => import("./pages/PromoPage"));
 
 if (typeof window !== "undefined") {
-  const warmupCart = () => {
+  const warmupCheckoutRoutes = () => {
     import("./pages/CartPage");
+    import("./pages/OrdersPage");
   };
 
   if ("requestIdleCallback" in window) {
-    window.requestIdleCallback(warmupCart, { timeout: 4000 });
+    window.requestIdleCallback(warmupCheckoutRoutes, { timeout: 4000 });
   } else {
-    setTimeout(warmupCart, 2500);
+    setTimeout(warmupCheckoutRoutes, 2500);
   }
 }
 

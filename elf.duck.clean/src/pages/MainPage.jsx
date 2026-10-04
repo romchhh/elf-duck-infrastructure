@@ -3801,15 +3801,19 @@ navigate("/cart");
                         : "primary"
 
                     }`}
+                    onPointerDown={() => {
+                      import("./OrdersPage");
+                    }}
                     onClick={() => {
                       haptic.light();
-
-                      navigate("/orders", {
-                        state: {
-                          openPaymentOrderId: String(
-                            activeOrder?._id || ""
-                          ),
-                        },
+                      import("./OrdersPage").finally(() => {
+                        navigate("/orders", {
+                          state: {
+                            openPaymentOrderId: String(
+                              activeOrder?._id || ""
+                            ),
+                          },
+                        });
                       });
                     }}
                     disabled={
@@ -4303,7 +4307,7 @@ navigate("/cart");
                           type="button"
                           className={`deliveryButton ${
                             deliveryType === "pickup" ? "primary" : ""
-                          } ${!hasOpenPickupNow ? "scheduleDimmed" : ""}`}
+                          } ${!hasAvailablePickup ? "scheduleDimmed" : ""}`}
                           onClick={() => {
                             haptic.light();
                             setDeliveryType("pickup");
