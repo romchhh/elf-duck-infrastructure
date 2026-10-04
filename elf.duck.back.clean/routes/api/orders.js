@@ -282,38 +282,13 @@ app.post("/orders/confirm", async (req, res) => {
       //   (!isCourierDelivery && !openState.isOpen)
       // ) {
 
-      const pointSchedulePeriods = Array.isArray(openState?.periods)
-        ? openState.periods
-        : [];
-
-      const pointHasWorkingScheduleToday =
-        openState?.reason !== "NO_SCHEDULE" &&
-        openState?.reason !== "CLOSED_TODAY" &&
-        (
-          pointSchedulePeriods.length > 0 ||
-          (String(openState?.openFrom || "").trim() && String(openState?.openTo || "").trim())
-        );
-
-      const scheduleEndMinutesList = pointSchedulePeriods.length
-        ? pointSchedulePeriods
-            .map((p) => timeToMinutes(p?.openTo))
-            .filter((n) => Number.isFinite(n) && n > 0)
-        : [timeToMinutes(openState?.openTo)].filter((n) => Number.isFinite(n) && n > 0);
-
-      const latestScheduleEndMinutes = scheduleEndMinutesList.length
-        ? Math.max(...scheduleEndMinutesList)
-        : 0;
-
-      const isAfterWorkingHoursToday =
-        !isCourierDelivery &&
-        pointHasWorkingScheduleToday &&
-        latestScheduleEndMinutes > 0 &&
-        getWarsawNowMinutes() > latestScheduleEndMinutes;
+      // Заказ только пока точка/склад реально открыты сейчас (Warsaw).
+      // До openFrom и после openTo — нельзя; «на завтра» нет — дождаться 00:00.
+      const pointClosedNow = !openState?.isOpen;
 
       if (
-        (isCourierDelivery && !courierWindowFitsSchedule) ||
-        (!isCourierDelivery && !pointHasWorkingScheduleToday) ||
-        isAfterWorkingHoursToday
+        pointClosedNow ||
+        (isCourierDelivery && !courierWindowFitsSchedule)
       ) {
         const pointLabel =
           String(schedulePoint?.title || "").trim() ||
@@ -338,22 +313,26 @@ app.post("/orders/confirm", async (req, res) => {
             ? ` Выбранный промежуток: ${String(cart.deliveryTimeWindow).trim()}.`
             : "";
 
+        const beforeOpen =
+          openState?.reason === "OUTSIDE_HOURS" &&
+          openState?.openFrom &&
+          getWarsawNowMinutes() < timeToMinutes(openState.openFrom);
+
+        const afterClose =
+          openState?.reason === "OUTSIDE_HOURS" &&
+          openState?.openTo &&
+          getWarsawNowMinutes() > timeToMinutes(openState.openTo);
+
         return res.status(400).json({
-
           ok: false,
-
           field: "schedule",
-
-          error: isCourierDelivery
-
-            ? `${pointLabel}: выберите время в рамках рабочего графика. ${scheduleText}${selectedWindowText}`
-
-            : isAfterWorkingHoursToday
-
-            ? `${pointLabel}: рабочий день уже закончился. ${scheduleText}`
-
-            : `${pointLabel}: сегодня заказ недоступен. ${scheduleText}`,
-
+          error: pointClosedNow
+            ? beforeOpen
+              ? `${pointLabel}: ещё закрыто. Откроется в ${openState.openFrom}. ${scheduleText}`
+              : afterClose
+              ? `${pointLabel}: рабочий день уже закончился. ${scheduleText}`
+              : `${pointLabel}: сейчас заказ недоступен. ${scheduleText}`
+            : `${pointLabel}: выберите время в рамках рабочего графика. ${scheduleText}${selectedWindowText}`,
         });
       }
     }

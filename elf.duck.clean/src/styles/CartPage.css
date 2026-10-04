@@ -2418,6 +2418,31 @@ body {
   pointer-events: none;
 }
 
+.pickupCheckoutOption.scheduleClosed {
+  opacity: 0.42;
+  filter: grayscale(0.3);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  cursor: default;
+}
+
+.pickupCheckoutOptionMain {
+  display: block;
+}
+
+.pickupCheckoutOption .pickupScheduleHint {
+  font-size: 10px;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: Unbounded-Light;
+}
+
+.checkoutTab.scheduleDimmed {
+  opacity: 0.55;
+}
+
 /* .pickupSelectWrap { position: relative; }
 
 .pickupDropdown{

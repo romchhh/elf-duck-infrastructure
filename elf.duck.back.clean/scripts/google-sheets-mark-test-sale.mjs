@@ -1,10 +1,11 @@
 /**
  * Тестовий запис продажу в Google Таблицю (без замовлення в Mongo).
  *
- *   node scripts/google-sheets-mark-test-sale.mjs --point praga
- *   node scripts/google-sheets-mark-test-sale.mjs --point praga --reverse
+ *   node scripts/google-sheets-mark-test-sale.mjs --point mokot-w
+ *   node scripts/google-sheets-mark-test-sale.mjs --point mokot-w --reverse
  *
- * За замовчуванням: 1× PUFFY 30 ML / Grape Raspberry Plum, tier1, каса 30 zł.
+ * Пише лише tier (1шт) + скидки в підсумках; БЫЛО/СТАЛО/ПРОДАНО/КАССА не чіпає (формули).
+ * Assortment: −1 по смаку (як живий продаж).
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -33,16 +34,16 @@ const args = process.argv.slice(2);
 const reverse = args.includes("--reverse");
 const pointKey = args.includes("--point")
   ? args[args.indexOf("--point") + 1]
-  : "praga";
+  : "mokot-w";
 const modelName = args.includes("--model")
   ? args[args.indexOf("--model") + 1]
   : "PUFFY 30 ML";
 const flavorLabel = args.includes("--flavor")
   ? args[args.indexOf("--flavor") + 1]
   : "Grape Raspberry Plum";
-const kasaZl = args.includes("--kasa")
-  ? Number(args[args.indexOf("--kasa") + 1])
-  : 30;
+const discountsZl = args.includes("--discounts")
+  ? Number(args[args.indexOf("--discounts") + 1])
+  : 0;
 
 const dayKey = getWarsawDayKey(new Date());
 const tabTitle = reportTabTitleForDayKey(dayKey);
@@ -65,7 +66,9 @@ console.log(`[${tag}]`, {
   modelName,
   reportModel,
   flavorLabel,
-  kasaZl: sign * kasaZl,
+  tierKey: "tier1",
+  discountsZl: sign * discountsZl,
+  note: "writes only tier + discounts; БЫЛО/СТАЛО/ПРОДАНО/КАССА untouched",
 });
 
 const report = await applyReportModelDelta({
@@ -93,9 +96,7 @@ const itogo = await applyMonthItogoDelta({
   spreadsheetId,
   tabTitle,
   dayKey,
-  kasaDeltaZl: sign * kasaZl,
-  discountsDeltaZl: 0,
-  soldUnitsDelta: sign * 1,
+  discountsDeltaZl: sign * discountsZl,
   tierDeltas: { tier1: sign * 1 },
   dryRun: false,
 });
@@ -104,9 +105,7 @@ const dayKassa = await applyDayBlockTotalsDelta({
   spreadsheetId,
   tabTitle,
   dayKey,
-  kasaDeltaZl: sign * kasaZl,
-  discountsDeltaZl: 0,
-  soldUnitsDelta: sign * 1,
+  discountsDeltaZl: sign * discountsZl,
   tierDeltas: { tier1: sign * 1 },
   dryRun: false,
 });
@@ -124,5 +123,5 @@ if (failed.length) {
 console.log(
   reverse
     ? "Тестовий продаж знято з таблиці."
-    : "Тестовий продаж записано. Зняти: node scripts/google-sheets-mark-test-sale.mjs --point praga --reverse"
+    : "Тестовий продаж записано (tier+assortment). Зняти: node scripts/google-sheets-mark-test-sale.mjs --point mokot-w --reverse"
 );

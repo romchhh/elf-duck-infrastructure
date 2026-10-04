@@ -2309,6 +2309,32 @@ body {
   opacity: 0.45;
 }
 
+.pickupItem.scheduleClosed {
+  opacity: 0.42;
+  pointer-events: none;
+  filter: grayscale(0.35);
+}
+
+.pickupLabelWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pickupScheduleHint {
+  font-size: 10px;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: Unbounded-Light;
+}
+
+.deliveryButton.scheduleDimmed,
+.deliveryMethodBtn.scheduleDimmed {
+  opacity: 0.5;
+}
+
 .pickupAction {
   padding: 8px 8px;
   border-radius: 16px;

@@ -31,6 +31,13 @@ import {
 } from "../utils/guestLocalStore";
 import { setPendingCart } from "../pendingCart";
 import { isSalePromoProduct } from "../utils/smartPricing";
+import {
+  formatNextOpenLabel,
+  getNextOpenInfo,
+  getPointOpenStateNow,
+  getPointScheduleUiState,
+  isPickupPointKey,
+} from "../utils/pickupSchedule";
 
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
@@ -1248,24 +1255,17 @@ const MainPage = () => {
   };
 
 
-  const getWarsawDateKey = () => {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Warsaw",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-  };
+  const [scheduleClock, setScheduleClock] = useState(() => Date.now());
 
-  const getTodayScheduleForPoint = (point) => {
-    const dateKey = getWarsawDateKey();
-    return point?.scheduleByDate?.[dateKey] || null;
-  };
+  useEffect(() => {
+    const id = setInterval(() => setScheduleClock(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
-  const isPickupPointOpenToday = (point) => {
-    const schedule = getTodayScheduleForPoint(point);
-    return Boolean(schedule?.isOpen);
-  };
+  const scheduleNow = useMemo(() => new Date(scheduleClock), [scheduleClock]);
+
+  const isPointOpenNow = (point) =>
+    Boolean(getPointOpenStateNow(point, scheduleNow).isOpen);
 
   const isFlavorOutOfStockForCurrentContext = (flavor) => {
     if (!flavor || !stockContextId) return false;
@@ -1865,30 +1865,55 @@ const headerPingConfig = headerPingFlags.cart
       }
 
       if (deliveryType === "pickup") {
-        const todayKey = getWarsawDateKey();
         const selectedPickupPoint = pickupPoint || null;
-        const todaySchedule = selectedPickupPoint?.scheduleByDate?.[todayKey] || null;
+        const openState = getPointOpenStateNow(selectedPickupPoint, new Date());
 
-        if (!todaySchedule || todaySchedule?.isOpen !== true) {
+        if (!openState.isOpen) {
           const otherAvailablePoints = (pickupPoints || []).filter((p) => {
             if (!p?._id || String(p._id) === String(selectedPickupPoint?._id)) return false;
             if (p?.isActive === false) return false;
-
-            const sch = p?.scheduleByDate?.[todayKey];
-            return Boolean(sch?.isOpen);
+            if (!isPickupPointKey(p)) return false;
+            return getPointOpenStateNow(p, new Date()).isOpen;
           });
 
+          const nextLabel = formatNextOpenLabel(
+            getNextOpenInfo(selectedPickupPoint, new Date()),
+            t
+          );
+
           const pointsText = otherAvailablePoints.length
-            ? `\n\n${t("Доступные точки самовывоза:", "Dostępne punkty odbioru:")}\n${otherAvailablePoints
+            ? `\n\n${t("Открытые сейчас точки:", "Punkty otwarte teraz:")}\n${otherAvailablePoints
                 .map((p) => `• ${p.title || p.address || t("Точка самовывоза", "Punkt odbioru")}`)
                 .join("\n")}`
-            : "";
+            : `\n\n${t(
+                "Сейчас все точки закрыты. Заказ будет доступен после открытия по графику (после 00:00 — график нового дня).",
+                "Teraz wszystkie punkty są zamknięte. Zamówienie będzie dostępne po otwarciu według grafiku (po 00:00 — grafik nowego dnia)."
+              )}`;
 
           haptic.heavy();
           showTgAlert(
             t(
-              `Сегодня точка самовывоза «${selectedPickupPoint?.title || selectedPickupPoint?.address || "Точка самовывоза"}» не работает.\n\nВыберите другую точку самовывоза или воспользуйтесь доставкой.${pointsText}`,
-              `Dziś punkt odbioru „${selectedPickupPoint?.title || selectedPickupPoint?.address || "Punkt odbioru"}” jest nieczynny.\n\nWybierz inny punkt odbioru lub skorzystaj z dostawy.${pointsText}`
+              `Точка «${selectedPickupPoint?.title || selectedPickupPoint?.address || "Точка самовывоза"}» сейчас закрыта. ${nextLabel}.${pointsText}`,
+              `Punkt „${selectedPickupPoint?.title || selectedPickupPoint?.address || "Punkt odbioru"}” jest teraz zamknięty. ${nextLabel}.${pointsText}`
+            )
+          );
+          setPickupPoint(null);
+          return;
+        }
+      } else if (deliveryType === "delivery") {
+        const warehouse = (pickupPoints || []).find((p) => {
+          const key = String(p?.key || "")
+            .trim()
+            .toLowerCase()
+            .replace(/,+$/, "");
+          return deliveryMethod === "inpost" ? key === "delivery-2" : key === "delivery";
+        });
+        if (!getPointOpenStateNow(warehouse, new Date()).isOpen) {
+          haptic.heavy();
+          showTgAlert(
+            t(
+              "Доставка сейчас недоступна — склад закрыт по графику. Попробуйте после открытия (новый день — после 00:00).",
+              "Dostawa jest teraz niedostępna — magazyn zamknięty według grafiku. Spróbuj po otwarciu (nowy dzień — po 00:00)."
             )
           );
           return;
@@ -2834,57 +2859,52 @@ navigate("/cart");
   // на всякий случай: если в базе key случайно "delivery," (с запятой)
   const normKey = (v) => String(v || "").trim().replace(/,+$/, "");
 
+  // Усі активні точки самовивозу (закриті показуємо затемненими)
   const visiblePickupPoints = pickupPoints.filter((p) => {
-
-    const k = normKey(p?.key);
-
-    if (k === "delivery" || k === "delivery-2") {
-
-      return false;
-
-    }
-
-    return isPickupPointOpenToday(p);
-
+    if (p?.isActive === false) return false;
+    return isPickupPointKey(p);
   });
 
-  const hasAvailablePickup = visiblePickupPoints.length > 0;
+  const hasOpenPickupNow = visiblePickupPoints.some((p) => isPointOpenNow(p));
 
-  const hasAvailableDelivery = pickupPoints.some((point) => {
-
+  // Вкладки показуємо завжди, якщо точки/склади є в каталозі (навіть коли зараз закриті)
+  const showPickupTab = visiblePickupPoints.length > 0;
+  const showDeliveryTab = pickupPoints.some((point) => {
     const key = normKey(point?.key);
-
     return (
-
       (key === "delivery" || key === "delivery-2") &&
-
-      point?.isActive !== false &&
-
-      isPickupPointOpenToday(point)
-
+      point?.isActive !== false
     );
-
   });
 
   const hasAvailableCourier = pickupPoints.some((point) => {
     const key = normKey(point?.key);
-
     return (
       key === "delivery" &&
       point?.isActive !== false &&
-      isPickupPointOpenToday(point)
+      isPointOpenNow(point)
     );
   });
 
   const hasAvailableInpost = pickupPoints.some((point) => {
     const key = normKey(point?.key);
-
     return (
       key === "delivery-2" &&
       point?.isActive !== false &&
-      isPickupPointOpenToday(point)
+      isPointOpenNow(point)
     );
   });
+
+  const hasAvailableDelivery = hasAvailableCourier || hasAvailableInpost;
+  const hasAvailablePickup = hasOpenPickupNow;
+
+  // Якщо вибрана точка закрилась — скинути вибір
+  useEffect(() => {
+    if (!pickupPoint) return;
+    if (!isPointOpenNow(pickupPoint)) {
+      setPickupPoint(null);
+    }
+  }, [scheduleClock, pickupPoint, pickupPoints]);
 
   useEffect(() => {
     if (!hasAvailableDelivery && hasAvailablePickup) {
@@ -4275,12 +4295,12 @@ navigate("/cart");
 
                     <div className="checkoutDeliveryButtons">
 
-                      {hasAvailablePickup && (
+                      {showPickupTab && (
                         <button
                           type="button"
                           className={`deliveryButton ${
                             deliveryType === "pickup" ? "primary" : ""
-                          }`}
+                          } ${!hasOpenPickupNow ? "scheduleDimmed" : ""}`}
                           onClick={() => {
                             haptic.light();
                             setDeliveryType("pickup");
@@ -4291,12 +4311,12 @@ navigate("/cart");
                         </button>
                       )}
 
-                      {hasAvailableDelivery && (
+                      {showDeliveryTab && (
                         <button
                           type="button"
                           className={`deliveryButton ${
                             deliveryType === "delivery" ? "primary" : ""
-                          }`}
+                          } ${!hasAvailableDelivery ? "scheduleDimmed" : ""}`}
                           onClick={() => {
                             haptic.light();
                             setDeliveryType("delivery");
@@ -4323,38 +4343,54 @@ navigate("/cart");
 
                       {/* Кнопки выбора способа */}
                       <div className="deliveryMethodButtons">
-                        {hasAvailableCourier && (
+                        {pickupPoints.some(
+                          (p) =>
+                            normKey(p?.key) === "delivery" && p?.isActive !== false
+                        ) && (
                           <button
                             type="button"
-                            className={`deliveryMethodBtn ${deliveryMethod === "courier" ? "active" : ""}`}
+                            className={`deliveryMethodBtn ${deliveryMethod === "courier" ? "active" : ""} ${!hasAvailableCourier ? "scheduleDimmed" : ""}`}
+                            disabled={!hasAvailableCourier}
                             onClick={() => {
+                              if (!hasAvailableCourier) return;
                               haptic.light();
                               setDeliveryMethod("courier");
                               setInpostStep(1);
                             }}
                           >
-                            {/* тут подставь свою картинку для courier */}
                             <img className="deliveryMethodIcon" src={curierIcon} alt="" />
-                            <span className="deliveryMethodText">{t("Курьер", "Kurier")}</span>
+                            <span className="deliveryMethodText">
+                              {hasAvailableCourier
+                                ? t("Курьер", "Kurier")
+                                : t("Курьер — закрыто", "Kurier — zamknięty")}
+                            </span>
                           </button>
                         )}
 
-                        {hasAvailableInpost && (
+                        {pickupPoints.some(
+                          (p) =>
+                            normKey(p?.key) === "delivery-2" &&
+                            p?.isActive !== false
+                        ) && (
                           <button
                             type="button"
-                            className={`deliveryMethodBtn ${deliveryMethod === "inpost" ? "active" : ""}`}
+                            className={`deliveryMethodBtn ${deliveryMethod === "inpost" ? "active" : ""} ${!hasAvailableInpost ? "scheduleDimmed" : ""}`}
+                            disabled={!hasAvailableInpost}
                             onClick={() => {
+                              if (!hasAvailableInpost) return;
                               haptic.light();
                               setDeliveryMethod("inpost");
                               setInpostStep(1);
                             }}
                           >
-                            {/* тут подставь свою картинку для inpost */}
                             <img className="deliveryMethodIcon" src={curierInPostIcon} alt="" />
-                            <span className="deliveryMethodText">{t("InPost", "InPost")}</span>
+                            <span className="deliveryMethodText">
+                              {hasAvailableInpost
+                                ? t("InPost", "InPost")
+                                : t("InPost — закрыто", "InPost — zamknięty")}
+                            </span>
                           </button>
                         )}
-
                       </div>
                     </>
                   )}
@@ -4492,17 +4528,23 @@ navigate("/cart");
                         {isPickupOpen && (
                           <div className="pickupDropdown">
                             {visiblePickupPoints.map((point) => {
-                              const isPointActive = point.isActive !== false;
-                              const available = isPointActive;
+                              const ui = getPointScheduleUiState(point, scheduleNow);
+                              const available = ui.openNow;
                               const label = point.address || t("Без адреса", "Bez adresu");
                               const isSelected =
                                 pickupPoint &&
                                 String(pickupPoint._id) === String(point._id);
+                              const closedHint = available
+                                ? ""
+                                : t(
+                                    ui.closedLabelRu || "Временно закрыто",
+                                    ui.closedLabelPl || "Tymczasowo zamknięte"
+                                  );
 
                               return (
                                 <div
                                   key={point._id}
-                                  className={`pickupItem ${!available ? "disabled" : ""}`}
+                                  className={`pickupItem ${!available ? "disabled scheduleClosed" : ""} ${isSelected ? "selected" : ""}`}
                                   onClick={() => {
                                     if (!available) return;
                                     haptic.light();
@@ -4510,7 +4552,12 @@ navigate("/cart");
                                     setIsPickupOpen(false);
                                   }}
                                 >
-                                  <span className="pickupLabel">{label}</span>
+                                  <div className="pickupLabelWrap">
+                                    <span className="pickupLabel">{label}</span>
+                                    {!available && closedHint ? (
+                                      <span className="pickupScheduleHint">{closedHint}</span>
+                                    ) : null}
+                                  </div>
 
                                   <button
                                     type="button"
@@ -4518,7 +4565,7 @@ navigate("/cart");
                                     disabled={!available}
                                   >
                                     {!available
-                                      ? t("нет в наличии", "brak w magazynie")
+                                      ? t("закрыто", "zamknięte")
                                       : isSelected
                                         ? t("выбран", "wybrano")
                                         : t("выбрать", "wybierz")}

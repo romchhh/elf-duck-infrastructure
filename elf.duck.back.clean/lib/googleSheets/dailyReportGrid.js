@@ -243,45 +243,31 @@ export async function loadMonthlyReport(spreadsheetId, tabTitle) {
   return readSheetValues(spreadsheetId, range);
 }
 
+/** Місячний блок моделі: лише tier (1/2/3-4/5 шт). БЫЛО/СТАЛО/ПРОДАНО — формули в таблиці. */
 function buildMonthSummaryModelUpdates({
   tabTitle,
   rows,
   section,
   modelRow,
-  reportModelLabel,
   soldQty,
   tierKey,
 }) {
   const updates = [];
-  const { leftStartCol, rightStartCol } = section;
+  const { rightStartCol } = section;
 
-  const rightSoldCol = rightStartCol + MONTH_RIGHT_COL.sold;
   const rightTierCol =
     rightStartCol + (MONTH_RIGHT_COL[tierKey] ?? MONTH_RIGHT_COL.tier1);
-
-  const prevRightSold = parseNumberCell(rows[modelRow]?.[rightSoldCol]);
   const prevRightTier = parseNumberCell(rows[modelRow]?.[rightTierCol]);
 
-  updates.push({
-    range: `${escapeSheetTitle(tabTitle)}!${colToA1(rightSoldCol)}${modelRow + 1}`,
-    values: [[Math.max(0, prevRightSold + soldQty)]],
-  });
   updates.push({
     range: `${escapeSheetTitle(tabTitle)}!${colToA1(rightTierCol)}${modelRow + 1}`,
     values: [[Math.max(0, prevRightTier + soldQty)]],
   });
 
-  const leftStaloCol = leftStartCol + MONTH_LEFT_COL.stalo;
-  const prevLeftStalo = parseNumberCell(rows[modelRow]?.[leftStaloCol]);
-
-  updates.push({
-    range: `${escapeSheetTitle(tabTitle)}!${colToA1(leftStaloCol)}${modelRow + 1}`,
-    values: [[prevLeftStalo - soldQty]],
-  });
-
   return updates;
 }
 
+/** ІТОГО: лише tiers + СКИДКИ. КАССА / ЗАРПЛАТА / ПРОДАНО — формули в таблиці. */
 export async function applyMonthItogoDelta({
   spreadsheetId,
   tabTitle,
@@ -292,6 +278,10 @@ export async function applyMonthItogoDelta({
   tierDeltas = {},
   dryRun = false,
 }) {
+  // kasaDeltaZl / soldUnitsDelta залишені в сигнатурі для сумісності викликів — не пишемо в sheet
+  void kasaDeltaZl;
+  void soldUnitsDelta;
+
   const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
   if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
 
@@ -302,35 +292,11 @@ export async function applyMonthItogoDelta({
   if (itogoRow < 0) return { ok: false, reason: "ITOGO_ROW_NOT_FOUND" };
 
   const base = section.rightStartCol;
-  const kassaCol = base + 1;
-  const salaryCol = base + 2;
-  const soldCol = base + MONTH_RIGHT_COL.sold;
-
-  const prevKassa = parseNumberCell(rows[itogoRow]?.[kassaCol]);
-  const prevSalary = parseNumberCell(rows[itogoRow]?.[salaryCol]);
-  const prevSold = parseNumberCell(rows[itogoRow]?.[soldCol]);
-
-  const nextKassa = Number((prevKassa + kasaDeltaZl).toFixed(2));
-  const salaryAdd = Number(((kasaDeltaZl / 100) * 16).toFixed(2));
-  const nextSalary = Number((prevSalary + salaryAdd).toFixed(2));
-
-  const updates = [
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(kassaCol)}${itogoRow + 1}`,
-      values: [[nextKassa]],
-    },
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(salaryCol)}${itogoRow + 1}`,
-      values: [[nextSalary]],
-    },
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(soldCol)}${itogoRow + 1}`,
-      values: [[Math.max(0, prevSold + soldUnitsDelta)]],
-    },
-  ];
+  const updates = [];
 
   for (const [tierKey, delta] of Object.entries(tierDeltas)) {
     if (!Object.prototype.hasOwnProperty.call(MONTH_RIGHT_COL, tierKey)) continue;
+    if (tierKey === "sold" || tierKey === "discounts" || tierKey === "model") continue;
     const col = base + MONTH_RIGHT_COL[tierKey];
     const prev = parseNumberCell(rows[itogoRow]?.[col]);
     updates.push({
@@ -347,14 +313,16 @@ export async function applyMonthItogoDelta({
   });
 
   if (dryRun) {
-    return { ok: true, dryRun: true, nextKassa, nextSalary };
+    return { ok: true, dryRun: true, updates: updates.length };
   }
 
-  await batchUpdateValues(spreadsheetId, updates);
-  return { ok: true, nextKassa, nextSalary };
+  if (updates.length) {
+    await batchUpdateValues(spreadsheetId, updates);
+  }
+  return { ok: true, updates: updates.length };
 }
 
-/** Daily mini-table row КАССА: amount, sold units, tiers, discounts. */
+/** Денний рядок КАССА: лише tiers + СКИДКИ (каса/продано — формули). */
 export async function applyDayBlockTotalsDelta({
   spreadsheetId,
   tabTitle,
@@ -365,6 +333,9 @@ export async function applyDayBlockTotalsDelta({
   tierDeltas = {},
   dryRun = false,
 }) {
+  void kasaDeltaZl;
+  void soldUnitsDelta;
+
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
   const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
   if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
@@ -376,19 +347,9 @@ export async function applyDayBlockTotalsDelta({
   if (kassaRow < 0) return { ok: false, reason: "DAY_KASSA_ROW_NOT_FOUND" };
 
   const base = block.blockStart;
-  const prevKassa = parseNumberCell(rows[kassaRow]?.[base + 1]);
-  const prevSold = parseNumberCell(rows[kassaRow]?.[base + 3]);
   const prevDisc = parseNumberCell(rows[kassaRow]?.[base + 8]);
 
   const updates = [
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(base + 1)}${kassaRow + 1}`,
-      values: [[Number((prevKassa + kasaDeltaZl).toFixed(2))]],
-    },
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(base + 3)}${kassaRow + 1}`,
-      values: [[Math.max(0, prevSold + soldUnitsDelta)]],
-    },
     {
       range: `${escapeSheetTitle(tabTitle)}!${colToA1(base + 8)}${kassaRow + 1}`,
       values: [[Math.max(0, Number((prevDisc + discountsDeltaZl).toFixed(2)))]],
@@ -413,6 +374,7 @@ export async function applyDayBlockTotalsDelta({
   return { ok: true };
 }
 
+/** Денна модель: лише колонка tier (1/2/3-4/5 шт). БЫЛО/СТАЛО/ПРОДАНО — формули. */
 export async function applyReportModelDelta({
   spreadsheetId,
   tabTitle,
@@ -423,6 +385,8 @@ export async function applyReportModelDelta({
   discountsDelta = 0,
   dryRun = false,
 }) {
+  void discountsDelta;
+
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
   const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
   if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
@@ -438,27 +402,11 @@ export async function applyReportModelDelta({
     return { ok: false, reason: "REPORT_MODEL_ROW_NOT_FOUND", reportModelLabel };
   }
 
-  const soldCol = blockStart + 3;
-  const staloCol = blockStart + 2;
   const tierCol = blockStart + (TIER_COL_OFFSET[tierKey] ?? 4);
-
-  const prevSold = parseNumberCell(rows[modelRow]?.[soldCol]);
-  const prevStalo = parseNumberCell(rows[modelRow]?.[staloCol]);
   const prevTier = parseNumberCell(rows[modelRow]?.[tierCol]);
-
-  const nextSold = Math.max(0, prevSold + soldQty);
-  const nextStalo = Math.max(0, prevStalo - soldQty);
   const nextTier = Math.max(0, prevTier + soldQty);
 
   const updates = [
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(soldCol)}${modelRow + 1}`,
-      values: [[nextSold]],
-    },
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(staloCol)}${modelRow + 1}`,
-      values: [[nextStalo]],
-    },
     {
       range: `${escapeSheetTitle(tabTitle)}!${colToA1(tierCol)}${modelRow + 1}`,
       values: [[nextTier]],
@@ -480,7 +428,6 @@ export async function applyReportModelDelta({
           rows,
           section: monthSection,
           modelRow: monthModelRow,
-          reportModelLabel,
           soldQty,
           tierKey,
         })
@@ -494,12 +441,10 @@ export async function applyReportModelDelta({
       dryRun: true,
       dayHeader,
       reportModelLabel,
-      prevSold,
-      nextSold,
-      prevStalo,
-      nextStalo,
+      prevTier,
+      nextTier,
       tierKey,
-      monthUpdates: updates.length - 3,
+      monthUpdates: updates.length - 1,
     };
   }
 
@@ -509,13 +454,15 @@ export async function applyReportModelDelta({
     ok: true,
     dayHeader,
     reportModelLabel,
-    nextSold,
-    nextStalo,
+    nextTier,
     tierKey,
   };
 }
 
-/** Rebuild one day block model rows from aggregated stats (idempotent daily job). */
+/**
+ * Вечірній sync дня: лише tiers + СКИДКИ.
+ * Не чіпає БЫЛО / СТАЛО / ПРОДАНО / КАССА (формули в таблиці).
+ */
 export async function writeDayBlockFromAggregates({
   spreadsheetId,
   tabTitle,
@@ -527,6 +474,9 @@ export async function writeDayBlockFromAggregates({
   tierTotals = {},
   dryRun = false,
 }) {
+  void kasaTotalZl;
+  void soldUnitsTotal;
+
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
   const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
   if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
@@ -544,31 +494,11 @@ export async function writeDayBlockFromAggregates({
     const modelRow = findReportModelRowInDayBlock(rows, block, label);
     if (modelRow < 0) continue;
 
-    const sold = Number(product.sold || 0);
     const tier1 = Number(product.tier1 || 0);
     const tier2 = Number(product.tier2 || 0);
     const tier34 = Number(product.tier34 || 0);
     const tier5 = Number(product.tier5 || 0);
 
-    const staloCol = blockStart + 2;
-    const soldCol = blockStart + 3;
-    const prevStalo = parseNumberCell(rows[modelRow]?.[staloCol]);
-    const byloCol = blockStart + 1;
-    const prevBylo = parseNumberCell(rows[modelRow]?.[byloCol]);
-    const bylo = prevBylo || prevStalo + sold;
-
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(byloCol)}${modelRow + 1}`,
-      values: [[bylo]],
-    });
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(staloCol)}${modelRow + 1}`,
-      values: [[Math.max(0, bylo - sold)]],
-    });
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(soldCol)}${modelRow + 1}`,
-      values: [[sold]],
-    });
     data.push({
       range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 4)}${modelRow + 1}`,
       values: [[tier1]],
@@ -587,24 +517,8 @@ export async function writeDayBlockFromAggregates({
     });
   }
 
-  if (!data.length) {
-    return { ok: false, reason: "NO_REPORT_ROWS" };
-  }
-
-  if (dryRun) {
-    return { ok: true, dryRun: true, updates: data.length };
-  }
-
   const kassaRow = findKassaRowInDayBlock(rows, block);
   if (kassaRow >= 0) {
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 1)}${kassaRow + 1}`,
-      values: [[kasaTotalZl]],
-    });
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 3)}${kassaRow + 1}`,
-      values: [[soldUnitsTotal]],
-    });
     data.push({
       range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`,
       values: [[discounts]],
@@ -615,6 +529,14 @@ export async function writeDayBlockFromAggregates({
         values: [[Number(tierTotals[tierKey] || 0)]],
       });
     }
+  }
+
+  if (!data.length) {
+    return { ok: false, reason: "NO_REPORT_ROWS" };
+  }
+
+  if (dryRun) {
+    return { ok: true, dryRun: true, updates: data.length };
   }
 
   await batchUpdateValues(spreadsheetId, data);

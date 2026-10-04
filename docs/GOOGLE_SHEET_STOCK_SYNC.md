@@ -64,11 +64,10 @@ docker compose exec api node scripts/google-sheets-e2e-test.mjs
 
 Після **списання складу** (`commitOrderStock`):
 
-1. Лист місяця `ОТЧЕТ 01.MM.YYYY` — міні-таблиця дня (`DD.MM`): `ПРОДАНО`, `СТАЛО`, tier-колонки.
+1. Лист місяця `ОТЧЕТ 01.MM.YYYY` — міні-таблиця дня (`DD.MM`): лише колонки **1шт / 2шт / 3-4шт / 5шт** (+ скидки в рядку підсумків). `БЫЛО` / `СТАЛО` / `ПРОДАНО` / `КАССА` — **формули в таблиці**, API їх не перезаписує.
 2. **Нижній місячний блок** (заголовок `01.MM–31.MM` на тому ж листі):
-   - зліва (`31.MM`) — `БЫЛО` / `СТАЛО` по моделях;
-   - справа — місячні `ПРОДАНО` + tier-и;
-   - `ИТОГО` — `КАССА`, `ЗАРПЛАТА` (16% від каси), суми tier-ів, `СКИДКИ`.
+   - зліва (`31.MM`) — `БЫЛО` / `СТАЛО` лишаються формулами (API не чіпає);
+   - справа — лише tier-колонки (+ `СКИДКИ` в `ИТОГО`); `ПРОДАНО` / `КАССА` / `ЗАРПЛАТА` — формули.
 3. Лист `АССОРТИМЕНТ` — мінус кількість по смаку (`lib/googleSheets/normalize.js`).
 
 Довідкові блоки **MODEL / ПРОДАЖА** (ціни) та **ПЛАТНЫЕ ДОСТАВКИ** (доставка) API не змінює.
@@ -117,10 +116,13 @@ node scripts/create-november-2026-tabs.mjs --replace   # перестворит�
 
 ```bash
 cd elf.duck.back.clean
+node scripts/google-sheets-mark-test-sale.mjs --point mokot-w
+node scripts/google-sheets-mark-test-sale.mjs --point mokot-w --reverse
 node scripts/test-google-sheets-sync.mjs
-node scripts/test-google-sheets-sync.mjs --model "ELFLIQ 30 ML" --flavor "Blue Razz Ice"
 node scripts/inspect-google-sheets.mjs
 ```
+
+Продаж пише **лише** `1шт` / `2шт` / `3-4шт` / `5шт` + `СКИДКИ` (+ Assortment). Колонки з формулами (`БЫЛО` / `СТАЛО` / `ПРОДАНО` / `КАССА` / `ЗАРПЛАТА`) не перезаписуються.
 
 ## CRM
 
