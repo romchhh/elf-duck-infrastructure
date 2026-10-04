@@ -175,7 +175,94 @@ export function getPointOpenStateNow(point, now = new Date()) {
 }
 
 /**
- * Наступне відкриття: сьогоднішній наступний інтервал, інакше найближчий день у scheduleByDate.
+ * Чи можна оформити замовлення на СЬОГОДНІ (Warsaw):
+ * є робочий графік і час ще не після кінця останнього інтервалу.
+ * До openFrom (00:00–12:00) — так; після openTo (20:00–23:59) — ні.
+ */
+export function canAcceptOrdersToday(point, now = new Date()) {
+  const openState = getPointOpenStateNow(point, now);
+  if (openState.reason === "OPEN") {
+    return {
+      ok: true,
+      reason: "OPEN",
+      openState,
+      openFrom: openState.openFrom,
+      openTo: openState.openTo,
+    };
+  }
+
+  if (
+    openState.reason === "NO_SCHEDULE" ||
+    openState.reason === "CLOSED_TODAY" ||
+    openState.reason === "NO_HOURS"
+  ) {
+    return { ok: false, reason: openState.reason, openState };
+  }
+
+  // OUTSIDE_HOURS: до відкриття — можна; після закриття — ні
+  const nowMinutes = getWarsawNowMinutes(now);
+  const periods = openState.periods || [];
+  if (!periods.length) {
+    return { ok: false, reason: "NO_HOURS", openState };
+  }
+
+  const firstFrom = timeToMinutes(periods[0].openFrom);
+  const lastTo = timeToMinutes(periods[periods.length - 1].openTo);
+
+  if (nowMinutes < firstFrom) {
+    return {
+      ok: true,
+      reason: "BEFORE_OPEN",
+      openState,
+      openFrom: periods[0].openFrom,
+      openTo: periods[periods.length - 1].openTo,
+    };
+  }
+
+  if (nowMinutes > lastTo) {
+    return {
+      ok: false,
+      reason: "AFTER_CLOSE",
+      openState,
+      openFrom: periods[0].openFrom,
+      openTo: periods[periods.length - 1].openTo,
+    };
+  }
+
+  // між інтервалами в той самий день — ще можна (час прибуття в межах періодів)
+  return {
+    ok: true,
+    reason: "BETWEEN_PERIODS",
+    openState,
+    openFrom: periods[0].openFrom,
+    openTo: periods[periods.length - 1].openTo,
+  };
+}
+
+/** Наступне відкриття лише в інший календарний день (для підпису після 20:00). */
+export function getNextDayOpenInfo(point, now = new Date()) {
+  const todayKey = getWarsawDateKey(now);
+
+  for (let offset = 1; offset <= 14; offset++) {
+    const dateKey = addWarsawCalendarDays(todayKey, offset);
+    if (!dateKey) break;
+    const schedule = getScheduleForDateKey(point, dateKey);
+    const periods = getSchedulePeriods(schedule);
+    if (!periods.length) continue;
+    return {
+      dateKey,
+      openFrom: periods[0].openFrom,
+      openTo: periods[0].openTo,
+      isToday: false,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Наступне відкриття: сьогоднішній наступний інтервал, інакше найближчий день.
+ * @deprecated для UI після закриття краще getNextDayOpenInfo
  */
 export function getNextOpenInfo(point, now = new Date()) {
   const todayKey = getWarsawDateKey(now);
@@ -195,29 +282,13 @@ export function getNextOpenInfo(point, now = new Date()) {
     };
   }
 
-  for (let offset = 1; offset <= 14; offset++) {
-    const dateKey = addWarsawCalendarDays(todayKey, offset);
-    if (!dateKey) break;
-    const schedule = getScheduleForDateKey(point, dateKey);
-    const periods = getSchedulePeriods(schedule);
-    if (!periods.length) continue;
-    return {
-      dateKey,
-      openFrom: periods[0].openFrom,
-      openTo: periods[0].openTo,
-      isToday: false,
-    };
-  }
-
-  return null;
+  return getNextDayOpenInfo(point, now);
 }
 
 /** @param {(ru: string, pl: string) => string} t */
 export function formatNextOpenLabel(nextOpen, t) {
   if (!nextOpen?.openFrom) {
-    return t
-      ? t("Временно закрыто", "Tymczasowo zamknięte")
-      : "Временно закрыто";
+    return "";
   }
 
   if (nextOpen.isToday) {
@@ -238,32 +309,39 @@ export function formatNextOpenLabel(nextOpen, t) {
     : `Откроется ${ddMm} в ${nextOpen.openFrom}`;
 }
 
+/**
+ * UI: selectable = можна замовити на сьогодні (вкл. до відкриття зміни).
+ * Після закриття — сіра; підпис лише якщо є графік на наступний день.
+ */
 export function getPointScheduleUiState(point, now = new Date()) {
-  const openState = getPointOpenStateNow(point, now);
-  if (openState.isOpen) {
+  const accept = canAcceptOrdersToday(point, now);
+  const openState = accept.openState || getPointOpenStateNow(point, now);
+
+  if (accept.ok) {
     return {
-      openNow: true,
+      openNow: openState.reason === "OPEN",
+      selectable: true,
       openState,
+      accept,
       nextOpen: null,
-      closedLabel: "",
+      closedLabelRu: "",
+      closedLabelPl: "",
     };
   }
 
-  const nextOpen = getNextOpenInfo(point, now);
+  const nextOpen = getNextDayOpenInfo(point, now);
   return {
     openNow: false,
+    selectable: false,
     openState,
+    accept,
     nextOpen,
     closedLabelRu: nextOpen
-      ? nextOpen.isToday
-        ? `Откроется сегодня в ${nextOpen.openFrom}`
-        : `Откроется ${formatDdMm(nextOpen.dateKey)} в ${nextOpen.openFrom}`
-      : "Временно закрыто",
+      ? `Откроется ${formatDdMm(nextOpen.dateKey)} в ${nextOpen.openFrom}`
+      : "",
     closedLabelPl: nextOpen
-      ? nextOpen.isToday
-        ? `Otwarte dziś od ${nextOpen.openFrom}`
-        : `Otwarte ${formatDdMm(nextOpen.dateKey)} od ${nextOpen.openFrom}`
-      : "Tymczasowo zamknięte",
+      ? `Otwarte ${formatDdMm(nextOpen.dateKey)} od ${nextOpen.openFrom}`
+      : "",
   };
 }
 

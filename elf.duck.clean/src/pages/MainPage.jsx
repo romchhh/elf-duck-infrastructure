@@ -32,9 +32,9 @@ import {
 import { setPendingCart } from "../pendingCart";
 import { isSalePromoProduct } from "../utils/smartPricing";
 import {
+  canAcceptOrdersToday,
   formatNextOpenLabel,
-  getNextOpenInfo,
-  getPointOpenStateNow,
+  getNextDayOpenInfo,
   getPointScheduleUiState,
   isPickupPointKey,
 } from "../utils/pickupSchedule";
@@ -1264,8 +1264,9 @@ const MainPage = () => {
 
   const scheduleNow = useMemo(() => new Date(scheduleClock), [scheduleClock]);
 
-  const isPointOpenNow = (point) =>
-    Boolean(getPointOpenStateNow(point, scheduleNow).isOpen);
+  /** Можна замовити на сьогодні (вкл. до відкриття зміни; після кінця зміни — ні) */
+  const isPointAcceptingOrders = (point) =>
+    Boolean(canAcceptOrdersToday(point, scheduleNow).ok);
 
   const isFlavorOutOfStockForCurrentContext = (flavor) => {
     if (!flavor || !stockContextId) return false;
@@ -1866,35 +1867,35 @@ const headerPingConfig = headerPingFlags.cart
 
       if (deliveryType === "pickup") {
         const selectedPickupPoint = pickupPoint || null;
-        const openState = getPointOpenStateNow(selectedPickupPoint, new Date());
+        const accept = canAcceptOrdersToday(selectedPickupPoint, new Date());
 
-        if (!openState.isOpen) {
+        if (!accept.ok) {
           const otherAvailablePoints = (pickupPoints || []).filter((p) => {
             if (!p?._id || String(p._id) === String(selectedPickupPoint?._id)) return false;
             if (p?.isActive === false) return false;
             if (!isPickupPointKey(p)) return false;
-            return getPointOpenStateNow(p, new Date()).isOpen;
+            return canAcceptOrdersToday(p, new Date()).ok;
           });
 
           const nextLabel = formatNextOpenLabel(
-            getNextOpenInfo(selectedPickupPoint, new Date()),
+            getNextDayOpenInfo(selectedPickupPoint, new Date()),
             t
           );
 
           const pointsText = otherAvailablePoints.length
-            ? `\n\n${t("Открытые сейчас точки:", "Punkty otwarte teraz:")}\n${otherAvailablePoints
+            ? `\n\n${t("Доступные сегодня точки:", "Punkty dostępne dziś:")}\n${otherAvailablePoints
                 .map((p) => `• ${p.title || p.address || t("Точка самовывоза", "Punkt odbioru")}`)
                 .join("\n")}`
             : `\n\n${t(
-                "Сейчас все точки закрыты. Заказ будет доступен после открытия по графику (после 00:00 — график нового дня).",
-                "Teraz wszystkie punkty są zamknięte. Zamówienie będzie dostępne po otwarciu według grafiku (po 00:00 — grafik nowego dnia)."
+                "Сегодня все точки уже закрыты. Новый день и график — после 00:00.",
+                "Dziś wszystkie punkty są już zamknięte. Nowy dzień i grafik — po 00:00."
               )}`;
 
           haptic.heavy();
           showTgAlert(
             t(
-              `Точка «${selectedPickupPoint?.title || selectedPickupPoint?.address || "Точка самовывоза"}» сейчас закрыта. ${nextLabel}.${pointsText}`,
-              `Punkt „${selectedPickupPoint?.title || selectedPickupPoint?.address || "Punkt odbioru"}” jest teraz zamknięty. ${nextLabel}.${pointsText}`
+              `Точка «${selectedPickupPoint?.title || selectedPickupPoint?.address || "Точка самовывоза"}» сегодня уже недоступна.${nextLabel ? ` ${nextLabel}.` : ""}${pointsText}`,
+              `Punkt „${selectedPickupPoint?.title || selectedPickupPoint?.address || "Punkt odbioru"}” jest dziś niedostępny.${nextLabel ? ` ${nextLabel}.` : ""}${pointsText}`
             )
           );
           setPickupPoint(null);
@@ -1908,12 +1909,12 @@ const headerPingConfig = headerPingFlags.cart
             .replace(/,+$/, "");
           return deliveryMethod === "inpost" ? key === "delivery-2" : key === "delivery";
         });
-        if (!getPointOpenStateNow(warehouse, new Date()).isOpen) {
+        if (!canAcceptOrdersToday(warehouse, new Date()).ok) {
           haptic.heavy();
           showTgAlert(
             t(
-              "Доставка сейчас недоступна — склад закрыт по графику. Попробуйте после открытия (новый день — после 00:00).",
-              "Dostawa jest teraz niedostępna — magazyn zamknięty według grafiku. Spróbuj po otwarciu (nowy dzień — po 00:00)."
+              "Доставка сегодня уже недоступна по графику. Новый день — после 00:00.",
+              "Dostawa jest dziś niedostępna według grafiku. Nowy dzień — po 00:00."
             )
           );
           return;
@@ -2865,9 +2866,11 @@ navigate("/cart");
     return isPickupPointKey(p);
   });
 
-  const hasOpenPickupNow = visiblePickupPoints.some((p) => isPointOpenNow(p));
+  const hasAcceptingPickup = visiblePickupPoints.some((p) =>
+    isPointAcceptingOrders(p)
+  );
 
-  // Вкладки показуємо завжди, якщо точки/склади є в каталозі (навіть коли зараз закриті)
+  // Вкладки показуємо завжди, якщо точки/склади є в каталозі (навіть коли вже закриті на день)
   const showPickupTab = visiblePickupPoints.length > 0;
   const showDeliveryTab = pickupPoints.some((point) => {
     const key = normKey(point?.key);
@@ -2882,7 +2885,7 @@ navigate("/cart");
     return (
       key === "delivery" &&
       point?.isActive !== false &&
-      isPointOpenNow(point)
+      isPointAcceptingOrders(point)
     );
   });
 
@@ -2891,17 +2894,17 @@ navigate("/cart");
     return (
       key === "delivery-2" &&
       point?.isActive !== false &&
-      isPointOpenNow(point)
+      isPointAcceptingOrders(point)
     );
   });
 
   const hasAvailableDelivery = hasAvailableCourier || hasAvailableInpost;
-  const hasAvailablePickup = hasOpenPickupNow;
+  const hasAvailablePickup = hasAcceptingPickup;
 
-  // Якщо вибрана точка закрилась — скинути вибір
+  // Якщо вибрана точка вже після кінця зміни / вихідний — скинути вибір
   useEffect(() => {
     if (!pickupPoint) return;
-    if (!isPointOpenNow(pickupPoint)) {
+    if (!isPointAcceptingOrders(pickupPoint)) {
       setPickupPoint(null);
     }
   }, [scheduleClock, pickupPoint, pickupPoints]);
@@ -4529,17 +4532,15 @@ navigate("/cart");
                           <div className="pickupDropdown">
                             {visiblePickupPoints.map((point) => {
                               const ui = getPointScheduleUiState(point, scheduleNow);
-                              const available = ui.openNow;
+                              const available = ui.selectable;
                               const label = point.address || t("Без адреса", "Bez adresu");
                               const isSelected =
                                 pickupPoint &&
                                 String(pickupPoint._id) === String(point._id);
-                              const closedHint = available
-                                ? ""
-                                : t(
-                                    ui.closedLabelRu || "Временно закрыто",
-                                    ui.closedLabelPl || "Tymczasowo zamknięte"
-                                  );
+                              const closedHint =
+                                !available && (ui.closedLabelRu || ui.closedLabelPl)
+                                  ? t(ui.closedLabelRu || "", ui.closedLabelPl || "")
+                                  : "";
 
                               return (
                                 <div

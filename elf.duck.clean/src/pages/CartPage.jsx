@@ -9,9 +9,9 @@ import { fetchProductsCached } from "../utils/productsApiCache";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { isSalePromoProduct } from "../utils/smartPricing";
 import {
+  canAcceptOrdersToday,
   formatNextOpenLabel,
-  getNextOpenInfo,
-  getPointOpenStateNow,
+  getNextDayOpenInfo,
   getPointScheduleUiState,
   getWarsawDateKey,
   isPickupPointKey,
@@ -197,8 +197,8 @@ const CartPage = () => {
     return point?.scheduleByDate?.[dateKey] || null;
   };
 
-  const isPointOpenNow = (point) =>
-    Boolean(getPointOpenStateNow(point, scheduleNow).isOpen);
+  const isPointAcceptingOrders = (point) =>
+    Boolean(canAcceptOrdersToday(point, scheduleNow).ok);
 
   const getSchedulePeriods = (schedule) => {
     if (!schedule || schedule.isOpen === false) return [];
@@ -1298,12 +1298,14 @@ const selectedPickupPoint = checkoutPickupPointId
 
   const pickupTimeMin = (() => {
     if (!todayPickupSchedule?.isOpen || !todayPickupSchedule?.from) return "";
+    if (!canAcceptOrdersToday(selectedPickupPoint, scheduleNow).ok) return "";
 
-    const nowMinutes = getWarsawNowMinutes();
+    const nowMinutes = getWarsawNowMinutes() + 10;
 
     const [fh, fm] = String(todayPickupSchedule.from).split(":").map(Number);
     const fromMinutes = fh * 60 + fm;
 
+    // До відкриття зміни — найраніше openFrom; під час зміни — не раніше now+10
     const effectiveMin = Math.max(nowMinutes, fromMinutes);
 
     const hh = String(Math.floor(effectiveMin / 60)).padStart(2, "0");
@@ -2684,7 +2686,9 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
     return isPickupPointKey(p);
   });
 
-  const hasOpenPickupNow = visiblePickupPoints.some((p) => isPointOpenNow(p));
+  const hasAcceptingPickup = visiblePickupPoints.some((p) =>
+    isPointAcceptingOrders(p)
+  );
   const showPickupTab = visiblePickupPoints.length > 0;
   const showDeliveryTab = pickupPoints.some((point) => {
     const key = normKey(point?.key);
@@ -2699,7 +2703,7 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
     return (
       key === "delivery" &&
       point?.isActive !== false &&
-      isPointOpenNow(point)
+      isPointAcceptingOrders(point)
     );
   });
 
@@ -2708,19 +2712,19 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
     return (
       key === "delivery-2" &&
       point?.isActive !== false &&
-      isPointOpenNow(point)
+      isPointAcceptingOrders(point)
     );
   });
 
   const hasAvailableDelivery = hasAvailableCourier || hasAvailableInpost;
-  const hasAvailablePickup = hasOpenPickupNow;
+  const hasAvailablePickup = hasAcceptingPickup;
 
   useEffect(() => {
     if (
       deliveryType === "pickup" &&
       checkoutPickupPointId &&
       selectedPickupPoint &&
-      !isPointOpenNow(selectedPickupPoint)
+      !isPointAcceptingOrders(selectedPickupPoint)
     ) {
       setCheckoutPickupPointId(null);
       setArrivalTime("");
@@ -5482,13 +5486,11 @@ if (pointBlob.includes("srodmiescie")) {
                               ) : (
                                 visiblePickupPoints.map((p) => {
                                   const ui = getPointScheduleUiState(p, scheduleNow);
-                                  const available = ui.openNow;
-                                  const closedHint = available
-                                    ? ""
-                                    : t(
-                                        ui.closedLabelRu || "Временно закрыто",
-                                        ui.closedLabelPl || "Tymczasowo zamknięte"
-                                      );
+                                  const available = ui.selectable;
+                                  const closedHint =
+                                    !available && (ui.closedLabelRu || ui.closedLabelPl)
+                                      ? t(ui.closedLabelRu || "", ui.closedLabelPl || "")
+                                      : "";
 
                                   return (
                                   <button
@@ -5850,20 +5852,20 @@ if (pointBlob.includes("srodmiescie")) {
                         }
 
                         if (deliveryType === "pickup") {
-                          const openNow = getPointOpenStateNow(
+                          const accept = canAcceptOrdersToday(
                             selectedPickupPoint,
                             new Date()
-                          ).isOpen;
-                          if (!openNow || !todayPickupSchedule?.isOpen || !pickupTimeMin || !pickupTimeMax) {
+                          );
+                          if (!accept.ok || !todayPickupSchedule?.isOpen || !pickupTimeMin || !pickupTimeMax) {
                             const nextLabel = formatNextOpenLabel(
-                              getNextOpenInfo(selectedPickupPoint, new Date()),
+                              getNextDayOpenInfo(selectedPickupPoint, new Date()),
                               t
                             );
                             showTelegramWarning(
                               t("⚠️ Точка недоступна", "⚠️ Punkt niedostępny"),
                               t(
-                                `Сейчас точка закрыта. ${nextLabel}. Выберите открытую точку или дождитесь открытия по графику (после 00:00 — график нового дня).`,
-                                `Punkt jest teraz zamknięty. ${nextLabel}. Wybierz otwarty punkt lub poczekaj na otwarcie według grafiku (po 00:00 — grafik nowego dnia).`
+                                `Сегодня точка уже недоступна.${nextLabel ? ` ${nextLabel}.` : ""} Выберите другую точку или дождитесь 00:00 (график нового дня).`,
+                                `Punkt jest dziś niedostępny.${nextLabel ? ` ${nextLabel}.` : ""} Wybierz inny punkt lub poczekaj do 00:00 (grafik nowego dnia).`
                               )
                             );
                             return;
