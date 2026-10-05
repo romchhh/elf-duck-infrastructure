@@ -37,6 +37,8 @@ import {
   getNextDayOpenInfo,
   getPointScheduleUiState,
   isPickupPointKey,
+  labelWithScheduleClosed,
+  SCHEDULE_CLOSED_MARK,
 } from "../utils/pickupSchedule";
 
 import menuIcon from "../assets/menuIcon.webp";
@@ -4369,7 +4371,7 @@ navigate("/cart");
                             <span className="deliveryMethodText">
                               {hasAvailableCourier
                                 ? t("Курьер", "Kurier")
-                                : t("Курьер — закрыто", "Kurier — zamknięty")}
+                                : labelWithScheduleClosed(t("Курьер", "Kurier"))}
                             </span>
                           </button>
                         )}
@@ -4394,7 +4396,7 @@ navigate("/cart");
                             <span className="deliveryMethodText">
                               {hasAvailableInpost
                                 ? t("InPost", "InPost")
-                                : t("InPost — закрыто", "InPost — zamknięty")}
+                                : labelWithScheduleClosed("InPost")}
                             </span>
                           </button>
                         )}
@@ -4570,7 +4572,7 @@ navigate("/cart");
                                     disabled={!available}
                                   >
                                     {!available
-                                      ? t("закрыто", "zamknięte")
+                                      ? SCHEDULE_CLOSED_MARK
                                       : isSelected
                                         ? t("выбран", "wybrano")
                                         : t("выбрать", "wybierz")}

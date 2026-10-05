@@ -2618,6 +2618,9 @@ body {
   letter-spacing: 0.2px;
 }
 
+.deliveryMethodBtn-2.scheduleDimmed .deliveryMethodText {
+  white-space: nowrap;
+}
 
 /* =========================
    Delivery (InPost) steps UI

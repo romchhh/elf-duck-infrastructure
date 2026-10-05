@@ -1,5 +1,14 @@
 /** Графік точок (Europe/Warsaw) — дзеркало бекенд getPointOpenStateNow + next open. */
 
+/** Коротка позначка «закрито» в кнопках (en-dash, один рядок). */
+export const SCHEDULE_CLOSED_MARK = "–";
+
+export function labelWithScheduleClosed(name) {
+  const base = String(name || "").trim();
+  if (!base) return SCHEDULE_CLOSED_MARK;
+  return `${base} ${SCHEDULE_CLOSED_MARK}`;
+}
+
 export function getWarsawDateKey(date = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Warsaw",

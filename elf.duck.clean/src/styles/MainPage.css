@@ -3511,6 +3511,11 @@ body {
   letter-spacing: 0.2px;
 }
 
+.deliveryMethodBtn.scheduleDimmed .deliveryMethodText,
+.pickupAction.disabled {
+  white-space: nowrap;
+}
+
 /* Кнопка-адрес с карандашом справа */
 .checkoutSelect.address{
   width: 100%;

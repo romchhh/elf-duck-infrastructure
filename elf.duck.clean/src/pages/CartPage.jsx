@@ -15,6 +15,7 @@ import {
   getPointScheduleUiState,
   getWarsawDateKey,
   isPickupPointKey,
+  labelWithScheduleClosed,
 } from "../utils/pickupSchedule";
 
 import menuIcon from "../assets/menuIcon.webp";
@@ -2718,6 +2719,12 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
 
   const hasAvailableDelivery = hasAvailableCourier || hasAvailableInpost;
   const hasAvailablePickup = hasAcceptingPickup;
+  const showCourierDeliveryBtn = pickupPoints.some(
+    (point) => normKey(point?.key) === "delivery" && point?.isActive !== false
+  );
+  const showInpostDeliveryBtn = pickupPoints.some(
+    (point) => normKey(point?.key) === "delivery-2" && point?.isActive !== false
+  );
 
   useEffect(() => {
     if (
@@ -4858,11 +4865,13 @@ if (pointBlob.includes("srodmiescie")) {
 
                         {/* Кнопки выбора способа */}
                         <div className="deliveryMethodButtons">
-                          {hasAvailableCourier && (
+                          {showCourierDeliveryBtn && (
                             <button
                               type="button"
-                              className={`deliveryMethodBtn-2 ${deliveryMethod === "courier" ? "active" : ""}`}
+                              className={`deliveryMethodBtn-2 ${deliveryMethod === "courier" ? "active" : ""} ${!hasAvailableCourier ? "scheduleDimmed" : ""}`}
+                              disabled={!hasAvailableCourier}
                               onPointerDown={(e) => {
+                                if (!hasAvailableCourier) return;
                                 if (isAddressEditing || isSavingAddressRef.current) {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -4883,15 +4892,21 @@ if (pointBlob.includes("srodmiescie")) {
                               }}
                             >
                               <img className="deliveryMethodIcon" src={curierIcon} alt="" />
-                              <span className="deliveryMethodText">{t("Курьер", "Kurier")}</span>
+                              <span className="deliveryMethodText">
+                                {hasAvailableCourier
+                                  ? t("Курьер", "Kurier")
+                                  : labelWithScheduleClosed(t("Курьер", "Kurier"))}
+                              </span>
                             </button>
                           )}
 
-                          {hasAvailableInpost && (
+                          {showInpostDeliveryBtn && (
                             <button
                               type="button"
-                              className={`deliveryMethodBtn-2 ${deliveryMethod === "inpost" ? "active" : ""}`}
+                              className={`deliveryMethodBtn-2 ${deliveryMethod === "inpost" ? "active" : ""} ${!hasAvailableInpost ? "scheduleDimmed" : ""}`}
+                              disabled={!hasAvailableInpost}
                               onPointerDown={(e) => {
+                                if (!hasAvailableInpost) return;
                                 if (isAddressEditing || isSavingAddressRef.current) {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -4912,7 +4927,11 @@ if (pointBlob.includes("srodmiescie")) {
                               }}
                             >
                               <img className="deliveryMethodIcon" src={curierInPostIcon} alt="" />
-                              <span className="deliveryMethodText">InPost</span>
+                              <span className="deliveryMethodText">
+                                {hasAvailableInpost
+                                  ? "InPost"
+                                  : labelWithScheduleClosed("InPost")}
+                              </span>
                             </button>
                           )}
                         </div>
