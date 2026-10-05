@@ -849,14 +849,9 @@ export function shouldCountOrderInDailyStats(order) {
   if (!order) return false;
 
   const status = String(order?.status || "").trim().toLowerCase();
-  const paymentStatus = String(order?.payment?.status || "").trim().toLowerCase();
 
   if (["canceled", "annulled"].includes(status)) return false;
-  if (order?.payment?.cashbackFullyPaid === true) return true;
-  if (["paid", "refunded"].includes(paymentStatus)) return true;
-  if (["processing", "done", "completed", "shipped", "assembled"].includes(status)) return true;
-
-  return false;
+  return ["completed", "done"].includes(status);
 }
 
 /** PLN amount managers see as «Касса» in daily warehouse stats (may differ from order.totalZl). */

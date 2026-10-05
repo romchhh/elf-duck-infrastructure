@@ -1251,12 +1251,8 @@ export async function changePickupOrderStatusByManager(
   }
 
   /*
-   * Списываем товар только если он
-   * ещё не был окончательно списан.
-   *
-   * Для InPost после статуса shipped
-   * stockCommittedAt уже будет заполнен,
-   * поэтому повторного списания не произойдёт.
+   * Склад и Google Sheets — только при «выполнен».
+   * Повторно не списываем, если stockCommittedAt уже есть.
    */
   if (!fresh?.stockCommittedAt) {
     await commitOrderStock(fresh);

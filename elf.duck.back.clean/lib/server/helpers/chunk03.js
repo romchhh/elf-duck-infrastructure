@@ -336,17 +336,6 @@ export async function completeInpostShipment(
       .toLowerCase() === "shipped";
 
   if (!wasAlreadyShipped) {
-    /*
-     * Окончательно списываем
-     * зарезервированный товар.
-     */
-    if (!order?.stockCommittedAt) {
-      await commitOrderStock(order);
-
-      order.stockCommittedAt =
-        new Date();
-    }
-
     order.status = "shipped";
     order.shippedAt =
       order?.shippedAt || new Date();

@@ -1546,12 +1546,6 @@ if (photoFileId) {
         .trim()
         .toLowerCase();
 
-      // списываем склад только один раз
-      if (String(order?.payment?.method || "").trim().toLowerCase() !== "cash") {
-        await commitOrderStock(order);
-        order.stockCommittedAt = new Date();
-      }
-
       const isCourierOrder =
         String(order?.deliveryType || "")
           .trim()
@@ -2768,17 +2762,6 @@ if (
         await ctx.answerCbQuery("Заказ уже доставлен");
         return;
       }
-
-      if (!order.stockCommittedAt) {
-        await commitOrderStock(order);
-        order.stockCommittedAt = new Date();
-      }
-
-      order.status = "completed";
-      order.completedAt = new Date();
-      await order.save();
-    
-      await applyOrderCashback(order);
 
       const deliveryMessageIds = Array.isArray(order.managerDeliveryMessageIds)
         ? order.managerDeliveryMessageIds.filter(Boolean)

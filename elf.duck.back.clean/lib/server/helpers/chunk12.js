@@ -273,6 +273,7 @@ export async function releaseOrderReservedStock(order) {
   return true;
 }
 
+/** Остаточное списание Mongo + Google Sheets. Вызывать только при «Заказ выполнен». */
 export async function commitOrderStock(order) {
   if (!order || order.stockCommittedAt) return false;
 
