@@ -152,7 +152,7 @@ export function formatPaymentMethodLabel(method) {
   return key || "Не указан";
 }
 
-const DAILY_STATS_SEP = "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈";
+const DAILY_STATS_SEP = "——————————————————";
 
 export function formatDailyStatsDayLabel(dayKey) {
   const m = String(dayKey || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -164,37 +164,24 @@ function formatDailyStatsZl(value) {
   return Number(value || 0).toFixed(2);
 }
 
-/** Як у Google Sheets / ОТЧЁТ: [1] [2] [3-4] [5] */
-function formatDailyStatsTierBracketLabel(bracket) {
-  const key = String(bracket || "").trim();
-  if (["[1]", "[2]", "[3-4]", "[5]"].includes(key)) return key;
-  return key || "[1]";
+const DAILY_STATS_TIER_ORDER = ["[5]", "[3-4]", "[2]", "[1]"];
+
+function formatDailyStatsProductTierLine(tierBuckets) {
+  const parts = DAILY_STATS_TIER_ORDER
+    .filter((tier) => Number(tierBuckets?.get?.(tier) || tierBuckets?.[tier] || 0) > 0)
+    .map((tier) => {
+      const n = tierBuckets.get ? tierBuckets.get(tier) : tierBuckets[tier];
+      return `<code>${tier}</code> <b>${n}</b>`;
+    });
+
+  return parts.join(" <> ");
 }
 
-function sumDailyStatsTierBuckets(orders) {
-  const totals = { "[1]": 0, "[2]": 0, "[3-4]": 0, "[5]": 0 };
-
-  for (const order of Array.isArray(orders) ? orders : []) {
-    for (const row of Array.isArray(order?.items) ? order.items : []) {
-      const soldQty = __chunk09.getStatsSheetProductQty(row);
-      if (soldQty <= 0) continue;
-
-      const tierQty = __chunk09.getStatsSheetTierQty(order, row);
-      const bracket = __chunk09.getStatsSheetTierBracketLabelFromQty(tierQty);
-      totals[bracket] = Number(totals[bracket] || 0) + soldQty;
-    }
-  }
-
-  return totals;
-}
-
-function formatDailyStatsTierTotalsLine(totals) {
-  const order = ["[1]", "[2]", "[3-4]", "[5]"];
-  const parts = order
-    .filter((tier) => Number(totals?.[tier] || 0) > 0)
-    .map((tier) => `${tier} <b>${totals[tier]}</b>`);
-
-  return parts.length ? parts.join(" · ") : "—";
+function formatDailyStatsDisplayTitle(productRow = {}) {
+  const t1 = String(productRow?.productTitle1 || "").trim();
+  const t2 = String(productRow?.productTitle2 || "").trim();
+  const joined = [t1, t2].filter(Boolean).join(" ").trim();
+  return joined.toUpperCase() || "ТОВАР";
 }
 
 function formatDailyStatsPaymentBadge(method) {
@@ -246,12 +233,6 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
   const userDisplayMap =
     extra?.userDisplayMap instanceof Map ? extra.userDisplayMap : new Map();
-
-  function getProductDisplayTitleForStats(productRow = {}) {
-    const t1 = String(productRow?.productTitle1 || "").trim();
-    const t2 = String(productRow?.productTitle2 || "").trim();
-    return [t1, t2].filter(Boolean).join(" ").trim() || "Товар";
-  }
 
   // function getOrderOriginalItemsTotalZl(order) {
   //   const items = Array.isArray(order?.items) ? order.items : [];
@@ -310,63 +291,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     return Number(order?.payment?.cashbackAppliedZl || 0);
   }
 
-  const orderBlocks = [];
   let soldPositionsQty = 0;
-
-  for (const order of Array.isArray(orders) ? orders : []) {
-    const orderCashbackSpent = getOrderCashbackDiscountTotalZl(order);
-    const paymentMethod = getOrderDisplayedPaymentMethod(order);
-    const paymentMethodLabel = formatPaymentMethodLabel(paymentMethod);
-
-    const orderClientName =
-      userDisplayMap.get(String(order?.userTelegramId || "").trim()) ||
-      String(order?.userTelegramId || "Клиент");
-
-    const productLines = (Array.isArray(order?.items) ? order.items : []).flatMap((productRow) => {
-      const flavors = Array.isArray(productRow?.flavors) ? productRow.flavors : [];
-      const productQty = flavors.reduce(
-        (acc, flavor) => acc + Math.max(1, Number(flavor?.qty || 1)),
-        0
-      );
-
-      if (productQty <= 0) return [];
-
-      soldPositionsQty += productQty;
-
-      const productTitle = getProductDisplayTitleForStats(productRow);
-      const orderTierQty = __chunk09.getStatsSheetTierQty(order, productRow);
-      const tierBracket = formatDailyStatsTierBracketLabel(
-        __chunk09.getStatsSheetTierBracketLabelFromQty(orderTierQty)
-      );
-      const flavorLines = flavors
-        .map((flavor) => {
-          const label =
-            String(flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "").trim() ||
-            "Вкус";
-          const qty = Math.max(1, Number(flavor?.qty || 1));
-          return `     • ${escapeHtml(label)} ×${qty}`;
-        })
-        .join("\n");
-
-      const lines = [
-        `  <code>${escapeHtml(tierBracket)}</code> ${productQty}`,
-        `  <b>${escapeHtml(productTitle)}</b> ×${productQty}`,
-      ];
-      if (flavorLines) lines.push(flavorLines);
-      return lines;
-    });
-
-    orderBlocks.push({
-      orderNo: String(order?.orderNo || "—"),
-      clientName: orderClientName,
-      paymentMethod,
-      paymentMethodLabel,
-      kasaZl: Number(__chunk08.getOrderKasaPlnZl(order).toFixed(2)),
-      cashbackSpentZl: Number(orderCashbackSpent.toFixed(2)),
-      lines: productLines,
-      createdAt: order?.createdAt || null,
-    });
-  }
 
   const uniqueCustomersCount = new Set(
     (Array.isArray(orders) ? orders : [])
@@ -472,109 +397,73 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     ).toFixed(2)
   );
   
-  const salaryTotalZl = Number((((kasaTotalZl / 100) * 16)).toFixed(2));
-
   const pointTitle = point?.title || point?.address || point?.key || "Склад";
-  const sortedOrders = [...orderBlocks].sort(
-    (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
-  );
-  const ordersCount = sortedOrders.length;
   const dayLabel = formatDailyStatsDayLabel(dayKey);
-  const tierTotals = sumDailyStatsTierBuckets(orders);
-
-  const lines = [
-    `📊 <b>Статистика дня</b>`,
-    `🏪 ${escapeHtml(pointTitle)}`,
-    `📅 ${escapeHtml(dayLabel)}`,
-    ``,
-    DAILY_STATS_SEP,
-    `📌 <b>Итого</b>`,
-    `• Заказов: <b>${ordersCount}</b>`,
-    `• Клиентов: <b>${uniqueCustomersCount}</b>`,
-    `• Продано: <b>${soldPositionsQty}</b> шт.`,
-    `• Сходинки: ${formatDailyStatsTierTotalsLine(tierTotals)}`,
-    `• Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> zł`,
-    DAILY_STATS_SEP,
-    ``,
-  ];
-
-  lines.push(`🧾 <b>Заказы</b>${ordersCount ? ` (${ordersCount})` : ""}`);
-  lines.push(``);
-
-  if (!sortedOrders.length) {
-    lines.push(`<i>За день заказов не было.</i>`);
-    lines.push(``);
-  } else {
-    sortedOrders.forEach((order, index) => {
-      const payBadge = formatDailyStatsPaymentBadge(order.paymentMethod);
-      lines.push(
-        `<code>#${escapeHtml(order.orderNo)}</code> · ${escapeHtml(order.clientName)} · ${payBadge} ${escapeHtml(order.paymentMethodLabel)} · <b>${formatDailyStatsZl(order.kasaZl)} zł</b>`
-      );
-      for (const line of order.lines) {
-        lines.push(line);
-      }
-      if (index !== sortedOrders.length - 1) {
-        lines.push(``);
-      }
-    });
-    lines.push(``);
-    lines.push(DAILY_STATS_SEP);
-    lines.push(``);
-  }
-
-  lines.push(`📦 <b>По товарам</b>`);
-  lines.push(``);
 
   const productStatsMap = new Map();
 
   for (const order of Array.isArray(orders) ? orders : []) {
     for (const row of Array.isArray(order?.items) ? order.items : []) {
-      const productKey = String(row?.productKey || "").trim();
-      const reportModelKey = __chunk09.getStatsSheetReportModelKey(row);
-      const productTitle =
-        reportModelKey ||
-        [row?.productTitle1, row?.productTitle2]
-          .filter(Boolean)
-          .join(" ")
-          .trim() ||
-        productKey ||
-        "Товар";
+      const statsKey = __chunk09.getStatsSheetReportModelKey(row) ||
+        String(row?.productKey || "").trim() ||
+        formatDailyStatsDisplayTitle(row);
 
-      const statsKey = reportModelKey || productKey || productTitle;
       if (!statsKey) continue;
 
       let bucket = productStatsMap.get(statsKey);
       if (!bucket) {
         bucket = {
-          title: productTitle,
+          title: formatDailyStatsDisplayTitle(row),
           totalQty: 0,
           tierBuckets: new Map(),
           flavors: new Map(),
+          variants: new Map(),
         };
         productStatsMap.set(statsKey, bucket);
       }
 
       const flavors = Array.isArray(row?.flavors) ? row.flavors : [];
+      const rowQty = flavors.reduce(
+        (sum, flavor) => sum + Math.max(0, Number(flavor?.qty || flavor?.quantity || 0)),
+        0
+      );
+      if (rowQty <= 0) continue;
 
-      const tierQtyForThisRow = __chunk09.getStatsSheetTierQty(order, row);
-      const tierLabel = __chunk09.getStatsSheetTierBracketLabelFromQty(tierQtyForThisRow);
+      soldPositionsQty += rowQty;
 
-      for (const flavor of flavors) {
-        const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
-        if (!qty) continue;
+      const tierLabel = __chunk09.getStatsSheetTierBracketLabelFromQty(
+        __chunk09.getStatsSheetTierQty(order, row)
+      );
 
-        bucket.totalQty += qty;
+      bucket.tierBuckets.set(
+        tierLabel,
+        (bucket.tierBuckets.get(tierLabel) || 0) + rowQty
+      );
+      bucket.totalQty += rowQty;
 
-        bucket.tierBuckets.set(
-          tierLabel,
-          (bucket.tierBuckets.get(tierLabel) || 0) + qty
+      const rowTitle = formatDailyStatsDisplayTitle(row);
+      if (rowTitle.length > bucket.title.length) {
+        bucket.title = rowTitle;
+      }
+
+      const useVariantLines =
+        __chunk09.isStatsSheetCartridge(row) || __chunk09.isStatsSheetPod(row);
+
+      if (useVariantLines) {
+        const variantTitle = formatDailyStatsDisplayTitle(row);
+        bucket.variants.set(
+          variantTitle,
+          (bucket.variants.get(variantTitle) || 0) + rowQty
         );
+      } else {
+        for (const flavor of flavors) {
+          const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
+          if (!qty) continue;
 
-        const flavorLabel = String(
-          flavor?.flavorLabel || flavor?.flavorKey || "Вкус"
-        ).trim();
+          const flavorLabel = String(
+            flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "Вкус"
+          ).trim();
 
-        if (flavorLabel) {
           bucket.flavors.set(
             flavorLabel,
             (bucket.flavors.get(flavorLabel) || 0) + qty
@@ -584,92 +473,64 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     }
   }
 
-  const tierOrder = ["[5]", "[3-4]", "[2]", "[1]"];
-
   const aggregatedProducts = Array.from(productStatsMap.values()).sort(
     (a, b) => b.totalQty - a.totalQty || a.title.localeCompare(b.title, "ru")
   );
 
+  const lines = [
+    `<b>📊СТАТИСТИКА ДНЯ</b>`,
+    `🏪 Склад: <b>${escapeHtml(pointTitle)}</b>`,
+    `📅 Дата: <b>${escapeHtml(dayLabel)}</b>`,
+    DAILY_STATS_SEP,
+    `<b>🧾 ЗАКАЗЫ :</b>`,
+    DAILY_STATS_SEP,
+  ];
+
   if (!aggregatedProducts.length) {
-    lines.push(`<i>Нет продаж по товарам.</i>`);
-    lines.push("");
+    lines.push(`<i>За день заказов не было.</i>`);
+    lines.push(DAILY_STATS_SEP);
   } else {
-    const maxFlavorLines = 10;
-    for (const product of aggregatedProducts) {
-      lines.push(`🦆 <b>${escapeHtml(product.title)}</b> — ${product.totalQty} шт.`);
-
-      const tierLine = tierOrder
-        .filter((tier) => (product.tierBuckets.get(tier) || 0) > 0)
-        .map((tier) => `${tier} ${product.tierBuckets.get(tier)}`)
-        .join(" · ");
-
-      if (tierLine) {
-        lines.push(`   <i>${tierLine}</i>`);
-      }
-
-      const sortedFlavors = Array.from(product.flavors.entries()).sort(
-        (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")
+    for (let i = 0; i < aggregatedProducts.length; i++) {
+      const product = aggregatedProducts[i];
+      lines.push(
+        `▫️<b>${escapeHtml(product.title)}</b> — <b>${product.totalQty}</b> шт.`
       );
+      lines.push(``);
 
-      const visibleFlavors = sortedFlavors.slice(0, maxFlavorLines);
-      const hiddenFlavors = sortedFlavors.length - visibleFlavors.length;
+      const tierLine = formatDailyStatsProductTierLine(product.tierBuckets);
+      if (tierLine) lines.push(tierLine);
+      lines.push(``);
 
-      for (const [flavorLabel, qty] of visibleFlavors) {
-        lines.push(`   ${escapeHtml(flavorLabel)} ×${qty}`);
+      if (product.variants.size > 0) {
+        const variantLines = Array.from(product.variants.entries()).sort(
+          (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")
+        );
+        for (const [variantTitle, qty] of variantLines) {
+          lines.push(`${escapeHtml(variantTitle)} ×<b>${qty}</b>`);
+        }
+      } else {
+        const flavorLines = Array.from(product.flavors.entries()).sort(
+          (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")
+        );
+        for (const [flavorLabel, qty] of flavorLines) {
+          lines.push(`${escapeHtml(flavorLabel)} ×<b>${qty}</b>`);
+        }
       }
 
-      if (hiddenFlavors > 0) {
-        lines.push(`   <i>…ещё ${hiddenFlavors} вкусов</i>`);
-      }
-
-      lines.push("");
+      lines.push(DAILY_STATS_SEP);
     }
   }
 
+  lines.push(`<b>🏦 ФИНАНСЫ :</b> `);
   lines.push(DAILY_STATS_SEP);
-  lines.push(`💰 <b>Финансы</b>`);
-  lines.push(`• Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> zł`);
-
-  const pointKeyNorm = String(point?.key || "").trim().toLowerCase().replace(/,+$/, "");
-  const pointTitleNorm = normalizePhotoLookupText(point?.title || "");
-  const pointAddressNorm = normalizePhotoLookupText(point?.address || "");
-
-  const isCourierStatsPoint =
-    pointKeyNorm === "delivery" ||
-    pointTitleNorm.includes("kurier") ||
-    pointTitleNorm.includes("courier") ||
-    pointAddressNorm.includes("kurier") ||
-    pointAddressNorm.includes("courier");
-
-  if (isCourierStatsPoint) {
-    lines.push(`• Доставка курьер: ${formatDailyStatsZl(courierDeliveryFeesTotalZl)} zł`);
-  }
-
-  const isInpostStatsPoint =
-    pointKeyNorm === "delivery-2" ||
-    pointTitleNorm.includes("inpost") ||
-    pointAddressNorm.includes("inpost");
-
-  if (isInpostStatsPoint) {
-    lines.push(`• Доставка InPost: ${formatDailyStatsZl(inpostDeliveryFeesTotalZl)} zł`);
-  }
-
-  lines.push(`• Скидки: ${formatDailyStatsZl(discountsTotalZl)} zł`);
-  if (salePromoDiscountTotalZl > 0) {
-    lines.push(`   🏷 акція SALE: ${formatDailyStatsZl(salePromoDiscountTotalZl)} zł`);
-  }
-  if (referralDiscountTotalZl > 0) {
-    lines.push(`   🎁 реферал: ${formatDailyStatsZl(referralDiscountTotalZl)} zł`);
-  }
-  if (cashbackDiscountTotalZl > 0) {
-    lines.push(`   🪙 кэшбек: ${formatDailyStatsZl(cashbackDiscountTotalZl)} zł`);
-  }
-  lines.push(`• Зарплата (16%): ${formatDailyStatsZl(salaryTotalZl)} zł`);
-  if (referredFirstOrderUsers.size > 0) {
-    lines.push(`• Новых рефералов: ${referredFirstOrderUsers.size}`);
-  }
-  lines.push(``);
-  lines.push(`🦆 <i>ELF DUCK · статистика</i>`);
+  lines.push(
+    `💰Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`
+  );
+  lines.push(`🪙Скидки: <b>${formatDailyStatsZl(discountsTotalZl)}</b> PLN`);
+  lines.push(`👤Кол-во клиентов: <b>${uniqueCustomersCount}</b>`);
+  lines.push(`⚙️Продано штук: <b>${soldPositionsQty}</b>`);
+  lines.push(DAILY_STATS_SEP);
+  lines.push(`<b>🦆 ELF DUCK &lt;&gt; СТАТИСТИКА</b>`);
 
   return lines.join("\n");
 }
@@ -698,7 +559,7 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
       };
 
       const isSectionBreak = (line) =>
-        line === DAILY_STATS_SEP || /^📦 <b>По товарам<\/b>/.test(line);
+        line === DAILY_STATS_SEP || /^🏦 ФИНАНСЫ/.test(line);
 
       for (const line of lines) {
         const candidate = current ? `${current}\n${line}` : line;
