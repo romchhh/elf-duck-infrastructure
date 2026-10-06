@@ -291,7 +291,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
   for (const order of Array.isArray(orders) ? orders : []) {
     const orderCashbackSpent = getOrderCashbackDiscountTotalZl(order);
-    const orderSmartDiscountZl = __chunk08.getOrderSmartDiscountTotalZl(order);
+    const orderSalePromoZl = __chunk08.getOrderSalePromoDiscountTotalZl(order);
     const paymentMethod = getOrderDisplayedPaymentMethod(order);
     const paymentMethodLabel = formatPaymentMethodLabel(paymentMethod);
 
@@ -338,7 +338,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       paymentMethod,
       paymentMethodLabel,
       kasaZl: Number(__chunk08.getOrderKasaPlnZl(order).toFixed(2)),
-      smartDiscountZl: Number(orderSmartDiscountZl.toFixed(2)),
+      salePromoZl: Number(orderSalePromoZl.toFixed(2)),
       cashbackSpentZl: Number(orderCashbackSpent.toFixed(2)),
       lines: productLines,
       createdAt: order?.createdAt || null,
@@ -391,9 +391,12 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       Math.max(0, kasaTotalZl - deliveryFeesTotalZl).toFixed(2)
     );
 
-    const smartDiscountTotalZl = Number(
+  const salePromoDiscountTotalZl = Number(
     (Array.isArray(orders) ? orders : [])
-      .reduce((sum, order) => sum + __chunk08.getOrderSmartDiscountTotalZl(order), 0)
+      .reduce(
+        (sum, order) => sum + __chunk08.getOrderSalePromoDiscountTotalZl(order),
+        0
+      )
       .toFixed(2)
   );
 
@@ -439,7 +442,11 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   // );
 
   const discountsTotalZl = Number(
-    (smartDiscountTotalZl + referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
+    (
+      salePromoDiscountTotalZl +
+      referralDiscountTotalZl +
+      cashbackDiscountTotalZl
+    ).toFixed(2)
   );
   
   const salaryTotalZl = Number((((kasaTotalZl / 100) * 16)).toFixed(2));
@@ -622,8 +629,8 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   }
 
   lines.push(`• Скидки: ${formatDailyStatsZl(discountsTotalZl)} zł`);
-  if (smartDiscountTotalZl > 0) {
-    lines.push(`   ⚙️ смарт-цена: ${formatDailyStatsZl(smartDiscountTotalZl)} zł`);
+  if (salePromoDiscountTotalZl > 0) {
+    lines.push(`   🏷 SALE: ${formatDailyStatsZl(salePromoDiscountTotalZl)} zł`);
   }
   if (referralDiscountTotalZl > 0) {
     lines.push(`   🎁 реферал: ${formatDailyStatsZl(referralDiscountTotalZl)} zł`);

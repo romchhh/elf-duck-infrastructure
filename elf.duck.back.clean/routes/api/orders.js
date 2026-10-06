@@ -472,6 +472,7 @@ app.post("/orders/confirm", async (req, res) => {
           qty,
           unitPrice,
           baseUnitPrice: Number(originalBaseUnitPrice || baseUnitPrice || unitPrice || 0),
+          salePromo: isSalePromoProduct(prod),
           smartDiscountPerItem,
           smartDiscountTotalZl,
           referralFirstOrderDiscountPercent: Number(it?.referralFirstOrderDiscountPercent || 0),
