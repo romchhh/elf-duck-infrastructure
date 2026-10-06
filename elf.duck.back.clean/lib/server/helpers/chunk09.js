@@ -139,6 +139,19 @@ const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([
   "puffy-30-ml-70-mg",
 ]);
 
+/** Назва для пошуку блоку на листі АССОРТИМЕНТ (разом із productKey у normalize). */
+export function getAssortmentSheetModelName(row = {}) {
+  const pk = String(row?.productKey || "").trim().toLowerCase();
+  if (STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk]) {
+    return STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk];
+  }
+
+  const title = getStatsSheetProductTitle(row);
+  if (!title) return "";
+
+  return normalizeSheetModelName(title);
+}
+
 /** Ключ рядка MODEL в Google ОТЧЁТ (PUFFY 70% → PUFFY 7%). */
 export function getStatsSheetReportModelKey(row = {}) {
   const pk = String(row?.productKey || "").trim().toLowerCase();

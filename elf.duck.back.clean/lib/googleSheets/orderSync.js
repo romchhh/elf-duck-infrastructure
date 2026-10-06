@@ -7,9 +7,7 @@ import {
   isGoogleSheetsEnabled,
   resolveSpreadsheetIdForPointKey,
 } from "./config.js";
-import {
-  getStatsSheetProductTitle,
-} from "../server/helpers/chunk09.js";
+import { getAssortmentSheetModelName } from "../server/helpers/chunk09.js";
 
 async function resolveOrderPointKey(order) {
   if (!order) return "";
@@ -75,7 +73,7 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
   const results = [];
 
   for (const row of order?.items || []) {
-    const modelName = getStatsSheetProductTitle(row);
+    const modelName = getAssortmentSheetModelName(row);
 
     for (const flavor of row?.flavors || []) {
       const flavorQty = Math.max(0, Number(flavor?.qty || 0));
