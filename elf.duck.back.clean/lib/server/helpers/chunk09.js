@@ -150,18 +150,79 @@ export function isStatsSheetPod(row = {}) {
   return title.includes("pod");
 }
 
+const STATS_SHEET_DISPOSABLE_NO_TIER_PRODUCT_KEYS = new Set([
+  "elf-duck-1500",
+  "elf-duck-1500-2",
+]);
+
+/** Order snapshots often lack categoryKey — match productKey like the shop smart-price bucket. */
+export function isStatsSheetDisposableByProductKey(productKey = "") {
+  const pk = String(productKey || "").trim().toLowerCase();
+  if (!pk) return false;
+  if (STATS_SHEET_DISPOSABLE_NO_TIER_PRODUCT_KEYS.has(pk)) return false;
+  if (pk.includes("30-ml") || pk.includes("cartridge") || pk.includes("catridge")) {
+    return false;
+  }
+  if (pk.includes("disposable")) return true;
+  if (/\bbc[-_]?45/.test(pk) || pk.includes("bc45") || pk.includes("45000")) return true;
+  if (/\bgh[-_]?33/.test(pk) || pk.includes("33000")) return true;
+  if (/\bmoon[-_]?40/.test(pk) || pk.includes("moon-40")) return true;
+  if (
+    /\b(25k|30k|40k|20k|3000|d3|trio|king|duke|ri[-_]?3000)\b/.test(pk) &&
+    pk.startsWith("elf")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function isStatsSheetDisposableByTitle(title = "") {
+  const t = String(title || "").trim();
+  if (!t) return false;
+  if (t.includes("cartridge") || t.includes("catridge")) return false;
+
+  if (
+    /\b(25k|30k|40k|20k|3000|15000|20000|25000|30000|40000|45000|33000)\b/.test(
+      t
+    )
+  ) {
+    return true;
+  }
+  if (/\bbc\s*45/.test(t) || /\bbc45k\b/.test(t)) return true;
+  if (/\bgh\s*33/.test(t)) return true;
+  if (/\bmoon\b/.test(t) && !/\b30\s*ml\b/.test(t)) return true;
+  if (/\btrio\b/.test(t)) return true;
+  if (/\belf\s+d3\b/.test(t) || /\bd3\s*25/.test(t)) return true;
+  if (/\bking\s*30/.test(t) || /\bduke\s*30/.test(t)) return true;
+  if (/\bri\s*3000\b/.test(t) || /\b3000\s*ri\b/.test(t)) return true;
+
+  return false;
+}
+
+export function isStatsSheetCartridge(row = {}) {
+  if (isStatsSheetLiquid(row)) return false;
+
+  const categoryKey = getStatsSheetProductCategory(row);
+  if (categoryKey === "cartridges" || categoryKey === "cartridge") return true;
+
+  const title = normalizeStatsSheetProductTitle(row);
+  return title.includes("cartridge") || title.includes("catridge");
+}
+
 export function isStatsSheetDisposable(row = {}) {
   if (isStatsSheetLiquid(row)) return false;
   if (isStatsSheetPod(row)) return false;
+  if (isStatsSheetCartridge(row)) return false;
   if (isStatsSheetExcludedDisposable(row)) return false;
 
   const categoryKey = getStatsSheetProductCategory(row);
   if (categoryKey === "disposables" || categoryKey === "disposable") return true;
 
-  const title = normalizeStatsSheetProductTitle(row);
-  if (title.includes("cartridge") || title.includes("catridge")) return false;
+  const productKey = String(row?.productKey || "").trim();
+  if (isStatsSheetDisposableByProductKey(productKey)) return true;
 
-  return /\b(25k|30k|40k|20k|3000|15000|20000|25000|30000|40000)\b/i.test(title);
+  const title = normalizeStatsSheetProductTitle(row);
+  return isStatsSheetDisposableByTitle(title);
 }
 
 export function getStatsSheetOrderLiquidQty(order) {
@@ -185,11 +246,35 @@ export function getStatsSheetOrderDisposableQty(order) {
   }, 0);
 }
 
+export function getStatsSheetOrderCartridgeQty(order) {
+  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
+    if (!isStatsSheetCartridge(row)) return sum;
+    return sum + getStatsSheetProductQty(row);
+  }, 0);
+}
+
 export function getStatsSheetTierQty(order, row) {
   if (isStatsSheetLiquid(row)) return getStatsSheetOrderLiquidQty(order);
+  if (isStatsSheetCartridge(row)) return getStatsSheetOrderCartridgeQty(order);
   if (isStatsSheetPod(row)) return getStatsSheetOrderPodQty(order);
   if (isStatsSheetDisposable(row)) return getStatsSheetOrderDisposableQty(order);
 
   return getStatsSheetProductQty(row);
+}
+
+export function getStatsSheetTierBucketLabelFromQty(qty) {
+  const n = Math.max(0, Number(qty || 0));
+  if (n >= 5) return "5шт.";
+  if (n >= 3) return "3-4шт.";
+  if (n >= 2) return "2шт.";
+  return "1шт.";
+}
+
+export function getStatsSheetTierBracketLabelFromQty(qty) {
+  const n = Math.max(0, Number(qty || 0));
+  if (n >= 5) return "[5]";
+  if (n >= 3) return "[3-4]";
+  if (n >= 2) return "[2]";
+  return "[1]";
 }
 

@@ -1,37 +1,15 @@
 import Order from "../../models/Order.js";
 import PickupPoint from "../../models/PickupPoint.js";
-import {
-  getOrderKasaPlnZl,
-  getOrderSheetsDiscountTotalZl,
-  getWarsawDayKey,
-} from "../server/helpers/chunk08.js";
-import {
-  getStatsSheetProductQty,
-  getStatsSheetProductTitle,
-  getStatsSheetTierQty,
-} from "../server/helpers/chunk09.js";
-function getStatsSheetTierKeyFromQty(qty) {
-  const n = Math.max(0, Number(qty || 0));
-  if (n >= 5) return "tier5";
-  if (n >= 3) return "tier34";
-  if (n >= 2) return "tier2";
-  return "tier1";
-}
+import { getOrderStatsDayKey } from "../server/helpers/orderStatsDay.js";
 import { applyAssortmentDelta } from "./assortmentGrid.js";
-import {
-  applyDayBlockTotalsDelta,
-  applyMonthItogoDelta,
-  applyReportModelDelta,
-  reportTabTitleForDayKey,
-} from "./dailyReportGrid.js";
+import { reportTabTitleForDayKey } from "./dailyReportGrid.js";
 import {
   isGoogleSheetsEnabled,
   resolveSpreadsheetIdForPointKey,
 } from "./config.js";
 import {
-  normalizeSheetModelName,
-  toReportModelLabel,
-} from "./normalize.js";
+  getStatsSheetProductTitle,
+} from "../server/helpers/chunk09.js";
 
 async function resolveOrderPointKey(order) {
   if (!order) return "";
@@ -69,6 +47,10 @@ export async function runGoogleSheetsOrderSync(order, options = {}) {
   return syncOrderItems(order, { direction: "apply", dryRun: options?.dryRun });
 }
 
+/**
+ * Per-order Google Sheets: only АССОРТИМЕНТ.
+ * Day/month tier columns and СКИДКИ — evening sync (writeDayBlockFromAggregates).
+ */
 async function syncOrderItems(order, { direction, dryRun = false }) {
   const pointKey = await resolveOrderPointKey(order);
   const spreadsheetId = resolveSpreadsheetIdForPointKey(pointKey);
@@ -85,41 +67,15 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
     }).lean();
     pointLabel = String(point?.title || pointKey || "");
   }
-  const dayKey = getWarsawDayKey(order?.stockCommittedAt || order?.createdAt);
+
+  const dayKey = getOrderStatsDayKey(order);
   const tabTitle = reportTabTitleForDayKey(dayKey);
   const sign = direction === "reverse" ? 1 : -1;
-  const reportSign = direction === "reverse" ? -1 : 1;
 
   const results = [];
-  const tierDeltas = { tier1: 0, tier2: 0, tier34: 0, tier5: 0 };
-  let soldUnitsDelta = 0;
 
   for (const row of order?.items || []) {
     const modelName = getStatsSheetProductTitle(row);
-    const normalizedModel = normalizeSheetModelName(modelName);
-    const reportModel = toReportModelLabel(normalizedModel);
-
-    const soldQty = getStatsSheetProductQty(row);
-    if (soldQty <= 0) continue;
-
-    const tierQty = getStatsSheetTierQty(order, row);
-    const tierKey = getStatsSheetTierKeyFromQty(tierQty);
-
-    soldUnitsDelta += reportSign * soldQty;
-    tierDeltas[tierKey] =
-      Number(tierDeltas[tierKey] || 0) + reportSign * soldQty;
-
-    const reportResult = await applyReportModelDelta({
-      spreadsheetId,
-      tabTitle,
-      dayKey,
-      reportModelLabel: reportModel,
-      soldQty: reportSign * soldQty,
-      tierKey,
-      dryRun,
-    });
-
-    results.push({ kind: "report", reportResult });
 
     for (const flavor of row?.flavors || []) {
       const flavorQty = Math.max(0, Number(flavor?.qty || 0));
@@ -141,41 +97,7 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
     }
   }
 
-  const discountsZl = getOrderSheetsDiscountTotalZl(order);
-
-  const kasaZl = Number(getOrderKasaPlnZl(order) || 0);
-
-  const itogoResult = await applyMonthItogoDelta({
-    spreadsheetId,
-    tabTitle,
-    dayKey,
-    kasaDeltaZl: reportSign * kasaZl,
-    discountsDeltaZl: reportSign * discountsZl,
-    soldUnitsDelta,
-    tierDeltas,
-    dryRun,
-  });
-
-  results.push({ kind: "monthItogo", itogoResult });
-
-  const dayTotalsResult = await applyDayBlockTotalsDelta({
-    spreadsheetId,
-    tabTitle,
-    dayKey,
-    kasaDeltaZl: reportSign * kasaZl,
-    discountsDeltaZl: reportSign * discountsZl,
-    soldUnitsDelta,
-    tierDeltas,
-    dryRun,
-  });
-
-  results.push({ kind: "dayKassa", dayTotalsResult });
-
-  const failed = results.filter((r) => {
-    const body =
-      r.reportResult || r.assortmentResult || r.itogoResult || r.dayTotalsResult;
-    return body && body.ok === false;
-  });
+  const failed = results.filter((r) => r.assortmentResult && r.assortmentResult.ok === false);
 
   return {
     ok: failed.length === 0,

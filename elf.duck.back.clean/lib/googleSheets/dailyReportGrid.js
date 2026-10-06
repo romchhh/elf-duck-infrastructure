@@ -267,6 +267,58 @@ function buildMonthSummaryModelUpdates({
   return updates;
 }
 
+const MONTH_TIER_KEYS = ["tier1", "tier2", "tier34", "tier5"];
+
+/** Вечірній rollup: місячні tier-колонки по моделях (інкремент з aggregates дня). */
+export async function applyMonthSummaryTiersFromProductRows({
+  spreadsheetId,
+  tabTitle,
+  dayKey,
+  productRows,
+  dryRun = false,
+}) {
+  const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
+  if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
+
+  const section = findMonthSummarySection(rows, dayKey);
+  if (!section) return { ok: false, reason: "MONTH_SUMMARY_NOT_FOUND" };
+
+  const updates = [];
+
+  for (const product of productRows || []) {
+    const label = toReportModelLabel(product.model);
+    const modelRow = findMonthSummaryModelRow(rows, section, label);
+    if (modelRow < 0) continue;
+
+    for (const tierKey of MONTH_TIER_KEYS) {
+      const soldQty = Number(product[tierKey] || 0);
+      if (soldQty <= 0) continue;
+
+      updates.push(
+        ...buildMonthSummaryModelUpdates({
+          tabTitle,
+          rows,
+          section,
+          modelRow,
+          soldQty,
+          tierKey,
+        })
+      );
+    }
+  }
+
+  if (!updates.length) {
+    return { ok: true, updates: 0, skipped: true };
+  }
+
+  if (dryRun) {
+    return { ok: true, dryRun: true, updates: updates.length };
+  }
+
+  await batchUpdateValues(spreadsheetId, updates);
+  return { ok: true, updates: updates.length };
+}
+
 /** ІТОГО: лише tiers + СКИДКИ. КАССА / ЗАРПЛАТА / ПРОДАНО — формули в таблиці. */
 export async function applyMonthItogoDelta({
   spreadsheetId,

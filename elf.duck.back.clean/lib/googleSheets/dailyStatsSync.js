@@ -5,6 +5,8 @@ import {
   STATS_LOG_SHEET_TITLE,
 } from "./config.js";
 import {
+  applyMonthItogoDelta,
+  applyMonthSummaryTiersFromProductRows,
   reportTabTitleForDayKey,
   writeDayBlockFromAggregates,
 } from "./dailyReportGrid.js";
@@ -26,7 +28,7 @@ function getStatsSheetTierKeyFromQty(qty) {
   return "tier1";
 }
 
-function buildProductAggregates(orders) {
+export function buildProductAggregates(orders) {
   const productMap = new Map();
 
   for (const order of Array.isArray(orders) ? orders : []) {
@@ -59,7 +61,14 @@ function buildProductAggregates(orders) {
   return Array.from(productMap.values());
 }
 
-export async function sendDailyPointStatsToGoogleSheetsApi(point, orders, dayKey) {
+export async function sendDailyPointStatsToGoogleSheetsApi(
+  point,
+  orders,
+  dayKey,
+  options = {}
+) {
+  const dryRun = Boolean(options?.dryRun);
+  const skipMonthRollup = Boolean(options?.skipMonthRollup);
   if (!isGoogleSheetsEnabled()) {
     return { ok: false, reason: "DISABLED" };
   }
@@ -117,7 +126,31 @@ export async function sendDailyPointStatsToGoogleSheetsApi(point, orders, dayKey
     kasaTotalZl,
     soldUnitsTotal,
     tierTotals,
+    dryRun,
   });
+
+  let monthModelResult = { ok: true, skipped: true };
+  let monthItogoResult = { ok: true, skipped: true };
+
+  if (writeResult?.ok && !skipMonthRollup) {
+    monthModelResult = await applyMonthSummaryTiersFromProductRows({
+      spreadsheetId,
+      tabTitle,
+      dayKey,
+      productRows: products,
+      dryRun,
+    });
+
+    monthItogoResult = await applyMonthItogoDelta({
+      spreadsheetId,
+      tabTitle,
+      dayKey,
+      discountsDeltaZl: discounts,
+      soldUnitsDelta: soldUnitsTotal,
+      tierDeltas: tierTotals,
+      dryRun,
+    });
+  }
 
   if (writeResult?.ok) {
     try {
@@ -132,11 +165,18 @@ export async function sendDailyPointStatsToGoogleSheetsApi(point, orders, dayKey
     }
   }
 
+  const ok =
+    Boolean(writeResult?.ok) &&
+    Boolean(monthModelResult?.ok !== false) &&
+    Boolean(monthItogoResult?.ok !== false);
+
   return {
-    ok: Boolean(writeResult?.ok),
+    ok,
     pointKey,
     spreadsheetId,
     tabTitle,
     response: writeResult,
+    monthModelResult,
+    monthItogoResult,
   };
 }

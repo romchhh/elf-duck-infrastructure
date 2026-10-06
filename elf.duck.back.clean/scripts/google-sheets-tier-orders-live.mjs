@@ -1,6 +1,6 @@
 /**
- * Тестові замовлення: tier 2 / 3–4 / 5+, apply + відміна (reverse).
- * Перевіряє день (модель + КАССА), місяць (ІТОГО + модель), асортимент.
+ * Тестові замовлення: apply + reverse лише АССОРТИМЕНТ (per-order sync).
+ * Tiers/СКИДКИ — вечірній sync (resync-google-sheets-day.mjs / daily stats).
  *
  * node scripts/google-sheets-tier-orders-live.mjs
  */
@@ -44,11 +44,13 @@ function parseNum(cell) {
 }
 
 function buildOrder({ qty, flavorLabel, totalZl }) {
+  const now = new Date();
   return {
     pickupPointKey: POINT,
     deliveryType: "pickup",
-    stockCommittedAt: new Date(),
-    createdAt: new Date(),
+    stockCommittedAt: now,
+    completedAt: now,
+    createdAt: now,
     totalZl,
     payment: {
       status: "paid",
@@ -171,32 +173,12 @@ function diff(a, b, path = "") {
   return issues;
 }
 
-function expectDelta(before, after, { qty, tierKey, kasa }) {
+function expectAssortmentDelta(before, after, { qty }) {
   const issues = [];
-  const dSold = after.day.sold - before.day.sold;
-  const dTier = after.day.tiers[tierKey] - before.day.tiers[tierKey];
-  const dKt = after.day.kassaTiers[tierKey] - before.day.kassaTiers[tierKey];
   const dAssort = after.assortment - before.assortment;
-  const dKassa = after.day.kassa - before.day.kassa;
-  const dMonthSold = after.month.sold - before.month.sold;
-  const dMonthTier = after.month.tiers[tierKey] - before.month.tiers[tierKey];
-  const dItogoTier =
-    after.month.itogoTiers[tierKey] - before.month.itogoTiers[tierKey];
-
-  if (dSold !== qty) issues.push(`day.sold +${qty} expected, got +${dSold}`);
-  if (dTier !== qty) issues.push(`day.tier.${tierKey} +${qty}, got +${dTier}`);
-  if (dKt !== qty) issues.push(`day.kassaTier.${tierKey} +${qty}, got +${dKt}`);
-  if (dAssort !== -qty)
+  if (dAssort !== -qty) {
     issues.push(`assortment -${qty} expected, got ${dAssort}`);
-  if (Math.abs(dKassa - kasa) > 0.02)
-    issues.push(`day.kassa +${kasa} expected, got +${dKassa}`);
-  if (dMonthSold !== qty)
-    issues.push(`month.sold +${qty}, got +${dMonthSold}`);
-  if (dMonthTier !== qty)
-    issues.push(`month.tier.${tierKey} +${qty}, got +${dMonthTier}`);
-  if (dItogoTier !== qty)
-    issues.push(`itogo.tier.${tierKey} +${qty}, got +${dItogoTier}`);
-
+  }
   return issues;
 }
 
@@ -221,16 +203,12 @@ for (const sc of SCENARIOS) {
     continue;
   }
   const after = await readMetrics("Blue Razz Ice");
-  const issues = expectDelta(before, after, {
-    qty: sc.qty,
-    tierKey: sc.tierKey,
-    kasa: sc.order.payment.managerDisplayAmount,
-  });
+  const issues = expectAssortmentDelta(before, after, { qty: sc.qty });
   if (issues.length) {
     failed++;
     console.error("ASSERT apply:", issues);
   } else {
-    console.log("OK apply: day/month/tiers/assortment/kassa");
+    console.log("OK apply: assortment");
   }
 
   console.log(`--- ${sc.name}: reverse (відміна) ---`);
@@ -245,8 +223,7 @@ for (const sc of SCENARIOS) {
     continue;
   }
   const afterRev = await readMetrics("Blue Razz Ice");
-  const restoreIssues = diff(before.day, afterRev.day, "day");
-  restoreIssues.push(...diff(before.month, afterRev.month, "month"));
+  const restoreIssues = [];
   if (afterRev.assortment !== before.assortment) {
     restoreIssues.push(
       `assortment ${before.assortment} -> ${afterRev.assortment} (expected restore)`

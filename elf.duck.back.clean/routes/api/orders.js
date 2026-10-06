@@ -455,6 +455,7 @@ app.post("/orders/confirm", async (req, res) => {
         row = {
           productId: prod._id,
           productKey: pk,
+          categoryKey: String(prod.categoryKey || "").trim(),
           productTitle1: String(prod.title1 || ""),
           productTitle2: String(prod.title2 || ""),
           orderImgUrl: String(prod.orderImgUrl || ""),
@@ -503,6 +504,7 @@ app.post("/orders/confirm", async (req, res) => {
     const orderItems = Array.from(byProduct.values()).map((row) => ({
       productId: row.productId,
       productKey: row.productKey,
+      categoryKey: row.categoryKey,
       productTitle1: row.productTitle1,
       productTitle2: row.productTitle2,
       orderImgUrl: row.orderImgUrl,

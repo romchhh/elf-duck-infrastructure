@@ -50,7 +50,20 @@ import * as __chunk06 from "./chunk06.js";
 import * as __chunk07 from "./chunk07.js";
 import * as __chunk08 from "./chunk08.js";
 import * as __chunk09 from "./chunk09.js";
-Object.assign(globalThis, { ...__chunk00, ...__chunk01, ...__chunk02, ...__chunk03, ...__chunk04, ...__chunk05, ...__chunk06, ...__chunk07, ...__chunk08, ...__chunk09 });
+import * as __orderStatsDay from "./orderStatsDay.js";
+Object.assign(globalThis, {
+  ...__chunk00,
+  ...__chunk01,
+  ...__chunk02,
+  ...__chunk03,
+  ...__chunk04,
+  ...__chunk05,
+  ...__chunk06,
+  ...__chunk07,
+  ...__chunk08,
+  ...__chunk09,
+  ...__orderStatsDay,
+});
 
 export function getStatsSheetTierKeyFromQty(qty) {
   const n = Math.max(0, Number(qty || 0));
@@ -139,6 +152,37 @@ export function formatPaymentMethodLabel(method) {
   return key || "Не указан";
 }
 
+const DAILY_STATS_SEP = "┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈";
+
+export function formatDailyStatsDayLabel(dayKey) {
+  const m = String(dayKey || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return String(dayKey || "").trim();
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+function formatDailyStatsZl(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function formatDailyStatsTierBracketLabel(bracket) {
+  const key = String(bracket || "").trim();
+  if (key === "[5]") return "5+ шт";
+  if (key === "[3-4]") return "3–4 шт";
+  if (key === "[2]") return "2 шт";
+  if (key === "[1]") return "1 шт";
+  return key;
+}
+
+function formatDailyStatsPaymentBadge(method) {
+  const key = String(method || "").trim().toLowerCase();
+  if (key === "cash") return "💵";
+  if (key === "blik") return "📱";
+  if (key === "crypto") return "🪙";
+  if (key === "ua_card") return "💳";
+  if (key === "cashback") return "🎁";
+  return "💳";
+}
+
 export function getOrderDisplayedPaymentMethod(order) {
   const paymentMethod = String(order?.payment?.method || "").trim();
 
@@ -179,160 +223,11 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   const userDisplayMap =
     extra?.userDisplayMap instanceof Map ? extra.userDisplayMap : new Map();
 
-  function getProductBucketLabelByQty(qty) {
-    const n = Math.max(0, Number(qty || 0));
-    if (n >= 5) return "5шт.";
-    if (n >= 3) return "3-4шт.";
-    if (n >= 2) return "2шт.";
-    return "1шт.";
-  }
-
   function getProductDisplayTitleForStats(productRow = {}) {
     const t1 = String(productRow?.productTitle1 || "").trim();
     const t2 = String(productRow?.productTitle2 || "").trim();
     return [t1, t2].filter(Boolean).join(" ").trim() || "Товар";
   }
-
-  function getProductRowStatsQty(productRow = {}) {
-  return (Array.isArray(productRow?.flavors) ? productRow.flavors : []).reduce((sum, flavor) => {
-    return sum + Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
-  }, 0);
-}
-
-function getProductRowStatsCategory(productRow = {}) {
-  return String(
-    productRow?.categoryKey ||
-      productRow?.productCategoryKey ||
-      productRow?.category ||
-      productRow?.snapshot?.categoryKey ||
-      productRow?.product?.categoryKey ||
-      ""
-  )
-    .trim()
-    .toLowerCase();
-}
-
-function normalizeStatsProductTitle(productRow = {}) {
-  return getProductDisplayTitleForStats(productRow)
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isLiquidSmartPriceProduct(productRow = {}) {
-  const title = normalizeStatsProductTitle(productRow);
-  return /\b30\s*ml\b/i.test(title);
-}
-
-function isExcludedDisposableSmartPriceProduct(productRow = {}) {
-  const title = normalizeStatsProductTitle(productRow);
-
-  return (
-    /(^|\s)(1500|1\s*5\s*k|1\.5\s*k)(\s|$)/i.test(title) ||
-    /(^|\s)(2000|2\s*k)(\s|$)/i.test(title)
-  );
-}
-
-function isCartridgeSmartPriceProduct(productRow = {}) {
-  const title = normalizeStatsProductTitle(productRow);
-  const categoryKey = getProductRowStatsCategory(productRow);
-
-  if (categoryKey === "cartridges" || categoryKey === "cartridge") {
-    return true;
-  }
-
-  return title.includes("cartridge") || title.includes("catridge");
-}
-
-function isPodSmartPriceProduct(productRow = {}) {
-  if (isLiquidSmartPriceProduct(productRow)) return false;
-
-  if (isCartridgeSmartPriceProduct(productRow)) return false;
-
-  const title = normalizeStatsProductTitle(productRow);
-
-  const categoryKey = getProductRowStatsCategory(productRow);
-
-  if (categoryKey === "pods" || categoryKey === "pod") {
-    return true;
-  }
-
-  return title.includes("pod");
-}
-
-function isDisposableSmartPriceProduct(productRow = {}) {
-  if (isLiquidSmartPriceProduct(productRow)) return false;
-  if (isPodSmartPriceProduct(productRow)) return false;
-  if (isExcludedDisposableSmartPriceProduct(productRow)) return false;
-
-  const categoryKey = getProductRowStatsCategory(productRow);
-
-  if (categoryKey === "disposables" || categoryKey === "disposable") {
-    return true;
-  }
-
-  if (isCartridgeSmartPriceProduct(productRow)) return false;
-
-  const title = normalizeStatsProductTitle(productRow);
-
-  return /\b(25k|30k|40k|20k|3000|15000|20000|25000|30000|40000)\b/i.test(title);
-}
-
-function getOrderLiquidSmartQty(order) {
-  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
-    if (!isLiquidSmartPriceProduct(productRow)) return sum;
-    return sum + getProductRowStatsQty(productRow);
-  }, 0);
-}
-
-function getOrderPodSmartQty(order) {
-  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
-    if (!isPodSmartPriceProduct(productRow)) return sum;
-    return sum + getProductRowStatsQty(productRow);
-  }, 0);
-}
-
-function getOrderDisposableSmartQty(order) {
-  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
-    if (!isDisposableSmartPriceProduct(productRow)) return sum;
-    return sum + getProductRowStatsQty(productRow);
-  }, 0);
-}
-
-function getOrderCartridgeSmartQty(order) {
-
-  return (Array.isArray(order?.items) ? order.items : []).reduce((sum, productRow) => {
-
-    if (!isCartridgeSmartPriceProduct(productRow)) return sum;
-
-    return sum + getProductRowStatsQty(productRow);
-
-  }, 0);
-
-}
-
-function getStatsTierQtyForProductRow(order, productRow) {
-  if (isLiquidSmartPriceProduct(productRow)) {
-    return getOrderLiquidSmartQty(order);
-  }
-
-  if (isCartridgeSmartPriceProduct(productRow)) {
-    return getOrderCartridgeSmartQty(order);
-  }
-
-  if (isPodSmartPriceProduct(productRow)) {
-    return getOrderPodSmartQty(order);
-  }
-
-  if (isDisposableSmartPriceProduct(productRow)) {
-    return getOrderDisposableSmartQty(order);
-  }
-
-  return getProductRowStatsQty(productRow);
-}
 
   // function getOrderOriginalItemsTotalZl(order) {
   //   const items = Array.isArray(order?.items) ? order.items : [];
@@ -387,39 +282,6 @@ function getStatsTierQtyForProductRow(order, productRow) {
   //   return Number(itemsTotal.toFixed(2));
   // }
 
-  function getOrderSmartDiscountTotalZl(order) {
-    return Number(
-      (Array.isArray(order?.items) ? order.items : []).reduce((orderSum, item) => {
-        const flavors = Array.isArray(item?.flavors) ? item.flavors : [];
-
-        return (
-          orderSum +
-          flavors.reduce((flavorSum, flavor) => {
-            const explicitSmartDiscount = Number(flavor?.smartDiscountTotalZl || 0);
-            if (explicitSmartDiscount > 0) {
-              return flavorSum + explicitSmartDiscount;
-            }
-
-            const qty = Math.max(1, Number(flavor?.qty || 1));
-            const originalBasePrice = Number(flavor?.baseUnitPrice || 0);
-            const finalUnitPrice = Number(flavor?.unitPrice || 0);
-            const referralDiscountTotal = Number(flavor?.referralFirstOrderDiscountTotalZl || 0);
-
-            if (originalBasePrice <= 0 || finalUnitPrice <= 0) {
-              return flavorSum;
-            } 
-            
-
-            const totalPriceDelta = Math.max(0, (originalBasePrice - finalUnitPrice) * qty);
-            const smartOnlyDiscount = Math.max(0, totalPriceDelta - referralDiscountTotal);
-
-            return flavorSum + smartOnlyDiscount;
-          }, 0)
-        );
-      }, 0).toFixed(2)
-    );
-  }
-
   function getOrderCashbackDiscountTotalZl(order) {
     return Number(order?.payment?.cashbackAppliedZl || 0);
   }
@@ -429,7 +291,7 @@ function getStatsTierQtyForProductRow(order, productRow) {
 
   for (const order of Array.isArray(orders) ? orders : []) {
     const orderCashbackSpent = getOrderCashbackDiscountTotalZl(order);
-    const orderSmartDiscountZl = getOrderSmartDiscountTotalZl(order);
+    const orderSmartDiscountZl = __chunk08.getOrderSmartDiscountTotalZl(order);
     const paymentMethod = getOrderDisplayedPaymentMethod(order);
     const paymentMethodLabel = formatPaymentMethodLabel(paymentMethod);
 
@@ -449,7 +311,10 @@ function getStatsTierQtyForProductRow(order, productRow) {
       soldPositionsQty += productQty;
 
       const productTitle = getProductDisplayTitleForStats(productRow);
-      const bucketLabel = getProductBucketLabelByQty(productQty);
+      const orderTierQty = __chunk09.getStatsSheetTierQty(order, productRow);
+      const bucketLabel = formatDailyStatsTierBracketLabel(
+        __chunk09.getStatsSheetTierBracketLabelFromQty(orderTierQty)
+      );
       const flavorsLine = flavors
         .map((flavor) => {
           const label =
@@ -460,18 +325,19 @@ function getStatsTierQtyForProductRow(order, productRow) {
         })
         .join(" • ");
 
-      const flavorsLineWithBullet = flavorsLine ? `• ${flavorsLine}` : "";
+      const flavorSuffix = flavorsLine ? `\n     ${flavorsLine}` : "";
 
       return [
-        `<b>${escapeHtml(productTitle)}</b> [${bucketLabel}] - ${productQty}шт.`,
-        flavorsLineWithBullet,
+        `  <b>${escapeHtml(productTitle)}</b> · ${escapeHtml(bucketLabel)} · ${productQty} шт${flavorSuffix}`,
       ];
     });
 
     orderBlocks.push({
       orderNo: String(order?.orderNo || "—"),
       clientName: orderClientName,
+      paymentMethod,
       paymentMethodLabel,
+      kasaZl: Number(__chunk08.getOrderKasaPlnZl(order).toFixed(2)),
       smartDiscountZl: Number(orderSmartDiscountZl.toFixed(2)),
       cashbackSpentZl: Number(orderCashbackSpent.toFixed(2)),
       lines: productLines,
@@ -527,7 +393,7 @@ function getStatsTierQtyForProductRow(order, productRow) {
 
     const smartDiscountTotalZl = Number(
     (Array.isArray(orders) ? orders : [])
-      .reduce((sum, order) => sum + getOrderSmartDiscountTotalZl(order), 0)
+      .reduce((sum, order) => sum + __chunk08.getOrderSmartDiscountTotalZl(order), 0)
       .toFixed(2)
   );
 
@@ -582,16 +448,50 @@ function getStatsTierQtyForProductRow(order, productRow) {
   const sortedOrders = [...orderBlocks].sort(
     (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
   );
+  const ordersCount = sortedOrders.length;
+  const dayLabel = formatDailyStatsDayLabel(dayKey);
 
   const lines = [
-    `📊 <b>СТАТИСТИКА ДНЯ</b>`,
-    `🏪 Склад: ${escapeHtml(pointTitle)}`,
-    `📅 Дата: ${escapeHtml(dayKey)}`,
-    `——————————————————`,
+    `📊 <b>Статистика дня</b>`,
+    `🏪 ${escapeHtml(pointTitle)}`,
+    `📅 ${escapeHtml(dayLabel)}`,
     ``,
-    `🧾 <b>ЗАКАЗЫ :</b>`,
+    DAILY_STATS_SEP,
+    `📌 <b>Итого</b>`,
+    `• Заказов: <b>${ordersCount}</b>`,
+    `• Клиентов: <b>${uniqueCustomersCount}</b>`,
+    `• Продано: <b>${soldPositionsQty}</b> шт.`,
+    `• Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> zł`,
+    DAILY_STATS_SEP,
     ``,
   ];
+
+  lines.push(`🧾 <b>Заказы</b>${ordersCount ? ` (${ordersCount})` : ""}`);
+  lines.push(``);
+
+  if (!sortedOrders.length) {
+    lines.push(`<i>За день заказов не было.</i>`);
+    lines.push(``);
+  } else {
+    sortedOrders.forEach((order, index) => {
+      const payBadge = formatDailyStatsPaymentBadge(order.paymentMethod);
+      lines.push(
+        `<code>#${escapeHtml(order.orderNo)}</code> · ${escapeHtml(order.clientName)} · ${payBadge} ${escapeHtml(order.paymentMethodLabel)} · <b>${formatDailyStatsZl(order.kasaZl)} zł</b>`
+      );
+      for (const line of order.lines) {
+        lines.push(line);
+      }
+      if (index !== sortedOrders.length - 1) {
+        lines.push(``);
+      }
+    });
+    lines.push(``);
+    lines.push(DAILY_STATS_SEP);
+    lines.push(``);
+  }
+
+  lines.push(`📦 <b>По товарам</b>`);
+  lines.push(``);
 
   const productStatsMap = new Map();
 
@@ -620,19 +520,8 @@ function getStatsTierQtyForProductRow(order, productRow) {
 
       const flavors = Array.isArray(row?.flavors) ? row.flavors : [];
 
-      const tierQtyForThisRow = getStatsTierQtyForProductRow(order, row);
-
-      const tierLabel = (() => {
-
-        if (tierQtyForThisRow >= 5) return "[5]";
-
-        if (tierQtyForThisRow >= 3) return "[3-4]";
-
-        if (tierQtyForThisRow >= 2) return "[2]";
-
-        return "[1]";
-
-      })();
+      const tierQtyForThisRow = __chunk09.getStatsSheetTierQty(order, row);
+      const tierLabel = __chunk09.getStatsSheetTierBracketLabelFromQty(tierQtyForThisRow);
 
       for (const flavor of flavors) {
         const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
@@ -666,59 +555,47 @@ function getStatsTierQtyForProductRow(order, productRow) {
   );
 
   if (!aggregatedProducts.length) {
-    lines.push("—");
+    lines.push(`<i>Нет продаж по товарам.</i>`);
     lines.push("");
   } else {
+    const maxFlavorLines = 10;
     for (const product of aggregatedProducts) {
-      lines.push(`——————————————————`);
-      lines.push(`🦆 <b>${escapeHtml(product.title)} — ${product.totalQty} шт.</b>`);
-      lines.push("");
+      lines.push(`🦆 <b>${escapeHtml(product.title)}</b> — ${product.totalQty} шт.`);
 
       const tierLine = tierOrder
         .filter((tier) => (product.tierBuckets.get(tier) || 0) > 0)
-        .map((tier) => `${tier} ${product.tierBuckets.get(tier)}`)
-        .join(" &lt;&gt; ");
+        .map(
+          (tier) =>
+            `${formatDailyStatsTierBracketLabel(tier)}: ${product.tierBuckets.get(tier)}`
+        )
+        .join(" · ");
 
       if (tierLine) {
-        lines.push(tierLine);
+        lines.push(`   <i>${tierLine}</i>`);
       }
-
-      lines.push("");
-      // lines.push("Вкусы:");
 
       const sortedFlavors = Array.from(product.flavors.entries()).sort(
         (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")
       );
 
-      for (const [flavorLabel, qty] of sortedFlavors) {
-        lines.push(`${flavorLabel} ×${qty}`);
+      const visibleFlavors = sortedFlavors.slice(0, maxFlavorLines);
+      const hiddenFlavors = sortedFlavors.length - visibleFlavors.length;
+
+      for (const [flavorLabel, qty] of visibleFlavors) {
+        lines.push(`   ${escapeHtml(flavorLabel)} ×${qty}`);
       }
-      lines.push(`——————————————————`);
+
+      if (hiddenFlavors > 0) {
+        lines.push(`   <i>…ещё ${hiddenFlavors} вкусов</i>`);
+      }
 
       lines.push("");
     }
   }
 
-  /*
-  if (!sortedOrders.length) {
-    lines.push(`Заказов за день не было.`);
-  } else {
-    sortedOrders.forEach((order, index) => {
-      lines.push(`#${escapeHtml(order.orderNo)}  [${escapeHtml(order.clientName)}]`);
-      for (const line of order.lines) {
-        lines.push(line);
-      }
-
-      if (index !== sortedOrders.length - 1) {
-        lines.push(``);
-      }
-    });
-  }
-  */
-
-  lines.push(`——————————————————`);
-  lines.push(``);
-  lines.push(`💰Касса: ${kasaNetTotalZl.toFixed(2)} PLN`);
+  lines.push(DAILY_STATS_SEP);
+  lines.push(`💰 <b>Финансы</b>`);
+  lines.push(`• Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> zł`);
 
   const pointKeyNorm = String(point?.key || "").trim().toLowerCase().replace(/,+$/, "");
   const pointTitleNorm = normalizePhotoLookupText(point?.title || "");
@@ -732,7 +609,7 @@ function getStatsTierQtyForProductRow(order, productRow) {
     pointAddressNorm.includes("courier");
 
   if (isCourierStatsPoint) {
-    lines.push(`🚚Доставка: ${courierDeliveryFeesTotalZl.toFixed(2)} PLN`);
+    lines.push(`• Доставка курьер: ${formatDailyStatsZl(courierDeliveryFeesTotalZl)} zł`);
   }
 
   const isInpostStatsPoint =
@@ -741,20 +618,25 @@ function getStatsTierQtyForProductRow(order, productRow) {
     pointAddressNorm.includes("inpost");
 
   if (isInpostStatsPoint) {
-    lines.push(`📦Доставка InPost: ${inpostDeliveryFeesTotalZl.toFixed(2)} PLN`);
+    lines.push(`• Доставка InPost: ${formatDailyStatsZl(inpostDeliveryFeesTotalZl)} zł`);
   }
 
-  lines.push(`🪙Скидки: ${discountsTotalZl.toFixed(2)} PLN`);
-  // lines.push(`- по ⚙️смарт-цене: ${smartDiscountTotalZl.toFixed(2)} PLN`);
-  lines.push(`- по 🎁реф. скидке: ${referralDiscountTotalZl.toFixed(2)} PLN`);
-  lines.push(`- по 🪙кэшбеку: ${cashbackDiscountTotalZl.toFixed(2)} PLN`);
-  lines.push(`👨‍💼Зарплата: ${salaryTotalZl.toFixed(2)} PLN`);
-  lines.push(`🫂Рефералов: ${referredFirstOrderUsers.size}`);
-  lines.push(`👤Кол-во клиентов: ${uniqueCustomersCount}`);
-  lines.push(`⚙️Продано штук: ${soldPositionsQty}`);
+  lines.push(`• Скидки: ${formatDailyStatsZl(discountsTotalZl)} zł`);
+  if (smartDiscountTotalZl > 0) {
+    lines.push(`   ⚙️ смарт-цена: ${formatDailyStatsZl(smartDiscountTotalZl)} zł`);
+  }
+  if (referralDiscountTotalZl > 0) {
+    lines.push(`   🎁 реферал: ${formatDailyStatsZl(referralDiscountTotalZl)} zł`);
+  }
+  if (cashbackDiscountTotalZl > 0) {
+    lines.push(`   🪙 кэшбек: ${formatDailyStatsZl(cashbackDiscountTotalZl)} zł`);
+  }
+  lines.push(`• Зарплата (16%): ${formatDailyStatsZl(salaryTotalZl)} zł`);
+  if (referredFirstOrderUsers.size > 0) {
+    lines.push(`• Новых рефералов: ${referredFirstOrderUsers.size}`);
+  }
   lines.push(``);
-  lines.push(`——————————————————`);
-  lines.push(`🦆 ELF DUCK &lt;&gt; СТАТИСТИКА`);
+  lines.push(`🦆 <i>ELF DUCK · статистика</i>`);
 
   return lines.join("\n");
 }
@@ -771,6 +653,7 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
     const splitTelegramHtmlMessage = (text, maxLen = 3500) => {
       const src = String(text || "");
       if (!src) return [""];
+      if (src.length <= maxLen) return [src];
 
       const lines = src.split("\n");
       const chunks = [];
@@ -781,11 +664,17 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
         current = "";
       };
 
+      const isSectionBreak = (line) =>
+        line === DAILY_STATS_SEP || /^📦 <b>По товарам<\/b>/.test(line);
+
       for (const line of lines) {
         const candidate = current ? `${current}\n${line}` : line;
 
         if (candidate.length <= maxLen) {
           current = candidate;
+          if (isSectionBreak(line) && current.length > maxLen * 0.55) {
+            pushCurrent();
+          }
           continue;
         }
 
@@ -876,7 +765,9 @@ export async function processDailyPointStats() {
     const now = new Date();
     const nowHHMM = getWarsawTimeHHMM(now);
     const dayKey = getWarsawDayKey(now);
-    const ordersSince = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const ordersSince = new Date(
+      Date.now() - __orderStatsDay.STATS_ORDERS_LOOKBACK_MS
+    );
 
     const points = await PickupPoint.find(
       {
@@ -921,43 +812,30 @@ export async function processDailyPointStats() {
       if (!sendTime) continue;
       if (nowHHMM < sendTime) continue;
 
-      const dedupeKey = `${String(point?._id || "")}:${dayKey}`;
+      const telegramDedupeKey = `${String(point?._id || "")}:${dayKey}`;
+      const sheetsDedupeKey = `${String(point?._id || "")}:${dayKey}:google_sheets`;
 
-      if (await isDailyStatsDispatchRecorded(dedupeKey)) {
+      const telegramAlreadySent = await isDailyStatsDispatchRecorded(
+        telegramDedupeKey
+      );
+      const sheetsAlreadySent = await isDailyStatsDispatchRecorded(
+        sheetsDedupeKey
+      );
+
+      if (telegramAlreadySent && sheetsAlreadySent) {
         continue;
       }
 
       const match = getOrderPointMatch(point);
 
       const orders = await Order.find(
-        {
-          ...match,
-          createdAt: { $gte: ordersSince },
-          status: { $ne: "canceled" },
-        },
-        {
-          userTelegramId: 1,
-          orderNo: 1,
-          totalZl: 1,
-          status: 1,
-          payment: 1,
-          items: 1,
-          cashbackZl: 1,
-          createdAt: 1,
-          deliveryType: 1,
-          deliveryMethod: 1,
-          deliveryFeeZl: 1,
-          inpostDeliveryFeeZl: 1,
-        }
+        __orderStatsDay.buildStatsOrdersMongoFilter(match, ordersSince),
+        __orderStatsDay.STATS_ORDER_LIST_PROJECTION
       ).lean();
 
-      const dayOrders = orders.filter((order) => {
-        if (getWarsawDayKey(order?.createdAt) !== dayKey) {
-          return false;
-        }
-
-        return shouldCountOrderInDailyStats(order);
-      });
+      const dayOrders = orders.filter((order) =>
+        __orderStatsDay.orderBelongsToStatsDay(order, dayKey)
+      );
 
       const needsFallbackBasePrices = dayOrders.some((order) =>
         (Array.isArray(order?.items) ? order.items : []).some(
@@ -1074,59 +952,64 @@ export async function processDailyPointStats() {
         })
       );
 
-      const claimed = await claimDailyStatsDispatch(dedupeKey, {
-        kind: "telegram",
-        dayKey,
-        pointKey: String(point?.key || ""),
-      });
+      const pointKey = String(point?.key || "")
+        .trim()
+        .toLowerCase()
+        .replace(/,+$/, "");
 
-      if (!claimed) {
-        console.log(
-          "[DAILY STATS][SKIP DUPLICATE BEFORE SEND]",
+      if (!telegramAlreadySent) {
+        const claimedTelegram = await claimDailyStatsDispatch(
+          telegramDedupeKey,
           {
-            pointKey: String(point?.key || ""),
+            kind: "telegram",
             dayKey,
-            dedupeKey,
+            pointKey,
           }
         );
-        continue;
-      }
 
-      const sent = await sendDailyPointStats(
-        point,
-        dayOrders,
-        dayKey,
-        {
-          productBasePriceMap,
-          referredFirstOrderUsers,
-          userDisplayMap,
+        if (claimedTelegram) {
+          const sent = await sendDailyPointStats(point, dayOrders, dayKey, {
+            productBasePriceMap,
+            referredFirstOrderUsers,
+            userDisplayMap,
+          });
+
+          if (!sent?.ok) {
+            await releaseDailyStatsDispatch(telegramDedupeKey);
+          }
         }
-      );
-
-      if (!sent?.ok) {
-        await releaseDailyStatsDispatch(dedupeKey);
-        continue;
       }
 
-      if (sent?.ok) {
-        const pointKey = String(point?.key || "")
-          .trim()
-          .toLowerCase()
-          .replace(/,+$/, "");
+      /*
+       * Wola и InPost не отправляем в Google
+       * по отдельности. Ниже они будут объединены.
+       */
+      if (
+        !sharedGoogleSheetPointKeys.has(pointKey) &&
+        !sheetsAlreadySent
+      ) {
+        const claimedSheets = await claimDailyStatsDispatch(sheetsDedupeKey, {
+          kind: "google_sheets",
+          dayKey,
+          pointKey,
+        });
 
-        /*
-         * Wola и InPost не отправляем в Google
-         * по отдельности. Ниже они будут объединены.
-         */
-        if (!sharedGoogleSheetPointKeys.has(pointKey)) {
-          await sendDailyPointStatsToGoogleSheet(
+        if (claimedSheets) {
+          const googleSheetResult = await sendDailyPointStatsToGoogleSheet(
             point,
             dayOrders,
             dayKey
           );
-        }
 
-        // dailyStatsState.sent.add(dedupeKey);
+          if (!googleSheetResult?.ok) {
+            await releaseDailyStatsDispatch(sheetsDedupeKey);
+            console.error("[DAILY STATS][GOOGLE SHEETS FAILED]", {
+              pointKey,
+              dayKey,
+              reason: googleSheetResult?.reason || googleSheetResult,
+            });
+          }
+        }
       }
     }
 
@@ -1150,12 +1033,12 @@ export async function processDailyPointStats() {
           .replace(/,+$/, "") === "delivery-2"
     );
 
-    const sharedDedupeKey = `wola-inpost:${dayKey}`;
+    const sharedSheetsDedupeKey = `wola-inpost:${dayKey}:google_sheets`;
 
     if (
       wolaPoint &&
       inpostPoint &&
-      !(await isDailyStatsDispatchRecorded(sharedDedupeKey))
+      !(await isDailyStatsDispatchRecorded(sharedSheetsDedupeKey))
     ) {
       const wolaSendTime = getPointStatsSendTime(
         wolaPoint,
@@ -1174,53 +1057,36 @@ export async function processDailyPointStats() {
         nowHHMM >= inpostSendTime;
 
       if (bothPointsReady) {
-        const combinedOrders = await Order.find(
-          {
-            $or: [
+        const [wolaOrders, inpostOrders] = await Promise.all([
+          Order.find(
+            __orderStatsDay.buildStatsOrdersMongoFilter(
               getOrderPointMatch(wolaPoint),
+              ordersSince
+            ),
+            __orderStatsDay.STATS_ORDER_LIST_PROJECTION
+          ).lean(),
+          Order.find(
+            __orderStatsDay.buildStatsOrdersMongoFilter(
               getOrderPointMatch(inpostPoint),
-            ],
-            createdAt: {
-              $gte: ordersSince,
-            },
-            status: {
-              $ne: "canceled",
-            },
-          },
-          {
-            userTelegramId: 1,
-            orderNo: 1,
-            totalZl: 1,
-            status: 1,
-            payment: 1,
-            items: 1,
-            cashbackZl: 1,
-            createdAt: 1,
-            deliveryType: 1,
-            deliveryMethod: 1,
-            deliveryFeeZl: 1,
-            inpostDeliveryFeeZl: 1,
-          }
-        ).lean();
+              ordersSince
+            ),
+            __orderStatsDay.STATS_ORDER_LIST_PROJECTION
+          ).lean(),
+        ]);
 
-        const combinedDayOrders =
-          combinedOrders.filter((order) => {
-            if (
-              getWarsawDayKey(order?.createdAt) !==
-              dayKey
-            ) {
-              return false;
-            }
+        const combinedById = new Map();
+        for (const order of [...wolaOrders, ...inpostOrders]) {
+          combinedById.set(String(order._id), order);
+        }
 
-            return shouldCountOrderInDailyStats(
-              order
-            );
-          });
+        const combinedDayOrders = Array.from(combinedById.values()).filter(
+          (order) => __orderStatsDay.orderBelongsToStatsDay(order, dayKey)
+        );
 
         const sharedClaimed = await claimDailyStatsDispatch(
-          sharedDedupeKey,
+          sharedSheetsDedupeKey,
           {
-            kind: "google_sheet_shared",
+            kind: "google_sheets_shared",
             dayKey,
             pointKey: "wola-inpost",
           }
@@ -1238,7 +1104,11 @@ export async function processDailyPointStats() {
             );
 
           if (!googleSheetResult?.ok) {
-            await releaseDailyStatsDispatch(sharedDedupeKey);
+            await releaseDailyStatsDispatch(sharedSheetsDedupeKey);
+            console.error("[DAILY STATS][GOOGLE SHEETS SHARED FAILED]", {
+              dayKey,
+              reason: googleSheetResult?.reason || googleSheetResult,
+            });
           }
         }
       }
