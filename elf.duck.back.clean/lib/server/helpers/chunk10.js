@@ -414,6 +414,15 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       Math.max(0, kasaTotalZl - deliveryFeesTotalZl).toFixed(2)
     );
 
+  const salePromoDiscountTotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce(
+        (sum, order) => sum + __chunk08.getOrderSalePromoDiscountTotalZl(order),
+        0
+      )
+      .toFixed(2)
+  );
+
   const referralDiscountTotalZl = Number(
     (Array.isArray(orders) ? orders : [])
       .reduce((sum, order) => sum + Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0), 0)
@@ -456,7 +465,11 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   // );
 
   const discountsTotalZl = Number(
-    (referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
+    (
+      salePromoDiscountTotalZl +
+      referralDiscountTotalZl +
+      cashbackDiscountTotalZl
+    ).toFixed(2)
   );
   
   const salaryTotalZl = Number((((kasaTotalZl / 100) * 16)).toFixed(2));
@@ -642,6 +655,9 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   }
 
   lines.push(`• Скидки: ${formatDailyStatsZl(discountsTotalZl)} zł`);
+  if (salePromoDiscountTotalZl > 0) {
+    lines.push(`   🏷 акція SALE: ${formatDailyStatsZl(salePromoDiscountTotalZl)} zł`);
+  }
   if (referralDiscountTotalZl > 0) {
     lines.push(`   🎁 реферал: ${formatDailyStatsZl(referralDiscountTotalZl)} zł`);
   }

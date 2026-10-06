@@ -71,6 +71,7 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
   const sign = direction === "reverse" ? 1 : -1;
 
   const results = [];
+  const appliedDeltas = [];
 
   for (const row of order?.items || []) {
     const modelName = getAssortmentSheetModelName(row);
@@ -79,19 +80,46 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
       const flavorQty = Math.max(0, Number(flavor?.qty || 0));
       if (!flavorQty) continue;
 
+      const flavorLabel =
+        flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "";
+      const deltaQty = sign * flavorQty;
+
       const assortmentResult = await applyAssortmentDelta({
         spreadsheetId,
         pointLabel,
         dayKey,
         modelName,
         productKey: row?.productKey,
-        flavorLabel:
-          flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "",
-        deltaQty: sign * flavorQty,
+        flavorLabel,
+        deltaQty,
         dryRun,
       });
 
       results.push({ kind: "assortment", assortmentResult });
+
+      if (assortmentResult?.ok && !dryRun) {
+        appliedDeltas.push({
+          spreadsheetId,
+          pointLabel,
+          dayKey,
+          modelName,
+          productKey: row?.productKey,
+          flavorLabel,
+          deltaQty,
+        });
+      } else if (!assortmentResult?.ok && !dryRun && appliedDeltas.length) {
+        for (const prev of appliedDeltas) {
+          try {
+            await applyAssortmentDelta({
+              ...prev,
+              deltaQty: -prev.deltaQty,
+            });
+          } catch (e) {
+            console.error("[googleSheets] assortment rollback error:", e);
+          }
+        }
+        appliedDeltas.length = 0;
+      }
     }
   }
 

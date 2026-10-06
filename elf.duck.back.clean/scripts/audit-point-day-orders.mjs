@@ -102,7 +102,7 @@ for (const o of dayOrders) {
   console.log(
     `#${o.orderNo}`,
     `kasa=${kasa.toFixed(2)}`,
-    `скидки=${disc.toFixed(2)} (ref ${ref.toFixed(2)} cb ${cb.toFixed(2)}; SALE ${sale.toFixed(2)} не в стат.)`,
+    `скидки=${disc.toFixed(2)} (SALE ${sale.toFixed(2)} ref ${ref.toFixed(2)} cb ${cb.toFixed(2)})`,
     `mongoStock=${stockOk ? "OK" : "MISS"}`,
     `assort=${assortOk ? "OK" : "FAIL"}`,
     gs.lastError ? `err=${String(gs.lastError).slice(0, 80)}` : "",
@@ -115,9 +115,9 @@ console.log({
   kasaTotal: sumKasa.toFixed(2),
   discountsTotal: sumDisc.toFixed(2),
   breakdown: {
+    SALE: sumSale.toFixed(2),
     referral: sumRef.toFixed(2),
     cashback: sumCb.toFixed(2),
-    SALE_not_in_stats: sumSale.toFixed(2),
   },
   assortmentSyncOk: syncOk,
   assortmentSyncFail: syncFail,
