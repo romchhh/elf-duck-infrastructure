@@ -58,7 +58,7 @@ if (!point) {
 
 const orders = await Order.find(
   buildStatsOrdersMongoFilter(getOrderPointMatch(point), ordersSince),
-  { ...STATS_ORDER_LIST_PROJECTION, googleSheetSync: 1 }
+  { ...STATS_ORDER_LIST_PROJECTION, googleSheetSync: 1, stockCommittedAt: 1 }
 ).lean();
 
 const dayOrders = orders
@@ -70,6 +70,9 @@ const dayOrders = orders
   );
 
 let sumDisc = 0;
+let sumSale = 0;
+let sumRef = 0;
+let sumCb = 0;
 let sumKasa = 0;
 let syncOk = 0;
 let syncFail = 0;
@@ -84,18 +87,24 @@ for (const o of dayOrders) {
   const cb = Number(o.payment?.cashbackAppliedZl || 0);
   const kasa = getOrderKasaPlnZl(o);
   sumDisc += disc;
+  sumSale += sale;
+  sumRef += ref;
+  sumCb += cb;
   sumKasa += kasa;
 
   const gs = o.googleSheetSync || {};
-  const assortOk = Boolean(gs.appliedAt && !gs.lastError);
+  const assortOk = Boolean(gs.appliedAt);
   if (assortOk) syncOk += 1;
   else syncFail += 1;
+
+  const stockOk = Boolean(o.stockCommittedAt);
 
   console.log(
     `#${o.orderNo}`,
     `kasa=${kasa.toFixed(2)}`,
-    `скидки=${disc.toFixed(2)} (SALE ${sale.toFixed(2)} ref ${ref.toFixed(2)} cb ${cb.toFixed(2)}, без смарт-сходинки)`,
-    `assort=${gs.appliedAt ? "OK" : "FAIL"}`,
+    `скидки=${disc.toFixed(2)} (ref ${ref.toFixed(2)} cb ${cb.toFixed(2)}; SALE ${sale.toFixed(2)} не в стат.)`,
+    `mongoStock=${stockOk ? "OK" : "MISS"}`,
+    `assort=${assortOk ? "OK" : "FAIL"}`,
     gs.lastError ? `err=${String(gs.lastError).slice(0, 80)}` : "",
     `statsDay=${getOrderStatsDayKey(o)}`
   );
@@ -105,11 +114,19 @@ console.log("—");
 console.log({
   kasaTotal: sumKasa.toFixed(2),
   discountsTotal: sumDisc.toFixed(2),
+  breakdown: {
+    referral: sumRef.toFixed(2),
+    cashback: sumCb.toFixed(2),
+    SALE_not_in_stats: sumSale.toFixed(2),
+  },
   assortmentSyncOk: syncOk,
   assortmentSyncFail: syncFail,
 });
 console.log(
-  "\nОТЧЁТ (tiers/СКИДКИ) оновлюється ввечері або через resync-google-sheets-day.mjs, не після кожного заказа."
+  "\nСклад (АССОРТИМЕНТ): після кожного «виконано» (retry-google-sheets-assortment.mjs якщо FAIL)."
+);
+console.log(
+  "Продажі (tier 1|2|3-4|5, ПРОДАНО формули): ввечері або resync-google-sheets-day.mjs + reconcile-day-stats.mjs."
 );
 
 await mongoose.disconnect();

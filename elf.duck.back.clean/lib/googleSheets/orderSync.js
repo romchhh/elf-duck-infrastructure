@@ -118,6 +118,33 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
     return { ok: true, reason: "ALREADY_APPLIED" };
   }
 
+  if (!options?.dryRun && !options?.force) {
+    const claimed = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        $or: [
+          { googleSheetSync: { $exists: false } },
+          { "googleSheetSync.appliedAt": { $exists: false } },
+          { "googleSheetSync.appliedAt": null },
+        ],
+        "googleSheetSync.syncInProgress": { $ne: true },
+      },
+      {
+        $set: {
+          "googleSheetSync.syncInProgress": true,
+          "googleSheetSync.lastError": "",
+        },
+      }
+    );
+    if (!claimed) {
+      const fresh = await Order.findById(order._id).lean();
+      if (fresh?.googleSheetSync?.appliedAt) {
+        return { ok: true, reason: "ALREADY_APPLIED" };
+      }
+      return { ok: false, reason: "SYNC_IN_PROGRESS_OR_CLAIM_FAILED" };
+    }
+  }
+
   const result = await syncOrderItems(order, {
     direction: "apply",
     dryRun: options?.dryRun,
@@ -131,6 +158,7 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
           googleSheetSync: {
             appliedAt: new Date(),
             reversedAt: null,
+            syncInProgress: false,
             lastError: "",
           },
         },
@@ -144,6 +172,7 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
           googleSheetSync: {
             appliedAt: order?.googleSheetSync?.appliedAt || null,
             reversedAt: order?.googleSheetSync?.reversedAt || null,
+            syncInProgress: false,
             lastError: JSON.stringify(result).slice(0, 500),
           },
         },
@@ -152,6 +181,22 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
   }
 
   return result;
+}
+
+/** Після «виконано»: асортимент (склад) у Google Sheets, один раз на замовлення. */
+export function ensureGoogleSheetAssortmentForCompletedOrder(order) {
+  if (!order?._id || !isGoogleSheetsEnabled()) return;
+
+  const status = String(order?.status || "")
+    .trim()
+    .toLowerCase();
+  if (status !== "completed" && status !== "done") return;
+
+  if (order?.googleSheetSync?.appliedAt && !order?.googleSheetSync?.reversedAt) {
+    return;
+  }
+
+  queueGoogleSheetApplyForOrder(order);
 }
 
 export async function reverseOrderOnGoogleSheets(order, options = {}) {

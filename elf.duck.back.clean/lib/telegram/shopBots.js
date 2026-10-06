@@ -3092,22 +3092,17 @@ if (
         return;
       }
 
-      if (!order.stockCommittedAt) {
-        await commitOrderStock(order);
-        order.stockCommittedAt = new Date();
-      }
-
-      order.status = "completed";
-      order.completedAt = new Date();
-      await order.save();
-
-      await applyOrderCashback(order);
-
       const arrivalMessageIds = Array.isArray(order.managerArrivalMessageIds)
         ? order.managerArrivalMessageIds.filter(Boolean)
         : [];
 
       const arrivalChatId = String(order?.payment?.managerMessageChatId || "").trim();
+
+      const changedOrder = await changePickupOrderStatusByManager(
+        order,
+        "completed",
+        String(ctx.from?.id || "")
+      );
 
       for (const messageId of arrivalMessageIds) {
         try {
@@ -3118,11 +3113,11 @@ if (
       }
 
       if (arrivalMessageIds.length) {
-        order.managerArrivalMessageIds = [];
-        await order.save();
+        changedOrder.managerArrivalMessageIds = [];
+        await changedOrder.save();
       }
 
-      await refreshManagerOrderMessage(order);
+      await refreshManagerOrderMessage(changedOrder);
       await ctx.answerCbQuery("Заказ отмечен как выполненный");
 
       try {

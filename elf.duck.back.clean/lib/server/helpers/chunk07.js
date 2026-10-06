@@ -1255,10 +1255,17 @@ export async function changePickupOrderStatusByManager(
    * Повторно не списываем, если stockCommittedAt уже есть.
    */
   if (!fresh?.stockCommittedAt) {
-    await commitOrderStock(fresh);
-
-    fresh.stockCommittedAt =
-      new Date();
+    const stockOk = await commitOrderStock(fresh);
+    if (stockOk) {
+      fresh.stockCommittedAt = new Date();
+    } else {
+      console.error("[stock] commitOrderStock skipped or failed", {
+        orderId: String(fresh._id || ""),
+        orderNo: String(fresh.orderNo || ""),
+        deliveryType: fresh.deliveryType,
+        pickupPointId: fresh.pickupPointId,
+      });
+    }
   }
 
   fresh.stockReleasedAt = null;
@@ -1302,9 +1309,21 @@ export async function changePickupOrderStatusByManager(
 
   await applyOrderCashback(fresh);
 
-  return await Order.findById(
-    fresh._id
-  );
+  const completedOrder = await Order.findById(fresh._id);
+
+  try {
+    const { ensureGoogleSheetAssortmentForCompletedOrder } = await import(
+      "../../googleSheets/orderSync.js"
+    );
+    ensureGoogleSheetAssortmentForCompletedOrder(completedOrder);
+  } catch (e) {
+    console.error(
+      "changePickupOrderStatusByManager googleSheets hook error:",
+      e
+    );
+  }
+
+  return completedOrder;
 }
 
 export async function resolveOrderNotificationPoint(order) {

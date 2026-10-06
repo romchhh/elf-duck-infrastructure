@@ -82,13 +82,37 @@ import * as __chunk06 from "./chunk06.js";
 import * as __chunk07 from "./chunk07.js";
 Object.assign(globalThis, { ...__chunk00, ...__chunk01, ...__chunk02, ...__chunk03, ...__chunk04, ...__chunk05, ...__chunk06, ...__chunk07 });
 
-const LADDER_SMART_DISCOUNT_PER_ITEM = new Set([5, 10, 15]);
+const LIQUIDS_SMART_DISCOUNT_PER_ITEM = new Set([5, 10, 15]);
+/** Картриджі: ціна з сходинки (30→25/23/20), не бейдж SALE */
+const CARTRIDGE_SMART_DISCOUNT_PER_ITEM = new Set([5, 7, 10, 12, 15]);
 
-function isSalePromoFlavorDiscount(flavor = {}) {
+function isSalePromoFlavorForItem(item = {}, flavor = {}) {
   if (flavor?.salePromo === true) return true;
+
+  const categoryKey = String(item?.categoryKey || "")
+    .trim()
+    .toLowerCase();
   const perItem = Number(flavor?.smartDiscountPerItem || 0);
   if (perItem <= 0) return false;
-  return !LADDER_SMART_DISCOUNT_PER_ITEM.has(perItem);
+
+  if (categoryKey === "cartridges" || categoryKey === "disposables") {
+    return false;
+  }
+
+  if (categoryKey === "liquids") {
+    if (LIQUIDS_SMART_DISCOUNT_PER_ITEM.has(perItem)) return false;
+    // Старі замовлення без salePromo: лише явна акція (напр. 55→30, −25/шт)
+    return perItem > 15;
+  }
+
+  if (
+    LIQUIDS_SMART_DISCOUNT_PER_ITEM.has(perItem) ||
+    CARTRIDGE_SMART_DISCOUNT_PER_ITEM.has(perItem)
+  ) {
+    return false;
+  }
+
+  return perItem > 15;
 }
 
 export function getCartItemFlavorRows(item = {}) {
@@ -914,7 +938,7 @@ export function getOrderSalePromoDiscountTotalZl(order) {
         return (
           orderSum +
           flavors.reduce((flavorSum, flavor) => {
-            if (!isSalePromoFlavorDiscount(flavor)) return flavorSum;
+            if (!isSalePromoFlavorForItem(item, flavor)) return flavorSum;
 
             const explicit = Number(flavor?.smartDiscountTotalZl || 0);
             if (explicit > 0) return flavorSum + explicit;
@@ -939,15 +963,13 @@ export function getOrderSalePromoDiscountTotalZl(order) {
 }
 
 /**
- * Сумма для колонки «Скидки» в Google Sheets и Telegram.
- * Смарт-ціна (сходинки 1/2/3-4/5) туди НЕ входить — вона вже в tier-колонках.
- * Тут: кэшбек + реферал + акція SALE.
+ * Сумма для колонки «Скидки» в Google Sheets и Telegram-статистике.
+ * Тільки кешбек + реферал. Смарт ([1]/[2]/[3-4]/[5]) і SALE — не тут.
  */
 export function getOrderSheetsDiscountTotalZl(order) {
   const cashback = Number(order?.payment?.cashbackAppliedZl || 0);
   const referral = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
-  const salePromo = getOrderSalePromoDiscountTotalZl(order);
-  return Number((cashback + referral + salePromo).toFixed(2));
+  return Number((cashback + referral).toFixed(2));
 }
 
 /** PLN amount managers see as «Касса» in daily warehouse stats (may differ from order.totalZl). */

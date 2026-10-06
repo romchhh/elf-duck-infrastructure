@@ -164,13 +164,37 @@ function formatDailyStatsZl(value) {
   return Number(value || 0).toFixed(2);
 }
 
+/** Як у Google Sheets / ОТЧЁТ: [1] [2] [3-4] [5] */
 function formatDailyStatsTierBracketLabel(bracket) {
   const key = String(bracket || "").trim();
-  if (key === "[5]") return "5+ шт";
-  if (key === "[3-4]") return "3–4 шт";
-  if (key === "[2]") return "2 шт";
-  if (key === "[1]") return "1 шт";
-  return key;
+  if (["[1]", "[2]", "[3-4]", "[5]"].includes(key)) return key;
+  return key || "[1]";
+}
+
+function sumDailyStatsTierBuckets(orders) {
+  const totals = { "[1]": 0, "[2]": 0, "[3-4]": 0, "[5]": 0 };
+
+  for (const order of Array.isArray(orders) ? orders : []) {
+    for (const row of Array.isArray(order?.items) ? order.items : []) {
+      const soldQty = __chunk09.getStatsSheetProductQty(row);
+      if (soldQty <= 0) continue;
+
+      const tierQty = __chunk09.getStatsSheetTierQty(order, row);
+      const bracket = __chunk09.getStatsSheetTierBracketLabelFromQty(tierQty);
+      totals[bracket] = Number(totals[bracket] || 0) + soldQty;
+    }
+  }
+
+  return totals;
+}
+
+function formatDailyStatsTierTotalsLine(totals) {
+  const order = ["[1]", "[2]", "[3-4]", "[5]"];
+  const parts = order
+    .filter((tier) => Number(totals?.[tier] || 0) > 0)
+    .map((tier) => `${tier} <b>${totals[tier]}</b>`);
+
+  return parts.length ? parts.join(" · ") : "—";
 }
 
 function formatDailyStatsPaymentBadge(method) {
@@ -291,7 +315,6 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
   for (const order of Array.isArray(orders) ? orders : []) {
     const orderCashbackSpent = getOrderCashbackDiscountTotalZl(order);
-    const orderSalePromoZl = __chunk08.getOrderSalePromoDiscountTotalZl(order);
     const paymentMethod = getOrderDisplayedPaymentMethod(order);
     const paymentMethodLabel = formatPaymentMethodLabel(paymentMethod);
 
@@ -312,24 +335,25 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
       const productTitle = getProductDisplayTitleForStats(productRow);
       const orderTierQty = __chunk09.getStatsSheetTierQty(order, productRow);
-      const bucketLabel = formatDailyStatsTierBracketLabel(
+      const tierBracket = formatDailyStatsTierBracketLabel(
         __chunk09.getStatsSheetTierBracketLabelFromQty(orderTierQty)
       );
-      const flavorsLine = flavors
+      const flavorLines = flavors
         .map((flavor) => {
           const label =
             String(flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "").trim() ||
             "Вкус";
           const qty = Math.max(1, Number(flavor?.qty || 1));
-          return `${escapeHtml(label)} ×${qty}`;
+          return `     • ${escapeHtml(label)} ×${qty}`;
         })
-        .join(" • ");
+        .join("\n");
 
-      const flavorSuffix = flavorsLine ? `\n     ${flavorsLine}` : "";
-
-      return [
-        `  <b>${escapeHtml(productTitle)}</b> · ${escapeHtml(bucketLabel)} · ${productQty} шт${flavorSuffix}`,
+      const lines = [
+        `  <code>${escapeHtml(tierBracket)}</code> ${productQty}`,
+        `  <b>${escapeHtml(productTitle)}</b> ×${productQty}`,
       ];
+      if (flavorLines) lines.push(flavorLines);
+      return lines;
     });
 
     orderBlocks.push({
@@ -338,7 +362,6 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       paymentMethod,
       paymentMethodLabel,
       kasaZl: Number(__chunk08.getOrderKasaPlnZl(order).toFixed(2)),
-      salePromoZl: Number(orderSalePromoZl.toFixed(2)),
       cashbackSpentZl: Number(orderCashbackSpent.toFixed(2)),
       lines: productLines,
       createdAt: order?.createdAt || null,
@@ -391,15 +414,6 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       Math.max(0, kasaTotalZl - deliveryFeesTotalZl).toFixed(2)
     );
 
-  const salePromoDiscountTotalZl = Number(
-    (Array.isArray(orders) ? orders : [])
-      .reduce(
-        (sum, order) => sum + __chunk08.getOrderSalePromoDiscountTotalZl(order),
-        0
-      )
-      .toFixed(2)
-  );
-
   const referralDiscountTotalZl = Number(
     (Array.isArray(orders) ? orders : [])
       .reduce((sum, order) => sum + Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0), 0)
@@ -442,11 +456,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   // );
 
   const discountsTotalZl = Number(
-    (
-      salePromoDiscountTotalZl +
-      referralDiscountTotalZl +
-      cashbackDiscountTotalZl
-    ).toFixed(2)
+    (referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
   );
   
   const salaryTotalZl = Number((((kasaTotalZl / 100) * 16)).toFixed(2));
@@ -457,6 +467,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   );
   const ordersCount = sortedOrders.length;
   const dayLabel = formatDailyStatsDayLabel(dayKey);
+  const tierTotals = sumDailyStatsTierBuckets(orders);
 
   const lines = [
     `📊 <b>Статистика дня</b>`,
@@ -468,6 +479,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     `• Заказов: <b>${ordersCount}</b>`,
     `• Клиентов: <b>${uniqueCustomersCount}</b>`,
     `• Продано: <b>${soldPositionsQty}</b> шт.`,
+    `• Сходинки: ${formatDailyStatsTierTotalsLine(tierTotals)}`,
     `• Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> zł`,
     DAILY_STATS_SEP,
     ``,
@@ -571,10 +583,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
       const tierLine = tierOrder
         .filter((tier) => (product.tierBuckets.get(tier) || 0) > 0)
-        .map(
-          (tier) =>
-            `${formatDailyStatsTierBracketLabel(tier)}: ${product.tierBuckets.get(tier)}`
-        )
+        .map((tier) => `${tier} ${product.tierBuckets.get(tier)}`)
         .join(" · ");
 
       if (tierLine) {
@@ -629,9 +638,6 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   }
 
   lines.push(`• Скидки: ${formatDailyStatsZl(discountsTotalZl)} zł`);
-  if (salePromoDiscountTotalZl > 0) {
-    lines.push(`   🏷 SALE: ${formatDailyStatsZl(salePromoDiscountTotalZl)} zł`);
-  }
   if (referralDiscountTotalZl > 0) {
     lines.push(`   🎁 реферал: ${formatDailyStatsZl(referralDiscountTotalZl)} zł`);
   }
