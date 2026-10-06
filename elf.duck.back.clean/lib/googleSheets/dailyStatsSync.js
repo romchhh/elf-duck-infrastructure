@@ -13,11 +13,10 @@ import {
 import {
   getOrderKasaPlnZl,
   getOrderSheetsDiscountTotalZl,
-  normalizeStatsSheetModelName,
 } from "../server/helpers/chunk08.js";
 import {
   getStatsSheetProductQty,
-  getStatsSheetProductTitle,
+  getStatsSheetReportModelKey,
   getStatsSheetTierQty,
 } from "../server/helpers/chunk09.js";
 function getStatsSheetTierKeyFromQty(qty) {
@@ -33,8 +32,7 @@ export function buildProductAggregates(orders) {
 
   for (const order of Array.isArray(orders) ? orders : []) {
     for (const row of Array.isArray(order?.items) ? order.items : []) {
-      const model = getStatsSheetProductTitle(row);
-      const modelKey = normalizeStatsSheetModelName(model);
+      const modelKey = getStatsSheetReportModelKey(row);
       if (!modelKey) continue;
 
       if (!productMap.has(modelKey)) {

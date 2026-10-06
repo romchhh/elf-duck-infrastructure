@@ -71,6 +71,10 @@ const CART_AUTO_CLEAR_AFTER_MINUTES = Number(process.env.CART_AUTO_CLEAR_AFTER_M
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000);
 
 import { bot, userBots } from "../botRegistry.js";
+import {
+  normalizeSheetModelName,
+  toReportModelLabel,
+} from "../../googleSheets/normalize.js";
 
 import * as __chunk00 from "./chunk00.js";
 import * as __chunk01 from "./chunk01.js";
@@ -125,7 +129,34 @@ export function getStatsSheetProductCategory(row = {}) {
     .toLowerCase();
 }
 
+const STATS_REPORT_MODEL_BY_PRODUCT_KEY = {
+  "puffy-30-ml": "PUFFY 5%",
+  "puffy-30-ml-70-mg": "PUFFY 7%",
+};
+
+const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([
+  "puffy-30-ml",
+  "puffy-30-ml-70-mg",
+]);
+
+/** Ключ рядка MODEL в Google ОТЧЁТ (PUFFY 70% → PUFFY 7%). */
+export function getStatsSheetReportModelKey(row = {}) {
+  const pk = String(row?.productKey || "").trim().toLowerCase();
+  if (STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk]) {
+    return STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk];
+  }
+
+  const title = getStatsSheetProductTitle(row);
+  if (!title) return "";
+
+  return toReportModelLabel(normalizeSheetModelName(title));
+}
+
 export function isStatsSheetLiquid(row = {}) {
+  const pk = String(row?.productKey || "").trim().toLowerCase();
+  if (STATS_SHEET_LIQUID_PRODUCT_KEYS.has(pk)) return true;
+  if (getStatsSheetProductCategory(row) === "liquids") return true;
+
   return /\b30\s*ml\b/i.test(normalizeStatsSheetProductTitle(row));
 }
 

@@ -517,13 +517,17 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   for (const order of Array.isArray(orders) ? orders : []) {
     for (const row of Array.isArray(order?.items) ? order.items : []) {
       const productKey = String(row?.productKey || "").trim();
+      const reportModelKey = __chunk09.getStatsSheetReportModelKey(row);
       const productTitle =
+        reportModelKey ||
         [row?.productTitle1, row?.productTitle2]
           .filter(Boolean)
           .join(" ")
-          .trim() || productKey || "Товар";
+          .trim() ||
+        productKey ||
+        "Товар";
 
-      const statsKey = productKey || productTitle;
+      const statsKey = reportModelKey || productKey || productTitle;
       if (!statsKey) continue;
 
       let bucket = productStatsMap.get(statsKey);

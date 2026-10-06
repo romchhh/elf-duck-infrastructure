@@ -1,8 +1,8 @@
 /**
- * Resync ОТЧЁТ (tiers + СКИДКИ) + догнати АССОРТИМЕНТ для всіх точок з googleSheets config.
+ * Resync ОТЧЁТ (tiers + СКИДКИ) + догнати АССОРТИМЕНТ для всіх точок.
+ * PUFFY 50%/70% у замовленнях → рядки MODEL «PUFFY 5%» / «PUFFY 7%» (після деплою chunk09).
  *
  * docker compose exec api node scripts/resync-google-sheets-day-all-points.mjs --day 2026-10-06
- * docker compose exec api node scripts/resync-google-sheets-day-all-points.mjs --day 2026-10-06 --dry-run
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -12,7 +12,10 @@ import { spawn } from "child_process";
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(backendRoot, ".env") });
 
-import { SPREADSHEET_ID_BY_POINT_KEY } from "../lib/googleSheets/config.js";
+import {
+  ASSORTMENT_RETRY_POINT_KEYS,
+  DAILY_STATS_RESYNC_POINT_KEYS,
+} from "../lib/googleSheets/statsScriptPoints.js";
 
 const args = process.argv.slice(2);
 function arg(name) {
@@ -31,8 +34,6 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
   );
   process.exit(1);
 }
-
-const pointKeys = Object.keys(SPREADSHEET_ID_BY_POINT_KEY).sort();
 
 function runNodeScript(scriptName, scriptArgs) {
   return new Promise((resolve, reject) => {
@@ -53,12 +54,16 @@ function runNodeScript(scriptName, scriptArgs) {
   });
 }
 
-console.log({ dayKey, dryRun, points: pointKeys.length, pointKeys });
+console.log({
+  dayKey,
+  dryRun,
+  resyncPoints: DAILY_STATS_RESYNC_POINT_KEYS,
+  assortmentPoints: ASSORTMENT_RETRY_POINT_KEYS,
+});
 
-for (const point of pointKeys) {
-  console.log("\n==========", point, "==========\n");
-
-  if (!skipAssortment) {
+if (!skipAssortment) {
+  console.log("\n===== АССОРТИМЕНТ (per Mongo point) =====\n");
+  for (const point of ASSORTMENT_RETRY_POINT_KEYS) {
     const retryArgs = ["--point", point, "--day", dayKey];
     if (dryRun) retryArgs.push("--dry-run");
     try {
@@ -67,18 +72,37 @@ for (const point of pointKeys) {
       console.error("[warn] assortment retry:", point, e.message);
     }
   }
+}
+
+const failures = [];
+
+console.log("\n===== ОТЧЁТ дня (resync) =====\n");
+for (const point of DAILY_STATS_RESYNC_POINT_KEYS) {
+  console.log("\n==========", point, "==========\n");
 
   const resyncArgs = ["--point", point, "--day", dayKey];
   if (dryRun) resyncArgs.push("--dry-run");
-  await runNodeScript("resync-google-sheets-day.mjs", resyncArgs);
+
+  try {
+    await runNodeScript("resync-google-sheets-day.mjs", resyncArgs);
+  } catch (e) {
+    console.error("[fail] resync:", point, e.message);
+    failures.push({ point, step: "resync", error: e.message });
+    continue;
+  }
 
   if (!skipReconcile) {
     try {
       await runNodeScript("reconcile-day-stats.mjs", ["--point", point, "--day", dayKey]);
     } catch (e) {
       console.error("[warn] reconcile:", point, e.message);
+      failures.push({ point, step: "reconcile", error: e.message });
     }
   }
 }
 
 console.log("\nDone all points for", dayKey);
+if (failures.length) {
+  console.error("Failures:", failures);
+  process.exit(1);
+}

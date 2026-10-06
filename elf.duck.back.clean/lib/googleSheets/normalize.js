@@ -10,6 +10,10 @@ export function normalizeSheetModelName(value) {
     .replace(/\bPUFFY\s+30\s*ML\s*\/\s*70\s*MG\b/g, "PUFFY 7%")
     .replace(/\bPUFFY\s+30\s*ML\s*\/\s*50\s*MG\b/g, "PUFFY 5%")
     .replace(/\bPUFFY\s+30\s*ML\b/g, "PUFFY 5%")
+    .replace(/\bPUFFY\s+70\s*%/g, "PUFFY 7%")
+    .replace(/\bPUFFY\s+50\s*%/g, "PUFFY 5%")
+    .replace(/\bPUFFY\s+70\b/g, "PUFFY 7%")
+    .replace(/\bPUFFY\s+50\b/g, "PUFFY 5%")
     .replace(/\s*30\s*ML/g, "")
     .replace(/^CHASER\s+/g, "")
     .replace(/\bLIQ\s+ELFLIQ\b/g, "ELFLIQ")
@@ -114,8 +118,19 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
   const key = String(productKey || "").trim().toLowerCase();
 
   const byProductKey = {
-    "puffy-30-ml": ["PUFFY 30 ML", "LIQ PUFFY 5%", "PUFFY 5%"],
-    "puffy-30-ml-70-mg": ["LIQ PUFFY 7%", "PUFFY 7%"],
+    "puffy-30-ml": [
+      "PUFFY 30 ML",
+      "LIQ PUFFY 5%",
+      "PUFFY 5%",
+      "PUFFY 50%",
+      "PUFFY 50",
+    ],
+    "puffy-30-ml-70-mg": [
+      "LIQ PUFFY 7%",
+      "PUFFY 7%",
+      "PUFFY 70%",
+      "PUFFY 70",
+    ],
     "chaser-black-30-ml": ["LIQ BLACK", " BLACK"],
     "chaser-for-pods-30-ml": ["LIQ FOR PODS", "FOR PODS"],
     "chaser-special-30-ml": ["LIQ SPECIAL", "SPECIAL"],

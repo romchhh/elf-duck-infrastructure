@@ -544,7 +544,12 @@ export async function writeDayBlockFromAggregates({
   for (const product of productRows || []) {
     const label = toReportModelLabel(product.model);
     const modelRow = findReportModelRowInDayBlock(rows, block, label);
-    if (modelRow < 0) continue;
+    if (modelRow < 0) {
+      if (process.env.GOOGLE_SHEETS_LOG_SKIPPED_MODELS === "1") {
+        console.warn("[googleSheets] skip model (row not found):", label);
+      }
+      continue;
+    }
 
     const tier1 = Number(product.tier1 || 0);
     const tier2 = Number(product.tier2 || 0);

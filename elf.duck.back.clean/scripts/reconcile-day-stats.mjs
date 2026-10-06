@@ -35,6 +35,10 @@ import {
   getOrderSheetsDiscountTotalZl,
 } from "../lib/server/helpers/chunk08.js";
 import {
+  loadStatsDayOrders,
+  resolveStatsScriptPointMeta,
+} from "../lib/googleSheets/statsScriptPoints.js";
+import {
   getStatsSheetProductQty,
   getStatsSheetTierQty,
 } from "../lib/server/helpers/chunk09.js";
@@ -75,21 +79,35 @@ const ordersSince = new Date(anchor.getTime() - 10 * 24 * 60 * 60 * 1000);
 
 await mongoose.connect(process.env.MONGODB_URI);
 
-const point = await PickupPoint.findOne({
-  key: new RegExp(`^${pointKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "i"),
-}).lean();
+const point = await resolveStatsScriptPointMeta(PickupPoint, pointKey);
 
 if (!point) {
   console.error("Pickup point not found:", pointKey);
   process.exit(1);
 }
 
-const orders = await Order.find(
-  buildStatsOrdersMongoFilter(getOrderPointMatch(point), ordersSince),
-  STATS_ORDER_LIST_PROJECTION
-).lean();
+let dayOrders;
+try {
+  dayOrders = await loadStatsDayOrders({
+    Order,
+    PickupPoint,
+    pointKey,
+    dayKey,
+    ordersSince,
+    projection: STATS_ORDER_LIST_PROJECTION,
+    buildStatsOrdersMongoFilter,
+    orderBelongsToStatsDay,
+    getOrderPointMatch,
+  });
+} catch (e) {
+  console.error(e.message || e);
+  process.exit(1);
+}
 
-const dayOrders = orders.filter((o) => orderBelongsToStatsDay(o, dayKey));
+if (dayOrders === null) {
+  console.error("Pickup point not found:", pointKey);
+  process.exit(1);
+}
 
 const mongoKasa = Number(
   dayOrders.reduce((s, o) => s + getOrderKasaPlnZl(o), 0).toFixed(2)
