@@ -403,6 +403,9 @@ app.post("/orders/confirm", async (req, res) => {
         orderImgUrl: 1,
         cardBgUrl: 1,
         price: 1,
+        listPriceZl: 1,
+        newBadge: 1,
+        categoryKey: 1,
       }
     ).lean();
 
@@ -420,7 +423,20 @@ app.post("/orders/confirm", async (req, res) => {
       const flavorLabel = String(it.flavorLabel || "");
       const gradient = Array.isArray(it.gradient) ? it.gradient.slice(0, 2) : [];
 
-      const originalBaseUnitPrice = Number(it?.baseUnitPrice || 0);
+      const prod = prodByKey.get(pk);
+      if (!prod?._id) continue; // если товар не найден — пропускаем
+
+      let originalBaseUnitPrice = Number(it?.baseUnitPrice || 0);
+      if (isSalePromoProduct(prod)) {
+        const salePrice = Number(prod?.price || unitPrice || 0);
+        const listPrice = Number(prod?.listPriceZl || 0);
+        if (listPrice > salePrice) {
+          originalBaseUnitPrice = listPrice;
+        } else if (!originalBaseUnitPrice) {
+          originalBaseUnitPrice = salePrice;
+        }
+      }
+
       const referralFirstOrderDiscountPerItem = Number(it?.referralFirstOrderDiscountPerItem || 0);
       const referralFirstOrderDiscountTotalZl = Number(it?.referralFirstOrderDiscountTotalZl || 0);
 
@@ -431,9 +447,6 @@ app.post("/orders/confirm", async (req, res) => {
       const smartDiscountTotalZl = Number(
         Math.max(0, smartDiscountPerItem * qty).toFixed(2)
       );
-
-      const prod = prodByKey.get(pk);
-      if (!prod?._id) continue; // если товар не найден — пропускаем
 
       const baseUnitPrice = Number(prod?.price || unitPrice || 0);
 

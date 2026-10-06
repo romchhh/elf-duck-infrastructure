@@ -1,6 +1,10 @@
 import Order from "../../models/Order.js";
 import PickupPoint from "../../models/PickupPoint.js";
-import { getOrderKasaPlnZl, getWarsawDayKey } from "../server/helpers/chunk08.js";
+import {
+  getOrderKasaPlnZl,
+  getOrderSheetsDiscountTotalZl,
+  getWarsawDayKey,
+} from "../server/helpers/chunk08.js";
 import {
   getStatsSheetProductQty,
   getStatsSheetProductTitle,
@@ -137,12 +141,7 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
     }
   }
 
-  const discountsZl = Number(
-    (
-      Number(order?.payment?.cashbackAppliedZl || 0) +
-      Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0)
-    ).toFixed(2)
-  );
+  const discountsZl = getOrderSheetsDiscountTotalZl(order);
 
   const kasaZl = Number(getOrderKasaPlnZl(order) || 0);
 

@@ -60,6 +60,8 @@ const productSchema = new mongoose.Schema(
     title2: { type: String, default: "" },
     titleModal: { type: String, default: "" },
     price: { type: Number, default: 0 },
+    /** Для SALE: ціна в таблиці (MODEL/ПРОДАЖА), якщо вища за price — йде в колонку «Скидки» */
+    listPriceZl: { type: Number, default: 0, min: 0 },
 
     // media URLs
     cardBgUrl: { type: String, default: "" },

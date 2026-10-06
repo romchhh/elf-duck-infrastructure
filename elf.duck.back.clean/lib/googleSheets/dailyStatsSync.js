@@ -10,6 +10,7 @@ import {
 } from "./dailyReportGrid.js";
 import {
   getOrderKasaPlnZl,
+  getOrderSheetsDiscountTotalZl,
   normalizeStatsSheetModelName,
 } from "../server/helpers/chunk08.js";
 import {
@@ -82,13 +83,7 @@ export async function sendDailyPointStatsToGoogleSheetsApi(point, orders, dayKey
 
   const discounts = Number(
     (Array.isArray(orders) ? orders : [])
-      .reduce((sum, order) => {
-        return (
-          sum +
-          Number(order?.payment?.cashbackAppliedZl || 0) +
-          Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0)
-        );
-      }, 0)
+      .reduce((sum, order) => sum + getOrderSheetsDiscountTotalZl(order), 0)
       .toFixed(2)
   );
 

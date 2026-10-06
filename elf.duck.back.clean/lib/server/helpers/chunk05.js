@@ -349,10 +349,14 @@ export function repriceCartItemsWithSmartPricing(items, products) {
     const fallbackBasePrice = Number(product?.price || it?.unitPrice || 0);
 
     if (isSalePromoProduct(product)) {
+      const salePrice = Number(fallbackBasePrice.toFixed(2));
+      const listPrice = Number(product?.listPriceZl || 0);
+      const baseUnitPrice =
+        listPrice > salePrice ? Number(listPrice.toFixed(2)) : salePrice;
       return {
         ...it,
-        baseUnitPrice: Number(fallbackBasePrice.toFixed(2)),
-        unitPrice: Number(fallbackBasePrice.toFixed(2)),
+        baseUnitPrice,
+        unitPrice: salePrice,
       };
     }
 

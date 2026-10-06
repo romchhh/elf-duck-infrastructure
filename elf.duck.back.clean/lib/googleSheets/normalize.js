@@ -114,7 +114,7 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
   const key = String(productKey || "").trim().toLowerCase();
 
   const byProductKey = {
-    "puffy-30-ml": ["LIQ PUFFY 5%", "PUFFY 5%"],
+    "puffy-30-ml": ["PUFFY 30 ML", "LIQ PUFFY 5%", "PUFFY 5%"],
     "puffy-30-ml-70-mg": ["LIQ PUFFY 7%", "PUFFY 7%"],
     "chaser-black-30-ml": ["LIQ BLACK", " BLACK"],
     "chaser-for-pods-30-ml": ["LIQ FOR PODS", "FOR PODS"],

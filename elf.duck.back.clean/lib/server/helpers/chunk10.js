@@ -573,7 +573,7 @@ function getStatsTierQtyForProductRow(order, productRow) {
   // );
 
   const discountsTotalZl = Number(
-    (referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
+    (smartDiscountTotalZl + referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
   );
   
   const salaryTotalZl = Number((((kasaTotalZl / 100) * 16)).toFixed(2));

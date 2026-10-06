@@ -1,28 +1,15 @@
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import React, { useEffect, Suspense } from "react";
 import MainPage from "./pages/MainPage";
+import CartPage from "./pages/CartPage";
+import OrdersPage from "./pages/OrdersPage";
 import DesktopShell from "./components/DesktopShell.jsx";
 import { subscribeDesktopLayout } from "./utils/desktopLayout.js";
 
 const ReferralPage = React.lazy(() => import("./pages/ReferralPage"));
-const CartPage = React.lazy(() => import("./pages/CartPage"));
-const OrdersPage = React.lazy(() => import("./pages/OrdersPage"));
 const FavoritePage = React.lazy(() => import("./pages/FavoritePage"));
 const ManagersPage = React.lazy(() => import("./pages/ManagersPage"));
 const PromoPage = React.lazy(() => import("./pages/PromoPage"));
-
-if (typeof window !== "undefined") {
-  const warmupCheckoutRoutes = () => {
-    import("./pages/CartPage");
-    import("./pages/OrdersPage");
-  };
-
-  if ("requestIdleCallback" in window) {
-    window.requestIdleCallback(warmupCheckoutRoutes, { timeout: 4000 });
-  } else {
-    setTimeout(warmupCheckoutRoutes, 2500);
-  }
-}
 
 const routeFallbackStyle = {
   flex: 1,

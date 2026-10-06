@@ -854,6 +854,56 @@ export function shouldCountOrderInDailyStats(order) {
   return ["completed", "done"].includes(status);
 }
 
+/** Smart price + SALE (base − paid), без реферальной части */
+export function getOrderSmartDiscountTotalZl(order) {
+  return Number(
+    (Array.isArray(order?.items) ? order.items : [])
+      .reduce((orderSum, item) => {
+        const flavors = Array.isArray(item?.flavors) ? item.flavors : [];
+        return (
+          orderSum +
+          flavors.reduce((flavorSum, flavor) => {
+            const explicitSmartDiscount = Number(flavor?.smartDiscountTotalZl || 0);
+            if (explicitSmartDiscount > 0) {
+              return flavorSum + explicitSmartDiscount;
+            }
+
+            const qty = Math.max(1, Number(flavor?.qty || 1));
+            const originalBasePrice = Number(flavor?.baseUnitPrice || 0);
+            const finalUnitPrice = Number(flavor?.unitPrice || 0);
+            const referralDiscountTotal = Number(
+              flavor?.referralFirstOrderDiscountTotalZl || 0
+            );
+
+            if (originalBasePrice <= 0 || finalUnitPrice <= 0) {
+              return flavorSum;
+            }
+
+            const totalPriceDelta = Math.max(
+              0,
+              (originalBasePrice - finalUnitPrice) * qty
+            );
+            const smartOnlyDiscount = Math.max(
+              0,
+              totalPriceDelta - referralDiscountTotal
+            );
+
+            return flavorSum + smartOnlyDiscount;
+          }, 0)
+        );
+      }, 0)
+      .toFixed(2)
+  );
+}
+
+/** Сумма для колонки «Скидки» в Google Sheets: кэшбек + реф. + smart/SALE */
+export function getOrderSheetsDiscountTotalZl(order) {
+  const cashback = Number(order?.payment?.cashbackAppliedZl || 0);
+  const referral = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
+  const smart = getOrderSmartDiscountTotalZl(order);
+  return Number((cashback + referral + smart).toFixed(2));
+}
+
 /** PLN amount managers see as «Касса» in daily warehouse stats (may differ from order.totalZl). */
 export function getOrderKasaPlnZl(order) {
   const payment = order?.payment || {};
