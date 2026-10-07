@@ -159,11 +159,16 @@ for (const pointKey of pointKeys) {
       });
     }
 
-    const match = matchCatalogFlavorInAssortmentBlock(rows, block, {
-      flavorKey: item.flavorKey,
-      label: item.flavorLabel,
-      flavorLabel: item.flavorLabel,
-    });
+    const match = matchCatalogFlavorInAssortmentBlock(
+      rows,
+      block,
+      {
+        flavorKey: item.flavorKey,
+        label: item.flavorLabel,
+        flavorLabel: item.flavorLabel,
+      },
+      item.productKey
+    );
 
     if (match.ok) {
       flavorOk.push({
@@ -182,7 +187,8 @@ for (const pointKey of pointKeys) {
         flavorKey: item.flavorKey,
         flavorLabel: item.flavorLabel,
         triedLabels: match.triedLabels,
-        sheetFlavorsSample: sheetFlavors.slice(0, 8),
+        sheetFlavorsSample: sheetFlavors.slice(0, 12),
+        sheetFlavors: sheetFlavors.length <= 40 ? sheetFlavors : undefined,
         sheetFlavorCount: sheetFlavors.length,
       });
     }

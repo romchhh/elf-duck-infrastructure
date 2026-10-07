@@ -138,6 +138,7 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "elfliq-30-ml": ["LIQ ELFLIQ", "ELFLIQ"],
     "hqd-30-ml": ["LIQ HQD", "HQD"],
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
+    "oxva-30-ml-20-mg": ["LIQ OXVA", "OXVA", "OXVA 20 MG", "OXVA 30 ML"],
     "elf-duck-d3-25k": ["ELF BAR D3 25K", "ELF BAR D3"],
     "elf-duck-bc-45k": ["ELF BAR BC45K", "ELF BC45K"],
   };
@@ -173,14 +174,54 @@ export function headerMatchesWanted(header, wantedSet) {
   const h = normalizeSheetModelName(header);
   const compact = h.replace(/\s+/g, "");
 
+  // Числові заголовки («0», «7») — лише точний збіг, інакше «OXVA 20 MG» ловить «0».
+  if (/^\d+$/.test(compact)) {
+    for (const wanted of wantedSet) {
+      const w = normalizeSheetModelName(wanted);
+      const wCompact = w.replace(/\s+/g, "");
+      if (h === w || compact === wCompact) return true;
+    }
+    return false;
+  }
+
   for (const wanted of wantedSet) {
     const w = normalizeSheetModelName(wanted);
     if (!w) continue;
-    if (h === w || compact === w.replace(/\s+/g, "")) return true;
-    if (h.includes(w) || w.includes(h)) return true;
+    const wCompact = w.replace(/\s+/g, "");
+    if (h === w || compact === wCompact) return true;
+    const shorter = compact.length <= wCompact.length ? compact : wCompact;
+    const longer = compact.length <= wCompact.length ? wCompact : compact;
+    if (shorter.length < 3) continue;
+    if (longer.includes(shorter)) return true;
   }
 
   return false;
+}
+
+/**
+ * Додаткові назви смаку на листі АССОРТИМЕНТ (ключ каталогу → flavorKey → варіанти).
+ */
+export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
+  "chaser-for-pods-30-ml": {
+    "l-ch": ["Лічі", "Личі", "Litchi", "Lychee"],
+    "litchi": ["Лічі", "Личі"],
+    "lychee": ["Лічі", "Личі"],
+  },
+  "vozol-prime-30-ml": {
+    "bluebbery-watermelon": ["BLUEBBERY WATERMELON", "Blueberry Watermelon"],
+    "blueberry-watermelon": ["BLUEBBERY WATERMELON", "Blueberry Watermelon"],
+  },
+};
+
+export function getAssortmentFlavorAliasLabels(productKey = "", flavorKey = "") {
+  const pk = String(productKey || "").trim().toLowerCase();
+  const fk = String(flavorKey || "").trim().toLowerCase();
+  if (!pk || !fk) return [];
+
+  const byProduct = ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT[pk];
+  if (!byProduct) return [];
+
+  return Array.isArray(byProduct[fk]) ? byProduct[fk] : [];
 }
 
 function flavorTokens(compact) {

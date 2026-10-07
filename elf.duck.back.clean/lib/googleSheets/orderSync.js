@@ -88,7 +88,10 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
       const flavorQty = Math.max(0, Number(flavor?.qty || 0));
       if (!flavorQty) continue;
 
-      const flavorLabels = buildAssortmentFlavorSearchLabels(flavor);
+      const flavorLabels = buildAssortmentFlavorSearchLabels(
+        flavor,
+        row?.productKey
+      );
       const flavorLabel = flavorLabels[0] || "";
       const deltaQty = sign * flavorQty;
 

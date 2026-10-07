@@ -13,8 +13,34 @@ import {
   flavorMatchesWanted,
   headerMatchesWanted,
   normalizeSheetModelName,
+  getAssortmentFlavorAliasLabels,
   toAssortmentHeaderCandidates,
 } from "./normalize.js";
+
+const WEAK_FLAVOR_SLUG_SEGMENTS = new Set([
+  "ice",
+  "cream",
+  "mint",
+  "lime",
+  "tea",
+  "cola",
+  "bear",
+  "berry",
+  "peach",
+  "cherry",
+  "energy",
+  "mojito",
+  "menthol",
+  "grape",
+  "apple",
+  "banana",
+  "tobacco",
+  "raspberry",
+  "blueberry",
+  "strawberry",
+  "watermelon",
+  "blackberry",
+]);
 
 function colToA1(colIndex) {
   let n = colIndex + 1;
@@ -95,7 +121,7 @@ function flavorSlugToTitleLabel(slug = "") {
 }
 
 /** Labels to try when matching a flavor row (order field variants + slug from flavorKey). */
-export function buildAssortmentFlavorSearchLabels(flavor = {}) {
+export function buildAssortmentFlavorSearchLabels(flavor = {}, productKey = "") {
   const candidates = [];
   const push = (v) => {
     const s = String(v || "").trim();
@@ -108,13 +134,22 @@ export function buildAssortmentFlavorSearchLabels(flavor = {}) {
   push(flavor?.label);
   push(flavor?.flavorKey);
 
+  for (const alias of getAssortmentFlavorAliasLabels(productKey, flavor?.flavorKey)) {
+    push(alias);
+  }
+
   const fk = String(flavor?.flavorKey || "").trim();
   if (fk) {
     push(flavorSlugToTitleLabel(fk));
 
     const segments = fk.split(/[-_/]/).filter(Boolean);
     const last = segments[segments.length - 1];
-    if (last && last.length > 2) {
+    if (
+      last &&
+      last.length > 2 &&
+      (segments.length === 1 ||
+        !WEAK_FLAVOR_SLUG_SEGMENTS.has(last.toLowerCase()))
+    ) {
       push(last.replace(/-/g, " "));
       push(flavorSlugToTitleLabel(last));
     }
@@ -171,12 +206,20 @@ export function listAssortmentFlavorsInBlock(rows, block) {
 }
 
 /** Чи знайде sync рядок для смаку з каталогу (ті самі кандидати, що в orderSync). */
-export function matchCatalogFlavorInAssortmentBlock(rows, block, flavor = {}) {
-  const labels = buildAssortmentFlavorSearchLabels({
-    flavorKey: flavor.flavorKey,
-    flavorLabel: flavor.flavorLabel || flavor.label,
-    label: flavor.label,
-  });
+export function matchCatalogFlavorInAssortmentBlock(
+  rows,
+  block,
+  flavor = {},
+  productKey = ""
+) {
+  const labels = buildAssortmentFlavorSearchLabels(
+    {
+      flavorKey: flavor.flavorKey,
+      flavorLabel: flavor.flavorLabel || flavor.label,
+      label: flavor.label,
+    },
+    productKey
+  );
 
   for (const label of labels) {
     const rowIndex = findAssortmentFlavorRow(rows, block, label);

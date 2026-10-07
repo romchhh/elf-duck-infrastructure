@@ -71,7 +71,7 @@ for (const row of order.items || []) {
     const qty = Number(flavor?.qty || 0);
     if (!qty) continue;
 
-    const labels = buildAssortmentFlavorSearchLabels(flavor);
+    const labels = buildAssortmentFlavorSearchLabels(flavor, row.productKey);
     console.log("flavor:", {
       flavorKey: flavor.flavorKey,
       flavorLabel: flavor.flavorLabel,
