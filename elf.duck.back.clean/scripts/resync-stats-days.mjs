@@ -124,7 +124,7 @@ for (const pointKey of pointKeys) {
       point,
       dayOrders || [],
       dayKey,
-      { dryRun, skipMonthRollup: false }
+      { dryRun, skipMonthRollup: true }
     );
     console.log("sheets:", sheetResult?.ok, sheetResult?.reason || "");
 

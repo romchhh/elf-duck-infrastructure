@@ -105,6 +105,25 @@ export function findKassaRowInDayBlock(rows, block) {
   return -1;
 }
 
+/** Усі рядки моделей у денному блоці (до «КАССА»). */
+export function listDayBlockModelRowIndexes(rows, block) {
+  if (!block) return [];
+
+  const { blockStart, headerRow, endRow } = block;
+  const kassaRow = findKassaRowInDayBlock(rows, block);
+  const stop = kassaRow >= 0 ? kassaRow : endRow;
+  const out = [];
+
+  for (let r = headerRow + 1; r < stop; r++) {
+    const cell = String(rows[r]?.[blockStart] || "").trim();
+    if (!cell) continue;
+    if (/^касса$/i.test(cell)) break;
+    out.push(r);
+  }
+
+  return out;
+}
+
 export function monthRangeLabelForDayKey(dayKey) {
   const m = String(dayKey || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return "";
@@ -540,6 +559,16 @@ export async function writeDayBlockFromAggregates({
 
   const blockStart = block.blockStart;
   const data = [];
+
+  // Повний зліпок дня з Mongo: спочатку обнуляємо tier-колонки всіх моделей (інакше лишаються старі цифри).
+  for (const modelRow of listDayBlockModelRowIndexes(rows, block)) {
+    for (const off of [4, 5, 6, 7]) {
+      data.push({
+        range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + off)}${modelRow + 1}`,
+        values: [[0]],
+      });
+    }
+  }
 
   for (const product of productRows || []) {
     const label = toReportModelLabel(product.model);
