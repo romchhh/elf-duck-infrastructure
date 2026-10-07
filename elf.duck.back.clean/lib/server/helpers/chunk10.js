@@ -521,11 +521,51 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     }
   }
 
+  const ordersCount = (Array.isArray(orders) ? orders : []).length;
+  const sumTotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce((sum, order) => sum + Number(order?.totalZl || 0), 0)
+      .toFixed(2)
+  );
+  const sumItemsSubtotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce((sum, order) => sum + __chunk08.getOrderItemsSubtotalZl(order), 0)
+      .toFixed(2)
+  );
+
+  const kasaByMethod = new Map();
+  for (const order of Array.isArray(orders) ? orders : []) {
+    const methodLabel = formatPaymentMethodLabel(
+      getOrderDisplayedPaymentMethod(order)
+    );
+    const part = Number(__chunk08.getOrderKasaPlnZl(order) || 0);
+    kasaByMethod.set(methodLabel, Number((kasaByMethod.get(methodLabel) || 0) + part));
+  }
+
   lines.push(`<b>🏦 ФИНАНСЫ :</b> `);
   lines.push(DAILY_STATS_SEP);
+  lines.push(`📦Заказов: <b>${ordersCount}</b>`);
   lines.push(
-    `💰Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`
+    `💰Оборот (все способы оплаты): <b>${formatDailyStatsZl(kasaTotalZl)}</b> PLN`
   );
+  if (deliveryFeesTotalZl > 0) {
+    lines.push(
+      `🚚Минус доставка: <b>${formatDailyStatsZl(deliveryFeesTotalZl)}</b> PLN`
+    );
+  }
+  lines.push(
+    `💵Касса (товар, без доставки): <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`
+  );
+  if (Math.abs(sumItemsSubtotalZl - kasaNetTotalZl) > 1) {
+    lines.push(
+      `<i>Σ позиции по unitPrice: ${formatDailyStatsZl(sumItemsSubtotalZl)} PLN · Σ totalZl заказов: ${formatDailyStatsZl(sumTotalZl)} PLN</i>`
+    );
+  }
+  for (const [methodLabel, amount] of [...kasaByMethod.entries()].sort(
+    (a, b) => b[1] - a[1]
+  )) {
+    lines.push(`   ${methodLabel}: <b>${formatDailyStatsZl(amount)}</b> PLN`);
+  }
   lines.push(`🪙Скидки: <b>${formatDailyStatsZl(discountsTotalZl)}</b> PLN`);
   lines.push(`👤Кол-во клиентов: <b>${uniqueCustomersCount}</b>`);
   lines.push(`⚙️Продано штук: <b>${soldPositionsQty}</b>`);
@@ -736,7 +776,9 @@ export async function processDailyPointStats() {
         }
         continue;
       }
-      if (nowHHMM < sendTime) continue;
+      const sendMinutes = __chunk08.parseWarsawTimeToMinutes(sendTime);
+      const nowMinutes = __chunk08.getWarsawTimeMinutes(now);
+      if (sendMinutes !== null && nowMinutes < sendMinutes) continue;
 
       const telegramDedupeKey = `${String(point?._id || "")}:${dayKey}`;
       const sheetsDedupeKey = `${String(point?._id || "")}:${dayKey}:google_sheets`;

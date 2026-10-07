@@ -22,6 +22,7 @@ import PickupPoint from "../../../models/PickupPoint.js";
 import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
+import { getOrderStatsFulfillmentKind } from "./orderStatsDay.js";
 import crmRouter from "../../../routes/crm.js";
 
 const APP_URL = String(
@@ -1090,6 +1091,41 @@ export async function restoreCommittedOrderStock(
   }
 
   return true;
+}
+
+/** Кур’єр: «🚚 Заказ доставлен» — день у статистиці (deliveredAt). */
+export async function markCourierOrderDeliveredByManager(
+  order,
+  managerTelegramId = ""
+) {
+  if (!order) {
+    throw new Error("ORDER_NOT_FOUND");
+  }
+
+  if (getOrderStatsFulfillmentKind(order) !== "courier") {
+    throw new Error("ORDER_IS_NOT_COURIER");
+  }
+
+  const fresh = await Order.findById(order._id);
+  if (!fresh) {
+    throw new Error("ORDER_NOT_FOUND");
+  }
+
+  if (fresh.deliveredAt) {
+    return fresh;
+  }
+
+  const status = String(fresh.status || "").trim().toLowerCase();
+  if (!["completed", "done"].includes(status)) {
+    throw new Error("COURIER_ORDER_NOT_COMPLETED");
+  }
+
+  fresh.deliveredAt = new Date();
+  fresh.managerEditedAt = new Date();
+  fresh.managerEditedByTelegramId = String(managerTelegramId || "").trim();
+  await fresh.save();
+
+  return await Order.findById(fresh._id);
 }
 
 export async function changePickupOrderStatusByManager(

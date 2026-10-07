@@ -49,6 +49,15 @@ export async function ensureDbIndexes() {
           },
         }
       ),
+      Order.collection.createIndex(
+        { deliveryMethod: 1, deliveredAt: -1 },
+        {
+          name: "order_courier_delivered_at",
+          partialFilterExpression: {
+            deliveredAt: { $type: "date" },
+          },
+        }
+      ),
       User.collection.createIndex(
         { "referral.code": 1 },
         { name: "user_referral_code", sparse: true }

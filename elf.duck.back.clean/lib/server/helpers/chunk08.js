@@ -851,6 +851,32 @@ export function getWarsawTimeHHMM(dateLike = new Date()) {
   return `${hour}:${minute}`;
 }
 
+export function parseWarsawTimeToMinutes(hhmm) {
+  const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+export function getWarsawTimeMinutes(dateLike = new Date()) {
+  return parseWarsawTimeToMinutes(getWarsawTimeHHMM(dateLike)) ?? 0;
+}
+
+/** Сума позицій замовлення (без доставки), для звірки з «касою». */
+export function getOrderItemsSubtotalZl(order) {
+  let sum = 0;
+  for (const row of order?.items || []) {
+    for (const flavor of row?.flavors || []) {
+      const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
+      if (!qty) continue;
+      sum += qty * Number(flavor?.unitPrice || 0);
+    }
+  }
+  return Number(sum.toFixed(2));
+}
+
 export function getPointStatsSendTime(point, dateLike = new Date()) {
   const todayKey = getWarsawDayKey(dateLike);
 
@@ -893,14 +919,7 @@ export function getOrderPointMatch(point) {
   };
 }
 
-export function shouldCountOrderInDailyStats(order) {
-  if (!order) return false;
-
-  const status = String(order?.status || "").trim().toLowerCase();
-
-  if (["canceled", "annulled"].includes(status)) return false;
-  return ["completed", "done"].includes(status);
-}
+export { shouldCountOrderInDailyStats } from "./orderStatsDay.js";
 
 /** Smart price + SALE (base − paid), без реферальной части */
 export function getOrderSmartDiscountTotalZl(order) {
@@ -997,9 +1016,37 @@ export function getOrderSheetsDiscountTotalZl(order) {
   return Number((cashback + referral + salePromo).toFixed(2));
 }
 
-/** PLN amount managers see as «Касса» in daily warehouse stats (may differ from order.totalZl). */
+const KASA_PLN_SANITY_RATIO = 1.15;
+
+function clampKasaToOrderTotalZl(kasaPln, totalZl) {
+  const kasa = Number(kasaPln || 0);
+  const total = Number(totalZl || 0);
+  if (total <= 0 || kasa <= 0) return kasa;
+  if (kasa > total * KASA_PLN_SANITY_RATIO) {
+    return Number(total.toFixed(2));
+  }
+  return Number(kasa.toFixed(2));
+}
+
+/**
+ * PLN «Касса» для Telegram / звірок.
+ * База — order.totalZl (і залишок після кешбеку); foreign display конвертується в PLN.
+ * Якщо в payment лишилось UAH-суму з currency=PLN — обрізаємо до totalZl.
+ */
 export function getOrderKasaPlnZl(order) {
   const payment = order?.payment || {};
+  const totalZl = Number(order?.totalZl || 0);
+
+  if (payment?.cashbackFullyPaid === true) {
+    return 0;
+  }
+
+  const cashbackAppliedZl = Number(payment?.cashbackAppliedZl || 0);
+  const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
+
+  if (cashbackAppliedZl > 0 && cashbackRemainingToPayZl >= 0) {
+    return clampKasaToOrderTotalZl(cashbackRemainingToPayZl, totalZl);
+  }
 
   const managerDisplayCurrency = String(payment?.managerDisplayCurrency || "PLN")
     .trim()
@@ -1007,33 +1054,32 @@ export function getOrderKasaPlnZl(order) {
 
   const managerDisplayAmount = Number(payment?.managerDisplayAmount || 0);
   const managerDisplayRate = Number(payment?.managerDisplayRate || 0);
-  const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
-  const totalZl = Number(order?.totalZl || 0);
-
-  if (cashbackRemainingToPayZl > 0) {
-    return cashbackRemainingToPayZl;
-  }
-
-  if (managerDisplayCurrency === "PLN") {
-    if (managerDisplayAmount > 0) return managerDisplayAmount;
-    return totalZl;
-  }
 
   if (managerDisplayCurrency === "UAH") {
     if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
-      return Number((managerDisplayAmount / managerDisplayRate).toFixed(2));
+      return clampKasaToOrderTotalZl(
+        managerDisplayAmount / managerDisplayRate,
+        totalZl
+      );
     }
-    return totalZl;
+    return Number(totalZl.toFixed(2));
   }
 
   if (managerDisplayCurrency === "USDT") {
     if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
-      return Number((managerDisplayAmount * managerDisplayRate).toFixed(2));
+      return clampKasaToOrderTotalZl(
+        managerDisplayAmount * managerDisplayRate,
+        totalZl
+      );
     }
-    return totalZl;
+    return Number(totalZl.toFixed(2));
   }
 
-  return totalZl;
+  if (managerDisplayAmount > 0) {
+    return clampKasaToOrderTotalZl(managerDisplayAmount, totalZl);
+  }
+
+  return Number(totalZl.toFixed(2));
 }
 
 export function allocateCashbackBySubtotal(orderTotal, orderCashback, itemSubtotal) {

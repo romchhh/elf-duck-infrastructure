@@ -198,6 +198,9 @@ const orderSchema = new mongoose.Schema(
     
     completedAt: { type: Date, default: null },
 
+    /** Кур’єр: момент «🚚 Заказ доставлен» (день у статистиці). */
+    deliveredAt: { type: Date, default: null },
+
     shippedAt: { type: Date, default: null },
 
     canceledAt: { type: Date, default: null },

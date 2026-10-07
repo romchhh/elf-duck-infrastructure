@@ -3079,6 +3079,51 @@ if (
     }
   );
 
+  activeBot.action(/mgr_order_completed_done:(.+)/, async (ctx) => {
+    try {
+      const order = await findOrderForManagerCallback(
+        ctx.match?.[1],
+        ctx
+      );
+      if (!order) return;
+
+      const isCourier =
+        String(order?.deliveryType || "").trim().toLowerCase() ===
+          "delivery" &&
+        String(order?.deliveryMethod || "").trim().toLowerCase() ===
+          "courier";
+
+      if (!isCourier) {
+        await answerManagerCallbackQuery(ctx, "Статус уже обновлён");
+        return;
+      }
+
+      if (order?.deliveredAt) {
+        await answerManagerCallbackQuery(ctx, "Заказ уже доставлен");
+        return;
+      }
+
+      const updated = await markCourierOrderDeliveredByManager(
+        order,
+        String(ctx.from?.id || "")
+      );
+
+      await refreshManagerOrderMessage(updated);
+      await answerManagerCallbackQuery(ctx, "Заказ отмечен как доставленный");
+    } catch (e) {
+      console.error("mgr_order_completed_done error:", e);
+      await answerManagerCallbackQuery(
+        ctx,
+        "Не удалось отметить доставку",
+        { show_alert: true }
+      );
+    }
+  });
+
+  activeBot.action(/mgr_order_shipped_done:(.+)/, async (ctx) => {
+    await answerManagerCallbackQuery(ctx, "Заказ уже отправлен");
+  });
+
   activeBot.action(/mgr_order_completed:(.+)/, async (ctx) => {
     try {
       const order = await findOrderForManagerCallback(
