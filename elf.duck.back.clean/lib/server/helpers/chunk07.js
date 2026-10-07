@@ -1353,15 +1353,15 @@ export async function changePickupOrderStatusByManager(
   const completedOrder = await Order.findById(fresh._id);
 
   try {
-    const { ensureGoogleSheetAssortmentForCompletedOrder } = await import(
+    const { ensureGoogleSheetAssortmentForFulfilledOrder } = await import(
       "../../googleSheets/orderSync.js"
     );
-    ensureGoogleSheetAssortmentForCompletedOrder(completedOrder);
+    ensureGoogleSheetAssortmentForFulfilledOrder(completedOrder);
 
-    const { ensureGoogleSheetReportForCompletedOrder } = await import(
+    const { ensureGoogleSheetReportForFulfilledOrder } = await import(
       "../../googleSheets/reportOrderSync.js"
     );
-    ensureGoogleSheetReportForCompletedOrder(completedOrder);
+    ensureGoogleSheetReportForFulfilledOrder(completedOrder);
   } catch (e) {
     console.error(
       "changePickupOrderStatusByManager googleSheets hook error:",

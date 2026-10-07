@@ -1023,11 +1023,14 @@ export async function processDailyPointStats() {
         now
       );
 
+      const wolaSendMinutes = __chunk08.parseWarsawTimeToMinutes(wolaSendTime);
+      const inpostSendMinutes = __chunk08.parseWarsawTimeToMinutes(inpostSendTime);
+      const nowMinutesShared = __chunk08.getWarsawTimeMinutes(now);
       const bothPointsReady =
-        wolaSendTime &&
-        inpostSendTime &&
-        nowHHMM >= wolaSendTime &&
-        nowHHMM >= inpostSendTime;
+        wolaSendMinutes !== null &&
+        inpostSendMinutes !== null &&
+        nowMinutesShared >= wolaSendMinutes &&
+        nowMinutesShared >= inpostSendMinutes;
 
       if (bothPointsReady) {
         const [wolaOrders, inpostOrders] = await Promise.all([

@@ -203,13 +203,55 @@ export function headerMatchesWanted(header, wantedSet) {
  */
 export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
   "chaser-for-pods-30-ml": {
-    "l-ch": ["Лічі", "Личі", "Litchi", "Lychee"],
-    "litchi": ["Лічі", "Личі"],
-    "lychee": ["Лічі", "Личі"],
+    "l-ch": ["Личи", "Лічі", "Личі", "Litchi", "Lychee"],
+    "lichi": ["Личи", "Лічі", "Личі", "Litchi", "Lychee"],
+    "litchi": ["Личи", "Лічі", "Личі"],
+    "lychee": ["Личи", "Лічі", "Личі"],
   },
   "vozol-prime-30-ml": {
     "bluebbery-watermelon": ["BLUEBBERY WATERMELON", "Blueberry Watermelon"],
     "blueberry-watermelon": ["BLUEBBERY WATERMELON", "Blueberry Watermelon"],
+    "vanilla-cream-tobacco": [
+      "Vanilla Cream Tobacco",
+      "Vanilla cream tobacco",
+      "VANILLA CREAM TOBACCO",
+    ],
+  },
+  "elfliq-30-ml": {
+    "blackcurrant-aniseed": [
+      "Blackcurrant anissed",
+      "Blackcurrant Anissed",
+      "Blackcurrant Aniseed",
+    ],
+  },
+  "puffy-30-ml": {
+    "kiwi-berry": ["Berri kiwi", "Berry kiwi", "Kiwi Berry"],
+  },
+  "chaser-black-30-ml": {
+    "kiwi-wild-strawberry": [
+      "Kiwi Wild Strawberry",
+      "Wld Strawberry Kiwi",
+      "Wild Strawberry Kiwi",
+    ],
+    "triple-raspberry": ["Tripple Raspberry", "Triple Raspberry"],
+    "blackberry-sour-raspberry": [
+      "Blackberry Sour Rasp",
+      "Blackberry Sour Raspberry",
+    ],
+    "blue-raz-apple": ["Blue Raz Apple", "Blue Razz Apple"],
+  },
+  "chaser-black-30-ml-2": {
+    "kiwi-wild-strawberry": [
+      "Kiwi Wild Strawberry",
+      "Wld Strawberry Kiwi",
+      "Wild Strawberry Kiwi",
+    ],
+    "triple-raspberry": ["Tripple Raspberry", "Triple Raspberry"],
+    "blackcurrant-peach-apple": [
+      "Blackcurrant Peach Apple",
+      "Black Currant Peach Apple",
+    ],
+    "blue-raz-apple": ["Blue Raz Apple", "Blue Razz Apple"],
   },
 };
 

@@ -218,20 +218,36 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
   return result;
 }
 
-/** Після «виконано»: асортимент (склад) у Google Sheets, один раз на замовлення. */
-export function ensureGoogleSheetAssortmentForCompletedOrder(order) {
-  if (!order?._id || !isGoogleSheetsEnabled()) return;
+/** Чи час списувати АССОРТИМЕНТ: pickup/courier — completed; InPost — shipped. */
+export function orderQualifiesForAssortmentGoogleSync(order) {
+  if (!order) return false;
 
-  const status = String(order?.status || "")
-    .trim()
-    .toLowerCase();
-  if (status !== "completed" && status !== "done") return;
+  const status = String(order?.status || "").trim().toLowerCase();
+  const deliveryType = String(order?.deliveryType || "").trim().toLowerCase();
+  const deliveryMethod = String(order?.deliveryMethod || "").trim().toLowerCase();
+
+  if (deliveryType === "delivery" && deliveryMethod === "inpost") {
+    return status === "shipped" && Boolean(order?.shippedAt);
+  }
+
+  return status === "completed" || status === "done";
+}
+
+/** Після виконання / відправлення InPost: асортимент у Google Sheets, один раз на замовлення. */
+export function ensureGoogleSheetAssortmentForFulfilledOrder(order) {
+  if (!order?._id || !isGoogleSheetsEnabled()) return;
+  if (!orderQualifiesForAssortmentGoogleSync(order)) return;
 
   if (order?.googleSheetSync?.appliedAt && !order?.googleSheetSync?.reversedAt) {
     return;
   }
 
   queueGoogleSheetApplyForOrder(order);
+}
+
+/** @deprecated alias */
+export function ensureGoogleSheetAssortmentForCompletedOrder(order) {
+  ensureGoogleSheetAssortmentForFulfilledOrder(order);
 }
 
 export async function reverseOrderOnGoogleSheets(order, options = {}) {

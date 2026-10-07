@@ -39,6 +39,7 @@ function arg(name) {
 const pointKeyArg = arg("--point");
 const allPoints = args.includes("--all-points");
 const asJson = args.includes("--json");
+const summaryJson = args.includes("--summary-json");
 const includeInactive = args.includes("--include-inactive");
 
 if (!allPoints && !pointKeyArg) {
@@ -237,8 +238,27 @@ function dedupeByKey(list, keyFn) {
   return out;
 }
 
-if (asJson) {
-  console.log(JSON.stringify(reportByPoint, null, 2));
+if (summaryJson || asJson) {
+  const payload = summaryJson
+    ? Object.fromEntries(
+        Object.entries(reportByPoint).map(([k, rep]) => [
+          k,
+          {
+            spreadsheetId: rep.spreadsheetId,
+            reason: rep.reason,
+            modelsOk: rep.modelsOk,
+            modelsMissing: rep.modelsMissing,
+            flavorsOk: rep.flavorsOk,
+            flavorsMissing: rep.flavorsMissing,
+            modelMissingUnique: rep.modelMissingUnique,
+            flavorMissingKeys: (rep.flavorMissing || []).map(
+              (f) => `${f.productKey}/${f.flavorKey}`
+            ),
+          },
+        ])
+      )
+    : reportByPoint;
+  console.log(JSON.stringify(payload, null, summaryJson ? 0 : 2));
 } else {
   for (const [pointKey, rep] of Object.entries(reportByPoint)) {
     if (rep.reason) {

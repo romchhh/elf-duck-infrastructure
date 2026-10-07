@@ -518,6 +518,24 @@ export async function completeInpostShipment(
     freshOrder
   );
 
+  if (!wasAlreadyShipped) {
+    try {
+      const { ensureGoogleSheetAssortmentForFulfilledOrder } = await import(
+        "../../googleSheets/orderSync.js"
+      );
+      const { ensureGoogleSheetReportForFulfilledOrder } = await import(
+        "../../googleSheets/reportOrderSync.js"
+      );
+      ensureGoogleSheetAssortmentForFulfilledOrder(freshOrder);
+      ensureGoogleSheetReportForFulfilledOrder(freshOrder);
+    } catch (sheetHookErr) {
+      console.error(
+        "completeInpostShipment googleSheets hook error:",
+        sheetHookErr
+      );
+    }
+  }
+
   return freshOrder;
 }
 

@@ -9,7 +9,10 @@ import {
   applyReportModelDelta,
   reportTabTitleForDayKey,
 } from "./dailyReportGrid.js";
-import { resolveOrderPointKey } from "./orderSync.js";
+import {
+  orderQualifiesForAssortmentGoogleSync,
+  resolveOrderPointKey,
+} from "./orderSync.js";
 import { getOrderSheetsDiscountTotalZl } from "../server/helpers/chunk08.js";
 import { getOrderStatsDayKey } from "../server/helpers/orderStatsDay.js";
 import {
@@ -239,14 +242,10 @@ export async function reverseOrderReportOnGoogleSheets(order, options = {}) {
   return result;
 }
 
-/** Після «виконано»: tiers + СКИДКИ в ОТЧЁТ (окремо від АССОРТИМЕНТ). */
-export function ensureGoogleSheetReportForCompletedOrder(order) {
+/** Після виконання / InPost shipped: tiers + СКИДКИ в ОТЧЁТ (окремо від АССОРТИМЕНТ). */
+export function ensureGoogleSheetReportForFulfilledOrder(order) {
   if (!order?._id || !isGoogleSheetsEnabled()) return;
-
-  const status = String(order?.status || "")
-    .trim()
-    .toLowerCase();
-  if (status !== "completed" && status !== "done") return;
+  if (!orderQualifiesForAssortmentGoogleSync(order)) return;
 
   if (
     order?.googleSheetSync?.reportAppliedAt &&
@@ -256,6 +255,11 @@ export function ensureGoogleSheetReportForCompletedOrder(order) {
   }
 
   queueGoogleSheetReportApplyForOrder(order);
+}
+
+/** @deprecated alias */
+export function ensureGoogleSheetReportForCompletedOrder(order) {
+  ensureGoogleSheetReportForFulfilledOrder(order);
 }
 
 export function queueGoogleSheetReportApplyForOrder(order) {
