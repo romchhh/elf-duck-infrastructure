@@ -149,6 +149,50 @@ export function findAssortmentFlavorRow(rows, block, flavorLabel) {
   return -1;
 }
 
+/** Усі рядки смаків у блоці моделі (як у sync). */
+export function listAssortmentFlavorsInBlock(rows, block) {
+  const flavors = [];
+  const startRow = block.headerRow + 1;
+
+  for (let r = startRow; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const flavorCell = String(row[block.flavorCol] || "").trim();
+    if (!flavorCell) {
+      if (r > startRow + 1 && !row.some((c) => String(c || "").trim())) {
+        break;
+      }
+      continue;
+    }
+    if (/^total\b/i.test(flavorCell)) break;
+    flavors.push(flavorCell);
+  }
+
+  return flavors;
+}
+
+/** Чи знайде sync рядок для смаку з каталогу (ті самі кандидати, що в orderSync). */
+export function matchCatalogFlavorInAssortmentBlock(rows, block, flavor = {}) {
+  const labels = buildAssortmentFlavorSearchLabels({
+    flavorKey: flavor.flavorKey,
+    flavorLabel: flavor.flavorLabel || flavor.label,
+    label: flavor.label,
+  });
+
+  for (const label of labels) {
+    const rowIndex = findAssortmentFlavorRow(rows, block, label);
+    if (rowIndex >= 0) {
+      return {
+        ok: true,
+        matchedLabel: label,
+        sheetLabel: String(rows[rowIndex]?.[block.flavorCol] || "").trim(),
+        rowIndex,
+      };
+    }
+  }
+
+  return { ok: false, triedLabels: labels };
+}
+
 export async function loadAssortmentGrid(spreadsheetId) {
   const range = `${escapeSheetTitle(ASSORTMENT_SHEET_TITLE)}!A1:ZZ200`;
   return readSheetValues(spreadsheetId, range);
