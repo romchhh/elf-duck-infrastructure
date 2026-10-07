@@ -1077,6 +1077,11 @@ export async function restoreCommittedOrderStock(
       "../../googleSheets/orderSync.js"
     );
     queueGoogleSheetReverseForOrder(order);
+
+    const { queueGoogleSheetReportReverseForOrder } = await import(
+      "../../googleSheets/reportOrderSync.js"
+    );
+    queueGoogleSheetReportReverseForOrder(order);
   } catch (e) {
     console.error(
       "restoreCommittedOrderStock googleSheets hook error:",
@@ -1316,6 +1321,11 @@ export async function changePickupOrderStatusByManager(
       "../../googleSheets/orderSync.js"
     );
     ensureGoogleSheetAssortmentForCompletedOrder(completedOrder);
+
+    const { ensureGoogleSheetReportForCompletedOrder } = await import(
+      "../../googleSheets/reportOrderSync.js"
+    );
+    ensureGoogleSheetReportForCompletedOrder(completedOrder);
   } catch (e) {
     console.error(
       "changePickupOrderStatusByManager googleSheets hook error:",

@@ -216,6 +216,10 @@ const orderSchema = new mongoose.Schema(
       reversedAt: { type: Date, default: null },
       syncInProgress: { type: Boolean, default: false },
       lastError: { type: String, default: "" },
+      reportAppliedAt: { type: Date, default: null },
+      reportReversedAt: { type: Date, default: null },
+      reportSyncInProgress: { type: Boolean, default: false },
+      reportLastError: { type: String, default: "" },
     },
 
   },

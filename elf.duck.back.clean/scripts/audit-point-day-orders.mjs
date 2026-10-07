@@ -108,7 +108,8 @@ console.log("—");
 for (const o of dayOrders) {
   const gs = o.googleSheetSync || {};
   const assortOk = Boolean(gs.appliedAt);
-  if (onlyFail && assortOk) continue;
+  const reportOk = Boolean(gs.reportAppliedAt);
+  if (onlyFail && assortOk && reportOk) continue;
 
   const disc = getOrderSheetsDiscountTotalZl(o);
   const sale = getOrderSalePromoDiscountTotalZl(o);
@@ -126,6 +127,7 @@ for (const o of dayOrders) {
 
   const stockOk = Boolean(o.stockCommittedAt);
   const assortErr = !assortOk ? summarizeAssortSyncError(gs) : "";
+  const reportErr = !reportOk ? summarizeAssortSyncError({ lastError: gs.reportLastError }) : "";
 
   console.log(
     `#${o.orderNo}`,
@@ -133,7 +135,9 @@ for (const o of dayOrders) {
     `скидки=${disc.toFixed(2)} (SALE ${sale.toFixed(2)} ref ${ref.toFixed(2)} cb ${cb.toFixed(2)})`,
     `mongoStock=${stockOk ? "OK" : "MISS"}`,
     `assort=${assortOk ? "OK" : "FAIL"}`,
-    assortErr ? `syncReason=${assortErr}` : "",
+    assortErr ? `assortReason=${assortErr}` : "",
+    `report=${reportOk ? "OK" : "FAIL"}`,
+    reportErr ? `reportReason=${reportErr}` : "",
     `statsDay=${getOrderStatsDayKey(o)}`
   );
 }

@@ -12,7 +12,7 @@ import {
 } from "./config.js";
 import { getAssortmentSheetModelName } from "../server/helpers/chunk09.js";
 
-async function resolveOrderPointKey(order) {
+export async function resolveOrderPointKey(order) {
   if (!order) return "";
 
   const explicitKey = String(order?.pickupPointKey || "")
@@ -49,8 +49,8 @@ export async function runGoogleSheetsOrderSync(order, options = {}) {
 }
 
 /**
- * Per-order Google Sheets: only АССОРТИМЕНТ.
- * Day/month tier columns and СКИДКИ — evening sync (writeDayBlockFromAggregates).
+ * Per-order Google Sheets: only АССОРТИМЕНТ (склад).
+ * ОТЧЁТ (tiers + СКИДКИ) — reportOrderSync.js на «виконано»; ввечері ще раз writeDayBlockFromAggregates.
  */
 async function syncOrderItems(order, { direction, dryRun = false }) {
   const pointKey = await resolveOrderPointKey(order);
@@ -193,12 +193,10 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
       { _id: order._id },
       {
         $set: {
-          googleSheetSync: {
-            appliedAt: new Date(),
-            reversedAt: null,
-            syncInProgress: false,
-            lastError: "",
-          },
+          "googleSheetSync.appliedAt": new Date(),
+          "googleSheetSync.reversedAt": null,
+          "googleSheetSync.syncInProgress": false,
+          "googleSheetSync.lastError": "",
         },
       }
     );
@@ -207,12 +205,8 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
       { _id: order._id },
       {
         $set: {
-          googleSheetSync: {
-            appliedAt: order?.googleSheetSync?.appliedAt || null,
-            reversedAt: order?.googleSheetSync?.reversedAt || null,
-            syncInProgress: false,
-            lastError: JSON.stringify(result).slice(0, 500),
-          },
+          "googleSheetSync.syncInProgress": false,
+          "googleSheetSync.lastError": JSON.stringify(result).slice(0, 500),
         },
       }
     );
@@ -260,11 +254,8 @@ export async function reverseOrderOnGoogleSheets(order, options = {}) {
       { _id: order._id },
       {
         $set: {
-          googleSheetSync: {
-            appliedAt: order.googleSheetSync.appliedAt,
-            reversedAt: new Date(),
-            lastError: "",
-          },
+          "googleSheetSync.reversedAt": new Date(),
+          "googleSheetSync.lastError": "",
         },
       }
     );
