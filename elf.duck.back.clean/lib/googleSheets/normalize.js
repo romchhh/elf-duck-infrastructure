@@ -210,6 +210,9 @@ export function flavorMatchesWanted(flavorCell, wantedCompact) {
     cellTokens.some((c) => c === t || c.includes(t) || t.includes(c))
   ).length;
 
-  const need = Math.max(2, wantedTokens.length - 1);
+  let need = Math.max(2, wantedTokens.length - 1);
+  if (wantedTokens.length === 3) {
+    need = 2;
+  }
   return overlap >= need;
 }

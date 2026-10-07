@@ -81,6 +81,19 @@ export function findAssortmentBlockForModel(rows, modelName, productKey = "") {
   return null;
 }
 
+function flavorSlugToTitleLabel(slug = "") {
+  return String(slug || "")
+    .split(/[-_/]/)
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
+      if (lower.length <= 2) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ")
+    .trim();
+}
+
 /** Labels to try when matching a flavor row (order field variants + slug from flavorKey). */
 export function buildAssortmentFlavorSearchLabels(flavor = {}) {
   const candidates = [];
@@ -97,10 +110,13 @@ export function buildAssortmentFlavorSearchLabels(flavor = {}) {
 
   const fk = String(flavor?.flavorKey || "").trim();
   if (fk) {
+    push(flavorSlugToTitleLabel(fk));
+
     const segments = fk.split(/[-_/]/).filter(Boolean);
     const last = segments[segments.length - 1];
     if (last && last.length > 2) {
       push(last.replace(/-/g, " "));
+      push(flavorSlugToTitleLabel(last));
     }
     push(fk.replace(/[-_]/g, " "));
   }

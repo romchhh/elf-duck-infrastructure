@@ -174,7 +174,7 @@ function formatDailyStatsProductTierLine(tierBuckets) {
       return `<code>${tier}</code> <b>${n}</b>`;
     });
 
-  return parts.join(" <> ");
+  return parts.join(" &lt;&gt; ");
 }
 
 function formatDailyStatsDisplayTitle(productRow = {}) {

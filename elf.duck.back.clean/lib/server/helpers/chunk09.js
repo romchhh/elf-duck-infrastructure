@@ -134,6 +134,19 @@ const STATS_REPORT_MODEL_BY_PRODUCT_KEY = {
   "puffy-30-ml-70-mg": "PUFFY 7%",
 };
 
+/** Перший заголовок блоку на листі АССОРТИМЕНТ (LIQ …). */
+const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
+  "vozol-prime-30-ml": "LIQ VOZOL PRIME",
+  "elfliq-30-ml": "LIQ ELFLIQ",
+  "hqd-30-ml": "LIQ HQD",
+  "ethereum-30-ml": "LIQ ETHEREUM",
+  "chaser-special-30-ml": "LIQ SPECIAL",
+  "chaser-black-30-ml": "LIQ BLACK",
+  "chaser-for-pods-30-ml": "LIQ FOR PODS",
+  "puffy-30-ml": "LIQ PUFFY 5%",
+  "puffy-30-ml-70-mg": "LIQ PUFFY 7%",
+};
+
 const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([
   "puffy-30-ml",
   "puffy-30-ml-70-mg",
@@ -142,6 +155,9 @@ const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([
 /** Назва для пошуку блоку на листі АССОРТИМЕНТ (разом із productKey у normalize). */
 export function getAssortmentSheetModelName(row = {}) {
   const pk = String(row?.productKey || "").trim().toLowerCase();
+  if (ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY[pk]) {
+    return ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY[pk];
+  }
   if (STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk]) {
     return STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk];
   }
