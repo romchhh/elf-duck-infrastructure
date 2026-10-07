@@ -815,8 +815,11 @@ export async function processOrdersWithoutPaymentConfirm() {
 //   }
 // }
 
+/** Чат для вечірньої СТАТИСТИКИ ДНЯ; якщо statsChatId порожній — канал замовлень. */
 export function getPointStatsChatId(point) {
-  return String(point?.statsChatId || "").trim();
+  const statsChatId = String(point?.statsChatId || "").trim();
+  if (statsChatId) return statsChatId;
+  return String(point?.notificationChatId || "").trim();
 }
 
 export function getWarsawDayKey(dateLike = new Date()) {

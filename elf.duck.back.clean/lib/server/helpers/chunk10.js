@@ -540,7 +540,18 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
     if (!bot || !point) return { ok: false, reason: "NO_BOT_OR_POINT" };
 
     let chatId = getPointStatsChatId(point);
-    if (!chatId) return { ok: false, reason: "NO_STATS_CHAT" };
+    if (!chatId) {
+      console.warn("[DAILY STATS][NO_CHAT]", {
+        pointKey: String(point?.key || ""),
+        statsChatId: String(point?.statsChatId || ""),
+        notificationChatId: String(point?.notificationChatId || ""),
+      });
+      return { ok: false, reason: "NO_STATS_CHAT" };
+    }
+
+    const statsChatConfigured = Boolean(
+      String(point?.statsChatId || "").trim()
+    );
 
     const fullText = buildDailyStatsMessage(point, orders, dayKey, extra);
 
@@ -611,10 +622,11 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
 
       const nextChatId = String(migratedChatId).trim();
 
-      await PickupPoint.updateOne(
-        { _id: point._id },
-        { $set: { statsChatId: nextChatId } }
-      );
+      const chatIdUpdate = statsChatConfigured
+        ? { statsChatId: nextChatId }
+        : { notificationChatId: nextChatId };
+
+      await PickupPoint.updateOne({ _id: point._id }, { $set: chatIdUpdate });
 
       chatId = nextChatId;
       await sendAllParts(chatId);
@@ -627,8 +639,15 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
       };
     }
   } catch (e) {
-    console.error("sendDailyPointStats error:", e);
-    return { ok: false, reason: "SEND_ERROR" };
+    console.error("sendDailyPointStats error:", {
+      pointKey: String(point?.key || ""),
+      description: e?.response?.description || e?.message || e,
+    });
+    return {
+      ok: false,
+      reason: "SEND_ERROR",
+      description: e?.response?.description || e?.message || String(e),
+    };
   }
 }
 
@@ -703,7 +722,20 @@ export async function processDailyPointStats() {
 
       const sendTime = getPointStatsSendTime(point, now);
 
-      if (!sendTime) continue;
+      if (!sendTime) {
+        const todayKey = getWarsawDayKey(now);
+        const rawSchedule =
+          point?.scheduleByDate?.[todayKey] ||
+          point?.scheduleByDate?.get?.(todayKey) ||
+          null;
+        if (rawSchedule?.isOpen === false) {
+          console.log("[DAILY STATS][SKIP CLOSED]", {
+            pointKey: String(point?.key || ""),
+            dayKey,
+          });
+        }
+        continue;
+      }
       if (nowHHMM < sendTime) continue;
 
       const telegramDedupeKey = `${String(point?._id || "")}:${dayKey}`;
@@ -870,6 +902,11 @@ export async function processDailyPointStats() {
 
           if (!sent?.ok) {
             await releaseDailyStatsDispatch(telegramDedupeKey);
+            console.warn("[DAILY STATS][TELEGRAM FAILED]", {
+              pointKey,
+              dayKey,
+              reason: sent?.reason || sent,
+            });
           }
         }
       }
