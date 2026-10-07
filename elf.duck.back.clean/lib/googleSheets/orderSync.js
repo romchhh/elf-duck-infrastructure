@@ -1,7 +1,10 @@
 import Order from "../../models/Order.js";
 import PickupPoint from "../../models/PickupPoint.js";
 import { getOrderStatsDayKey } from "../server/helpers/orderStatsDay.js";
-import { applyAssortmentDelta } from "./assortmentGrid.js";
+import {
+  applyAssortmentDelta,
+  buildAssortmentFlavorSearchLabels,
+} from "./assortmentGrid.js";
 import { reportTabTitleForDayKey } from "./dailyReportGrid.js";
 import {
   isGoogleSheetsEnabled,
@@ -72,16 +75,21 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
 
   const results = [];
   const appliedDeltas = [];
+  let syncFailed = false;
 
   for (const row of order?.items || []) {
+    if (syncFailed) break;
+
     const modelName = getAssortmentSheetModelName(row);
 
     for (const flavor of row?.flavors || []) {
+      if (syncFailed) break;
+
       const flavorQty = Math.max(0, Number(flavor?.qty || 0));
       if (!flavorQty) continue;
 
-      const flavorLabel =
-        flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "";
+      const flavorLabels = buildAssortmentFlavorSearchLabels(flavor);
+      const flavorLabel = flavorLabels[0] || "";
       const deltaQty = sign * flavorQty;
 
       const assortmentResult = await applyAssortmentDelta({
@@ -91,6 +99,7 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
         modelName,
         productKey: row?.productKey,
         flavorLabel,
+        flavorLabelCandidates: flavorLabels.slice(1),
         deltaQty,
         dryRun,
       });
@@ -104,21 +113,24 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
           dayKey,
           modelName,
           productKey: row?.productKey,
-          flavorLabel,
+          flavorLabel: assortmentResult.matchedFlavorLabel || flavorLabel,
           deltaQty,
         });
-      } else if (!assortmentResult?.ok && !dryRun && appliedDeltas.length) {
-        for (const prev of appliedDeltas) {
-          try {
-            await applyAssortmentDelta({
-              ...prev,
-              deltaQty: -prev.deltaQty,
-            });
-          } catch (e) {
-            console.error("[googleSheets] assortment rollback error:", e);
+      } else if (!assortmentResult?.ok) {
+        if (!dryRun && appliedDeltas.length) {
+          for (const prev of appliedDeltas) {
+            try {
+              await applyAssortmentDelta({
+                ...prev,
+                deltaQty: -prev.deltaQty,
+              });
+            } catch (e) {
+              console.error("[googleSheets] assortment rollback error:", e);
+            }
           }
+          appliedDeltas.length = 0;
         }
-        appliedDeltas.length = 0;
+        syncFailed = true;
       }
     }
   }

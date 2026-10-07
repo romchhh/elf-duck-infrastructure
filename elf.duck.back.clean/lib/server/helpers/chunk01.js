@@ -132,6 +132,54 @@ export async function sendManagerRelayToClient(clientMessageState, messageText) 
   );
 }
 
+const MANAGER_CLIENT_MESSAGE_CONFIRM_VISIBLE_MS = Number(
+  process.env.MANAGER_CLIENT_MESSAGE_CONFIRM_VISIBLE_MS || 3500
+);
+
+async function cleanupManagerClientMessageThread(
+  telegram,
+  {
+    managerChatId,
+    instructionMessageId,
+    managerMessageId,
+    confirmationMessageId,
+  }
+) {
+  const chatId = String(managerChatId || "").trim();
+  if (!chatId || !telegram?.deleteMessage) return;
+
+  const deleteIds = async (ids) => {
+    const messageIds = ids
+      .map((id) => Number(id || 0))
+      .filter((id) => id > 0);
+
+    const results = await Promise.allSettled(
+      messageIds.map((messageId) => telegram.deleteMessage(chatId, messageId))
+    );
+
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        console.warn("[MANAGER CLIENT MESSAGE][cleanup failed]", {
+          managerChatId: chatId,
+          messageId: messageIds[index],
+          error:
+            result.reason?.response?.description ||
+            result.reason?.message ||
+            result.reason,
+        });
+      }
+    });
+  };
+
+  await deleteIds([instructionMessageId, managerMessageId]);
+
+  await new Promise((resolve) =>
+    setTimeout(resolve, MANAGER_CLIENT_MESSAGE_CONFIRM_VISIBLE_MS)
+  );
+
+  await deleteIds([confirmationMessageId]);
+}
+
 export const handleManagerClientMessageText =
   async (ctx, next) => {
 const incomingMessage =
@@ -315,9 +363,19 @@ const resolvedByManager =
 
       }
 
-      await ctx.reply(
+      const confirmationMessage = await ctx.reply(
         "✅ Сообщение отправлено клиенту."
       );
+
+      void cleanupManagerClientMessageThread(ctx.telegram, {
+        managerChatId:
+          clientMessageState?.managerChatId || currentChatId,
+        instructionMessageId: clientMessageState?.instructionMessageId,
+        managerMessageId: incomingMessage?.message_id,
+        confirmationMessageId: confirmationMessage?.message_id,
+      }).catch((error) => {
+        console.warn("[MANAGER CLIENT MESSAGE][cleanup error]", error);
+      });
 
       return;
     } catch (error) {

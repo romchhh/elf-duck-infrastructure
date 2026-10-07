@@ -81,6 +81,33 @@ export function findAssortmentBlockForModel(rows, modelName, productKey = "") {
   return null;
 }
 
+/** Labels to try when matching a flavor row (order field variants + slug from flavorKey). */
+export function buildAssortmentFlavorSearchLabels(flavor = {}) {
+  const candidates = [];
+  const push = (v) => {
+    const s = String(v || "").trim();
+    if (s && !candidates.some((c) => compactSheetFlavor(c) === compactSheetFlavor(s))) {
+      candidates.push(s);
+    }
+  };
+
+  push(flavor?.flavorLabel);
+  push(flavor?.label);
+  push(flavor?.flavorKey);
+
+  const fk = String(flavor?.flavorKey || "").trim();
+  if (fk) {
+    const segments = fk.split(/[-_/]/).filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (last && last.length > 2) {
+      push(last.replace(/-/g, " "));
+    }
+    push(fk.replace(/[-_]/g, " "));
+  }
+
+  return candidates;
+}
+
 export function findAssortmentFlavorRow(rows, block, flavorLabel) {
   const wanted = compactSheetFlavor(flavorLabel);
   const startRow = block.headerRow + 1;
@@ -118,6 +145,7 @@ export async function applyAssortmentDelta({
   modelName,
   productKey,
   flavorLabel,
+  flavorLabelCandidates = [],
   deltaQty,
   dryRun = false,
 }) {
@@ -126,6 +154,8 @@ export async function applyAssortmentDelta({
     return { ok: false, reason: "SHEETS_DISABLED" };
   }
 
+  const headerCandidates = toAssortmentHeaderCandidates(modelName, productKey);
+
   const block = findAssortmentBlockForModel(rows, modelName, productKey);
   if (!block) {
     await logSyncError(spreadsheetId, {
@@ -133,6 +163,8 @@ export async function applyAssortmentDelta({
       dayKey,
       reason: "MODEL_BLOCK_NOT_FOUND",
       modelName,
+      productKey: productKey || "",
+      headerCandidates: headerCandidates.join(" | "),
       normalizedModel: normalizeSheetModelName(modelName),
       flavorLabel,
       normalizedFlavor: compactSheetFlavor(flavorLabel),
@@ -141,19 +173,36 @@ export async function applyAssortmentDelta({
     return { ok: false, reason: "MODEL_BLOCK_NOT_FOUND" };
   }
 
-  const flavorRow = findAssortmentFlavorRow(rows, block, flavorLabel);
+  const flavorLabels = [
+    ...new Set(
+      [flavorLabel, ...flavorLabelCandidates].map((x) => String(x || "").trim()).filter(Boolean)
+    ),
+  ];
+  let flavorRow = -1;
+  let matchedFlavorLabel = flavorLabels[0] || "";
+
+  for (const label of flavorLabels) {
+    flavorRow = findAssortmentFlavorRow(rows, block, label);
+    if (flavorRow >= 0) {
+      matchedFlavorLabel = label;
+      break;
+    }
+  }
+
   if (flavorRow < 0) {
     await logSyncError(spreadsheetId, {
       pointLabel,
       dayKey,
       reason: "FLAVOR_ROW_NOT_FOUND",
       modelName,
+      productKey: productKey || "",
+      headerCandidates: headerCandidates.join(" | "),
       normalizedModel: normalizeSheetModelName(modelName),
-      flavorLabel,
-      normalizedFlavor: compactSheetFlavor(flavorLabel),
+      flavorLabel: flavorLabels.join(" | "),
+      normalizedFlavor: flavorLabels.map((l) => compactSheetFlavor(l)).join(" | "),
     });
 
-    return { ok: false, reason: "FLAVOR_ROW_NOT_FOUND" };
+    return { ok: false, reason: "FLAVOR_ROW_NOT_FOUND", triedLabels: flavorLabels };
   }
 
   const currentQty = parseQty(rows[flavorRow]?.[block.qtyCol]);
@@ -169,6 +218,7 @@ export async function applyAssortmentDelta({
       currentQty,
       nextQty,
       header: block.header,
+      matchedFlavorLabel,
     };
   }
 
@@ -185,6 +235,7 @@ export async function applyAssortmentDelta({
     currentQty,
     nextQty,
     header: block.header,
+    matchedFlavorLabel,
   };
 }
 
@@ -199,7 +250,8 @@ async function logSyncError(spreadsheetId, payload) {
       payload.dayKey || "",
       payload.reason || "",
       payload.modelName || "",
-      payload.normalizedModel || "",
+      payload.productKey || "",
+      payload.headerCandidates || payload.normalizedModel || "",
       payload.flavorLabel || "",
       payload.normalizedFlavor || "",
     ]);

@@ -214,6 +214,7 @@ const orderSchema = new mongoose.Schema(
     googleSheetSync: {
       appliedAt: { type: Date, default: null },
       reversedAt: { type: Date, default: null },
+      syncInProgress: { type: Boolean, default: false },
       lastError: { type: String, default: "" },
     },
 

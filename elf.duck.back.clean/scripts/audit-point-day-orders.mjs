@@ -34,10 +34,35 @@ function arg(name) {
 
 const pointKey = arg("--point");
 const dayKey = arg("--day");
+const onlyFail = args.includes("--only-fail");
+
+function summarizeAssortSyncError(gs = {}) {
+  const raw = String(gs.lastError || "").trim();
+  if (!raw) return "";
+
+  try {
+    const parsed = JSON.parse(raw);
+    const hit = (parsed.results || []).find(
+      (r) => r.assortmentResult && r.assortmentResult.ok === false
+    );
+    if (hit?.assortmentResult?.reason) {
+      return String(hit.assortmentResult.reason);
+    }
+  } catch {
+    // not JSON — fall through
+  }
+
+  const reasonMatch = raw.match(
+    /MODEL_BLOCK_NOT_FOUND|FLAVOR_ROW_NOT_FOUND|NO_SPREADSHEET_FOR_POINT|SYNC_IN_PROGRESS/
+  );
+  if (reasonMatch) return reasonMatch[0];
+
+  return raw.slice(0, 80);
+}
 
 if (!pointKey || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
   console.error(
-    "Usage: node scripts/audit-point-day-orders.mjs --point mokot-w --day YYYY-MM-DD"
+    "Usage: node scripts/audit-point-day-orders.mjs --point mokot-w --day YYYY-MM-DD [--only-fail]"
   );
   process.exit(1);
 }
@@ -81,6 +106,10 @@ console.log({ point: point.key, title: point.title, dayKey, orders: dayOrders.le
 console.log("—");
 
 for (const o of dayOrders) {
+  const gs = o.googleSheetSync || {};
+  const assortOk = Boolean(gs.appliedAt);
+  if (onlyFail && assortOk) continue;
+
   const disc = getOrderSheetsDiscountTotalZl(o);
   const sale = getOrderSalePromoDiscountTotalZl(o);
   const ref = Number(o.payment?.referralFirstOrderDiscountTotalZl || 0);
@@ -92,12 +121,11 @@ for (const o of dayOrders) {
   sumCb += cb;
   sumKasa += kasa;
 
-  const gs = o.googleSheetSync || {};
-  const assortOk = Boolean(gs.appliedAt);
   if (assortOk) syncOk += 1;
   else syncFail += 1;
 
   const stockOk = Boolean(o.stockCommittedAt);
+  const assortErr = !assortOk ? summarizeAssortSyncError(gs) : "";
 
   console.log(
     `#${o.orderNo}`,
@@ -105,7 +133,7 @@ for (const o of dayOrders) {
     `скидки=${disc.toFixed(2)} (SALE ${sale.toFixed(2)} ref ${ref.toFixed(2)} cb ${cb.toFixed(2)})`,
     `mongoStock=${stockOk ? "OK" : "MISS"}`,
     `assort=${assortOk ? "OK" : "FAIL"}`,
-    gs.lastError ? `err=${String(gs.lastError).slice(0, 80)}` : "",
+    assortErr ? `syncReason=${assortErr}` : "",
     `statsDay=${getOrderStatsDayKey(o)}`
   );
 }

@@ -3,6 +3,13 @@
  *
  * docker compose exec api node scripts/retry-google-sheets-assortment.mjs --point mokot-w --day 2026-10-06
  * docker compose exec api node scripts/retry-google-sheets-assortment.mjs --point mokot-w --day 2026-10-06 --dry-run
+ *
+ * Після деплою на VPS (приклад):
+ *   cd ~/elf-duck-infrastructure && git pull && docker compose build api && docker compose up -d api
+ *   docker compose exec api node scripts/audit-point-day-orders.mjs --point mokot-w --day YYYY-MM-DD
+ *   docker compose exec api node scripts/retry-google-sheets-assortment.mjs --point mokot-w --day YYYY-MM-DD
+ * Якщо retry лишається FAIL — відкрийте лист SYNC_ERRORS у spreadsheet точки (MODEL_BLOCK_NOT_FOUND / FLAVOR_ROW_NOT_FOUND).
+ * Усі точки за день: scripts/resync-google-sheets-day-all-points.mjs (асортимент через retry у складі скрипта).
  */
 import dotenv from "dotenv";
 import path from "path";
