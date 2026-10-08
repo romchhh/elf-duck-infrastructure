@@ -52,6 +52,10 @@ export async function runGoogleSheetsOrderSync(order, options = {}) {
  * Per-order Google Sheets: only АССОРТИМЕНТ (склад).
  * ОТЧЁТ (tiers + СКИДКИ) — reportOrderSync.js на «виконано»; ввечері ще раз writeDayBlockFromAggregates.
  */
+function assortmentStepId(productKey, flavorKey) {
+  return `${String(productKey || "").trim().toLowerCase()}|${String(flavorKey || "").trim().toLowerCase()}`;
+}
+
 async function syncOrderItems(order, { direction, dryRun = false }) {
   const pointKey = await resolveOrderPointKey(order);
   const spreadsheetId = resolveSpreadsheetIdForPointKey(pointKey);
@@ -74,19 +78,61 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
   const sign = direction === "reverse" ? 1 : -1;
 
   const results = [];
-  const appliedDeltas = [];
-  let syncFailed = false;
+  const newSteps = [];
+  const priorSteps = Array.isArray(order?.googleSheetSync?.assortmentAppliedSteps)
+    ? order.googleSheetSync.assortmentAppliedSteps
+    : [];
+  const doneStepIds = new Set(
+    priorSteps.map((s) => assortmentStepId(s.productKey, s.flavorKey))
+  );
+
+  if (direction === "reverse" && priorSteps.length > 0) {
+    for (const step of priorSteps) {
+      const revQty = -Number(step.deltaQty || 0);
+      if (!revQty) continue;
+
+      const assortmentResult = await applyAssortmentDelta({
+        spreadsheetId,
+        pointLabel,
+        dayKey,
+        modelName: getAssortmentSheetModelName({
+          productKey: step.productKey,
+        }),
+        productKey: step.productKey,
+        flavorLabel: step.matchedFlavorLabel,
+        deltaQty: revQty,
+        dryRun,
+      });
+      results.push({ kind: "assortment", assortmentResult });
+    }
+
+    const failed = results.filter(
+      (r) => r.assortmentResult && r.assortmentResult.ok === false
+    );
+
+    return {
+      ok: failed.length === 0,
+      pointKey,
+      spreadsheetId,
+      tabTitle,
+      dayKey,
+      results,
+      newSteps: [],
+      clearAssortmentSteps: failed.length === 0 && !dryRun,
+    };
+  }
 
   for (const row of order?.items || []) {
-    if (syncFailed) break;
-
     const modelName = getAssortmentSheetModelName(row);
 
     for (const flavor of row?.flavors || []) {
-      if (syncFailed) break;
-
       const flavorQty = Math.max(0, Number(flavor?.qty || 0));
       if (!flavorQty) continue;
+
+      const stepId = assortmentStepId(row?.productKey, flavor?.flavorKey);
+      if (direction === "apply" && doneStepIds.has(stepId)) {
+        continue;
+      }
 
       const flavorLabels = buildAssortmentFlavorSearchLabels(
         flavor,
@@ -109,44 +155,33 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
 
       results.push({ kind: "assortment", assortmentResult });
 
-      if (assortmentResult?.ok && !dryRun) {
-        appliedDeltas.push({
-          spreadsheetId,
-          pointLabel,
-          dayKey,
-          modelName,
-          productKey: row?.productKey,
-          flavorLabel: assortmentResult.matchedFlavorLabel || flavorLabel,
+      if (assortmentResult?.ok && !dryRun && direction === "apply") {
+        newSteps.push({
+          productKey: String(row?.productKey || ""),
+          flavorKey: String(flavor?.flavorKey || ""),
+          matchedFlavorLabel:
+            assortmentResult.matchedFlavorLabel || flavorLabel,
           deltaQty,
         });
-      } else if (!assortmentResult?.ok) {
-        if (!dryRun && appliedDeltas.length) {
-          for (const prev of appliedDeltas) {
-            try {
-              await applyAssortmentDelta({
-                ...prev,
-                deltaQty: -prev.deltaQty,
-              });
-            } catch (e) {
-              console.error("[googleSheets] assortment rollback error:", e);
-            }
-          }
-          appliedDeltas.length = 0;
-        }
-        syncFailed = true;
+        doneStepIds.add(stepId);
       }
     }
   }
 
-  const failed = results.filter((r) => r.assortmentResult && r.assortmentResult.ok === false);
+  const failed = results.filter(
+    (r) => r.assortmentResult && r.assortmentResult.ok === false
+  );
 
   return {
     ok: failed.length === 0,
+    partial: failed.length > 0 && newSteps.length > 0,
     pointKey,
     spreadsheetId,
     tabTitle,
     dayKey,
     results,
+    newSteps,
+    mergedStepCount: priorSteps.length + newSteps.length,
   };
 }
 
@@ -192,6 +227,12 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
   });
 
   if (!options?.dryRun && result.ok) {
+    const mergedSteps = [
+      ...(Array.isArray(order?.googleSheetSync?.assortmentAppliedSteps)
+        ? order.googleSheetSync.assortmentAppliedSteps
+        : []),
+      ...(result.newSteps || []),
+    ];
     await Order.updateOne(
       { _id: order._id },
       {
@@ -200,16 +241,33 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
           "googleSheetSync.reversedAt": null,
           "googleSheetSync.syncInProgress": false,
           "googleSheetSync.lastError": "",
+          "googleSheetSync.assortmentAppliedSteps": mergedSteps,
         },
       }
     );
   } else if (!options?.dryRun && !result.ok) {
+    const mergedSteps = [
+      ...(Array.isArray(order?.googleSheetSync?.assortmentAppliedSteps)
+        ? order.googleSheetSync.assortmentAppliedSteps
+        : []),
+      ...(result.newSteps || []),
+    ];
     await Order.updateOne(
       { _id: order._id },
       {
         $set: {
           "googleSheetSync.syncInProgress": false,
-          "googleSheetSync.lastError": JSON.stringify(result).slice(0, 500),
+          "googleSheetSync.lastError": JSON.stringify({
+            ok: false,
+            partial: Boolean(result.partial),
+            failed: (result.results || []).filter(
+              (r) => r.assortmentResult?.ok === false
+            ).length,
+            pointKey: result.pointKey,
+          }).slice(0, 500),
+          ...(mergedSteps.length
+            ? { "googleSheetSync.assortmentAppliedSteps": mergedSteps }
+            : {}),
         },
       }
     );
@@ -275,6 +333,7 @@ export async function reverseOrderOnGoogleSheets(order, options = {}) {
         $set: {
           "googleSheetSync.reversedAt": new Date(),
           "googleSheetSync.lastError": "",
+          "googleSheetSync.assortmentAppliedSteps": [],
         },
       }
     );

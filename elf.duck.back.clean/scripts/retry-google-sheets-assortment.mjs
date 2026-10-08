@@ -67,6 +67,7 @@ const orders = await Order.find(
 
 const dayOrders = orders.filter((o) => orderBelongsToStatsDay(o, dayKey));
 
+/** Без appliedAt — у т.ч. частковий sync (assortmentAppliedSteps + lastError). */
 const pending = dayOrders.filter((o) => !o.googleSheetSync?.appliedAt);
 
 console.log({

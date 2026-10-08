@@ -189,14 +189,25 @@ const catalogFlavorMissing = Object.values(catalogAudit || {}).reduce(
 
 const probeFail = probeResults.filter((p) => !p.ok).length;
 
+const syncGapFail = syncGaps.some((g) => {
+  if (!g.fulfilled) return false;
+  const missing = Number(g.missingAppliedAt || 0);
+  return missing > 0 && missing / g.fulfilled > 0.02;
+});
+
 const summary = {
   sheetsEnabled: isGoogleSheetsEnabled(),
   catalogAudit,
   catalogFlavorMissing,
   syncGaps,
+  syncGapFail,
   probeSampled: probeResults.length,
   probeFailures: probeResults.filter((p) => !p.ok),
-  ok: catalogFail === 0 && probeFail === 0,
+  ok:
+    catalogFail === 0 &&
+    catalogFlavorMissing === 0 &&
+    probeFail === 0 &&
+    !syncGapFail,
 };
 
 if (asJson) {
@@ -208,8 +219,14 @@ if (asJson) {
     catalogModelMissing: catalogFail,
     catalogFlavorMissing,
     probeFail,
+    syncGapFail,
     syncGaps,
   });
+  if (!summary.ok) {
+    console.log(
+      "\nDeploy BLOCKED: виправ SYNC_ERRORS / рядки на АССОРТИМЕНТ або retry після деплою."
+    );
+  }
   if (summary.probeFailures.length) {
     console.log("\nProbe failures:", summary.probeFailures);
   }

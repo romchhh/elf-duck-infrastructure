@@ -219,6 +219,18 @@ const orderSchema = new mongoose.Schema(
       reversedAt: { type: Date, default: null },
       syncInProgress: { type: Boolean, default: false },
       lastError: { type: String, default: "" },
+      /** Успішні рядки АССОРТИМЕНТ (частковий sync + retry без подвійного списання). */
+      assortmentAppliedSteps: {
+        type: [
+          {
+            productKey: { type: String, default: "" },
+            flavorKey: { type: String, default: "" },
+            matchedFlavorLabel: { type: String, default: "" },
+            deltaQty: { type: Number, default: 0 },
+          },
+        ],
+        default: undefined,
+      },
       reportAppliedAt: { type: Date, default: null },
       reportReversedAt: { type: Date, default: null },
       reportSyncInProgress: { type: Boolean, default: false },
