@@ -774,13 +774,20 @@ app.post("/orders/confirm", async (req, res) => {
     //       )
     //     : { districtLabel: null, deliveryFeeZl: 0 };
 
+    const inpostNominalFeeZl = Number(cart?.inpostDeliveryFeeZl || 0);
+    const inpostFreeForCustomer =
+      deliveryType === "delivery" &&
+      deliveryMethod === "inpost" &&
+      Number(itemsTotalZl || 0) >= 200;
+
     const confirmedInpostPricing =
       deliveryType === "delivery" && deliveryMethod === "inpost"
         ? {
             packageUnits: Number(cart?.inpostPackageUnits || 0),
-            deliveryFeeZl: Number(itemsTotalZl || 0) >= 200 ? 0 : Number(cart?.inpostDeliveryFeeZl || 0),
+            deliveryFeeZl: inpostFreeForCustomer ? 0 : inpostNominalFeeZl,
+            subsidyZl: inpostFreeForCustomer ? inpostNominalFeeZl : 0,
           }
-        : { packageUnits: 0, deliveryFeeZl: 0 };
+        : { packageUnits: 0, deliveryFeeZl: 0, subsidyZl: 0 };
 
     const duplicateCreatedAfter = new Date(Date.now() - 15 * 1000);
 
@@ -902,6 +909,11 @@ app.post("/orders/confirm", async (req, res) => {
       inpostDeliveryFeeZl:
         deliveryType === "delivery" && deliveryMethod === "inpost"
           ? Number(confirmedInpostPricing.deliveryFeeZl || 0)
+          : 0,
+
+      inpostDeliverySubsidyZl:
+        deliveryType === "delivery" && deliveryMethod === "inpost"
+          ? Number(confirmedInpostPricing.subsidyZl || 0)
           : 0,
 
       inpostPackageUnits:

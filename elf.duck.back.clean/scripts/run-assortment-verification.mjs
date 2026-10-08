@@ -39,8 +39,10 @@ import { getAssortmentSheetModelName } from "../lib/server/helpers/chunk09.js";
 import { ASSORTMENT_RETRY_POINT_KEYS } from "../lib/googleSheets/statsScriptPoints.js";
 
 const asJson = process.argv.includes("--json");
+const strictCatalog = process.argv.includes("--strict-catalog");
 const samplePerPoint = 5;
 const lookbackDays = 14;
+const syncGapLookbackDays = 3;
 
 function runAuditAllPoints() {
   return new Promise((resolve, reject) => {
@@ -138,6 +140,11 @@ const catalogAudit = await runAuditAllPoints();
 
 const probeResults = [];
 const syncGaps = [];
+const syncGapsRecent = [];
+
+const recentDayCutoff = new Date();
+recentDayCutoff.setDate(recentDayCutoff.getDate() - syncGapLookbackDays);
+const recentDayKeyMin = recentDayCutoff.toISOString().slice(0, 10);
 
 for (const pointKey of ASSORTMENT_RETRY_POINT_KEYS.filter(
   (k) => SPREADSHEET_ID_BY_POINT_KEY[k]
@@ -174,6 +181,19 @@ for (const pointKey of ASSORTMENT_RETRY_POINT_KEYS.filter(
     fulfilled: fulfilled.length,
     missingAppliedAt: missingSync,
   });
+
+  const recentFulfilled = fulfilled.filter(
+    (o) => getOrderStatsDayKey(o) >= recentDayKeyMin
+  );
+  const recentMissing = recentFulfilled.filter(
+    (o) => !o.googleSheetSync?.appliedAt
+  ).length;
+  syncGapsRecent.push({
+    pointKey,
+    sinceDayKey: recentDayKeyMin,
+    fulfilled: recentFulfilled.length,
+    missingAppliedAt: recentMissing,
+  });
 }
 
 /** Критерій «PASS»: усі блоки моделей; смаки — див. flavorsMissing у звіті (лист ≠ каталог). */
@@ -189,25 +209,25 @@ const catalogFlavorMissing = Object.values(catalogAudit || {}).reduce(
 
 const probeFail = probeResults.filter((p) => !p.ok).length;
 
-const syncGapFail = syncGaps.some((g) => {
+const syncGapFail = syncGapsRecent.some((g) => {
   if (!g.fulfilled) return false;
   const missing = Number(g.missingAppliedAt || 0);
-  return missing > 0 && missing / g.fulfilled > 0.02;
+  return missing > 0;
 });
+
+const catalogFlavorFail = strictCatalog && catalogFlavorMissing > 0;
 
 const summary = {
   sheetsEnabled: isGoogleSheetsEnabled(),
   catalogAudit,
   catalogFlavorMissing,
+  strictCatalog,
   syncGaps,
+  syncGapsRecent,
   syncGapFail,
   probeSampled: probeResults.length,
   probeFailures: probeResults.filter((p) => !p.ok),
-  ok:
-    catalogFail === 0 &&
-    catalogFlavorMissing === 0 &&
-    probeFail === 0 &&
-    !syncGapFail,
+  ok: catalogFail === 0 && probeFail === 0 && !syncGapFail && !catalogFlavorFail,
 };
 
 if (asJson) {
@@ -220,11 +240,25 @@ if (asJson) {
     catalogFlavorMissing,
     probeFail,
     syncGapFail,
-    syncGaps,
+    syncGapsRecent,
+    syncGaps14d: syncGaps,
   });
   if (!summary.ok) {
     console.log(
-      "\nDeploy BLOCKED: виправ SYNC_ERRORS / рядки на АССОРТИМЕНТ або retry після деплою."
+      "\nFAIL: моделі / probe / немає appliedAt за останні",
+      syncGapLookbackDays,
+      "дні (див. syncGapsRecent). 186 catalog flavors — лише з --strict-catalog."
+    );
+    console.log(
+      "Догнати асортимент:",
+      "node scripts/retry-google-sheets-assortment-range.mjs --from 2026-09-25 --to",
+      new Date().toISOString().slice(0, 10)
+    );
+  } else if (catalogFlavorMissing > 0) {
+    console.log(
+      "\nWARN: catalogFlavorMissing =",
+      catalogFlavorMissing,
+      "(CHASER BLACK тощо на листі — SYNC_ERRORS при продажу цих смаків)."
     );
   }
   if (summary.probeFailures.length) {

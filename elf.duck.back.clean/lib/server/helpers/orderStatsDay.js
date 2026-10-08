@@ -190,4 +190,5 @@ export const STATS_ORDER_LIST_PROJECTION = {
   deliveryMethod: 1,
   deliveryFeeZl: 1,
   inpostDeliveryFeeZl: 1,
+  inpostDeliverySubsidyZl: 1,
 };

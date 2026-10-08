@@ -109,6 +109,8 @@ const orderSchema = new mongoose.Schema(
     },
 
     inpostDeliveryFeeZl: { type: Number, default: 0 },
+    /** Тариф InPost, який магазин оплатив при безкоштовній доставці клієнту (від 200 zł). */
+    inpostDeliverySubsidyZl: { type: Number, default: 0 },
     inpostPackageUnits: { type: Number, default: 0 },
 
     inpostTrackingNumber: {

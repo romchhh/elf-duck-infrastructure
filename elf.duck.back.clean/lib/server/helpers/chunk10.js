@@ -253,6 +253,17 @@ export function isDeliveryChannelStatsPoint(point) {
   return k === "delivery" || k === "delivery-2";
 }
 
+export function isInpostStatsPoint(point) {
+  return getDailyStatsPointPrimaryKey(point) === "delivery-2";
+}
+
+function isInpostDeliveryOrder(order) {
+  return (
+    String(order?.deliveryType || "").trim().toLowerCase() === "delivery" &&
+    String(order?.deliveryMethod || "").trim().toLowerCase() === "inpost"
+  );
+}
+
 export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   const productBasePriceMap =
     extra?.productBasePriceMap instanceof Map ? extra.productBasePriceMap : new Map();
@@ -418,7 +429,23 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   //   (smartDiscountTotalZl + referralDiscountTotalZl + cashbackDiscountTotalZl).toFixed(2)
   // );
 
-  const discountsTotalZl = Number(
+  const primaryPointKey = getDailyStatsPointPrimaryKey(point);
+  const isInpostPoint = isInpostStatsPoint(point);
+  const isDeliveryChannelPoint = isDeliveryChannelStatsPoint(point);
+  const deliveryFeesInfoZl = isInpostPoint
+    ? inpostDeliveryFeesTotalZl
+    : courierDeliveryFeesTotalZl;
+
+  const inpostDeliverySubsidyTotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce((sum, order) => {
+        if (!isInpostDeliveryOrder(order)) return sum;
+        return sum + Number(order?.inpostDeliverySubsidyZl || 0);
+      }, 0)
+      .toFixed(2)
+  );
+
+  const promoDiscountsBaseZl = Number(
     (
       salePromoDiscountTotalZl +
       referralDiscountTotalZl +
@@ -426,11 +453,12 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     ).toFixed(2)
   );
 
-  const primaryPointKey = getDailyStatsPointPrimaryKey(point);
-  const isDeliveryChannelPoint = isDeliveryChannelStatsPoint(point);
-  const deliveryFeesInfoZl = primaryPointKey === "delivery-2"
-    ? inpostDeliveryFeesTotalZl
-    : courierDeliveryFeesTotalZl;
+  const discountsTotalZl = Number(
+    (
+      promoDiscountsBaseZl +
+      (isInpostPoint ? inpostDeliverySubsidyTotalZl : 0)
+    ).toFixed(2)
+  );
 
   const pointTitle = point?.title || point?.address || point?.key || "Склад";
   const dayLabel = formatDailyStatsDayLabel(dayKey);
@@ -605,8 +633,11 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     `💵Касса (товар, без доставки): <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`
   );
   if (isDeliveryChannelPoint) {
+    const deliveryLabel = isInpostPoint
+      ? "🚚Доставки InPost (оплатили клиенты)"
+      : "🚚Доставки";
     lines.push(
-      `🚚Доставки: <b>${formatDailyStatsZl(deliveryFeesInfoZl)}</b> PLN`
+      `${deliveryLabel}: <b>${formatDailyStatsZl(deliveryFeesInfoZl)}</b> PLN`
     );
   }
   if (Math.abs(sumItemsSubtotalZl - kasaNetTotalZl) > 1) {
@@ -620,6 +651,16 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     lines.push(`   ${methodLabel}: <b>${formatDailyStatsZl(amount)}</b> PLN`);
   }
   lines.push(`🪙Скидки: <b>${formatDailyStatsZl(discountsTotalZl)}</b> PLN`);
+  if (isInpostPoint && inpostDeliverySubsidyTotalZl > 0) {
+    lines.push(
+      `   ↳ доставка InPost бесплатно (от 200 zł, наш расход): <b>${formatDailyStatsZl(inpostDeliverySubsidyTotalZl)}</b> PLN`
+    );
+  }
+  if (isInpostPoint && promoDiscountsBaseZl > 0 && inpostDeliverySubsidyTotalZl > 0) {
+    lines.push(
+      `   ↳ акции / реферал / кешбек: <b>${formatDailyStatsZl(promoDiscountsBaseZl)}</b> PLN`
+    );
+  }
   lines.push(`👤Кол-во клиентов: <b>${uniqueCustomersCount}</b>`);
   lines.push(`⚙️Продано штук: <b>${soldPositionsQty}</b>`);
   lines.push(DAILY_STATS_SEP);
