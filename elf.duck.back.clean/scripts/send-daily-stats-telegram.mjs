@@ -2,7 +2,8 @@
  * Відправити «СТАТИСТИКА ДНЯ» в Telegram-групу точки (не Google Sheets).
  *
  * docker compose exec api node scripts/send-daily-stats-telegram.mjs --point mokot-w --day 2026-10-07
- * docker compose exec api node scripts/send-daily-stats-telegram.mjs --point mokot-w --day 2026-10-07 --force
+ * docker compose exec api node scripts/send-daily-stats-telegram.mjs --point delivery-2 --day 2026-10-08 --test
+ * docker compose exec api node scripts/send-daily-stats-telegram.mjs --point mokot-w --day 2026-10-07 --to 7119952932
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -36,10 +37,13 @@ function arg(name) {
 const pointKey = arg("--point");
 const dayKey = arg("--day");
 const force = args.includes("--force");
+const testMode = args.includes("--test");
+const TEST_TELEGRAM_USER_ID = "7119952932";
+const toTelegramId = testMode ? TEST_TELEGRAM_USER_ID : arg("--to", "");
 
 if (!pointKey || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
   console.error(
-    "Usage: node scripts/send-daily-stats-telegram.mjs --point mokot-w --day YYYY-MM-DD [--force]"
+    "Usage: node scripts/send-daily-stats-telegram.mjs --point mokot-w --day YYYY-MM-DD [--force] [--test | --to <telegramId>]"
   );
   process.exit(1);
 }
@@ -68,18 +72,24 @@ if (!point) {
   process.exit(1);
 }
 
-const chatId = getPointStatsChatId(point);
+const groupChatId = getPointStatsChatId(point);
+const sendChatId = toTelegramId || groupChatId;
+
 console.log({
   point: point.key,
   dayKey,
   statsChatId: point.statsChatId || "(empty)",
   notificationChatId: point.notificationChatId || "(empty)",
-  resolvedChatId: chatId || "(none)",
+  groupChatId: groupChatId || "(none)",
+  sendChatId: sendChatId || "(none)",
+  testMode,
   force,
 });
 
-if (!chatId) {
-  console.error("Немає statsChatId і notificationChatId у точки в CRM");
+if (!sendChatId) {
+  console.error(
+    "Немає куди слати: додай --test / --to <id> або statsChatId у точки в CRM"
+  );
   process.exit(1);
 }
 
@@ -102,6 +112,7 @@ const result = await sendDailyPointStats(point, dayOrders, dayKey, {
   productBasePriceMap: new Map(),
   referredFirstOrderUsers: new Set(),
   userDisplayMap: new Map(),
+  telegramChatIdOverride: toTelegramId || undefined,
 });
 
 console.log(result);

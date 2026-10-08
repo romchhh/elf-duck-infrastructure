@@ -673,7 +673,8 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
   try {
     if (!bot || !point) return { ok: false, reason: "NO_BOT_OR_POINT" };
 
-    let chatId = getPointStatsChatId(point);
+    const chatIdOverride = String(extra?.telegramChatIdOverride || "").trim();
+    let chatId = chatIdOverride || getPointStatsChatId(point);
     if (!chatId) {
       console.warn("[DAILY STATS][NO_CHAT]", {
         pointKey: String(point?.key || ""),
@@ -749,18 +750,25 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
 
     try {
       await sendAllParts(chatId);
-      return { ok: true, parts: parts.length };
+      return {
+        ok: true,
+        parts: parts.length,
+        chatId,
+        testOverride: Boolean(chatIdOverride),
+      };
     } catch (e) {
       const migratedChatId = e?.response?.parameters?.migrate_to_chat_id;
       if (!migratedChatId) throw e;
 
       const nextChatId = String(migratedChatId).trim();
 
-      const chatIdUpdate = statsChatConfigured
-        ? { statsChatId: nextChatId }
-        : { notificationChatId: nextChatId };
+      if (!chatIdOverride) {
+        const chatIdUpdate = statsChatConfigured
+          ? { statsChatId: nextChatId }
+          : { notificationChatId: nextChatId };
 
-      await PickupPoint.updateOne({ _id: point._id }, { $set: chatIdUpdate });
+        await PickupPoint.updateOne({ _id: point._id }, { $set: chatIdUpdate });
+      }
 
       chatId = nextChatId;
       await sendAllParts(chatId);
@@ -770,6 +778,7 @@ export async function sendDailyPointStats(point, orders, dayKey, extra = {}) {
         migrated: true,
         chatId,
         parts: parts.length,
+        testOverride: Boolean(chatIdOverride),
       };
     }
   } catch (e) {
