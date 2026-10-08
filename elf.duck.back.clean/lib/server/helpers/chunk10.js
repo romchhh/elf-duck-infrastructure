@@ -184,6 +184,21 @@ function formatDailyStatsDisplayTitle(productRow = {}) {
   return joined.toUpperCase() || "ТОВАР";
 }
 
+/** Картридж: 0.4 / 0.6 / 0.8 з flavorKey або label замовлення. */
+export function formatDailyStatsCartridgeFlavorLabel(flavor = {}) {
+  const key = String(flavor?.flavorKey || "").trim().toLowerCase();
+  const label = String(flavor?.flavorLabel || flavor?.label || "").trim();
+
+  const fromKey = key.match(/0-(\d)-1-szt$/) || key.match(/0-(\d)(?:-|$)/);
+  if (fromKey) return `0.${fromKey[1]} Ω`;
+
+  const fromLabel = label.match(/\b0\.(\d)\b/);
+  if (fromLabel) return `0.${fromLabel[1]} Ω`;
+
+  if (label) return label.replace(/\s+/g, " ").trim();
+  return "Вариант";
+}
+
 function formatDailyStatsPaymentBadge(method) {
   const key = String(method || "").trim().toLowerCase();
   if (key === "cash") return "💵";
@@ -222,6 +237,20 @@ export function getOrderRowUnitBasePrice(row, productBasePriceMap) {
     : 0;
 
   return Number(fallback || 0);
+}
+
+/** Перший ключ точки (`delivery,…` → `delivery`). */
+export function getDailyStatsPointPrimaryKey(point) {
+  return String(point?.key || "")
+    .split(/[,;]/)[0]
+    .trim()
+    .toLowerCase();
+}
+
+/** Кур'єр / InPost — окремий рядок «Доставки» лише в Telegram (не в Google Sheets). */
+export function isDeliveryChannelStatsPoint(point) {
+  const k = getDailyStatsPointPrimaryKey(point);
+  return k === "delivery" || k === "delivery-2";
 }
 
 export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
@@ -396,7 +425,13 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       cashbackDiscountTotalZl
     ).toFixed(2)
   );
-  
+
+  const primaryPointKey = getDailyStatsPointPrimaryKey(point);
+  const isDeliveryChannelPoint = isDeliveryChannelStatsPoint(point);
+  const deliveryFeesInfoZl = primaryPointKey === "delivery-2"
+    ? inpostDeliveryFeesTotalZl
+    : courierDeliveryFeesTotalZl;
+
   const pointTitle = point?.title || point?.address || point?.key || "Склад";
   const dayLabel = formatDailyStatsDayLabel(dayKey);
 
@@ -446,8 +481,8 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
         bucket.title = rowTitle;
       }
 
-      const useVariantLines =
-        __chunk09.isStatsSheetCartridge(row) || __chunk09.isStatsSheetPod(row);
+      const isCartridgeRow = __chunk09.isStatsSheetCartridge(row);
+      const useVariantLines = !isCartridgeRow && __chunk09.isStatsSheetPod(row);
 
       if (useVariantLines) {
         const variantTitle = formatDailyStatsDisplayTitle(row);
@@ -460,9 +495,11 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
           const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
           if (!qty) continue;
 
-          const flavorLabel = String(
-            flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "Вкус"
-          ).trim();
+          const flavorLabel = isCartridgeRow
+            ? formatDailyStatsCartridgeFlavorLabel(flavor)
+            : String(
+                flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "Вкус"
+              ).trim();
 
           bucket.flavors.set(
             flavorLabel,
@@ -508,9 +545,20 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
         for (const [variantTitle, qty] of variantLines) {
           lines.push(`${escapeHtml(variantTitle)} ×<b>${qty}</b>`);
         }
-      } else {
+      }
+
+      if (product.flavors.size > 0) {
         const flavorLines = Array.from(product.flavors.entries()).sort(
-          (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")
+          (a, b) => {
+            const ohm = (s) => {
+              const m = String(s).match(/0\.(\d)/);
+              return m ? Number(m[1]) : 99;
+            };
+            const ao = ohm(a[0]);
+            const bo = ohm(b[0]);
+            if (ao !== bo) return ao - bo;
+            return b[1] - a[1] || a[0].localeCompare(b[0], "ru");
+          }
         );
         for (const [flavorLabel, qty] of flavorLines) {
           lines.push(`${escapeHtml(flavorLabel)} ×<b>${qty}</b>`);
@@ -548,7 +596,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   lines.push(
     `💰Оборот (все способы оплаты): <b>${formatDailyStatsZl(kasaTotalZl)}</b> PLN`
   );
-  if (deliveryFeesTotalZl > 0) {
+  if (!isDeliveryChannelPoint && deliveryFeesTotalZl > 0) {
     lines.push(
       `🚚Минус доставка: <b>${formatDailyStatsZl(deliveryFeesTotalZl)}</b> PLN`
     );
@@ -556,6 +604,11 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   lines.push(
     `💵Касса (товар, без доставки): <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`
   );
+  if (isDeliveryChannelPoint) {
+    lines.push(
+      `🚚Доставки: <b>${formatDailyStatsZl(deliveryFeesInfoZl)}</b> PLN`
+    );
+  }
   if (Math.abs(sumItemsSubtotalZl - kasaNetTotalZl) > 1) {
     lines.push(
       `<i>Σ позиции по unitPrice: ${formatDailyStatsZl(sumItemsSubtotalZl)} PLN · Σ totalZl заказов: ${formatDailyStatsZl(sumTotalZl)} PLN</i>`

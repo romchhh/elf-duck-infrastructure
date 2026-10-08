@@ -26,3 +26,6 @@ dist/
 # CRM catalog uploads (served from API /catalog-media)
 elf.duck.back.clean/data/catalog-uploads/*
 !elf.duck.back.clean/data/catalog-uploads/.gitkeep
+
+# Mokotów assortment live test pending restore
+elf.duck.back.clean/data/mokot-assortment-live-test-state.json
