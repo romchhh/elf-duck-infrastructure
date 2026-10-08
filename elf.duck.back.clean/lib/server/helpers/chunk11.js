@@ -392,13 +392,8 @@ export async function sendOrderCreatedNotification(order, options = {}) {
     const customerName = clientContact.displayLabel;
     const user = clientContact.user;
 
-    const managerAmountValue = Number(order?.payment?.managerDisplayAmount || 0);
-    const managerAmountCurrency = String(order?.payment?.managerDisplayCurrency || "").trim();
-
-    const managerAmountText =
-      managerAmountValue > 0 && managerAmountCurrency
-        ? `${managerAmountValue.toFixed(2)} ${escapeHtml(managerAmountCurrency)}`
-        : `${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`;
+    const managerAmountText = escapeHtml(formatManagerOrderTotalZlText(order));
+    const managerForeignPaymentSubline = formatManagerForeignPaymentSubline(order);
 
     const itemsText = (order.items || [])
       .map((it) => {
@@ -467,6 +462,9 @@ export async function sendOrderCreatedNotification(order, options = {}) {
           ? "Кэшбек"
           : escapeHtml(paymentMethodLabel)
       }`,
+      managerForeignPaymentSubline
+        ? escapeHtml(managerForeignPaymentSubline)
+        : null,
       ``,
       order?.payment?.cashbackAppliedZl > 0
         ? `🪙 <b>Оплачено кэшбеком:</b> ${Number(order.payment.cashbackAppliedZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
@@ -1020,13 +1018,8 @@ export async function refreshManagerOrderMessage(order) {
         : String(inviterUser?.firstName || "").trim() || String(inviterUser?.telegramId || "").trim();
     }
 
-    const managerAmountValue = Number(order?.payment?.managerDisplayAmount || 0);
-    const managerAmountCurrency = String(order?.payment?.managerDisplayCurrency || "").trim();
-
-    const managerAmountText =
-      managerAmountValue > 0 && managerAmountCurrency
-        ? `${managerAmountValue.toFixed(2)} ${escapeHtml(managerAmountCurrency)}`
-        : `${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`;
+    const managerAmountText = escapeHtml(formatManagerOrderTotalZlText(order));
+    const managerForeignPaymentSubline = formatManagerForeignPaymentSubline(order);
 
     const orderStatusKey = String(order?.status || "").trim().toLowerCase();
     const canceledByTelegramId = String(order?.canceledByTelegramId || "").trim();
@@ -1091,6 +1084,9 @@ export async function refreshManagerOrderMessage(order) {
           ? "Кэшбек"
           : escapeHtml(paymentMethodLabel)
       }`,
+      managerForeignPaymentSubline
+        ? escapeHtml(managerForeignPaymentSubline)
+        : null,
       ``,
       order?.payment?.cashbackAppliedZl > 0
         ? `🪙 <b>Оплачено кэшбеком:</b> ${Number(order.payment.cashbackAppliedZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`

@@ -1,0 +1,131 @@
+/**
+ * Lighter visuals on Android Telegram WebView — same layout, fewer GPU repaints.
+ */
+
+/* ——— Root “live wave” glow (all pages using App / *App) ——— */
+html.platform-android .App::before,
+html.platform-android .CartApp::before,
+html.platform-android .ManagersApp::before,
+html.platform-android .ReferralApp::before,
+html.platform-android .PromoReferralApp::before {
+  animation: none !important;
+  transform: rotate(-32deg) translate3d(0, 0, 0);
+  opacity: 0.82;
+}
+
+html.platform-android .App::after,
+html.platform-android .CartApp::after,
+html.platform-android .ManagersApp::after,
+html.platform-android .ReferralApp::after {
+  animation: none !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  will-change: auto !important;
+  background-size: 100% 100% !important;
+  background-position: 0 0 !important;
+  opacity: 0.42;
+  transform: translate3d(0, 0, 0);
+}
+
+html.platform-android .PromoGiftGlow {
+  filter: none !important;
+  opacity: 0.55;
+}
+
+/* ——— Checkout / payment bottom sheets ——— */
+html.platform-android .checkoutSheet::after,
+html.platform-android .paymentSheet::after {
+  display: none !important;
+}
+
+html.platform-android .checkoutSheet::before,
+html.platform-android .paymentSheet::before {
+  inset: 0;
+  transform: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+  opacity: 1;
+  background: radial-gradient(
+    ellipse 130% 90% at 50% 0%,
+    rgba(var(--accent-color), 0.38) 0%,
+    rgba(var(--accent-color), 0.12) 42%,
+    transparent 68%
+  );
+}
+
+html.platform-android .checkoutSheet,
+html.platform-android .paymentSheet {
+  transition:
+    border-color 0.28s ease,
+    box-shadow 0.28s ease;
+  contain: layout style;
+}
+
+html.platform-android .checkoutSheetDragZone,
+html.platform-android .checkoutScrollArea {
+  transform: translateZ(0);
+}
+
+html.platform-android .checkoutBackdrop,
+html.platform-android .sideMenuBackdrop {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ——— Dropdowns (flavor / pickup / payment method) ——— */
+html.platform-android .flavorDropdown,
+html.platform-android .pickupDropdown,
+html.platform-android .pickupDropdown-pay,
+html.platform-android .paymentMethodDropdown {
+  animation: none !important;
+  contain: layout style paint;
+}
+
+html.platform-android .flavorItem,
+html.platform-android .pickupItem,
+html.platform-android .paymentMethodItem {
+  contain: layout style;
+}
+
+html.platform-android .flavorItem,
+html.platform-android .checkoutSelect,
+html.platform-android .pickupItem {
+  touch-action: manipulation;
+}
+
+/* ——— Order / hero cards ——— */
+html.platform-android .orderCard::after,
+html.platform-android .mainActiveOrderCard::after,
+html.platform-android .orderNotifyCard::after,
+html.platform-android .mainActiveOrderArrivalCard::after {
+  animation: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  will-change: auto !important;
+}
+
+html.platform-android .mainHeroLoadingCard::after,
+html.platform-android .mainHeroLoadingGlow {
+  animation: none !important;
+  filter: none !important;
+}
+
+html.platform-android .heroDiscountFX {
+  contain: strict;
+  transform: translateZ(0);
+}
+
+/* ——— Side menu: avoid permanent will-change while open ——— */
+html.platform-android .sideMenu.open {
+  will-change: auto;
+}
+
+/* ——— Global: reduce backdrop blur cost on overlays ——— */
+html.platform-android .sideLanguageDropdown,
+html.platform-android .paymentDetailsBox,
+html.platform-android .paymentInputSheet {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}

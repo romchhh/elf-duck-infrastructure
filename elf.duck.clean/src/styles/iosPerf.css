@@ -1,0 +1,15 @@
+/**
+ * iOS WebKit tweaks — full visuals stay on; smooth scrolling only.
+ */
+
+html.platform-ios .scrollContent,
+html.platform-ios .checkoutScrollArea,
+html.platform-ios .sideMenuScroll,
+html.platform-ios .cartScrollArea {
+  -webkit-overflow-scrolling: touch;
+}
+
+html.platform-ios .checkoutSheet,
+html.platform-ios .sideMenu {
+  -webkit-transform: translate3d(0, 0, 0);
+}

@@ -1,4 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  startTransition,
+} from "react";
+import { isAndroidPlatform } from "../utils/platformPerf.js";
 import Lottie from "lottie-react";
 import "../styles/sideMenuLanguage.css";
 import "../styles/MainPage.css";
@@ -1495,7 +1504,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     ? "left"
     : "right";
 
-  const checkoutAccentRgb = useMemo(() => {
+  const checkoutAccentRgbImmediate = useMemo(() => {
     const pageTint = String(activeProduct?.pageAccentRgb || "").trim();
     if (pageTint) return pageTint;
 
@@ -1506,6 +1515,10 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     if (fromProduct) return fromProduct;
     return "137, 117, 201";
   }, [selectedFlavor, activeProduct?.pageAccentRgb, activeProduct?.accentColor]);
+
+  const checkoutAccentRgbDeferred = useDeferredValue(checkoutAccentRgbImmediate);
+  const checkoutAccentRgb =
+    isAndroidPlatform() ? checkoutAccentRgbDeferred : checkoutAccentRgbImmediate;
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -4263,7 +4276,7 @@ navigate("/cart");
                     : isCheckoutClosing
                     ? "transform 300ms cubic-bezier(0.22, 1, 0.36, 1)"
                     : "transform 380ms cubic-bezier(0.22, 1, 0.36, 1)",
-                  willChange: "transform",
+                  willChange: isCheckoutDragging ? "transform" : undefined,
                 }}
 
                 >
@@ -4659,8 +4672,10 @@ navigate("/cart");
                                     onClick={() => {
                                       haptic.light();
                                       if (isOutOfStock) return;
-                                      setSelectedFlavor(flavor);
-                                      setIsFlavorOpen(false);
+                                      startTransition(() => {
+                                        setSelectedFlavor(flavor);
+                                        setIsFlavorOpen(false);
+                                      });
                                     }}
                                   >
                                     <div className="flavorLeft">

@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useRef} from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useDeferredValue,
+  startTransition,
+} from "react";
+import { isAndroidPlatform } from "../utils/platformPerf.js";
 import "../styles/sideMenuLanguage.css";
 import "../styles/MainPage.css";
 import "../styles/OrdersPage.css";
@@ -552,7 +560,7 @@ useEffect(() => {
             ? t("Наличные", "Gotówka")
             : t("Выберите способ оплаты", "Wybierz metodę płatności");
 
-    const paymentTheme =
+    const paymentThemeImmediate =
     paymentMethod === "blik"
         ? {
             accent: "221, 43, 67",
@@ -597,6 +605,11 @@ useEffect(() => {
             detailsValue: "",
             badge: "",
         };
+
+    const paymentThemeDeferred = useDeferredValue(paymentThemeImmediate);
+    const paymentTheme = isAndroidPlatform()
+      ? paymentThemeDeferred
+      : paymentThemeImmediate;
 
     const paymentIcons = {
         blik: blikIcon,
@@ -877,6 +890,21 @@ useEffect(() => {
                 t(
                     "Обязательно укажите, нужна ли сдача или без сдачи",
                     "Koniecznie wskaż, czy potrzebna jest reszta, czy bez reszty"
+                )
+            );
+            return;
+        }
+
+        if (
+            !cashbackFullyPaid &&
+            paymentMethod === "crypto" &&
+            !(Number(usdtPlnRate || 0) > 0)
+        ) {
+            haptic.heavy();
+            showTgAlert(
+                t(
+                    "Курс USDT ещё загружается. Подождите пару секунд и попробуйте снова.",
+                    "Kurs USDT jest jeszcze ładowany. Poczekaj chwilę i spróbuj ponownie."
                 )
             );
             return;
@@ -1953,6 +1981,7 @@ useEffect(() => {
                     "--accent-color": paymentTheme.accent,
                     transform: `translateY(${paymentSheetOffsetY}px)`,
                     transition: isPaymentDragging ? "none" : "transform 220ms ease",
+                    willChange: isPaymentDragging ? "transform" : undefined,
                 }}
             >
             <div
@@ -2051,15 +2080,17 @@ useEffect(() => {
                             className="pickupItem paymentMethodItem"
                             onClick={() => {
                                 haptic.light();
-                                setPaymentMethod(method.key);
-                                setPaymentDetailsVisible(false);
+                                startTransition(() => {
+                                  setPaymentMethod(method.key);
+                                  setPaymentDetailsVisible(false);
 
-                                if (method.key !== "cash") {
-                                setCashChangeType("");
-                                setCashAmountDraft("");
-                                }
+                                  if (method.key !== "cash") {
+                                    setCashChangeType("");
+                                    setCashAmountDraft("");
+                                  }
 
-                                setIsPaymentMethodOpen(false);
+                                  setIsPaymentMethodOpen(false);
+                                });
                             }}
                             >
                             <span>{translatePaymentMethodLabel(method.label || method.key)}</span>

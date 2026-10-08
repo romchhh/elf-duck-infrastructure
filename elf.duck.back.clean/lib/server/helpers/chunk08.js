@@ -1018,6 +1018,105 @@ export function getOrderSheetsDiscountTotalZl(order) {
 
 const KASA_PLN_SANITY_RATIO = 1.15;
 
+/** Сума до оплати в PLN (залишок після кешбеку або totalZl). */
+export function getOrderPayablePlnZl(order) {
+  const payment = order?.payment || {};
+  const totalZl = Number(order?.totalZl || 0);
+
+  if (payment?.cashbackFullyPaid === true) {
+    return 0;
+  }
+
+  const cashbackAppliedZl = Number(payment?.cashbackAppliedZl || 0);
+  const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
+
+  if (cashbackAppliedZl > 0 && cashbackRemainingToPayZl >= 0) {
+    return Number(cashbackRemainingToPayZl.toFixed(2));
+  }
+
+  return Number(totalZl.toFixed(2));
+}
+
+function isLikelyPlnMislabeledAsForeign(displayAmount, payablePln) {
+  const amount = Number(displayAmount || 0);
+  const pln = Number(payablePln || 0);
+  if (amount <= 0 || pln <= 0) return false;
+  return amount >= pln * 0.95;
+}
+
+/**
+ * Сума в USDT для відображення (реквізити / Telegram під способом оплати).
+ * Якщо в БД збережли PLN як USDT — рахуємо з курсу.
+ */
+export function resolveOrderUsdtPaymentAmount(order) {
+  const payment = order?.payment || {};
+  const payablePln = getOrderPayablePlnZl(order);
+  const amount = Number(payment?.managerDisplayAmount || 0);
+  const rate = Number(payment?.managerDisplayRate || 0);
+  const currency = String(payment?.managerDisplayCurrency || "")
+    .trim()
+    .toUpperCase();
+
+  if (String(payment?.method || "").trim().toLowerCase() !== "crypto") {
+    return null;
+  }
+
+  if (currency === "USDT" && amount > 0 && !isLikelyPlnMislabeledAsForeign(amount, payablePln)) {
+    return Number(amount.toFixed(2));
+  }
+
+  if (rate > 0 && payablePln > 0) {
+    return Number((payablePln / rate).toFixed(2));
+  }
+
+  return null;
+}
+
+export function resolveOrderUahPaymentAmount(order) {
+  const payment = order?.payment || {};
+  const payablePln = getOrderPayablePlnZl(order);
+  const amount = Number(payment?.managerDisplayAmount || 0);
+  const rate = Number(payment?.managerDisplayRate || 0);
+  const currency = String(payment?.managerDisplayCurrency || "")
+    .trim()
+    .toUpperCase();
+
+  if (String(payment?.method || "").trim().toLowerCase() !== "ua_card") {
+    return null;
+  }
+
+  if (currency === "UAH" && amount > 0 && !isLikelyPlnMislabeledAsForeign(amount, payablePln)) {
+    return Number(amount.toFixed(2));
+  }
+
+  if (rate > 0 && payablePln > 0) {
+    return Number((payablePln * rate).toFixed(2));
+  }
+
+  return null;
+}
+
+/** «Сумма заказа» у повідомленнях менеджеру — завжди в zł. */
+export function formatManagerOrderTotalZlText(order) {
+  const pln = getOrderPayablePlnZl(order);
+  return `${pln.toFixed(2)} zł`;
+}
+
+/** Другий рядок під способом оплати (USDT / UAH), або null. */
+export function formatManagerForeignPaymentSubline(order) {
+  const usdt = resolveOrderUsdtPaymentAmount(order);
+  if (usdt != null) {
+    return `${usdt.toFixed(2)} USDT`;
+  }
+
+  const uah = resolveOrderUahPaymentAmount(order);
+  if (uah != null) {
+    return `${uah.toFixed(2)} UAH`;
+  }
+
+  return null;
+}
+
 function clampKasaToOrderTotalZl(kasaPln, totalZl) {
   const kasa = Number(kasaPln || 0);
   const total = Number(totalZl || 0);
@@ -1066,7 +1165,11 @@ export function getOrderKasaPlnZl(order) {
   }
 
   if (managerDisplayCurrency === "USDT") {
+    const payablePln = getOrderPayablePlnZl(order);
     if (managerDisplayAmount > 0 && managerDisplayRate > 0) {
+      if (isLikelyPlnMislabeledAsForeign(managerDisplayAmount, payablePln)) {
+        return clampKasaToOrderTotalZl(managerDisplayAmount, totalZl);
+      }
       return clampKasaToOrderTotalZl(
         managerDisplayAmount * managerDisplayRate,
         totalZl

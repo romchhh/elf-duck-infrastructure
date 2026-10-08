@@ -103,16 +103,47 @@ const CartPage = () => {
   ).trim();
 
   const orderDetailsPillAmount =
-    orderDetailsManagerDisplayAmount > 0 && orderDetailsManagerDisplayCurrency
-      ? orderDetailsManagerDisplayAmount
-      : orderDetailsCashbackAppliedZl > 0
+    orderDetailsCashbackAppliedZl > 0
       ? orderDetailsRemainingPln
       : Number(orderFromState?.totalZl || 0);
 
-  const orderDetailsPillCurrency =
-    orderDetailsManagerDisplayAmount > 0 && orderDetailsManagerDisplayCurrency
-      ? orderDetailsManagerDisplayCurrency
-      : "PLN";
+  const orderDetailsPillCurrency = "PLN";
+
+  const orderDetailsForeignPaymentLabel = (() => {
+    const method = String(orderFromState?.payment?.method || "").trim().toLowerCase();
+    const rate = Number(orderFromState?.payment?.managerDisplayRate || 0);
+    const displayAmount = Number(orderDetailsManagerDisplayAmount || 0);
+    const displayCurrency = orderDetailsManagerDisplayCurrency.toUpperCase();
+    const payablePln = orderDetailsPillAmount;
+
+    if (method === "crypto") {
+      if (
+        displayCurrency === "USDT" &&
+        displayAmount > 0 &&
+        displayAmount < payablePln * 0.95
+      ) {
+        return `${displayAmount.toFixed(2)} USDT`;
+      }
+      if (rate > 0 && payablePln > 0) {
+        return `${(payablePln / rate).toFixed(2)} USDT`;
+      }
+    }
+
+    if (method === "ua_card") {
+      if (
+        displayCurrency === "UAH" &&
+        displayAmount > 0 &&
+        displayAmount < payablePln * 0.95
+      ) {
+        return `${displayAmount.toFixed(2)} UAH`;
+      }
+      if (rate > 0 && payablePln > 0) {
+        return `${(payablePln * rate).toFixed(2)} UAH`;
+      }
+    }
+
+    return "";
+  })();
 
   // --- Order details: items -> cart-like items (readonly render) ---
   const flattenOrderItemsToCartItems = (order) => {

@@ -20,7 +20,8 @@
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
     "build": "node ./node_modules/vite/bin/vite.js build",
-    "preview": "node ./node_modules/vite/bin/vite.js preview"
+    "preview": "node ./node_modules/vite/bin/vite.js preview",
+    "audit:mobile-perf": "node scripts/audit-mobile-perf.mjs"
   },
   "eslintConfig": {
     "extends": [

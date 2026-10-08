@@ -1544,7 +1544,7 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       ? order.payment.toObject()
       : (order.payment || {});
 
-    const managerDisplayAmount = Number(req.body?.managerDisplayAmount || 0);
+    let managerDisplayAmount = Number(req.body?.managerDisplayAmount || 0);
 
     // const cashbackUsedZl = Number(
     //   req.body?.cashbackUsedZl ||
@@ -1591,6 +1591,36 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       req.body?.managerDisplayRate === ""
         ? null
         : Number(req.body.managerDisplayRate || 0);
+
+    const payablePlnForDisplay = Number(
+      Number(cashbackRemainingToPayZl || 0) > 0
+        ? cashbackRemainingToPayZl
+        : order?.totalZl || 0
+    );
+
+    if (
+      requestedMethod === "crypto" &&
+      managerDisplayCurrency === "USDT" &&
+      Number(managerDisplayRate || 0) > 0 &&
+      payablePlnForDisplay > 0 &&
+      managerDisplayAmount >= payablePlnForDisplay * 0.95
+    ) {
+      managerDisplayAmount = Number(
+        (payablePlnForDisplay / Number(managerDisplayRate)).toFixed(2)
+      );
+    }
+
+    if (
+      requestedMethod === "ua_card" &&
+      managerDisplayCurrency === "UAH" &&
+      Number(managerDisplayRate || 0) > 0 &&
+      payablePlnForDisplay > 0 &&
+      managerDisplayAmount >= payablePlnForDisplay * 0.95
+    ) {
+      managerDisplayAmount = Number(
+        (payablePlnForDisplay * Number(managerDisplayRate)).toFixed(2)
+      );
+    }
 
     order.payment = {
       ...prevPayment,

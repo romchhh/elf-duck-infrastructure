@@ -4,8 +4,16 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import { UserProvider } from "./UserContext.jsx";
 import { applyDesktopLayoutClass } from "./utils/desktopLayout.js";
+import {
+  applyPlatformPerfClasses,
+  subscribePlatformPerf,
+} from "./utils/platformPerf.js";
+import "./styles/androidPerf.css";
+import "./styles/iosPerf.css";
 
 applyDesktopLayoutClass();
+applyPlatformPerfClasses();
+subscribePlatformPerf();
 
 console.log("🚀 React загружается...");
 
