@@ -146,6 +146,7 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
   "puffy-30-ml": "LIQ PUFFY 5%",
   "puffy-30-ml-70-mg": "LIQ PUFFY 7%",
   "oxva-30-ml-20-mg": "OXVA",
+  "yami-30ml": "YAMI",
 };
 
 const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([

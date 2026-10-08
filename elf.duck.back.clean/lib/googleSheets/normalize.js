@@ -138,6 +138,7 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "elfliq-30-ml": ["LIQ ELFLIQ", "ELFLIQ"],
     "hqd-30-ml": ["LIQ HQD", "HQD"],
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
+    "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI"],
     "oxva-30-ml-20-mg": ["LIQ OXVA", "OXVA", "OXVA 20 MG", "OXVA 30 ML"],
     "elf-duck-d3-25k": ["ELF BAR D3 25K", "ELF BAR D3"],
     "elf-duck-bc-45k": ["ELF BAR BC45K", "ELF BC45K"],

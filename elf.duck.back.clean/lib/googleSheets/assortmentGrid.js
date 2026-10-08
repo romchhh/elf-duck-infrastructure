@@ -271,6 +271,8 @@ export async function applyAssortmentDelta({
       normalizedModel: normalizeSheetModelName(modelName),
       flavorLabel,
       normalizedFlavor: compactSheetFlavor(flavorLabel),
+      qty: Math.abs(Number(deltaQty || 0)),
+      hint: `Заголовок блока на АССОРТИМЕНТ: один из «${headerCandidates.slice(0, 4).join(" / ")}»`,
     });
 
     return { ok: false, reason: "MODEL_BLOCK_NOT_FOUND" };
@@ -293,6 +295,7 @@ export async function applyAssortmentDelta({
   }
 
   if (flavorRow < 0) {
+    const sheetFlavors = listAssortmentFlavorsInBlock(rows, block);
     await logSyncError(spreadsheetId, {
       pointLabel,
       dayKey,
@@ -300,9 +303,13 @@ export async function applyAssortmentDelta({
       modelName,
       productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
-      normalizedModel: normalizeSheetModelName(modelName),
+      normalizedModel: block.header,
       flavorLabel: flavorLabels.join(" | "),
       normalizedFlavor: flavorLabels.map((l) => compactSheetFlavor(l)).join(" | "),
+      qty: Math.abs(Number(deltaQty || 0)),
+      hint: sheetFlavors.length
+        ? `Блок «${block.header}»: додайте рядок як у каталозі або скопіюйте з листа: ${sheetFlavors.slice(0, 6).join(" | ")}`
+        : `Блок «${block.header}» без рядків смаків`,
     });
 
     return { ok: false, reason: "FLAVOR_ROW_NOT_FOUND", triedLabels: flavorLabels };
@@ -353,10 +360,11 @@ async function logSyncError(spreadsheetId, payload) {
       payload.dayKey || "",
       payload.reason || "",
       payload.modelName || "",
-      payload.productKey || "",
-      payload.headerCandidates || payload.normalizedModel || "",
+      payload.normalizedModel || payload.productKey || "",
       payload.flavorLabel || "",
       payload.normalizedFlavor || "",
+      payload.qty != null && payload.qty !== "" ? String(payload.qty) : "",
+      payload.hint || payload.headerCandidates || "",
     ]);
   } catch (e) {
     console.error("[googleSheets] SYNC_ERRORS append failed:", e);
