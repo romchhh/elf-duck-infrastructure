@@ -158,7 +158,17 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
     "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI"],
     "oxva-30-ml-20-mg": ["LIQ OXVA", "OXVA", "OXVA 20 MG", "OXVA 30 ML"],
+    "oxva-pod": ["OXVA POD"],
+    "xros-5-mini-pod": ["XROS 5 MINI POD"],
+    "xros-5-pod": ["XROS 5 POD"],
+    "xros-6-mini-pod": ["XROS 6 MINI POD"],
+    "xros-6-pod": ["XROS 6 POD"],
+    "xros-cartridge": ["XROS CATRIDGE", "XROS CARTRIDGE"],
+    "cartridge-oxva": ["OXVA CATRIDGE", "OXVA CARTRIDGE"],
+    "elf-duck-1500-2": ["ELF BAR 1500", "ELF 1500"],
+    "elf-duck-3000": ["ELF BAR RI 3000", "ELF BAR 3000", "ELF 3000"],
     "elf-duck-d3-25k": ["ELF BAR D3 25K", "ELF BAR D3"],
+    "elf-duck-bc-45000": ["ELF BAR BC45K", "ELF BC45K"],
     "elf-duck-bc-45k": ["ELF BAR BC45K", "ELF BC45K"],
   };
 
@@ -231,18 +241,96 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
   "cartridge-oxva": CARTRIDGE_RESISTANCE_ALIASES,
   "xros-cartridge": CARTRIDGE_RESISTANCE_ALIASES,
   "xros-5-mini-pod": {
-    black: ["XROS Black"],
-    purple: ["XROS Purple"],
-    "sky-blue": ["XROS Blue", "XROS Sky Blue"],
+    black: ["Black", "XROS Black"],
+    purple: ["Purple", "XROS Purple"],
+    "sky-blue": ["Sky Blue", "XROS Blue", "XROS Sky Blue"],
+    "flowing-pink": ["Flowing Pink", "XROS Flowing Pink"],
+    "pastel-crystal": ["Pastel Crystal", "XROS Pastel Crystal"],
+    "carbon-black": ["Carbon Black", "XROS Carbon Black"],
+    "titanium-silver": ["Titanium Silver", "XROS Titanium Silver"],
+    "flowing-green": ["Flowing Green", "XROS Flowing Green"],
+    "flowing-blue": ["Flowing Blue", "XROS Flowing Blue"],
+    "rose-red": ["Rose Red", "XROS Rose Red"],
+  },
+  "xros-5-pod": {
+    "grey-silk": ["Grey Silk", "GREY SILK", "Gray Silk"],
+    "violet-silk": ["Violet Silk", "VIOLET SILK"],
+    "blue-silk": ["Blue Silk", "BLUE SILK"],
+    "jade-green": ["Jade Green", "JADE GREEN"],
+    "opal-white": ["Opal White", "Opal White "],
+    "opal-pink": ["Opal Pink", "Opal Pink "],
+    "carbon-stripe": ["Carbon Stripe", "Carbon stripe"],
+    "cosmic-black": ["Cosmic Black", "Cosmic black "],
+    "lavender-purple": ["Lavender Purple", "Lavender purple"],
+    "coral-red": ["Coral Red", "Coral red"],
+  },
+  "xros-6-mini-pod": {
+    "jelly-pink": ["Jelly pink", "Jelly Pink"],
+    "plume-blue": ["Plume blue", "Plume Blue"],
+    "plume-pink": ["Plume pink", "Plume Pink"],
+    "titanium-silver": ["Titanium silver", "Titanium Silver"],
+    "titanium-black": ["Titanium black", "Titanium Black"],
+    "plume-white": ["Plume white", "Plume White"],
+    brown: ["Brown"],
+    "jelly-orange": ["Jelly Orange", "Jelly orange"],
+    "jelly-green": ["Jelly Green", "Jelly green"],
+    black: ["Black"],
+    "jelly-blue": ["Jelly blue", "Jelly Blue"],
+  },
+  "xros-6-pod": {
+    "carbon-fiber-gray": ["Carbon Fiber Gray", "Carbon fibre gray"],
+    "slate-black": ["Slate Black", "Slate black"],
+    "cosmic-black": ["Cosmic Black", "Cosmic black"],
+    "silk-green": ["Silk Green", "Silk green"],
+    "scorching-cloud": ["Scorching Cloud", "Scorching Cloud 15"],
+    "abyssal-blue": ["Abyssal Blue", "Abyssal blue"],
+    "pearl-white": ["Pearl White", "Pearl white"],
+    "silk-gray": ["Silk Gray", "Silk grey", "Silk Gray "],
+    "silk-brown": ["Silk Brown", "Silk brown"],
+    "dreamy-pink": ["Dreamy Pink", "Dreamy pink"],
+    "aurora-blue": ["Aurora Blue", "Aurora Blue 10"],
+  },
+  "oxva-pod": {
+    "blue-ripple": ["Blue Ripple", "Blue ripple "],
+    "light-brown-shadow": ["Light Brown Shadow"],
+    "metal-silver": ["Metal Silver", "Metal silver"],
+    "green-ripple": ["Green Ripple"],
+    "carbon-black": ["Carbon Black", "Black Carbon"],
+    "pink-ripple": ["Pink Ripple"],
+    "black-shadow": ["Black Shadow"],
+    "metal-blue": ["Metal Blue", "Metal blue"],
+  },
+  "oxva-30-ml-20-mg": {
+    "blueberry-ice": ["Blueberry ice", "Blueberry Ice", "Blubbery ice", "Blubbery Ice"],
+    "sour-pineapple-ice-cream": [
+      "Sour pineapple ice cream",
+      "Sour pineapple ice",
+      "Sour Pineapple Ice",
+      "Sour pineapple ice ",
+    ],
   },
   "puffy-30-ml-70-mg": {
-    "grape-raspberry-black-plum": ["Grape Raspberry Plum"],
+    "grape-raspberry-black-plum": [
+      "Grape Raspberry Plum",
+      "Grape Raspberry Black Plum",
+    ],
+    "lemon-grapefruit": [
+      "Lemon grapefruit",
+      "Lemon Grapefruit",
+      "Lemon Grapeifruit",
+    ],
+    "sweet-orange-grapefruit": [
+      "Sweet Orange Grapefruit",
+      "SWEET ORANGE GRAPEFRUIT",
+    ],
+    "berri-kiwi": ["Berri kiwi", "Kiwi Berry", "Berry kiwi"],
   },
   "chaser-for-pods-30-ml": {
     "l-ch": ["Личи", "Лічі", "Личі", "Litchi", "Lychee"],
     "lichi": ["Личи", "Лічі", "Личі", "Litchi", "Lychee"],
     "litchi": ["Личи", "Лічі", "Личі"],
     "lychee": ["Личи", "Лічі", "Личі"],
+    "yabloko-m-yata": ["Яблоко м’ята", "Яблуко Мʼята", "Яблоко мята"],
   },
   "vozol-prime-30-ml": {
     "bluebbery-watermelon": ["BLUEBBERY WATERMELON", "Blueberry Watermelon"],
@@ -252,6 +340,12 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
       "Vanilla cream tobacco",
       "VANILLA CREAM TOBACCO",
     ],
+    "parfume-lemon": ["Parfume Lemon", "Perfume lemon", "Perfume Lemon"],
+    "pomegranat-lemonade": [
+      "Pomegranat Lemonade",
+      "Pomegranate lemonade",
+      "Pomegranate Lemonade",
+    ],
   },
   "elfliq-30-ml": {
     "blackcurrant-aniseed": [
@@ -259,13 +353,29 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
       "Blackcurrant Anissed",
       "Blackcurrant Aniseed",
     ],
+    "snoow-tobacco": ["Snow Tobacco", "Snoow Tobacco", "SNOW TOBACCO"],
+    "pb-cloud": ["PB Cloud", "Pb Cloud", "PB cloud", "Pb cloud"],
+  },
+  "elf-duck-1500-2": {
+    "pineapple-peach-mango": ["Pineapple Peach Mango", "Pineapple peach mango"],
+    "banana-ice": ["Banana Ice", "Banan ice", "Banan Ice"],
+  },
+  "elf-duck-3000": {
+    "watermelon-ice": ["Watermelon Ice", "Watermelon ice"],
+  },
+  "elf-duck-bc-45000": {
+    "pomergranate-burst": ["Pomegranate Burst", "Pomergranate Burst"],
   },
   "puffy-30-ml": {
     "kiwi-berry": ["Berri kiwi", "Berry kiwi", "Kiwi Berry"],
     "grape-raspberry-plum": ["Grape Raspberry Black Plum"],
   },
   "chaser-black-30-ml": {
-    "strawberry-raspberry-cherry-ice": ["Strawberry Raspberry Cherry"],
+    "strawberry-raspberry-cherry-ice": [
+      "Strawberry Raspberry Cherry Ice",
+      "Strawberry raspbery chery icе",
+      "Strawberry Raspberry Cherry",
+    ],
     "kiwi-wild-strawberry": [
       "Kiwi Wild Strawberry",
       "Wld Strawberry Kiwi",
@@ -277,8 +387,18 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
       "Blackberry Sour Raspberry",
     ],
     "blue-raz-apple": ["Blue Raz Apple", "Blue Razz Apple"],
+    "blueberry-cherry-cranberry": [
+      "Blueberry Cherry Cranberry",
+      "Bluberry Cherry cranberry",
+    ],
+    "blueberry-raspberry": ["Blueberry Raspberry", "Bluberry Raspberry"],
+    "blueberry-sour-raspberry": [
+      "Blueberry Sour Raspberry",
+      "Bluberry Sour Raspberry",
+    ],
   },
   "chaser-black-30-ml-2": {
+    "bali-triple-shot": ["Bali Triple Shot", "Bali Tripple Shot"],
     "kiwi-wild-strawberry": [
       "Kiwi Wild Strawberry",
       "Wld Strawberry Kiwi",
@@ -287,9 +407,21 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
     "triple-raspberry": ["Tripple Raspberry", "Triple Raspberry"],
     "blackcurrant-peach-apple": [
       "Blackcurrant Peach Apple",
+      "Blackccurant Peach Apple",
       "Black Currant Peach Apple",
     ],
+    "plum-lime-sour": ["Plum Lime Sour", "Plum Sour Lime"],
+    "blackberry-sour-raspberry": [
+      "Blackberry Sour Raspberry",
+      "Blackberry Sour Rasp",
+    ],
     "blue-raz-apple": ["Blue Raz Apple", "Blue Razz Apple"],
+  },
+  "elf-duck-d3-25k": {
+    "blackberry-pomegranate-cherry": [
+      "Blackberry Pomegranate Cherry",
+      "Blackbery pomegranat cherry",
+    ],
   },
 };
 
@@ -317,20 +449,47 @@ function flavorTokens(compact) {
  * 1 — точний (compact), 2 — banana/banan або LUX-суфікс, 3 — число в кінці на листі («Aurora Blue 10»),
  * 0 — немає збігу. Підрядки («Blueberry Lemon» ⊂ «Blueberry Lemonade») НЕ збігаються.
  */
+/** Типові опечатки на листах АССОРТИМЕНТ (після compact). */
+function foldCommonFlavorTypos(compact) {
+  return String(compact || "")
+    .replace(/BLUBBERY/g, "BLUEBERRY")
+    .replace(/GRAPEIFRUIT/g, "GRAPEFRUIT")
+    .replace(/BLACKCCURANT/g, "BLACKCURRANT")
+    .replace(/ANISSED/g, "ANISEED")
+    .replace(/POMERGRANATE/g, "POMEGRANATE")
+    .replace(/BLACKBERY/g, "BLACKBERRY")
+    .replace(/RASPBERY/g, "RASPBERRY")
+    .replace(/TRIPPLE/g, "TRIPLE")
+    .replace(/BANAN$/g, "BANANA")
+    .replace(/BANAN(?=ICE)/g, "BANANA");
+}
+
 export function flavorMatchTier(flavorCell, wantedCompact) {
   const cell = compactSheetFlavor(flavorCell);
   if (!cell || !wantedCompact) return 0;
   if (cell === wantedCompact) return 1;
 
+  const cellF = foldCommonFlavorTypos(cell);
+  const wantedF = foldCommonFlavorTypos(wantedCompact);
+  if (cellF === wantedF) return 2;
+
   // banana ice vs banan ice (без викидання ICE — «Watermelon» ≠ «Watermelon Ice»)
-  const a = cell.replace(/BANANA/g, "BANAN");
-  const b = wantedCompact.replace(/BANANA/g, "BANAN");
+  const a = cellF.replace(/BANANA/g, "BANAN");
+  const b = wantedF.replace(/BANANA/g, "BANAN");
   if (a === b) return 2;
 
   // «Cola Lux» ↔ «Cola» (на деяких точках рядок без LUX)
   const aNoLux = a.replace(/LUX$/, "");
   const bNoLux = b.replace(/LUX$/, "");
   if (aNoLux.length >= 3 && aNoLux === bNoLux) return 2;
+
+  // «Sour pineapple ice» ↔ «Sour pineapple ice cream»
+  if (
+    aNoLux.length >= 8 &&
+    (aNoLux + "CREAM" === bNoLux || bNoLux + "CREAM" === aNoLux)
+  ) {
+    return 2;
+  }
 
   // «Scorching Cloud 15» ↔ «Scorching Cloud» (число в кінці назви на листі)
   const aNoNum = aNoLux.replace(/\d+$/, "");

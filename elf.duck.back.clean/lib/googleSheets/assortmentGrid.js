@@ -90,28 +90,40 @@ export function findAssortmentModelBlocks(rows) {
   return blocks;
 }
 
+function pickBestAssortmentBlock(rows, hits) {
+  if (!hits.length) return null;
+  if (hits.length === 1) return hits[0];
+  return hits
+    .map((block) => ({
+      block,
+      n: listAssortmentFlavorsInBlock(rows, block).length,
+    }))
+    .sort((a, b) => b.n - a.n)[0].block;
+}
+
 export function findAssortmentBlockForModel(rows, modelName, productKey = "") {
   const candidates = toAssortmentHeaderCandidates(modelName, productKey).map(
     (x) => normalizeSheetModelName(x)
   );
   const wanted = new Set(candidates);
   const blocks = findAssortmentModelBlocks(rows);
+  const exactHits = [];
 
   for (const candidate of candidates) {
     for (const block of blocks) {
       if (normalizeSheetModelName(block.header) === candidate) {
-        return block;
+        exactHits.push(block);
       }
     }
   }
-
-  for (const block of blocks) {
-    if (headerMatchesWanted(block.header, wanted)) {
-      return block;
-    }
+  if (exactHits.length) {
+    return pickBestAssortmentBlock(rows, exactHits);
   }
 
-  return null;
+  const fuzzyHits = blocks.filter((block) =>
+    headerMatchesWanted(block.header, wanted)
+  );
+  return pickBestAssortmentBlock(rows, fuzzyHits);
 }
 
 function flavorSlugToTitleLabel(slug = "") {
@@ -181,6 +193,7 @@ function collectBlockFlavorRows(rows, block) {
       }
       continue;
     }
+    if (/^кол-во$/i.test(flavorCell)) continue;
     if (/^total\b/i.test(flavorCell)) break;
     out.push({ row: r, cell: flavorCell });
   }

@@ -148,9 +148,18 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
   "chaser-for-pods-30-ml": "LIQ FOR PODS",
   "puffy-30-ml": "LIQ PUFFY 5%",
   "puffy-30-ml-70-mg": "LIQ PUFFY 7%",
-  "oxva-30-ml-20-mg": "OXVA",
-  "yami-30ml": "YAMI",
-};
+    "oxva-30-ml-20-mg": "OXVA",
+    "oxva-pod": "OXVA POD",
+    "xros-5-mini-pod": "XROS 5 MINI POD",
+    "xros-5-pod": "XROS 5 POD",
+    "xros-6-mini-pod": "XROS 6 MINI POD",
+    "xros-6-pod": "XROS 6 POD",
+    "xros-cartridge": "XROS CATRIDGE",
+    "cartridge-oxva": "OXVA CATRIDGE",
+    "elf-duck-1500-2": "ELF BAR 1500",
+    "elf-duck-3000": "ELF BAR RI 3000",
+    "yami-30ml": "YAMI",
+  };
 
 const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([
   "puffy-30-ml",
