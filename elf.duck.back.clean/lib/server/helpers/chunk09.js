@@ -141,7 +141,10 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
   "hqd-30-ml": "LIQ HQD",
   "ethereum-30-ml": "LIQ ETHEREUM",
   "chaser-special-30-ml": "LIQ SPECIAL",
-  "chaser-black-30-ml": "LIQ BLACK",
+  // У каталозі productKey chaser-black-30-ml = «HQD 30 ML»; смаки на листі — блок LIQ HQD (не LIQ BLACK).
+  "chaser-black-30-ml": "LIQ HQD",
+  // «CHASER BLACK 30 ML» — окремий товар.
+  "chaser-black-30-ml-2": "LIQ BLACK",
   "chaser-for-pods-30-ml": "LIQ FOR PODS",
   "puffy-30-ml": "LIQ PUFFY 5%",
   "puffy-30-ml-70-mg": "LIQ PUFFY 7%",

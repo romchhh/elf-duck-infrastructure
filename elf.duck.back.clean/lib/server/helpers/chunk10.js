@@ -51,6 +51,11 @@ import * as __chunk07 from "./chunk07.js";
 import * as __chunk08 from "./chunk08.js";
 import * as __chunk09 from "./chunk09.js";
 import * as __orderStatsDay from "./orderStatsDay.js";
+import {
+  formatOrderFlavorCharacteristicLabel,
+  formatCartridgeCharacteristicLabel,
+  formatPodCharacteristicLabel,
+} from "../../orderFlavorLabel.js";
 Object.assign(globalThis, {
   ...__chunk00,
   ...__chunk01,
@@ -145,11 +150,35 @@ export function formatPaymentMethodLabel(method) {
 
   if (key === "cash") return "Наличные";
   if (key === "blik") return "BLIK";
-  if (key === "crypto") return "Крипта";
+  if (key === "crypto") return "Криптовалюта";
   if (key === "ua_card") return "Укр. карта";
   if (key === "cashback") return "Кэшбек";
 
   return key || "Не указан";
+}
+
+/** Підрозділи каси в «СТАТИСТИКА ДНЯ» — фіксований порядок для звірки. */
+export const DAILY_STATS_KASA_METHOD_SECTIONS = [
+  { key: "cash", label: "Наличные" },
+  { key: "blik", label: "BLIK" },
+  { key: "ua_card", label: "Укр. карта" },
+  { key: "crypto", label: "Криптовалюта" },
+];
+
+function getOrderDeliveryFeeZlForStats(order) {
+  const deliveryType = String(order?.deliveryType || "").trim().toLowerCase();
+  const deliveryMethod = String(order?.deliveryMethod || "").trim().toLowerCase();
+  if (deliveryType !== "delivery") return 0;
+  if (deliveryMethod === "courier") return Number(order?.deliveryFeeZl || 0);
+  if (deliveryMethod === "inpost") return Number(order?.inpostDeliveryFeeZl || 0);
+  return 0;
+}
+
+/** Касса по замовленню без доставки (як у рядку «Касса (товар, без доставки)»). */
+export function getOrderKasaNetPlnZl(order) {
+  const kasa = Number(__chunk08.getOrderKasaPlnZl(order) || 0);
+  const delivery = getOrderDeliveryFeeZlForStats(order);
+  return Number(Math.max(0, kasa - delivery).toFixed(2));
 }
 
 const DAILY_STATS_SEP = "——————————————————";
@@ -184,20 +213,8 @@ function formatDailyStatsDisplayTitle(productRow = {}) {
   return joined.toUpperCase() || "ТОВАР";
 }
 
-/** Картридж: 0.4 / 0.6 / 0.8 з flavorKey або label замовлення. */
-export function formatDailyStatsCartridgeFlavorLabel(flavor = {}) {
-  const key = String(flavor?.flavorKey || "").trim().toLowerCase();
-  const label = String(flavor?.flavorLabel || flavor?.label || "").trim();
-
-  const fromKey = key.match(/0-(\d)-1-szt$/) || key.match(/0-(\d)(?:-|$)/);
-  if (fromKey) return `0.${fromKey[1]} Ω`;
-
-  const fromLabel = label.match(/\b0\.(\d)\b/);
-  if (fromLabel) return `0.${fromLabel[1]} Ω`;
-
-  if (label) return label.replace(/\s+/g, " ").trim();
-  return "Вариант";
-}
+export const formatDailyStatsPodFlavorLabel = formatPodCharacteristicLabel;
+export const formatDailyStatsCartridgeFlavorLabel = formatCartridgeCharacteristicLabel;
 
 function formatDailyStatsPaymentBadge(method) {
   const key = String(method || "").trim().toLowerCase();
@@ -509,31 +526,16 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
         bucket.title = rowTitle;
       }
 
-      const isCartridgeRow = __chunk09.isStatsSheetCartridge(row);
-      const useVariantLines = !isCartridgeRow && __chunk09.isStatsSheetPod(row);
+      for (const flavor of flavors) {
+        const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
+        if (!qty) continue;
 
-      if (useVariantLines) {
-        const variantTitle = formatDailyStatsDisplayTitle(row);
-        bucket.variants.set(
-          variantTitle,
-          (bucket.variants.get(variantTitle) || 0) + rowQty
+        const flavorLabel = formatOrderFlavorCharacteristicLabel(row, flavor);
+
+        bucket.flavors.set(
+          flavorLabel,
+          (bucket.flavors.get(flavorLabel) || 0) + qty
         );
-      } else {
-        for (const flavor of flavors) {
-          const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
-          if (!qty) continue;
-
-          const flavorLabel = isCartridgeRow
-            ? formatDailyStatsCartridgeFlavorLabel(flavor)
-            : String(
-                flavor?.flavorLabel || flavor?.label || flavor?.flavorKey || "Вкус"
-              ).trim();
-
-          bucket.flavors.set(
-            flavorLabel,
-            (bucket.flavors.get(flavorLabel) || 0) + qty
-          );
-        }
       }
     }
   }
@@ -598,24 +600,23 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   }
 
   const ordersCount = (Array.isArray(orders) ? orders : []).length;
-  const sumTotalZl = Number(
-    (Array.isArray(orders) ? orders : [])
-      .reduce((sum, order) => sum + Number(order?.totalZl || 0), 0)
-      .toFixed(2)
-  );
-  const sumItemsSubtotalZl = Number(
-    (Array.isArray(orders) ? orders : [])
-      .reduce((sum, order) => sum + __chunk08.getOrderItemsSubtotalZl(order), 0)
-      .toFixed(2)
-  );
 
-  const kasaByMethod = new Map();
+  const kasaNetByMethodKey = new Map();
+  let kasaNetOtherZl = 0;
   for (const order of Array.isArray(orders) ? orders : []) {
-    const methodLabel = formatPaymentMethodLabel(
-      getOrderDisplayedPaymentMethod(order)
-    );
-    const part = Number(__chunk08.getOrderKasaPlnZl(order) || 0);
-    kasaByMethod.set(methodLabel, Number((kasaByMethod.get(methodLabel) || 0) + part));
+    const methodKey = String(getOrderDisplayedPaymentMethod(order) || "")
+      .trim()
+      .toLowerCase();
+    const part = getOrderKasaNetPlnZl(order);
+    const known = DAILY_STATS_KASA_METHOD_SECTIONS.some((s) => s.key === methodKey);
+    if (known) {
+      kasaNetByMethodKey.set(
+        methodKey,
+        Number((kasaNetByMethodKey.get(methodKey) || 0) + part)
+      );
+    } else if (part > 0) {
+      kasaNetOtherZl = Number((kasaNetOtherZl + part).toFixed(2));
+    }
   }
 
   lines.push(`<b>🏦 ФИНАНСЫ :</b> `);
@@ -632,6 +633,15 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   lines.push(
     `💵Касса (товар, без доставки): <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`
   );
+  for (const section of DAILY_STATS_KASA_METHOD_SECTIONS) {
+    const amount = Number(kasaNetByMethodKey.get(section.key) || 0);
+    lines.push(`   ${section.label}: <b>${formatDailyStatsZl(amount)}</b> PLN`);
+  }
+  if (kasaNetOtherZl > 0) {
+    lines.push(
+      `   Прочее (кэшбек и др.): <b>${formatDailyStatsZl(kasaNetOtherZl)}</b> PLN`
+    );
+  }
   if (isDeliveryChannelPoint) {
     const deliveryLabel = isInpostPoint
       ? "🚚Доставки InPost (оплатили клиенты)"
@@ -639,16 +649,6 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     lines.push(
       `${deliveryLabel}: <b>${formatDailyStatsZl(deliveryFeesInfoZl)}</b> PLN`
     );
-  }
-  if (Math.abs(sumItemsSubtotalZl - kasaNetTotalZl) > 1) {
-    lines.push(
-      `<i>Σ позиции по unitPrice: ${formatDailyStatsZl(sumItemsSubtotalZl)} PLN · Σ totalZl заказов: ${formatDailyStatsZl(sumTotalZl)} PLN</i>`
-    );
-  }
-  for (const [methodLabel, amount] of [...kasaByMethod.entries()].sort(
-    (a, b) => b[1] - a[1]
-  )) {
-    lines.push(`   ${methodLabel}: <b>${formatDailyStatsZl(amount)}</b> PLN`);
   }
   lines.push(`🪙Скидки: <b>${formatDailyStatsZl(discountsTotalZl)}</b> PLN`);
   if (isInpostPoint && inpostDeliverySubsidyTotalZl > 0) {

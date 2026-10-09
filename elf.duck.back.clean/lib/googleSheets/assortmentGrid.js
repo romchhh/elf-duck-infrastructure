@@ -4,13 +4,16 @@ import {
 } from "./config.js";
 import {
   appendSheetRow,
+  batchUpdateSpreadsheet,
   batchUpdateValues,
+  getSpreadsheetMeta,
   escapeSheetTitle,
   readSheetValues,
 } from "./client.js";
 import {
   compactSheetFlavor,
-  flavorMatchesWanted,
+  flavorMatchTier,
+  flavorWordsMatch,
   headerMatchesWanted,
   normalizeSheetModelName,
   getAssortmentFlavorAliasLabels,
@@ -55,7 +58,9 @@ function colToA1(colIndex) {
 
 function parseQty(cell) {
   const n = Number(String(cell || "").replace(/\s/g, "").replace(",", "."));
-  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  if (!Number.isFinite(n)) return 0;
+  // Дозволяємо від’ємний залишок на листі (−1, −2…), інакше наступне списання знову «бачить» 0.
+  return Math.floor(n);
 }
 
 export function findAssortmentModelBlocks(rows) {
@@ -159,29 +164,76 @@ export function buildAssortmentFlavorSearchLabels(flavor = {}, productKey = "") 
   return candidates;
 }
 
-export function findAssortmentFlavorRow(rows, block, flavorLabel) {
-  const wanted = compactSheetFlavor(flavorLabel);
+/** Рядки смаків блоку: { row (0-based), cell }. */
+function collectBlockFlavorRows(rows, block) {
+  const out = [];
   const startRow = block.headerRow + 1;
 
   for (let r = startRow; r < rows.length; r++) {
     const row = rows[r] || [];
-    const flavorCell = row[block.flavorCol];
-    if (!String(flavorCell || "").trim()) {
+    const flavorCell = String(row[block.flavorCol] || "").trim();
+    if (!flavorCell) {
       // stop at empty run only if we already passed some flavors
       if (r > startRow + 1 && !row.some((c) => String(c || "").trim())) {
         break;
       }
       continue;
     }
+    if (/^total\b/i.test(flavorCell)) break;
+    out.push({ row: r, cell: flavorCell });
+  }
 
-    if (/^total\b/i.test(String(flavorCell))) break;
+  return out;
+}
 
-    if (flavorMatchesWanted(flavorCell, wanted)) {
-      return r;
+function countAssortmentFlavorMatches(rows, block, flavorLabel) {
+  const wanted = compactSheetFlavor(flavorLabel);
+  return collectBlockFlavorRows(rows, block).filter(
+    (x) => flavorMatchTier(x.cell, wanted) === 1
+  ).length;
+}
+
+/**
+ * Пошук рядка смаку по списку кандидатів (label, alias, slug…).
+ * Спочатку точний збіг по БУДЬ-ЯКОМУ кандидату, потім banana/banan, потім підрядок —
+ * але лише якщо кандидат у блоці один (ніколи не «перший схожий»).
+ */
+export function resolveAssortmentFlavorRow(rows, block, labels = []) {
+  const entries = collectBlockFlavorRows(rows, block);
+  const wantedList = labels
+    .map((label) => ({ label, wanted: compactSheetFlavor(label) }))
+    .filter((x) => x.wanted);
+
+  for (const tier of [1, 2, 3, 4]) {
+    for (const { label, wanted } of wantedList) {
+      const hits = entries.filter((e) =>
+        tier === 4
+          ? flavorMatchTier(e.cell, wanted) === 0 && flavorWordsMatch(e.cell, label)
+          : flavorMatchTier(e.cell, wanted) === tier
+      );
+      if (tier === 1 && hits.length >= 1) {
+        return { row: hits[0].row, label, tier, ambiguous: false };
+      }
+      if (hits.length === 1) {
+        return { row: hits[0].row, label, tier, ambiguous: false };
+      }
+      if (hits.length > 1) {
+        return {
+          row: -1,
+          label,
+          tier,
+          ambiguous: true,
+          candidates: hits.map((h) => h.cell),
+        };
+      }
     }
   }
 
-  return -1;
+  return { row: -1, label: "", tier: 0, ambiguous: false };
+}
+
+export function findAssortmentFlavorRow(rows, block, flavorLabel) {
+  return resolveAssortmentFlavorRow(rows, block, [flavorLabel]).row;
 }
 
 /** Усі рядки смаків у блоці моделі (як у sync). */
@@ -205,6 +257,38 @@ export function listAssortmentFlavorsInBlock(rows, block) {
   return flavors;
 }
 
+/** Дублікати смаків у одному блоці (різні рядки, той самий compactSheetFlavor). */
+export function listAssortmentDuplicateFlavorsInBlock(rows, block) {
+  const startRow = block.headerRow + 1;
+  const groups = new Map();
+
+  for (let r = startRow; r < rows.length; r++) {
+    const row = rows[r] || [];
+    const flavorCell = String(row[block.flavorCol] || "").trim();
+    if (!flavorCell) {
+      if (r > startRow + 1 && !row.some((c) => String(c || "").trim())) {
+        break;
+      }
+      continue;
+    }
+    if (/^total\b/i.test(flavorCell)) break;
+
+    const key = compactSheetFlavor(flavorCell);
+    if (!key || key.length < 3 || /^\d+$/.test(key)) continue;
+    const list = groups.get(key) || [];
+    list.push({ row: r + 1, label: flavorCell });
+    groups.set(key, list);
+  }
+
+  const duplicates = [];
+  for (const [key, entries] of groups) {
+    if (entries.length > 1) {
+      duplicates.push({ key, entries });
+    }
+  }
+  return duplicates;
+}
+
 /** Чи знайде sync рядок для смаку з каталогу (ті самі кандидати, що в orderSync). */
 export function matchCatalogFlavorInAssortmentBlock(
   rows,
@@ -221,19 +305,91 @@ export function matchCatalogFlavorInAssortmentBlock(
     productKey
   );
 
-  for (const label of labels) {
-    const rowIndex = findAssortmentFlavorRow(rows, block, label);
-    if (rowIndex >= 0) {
-      return {
-        ok: true,
-        matchedLabel: label,
-        sheetLabel: String(rows[rowIndex]?.[block.flavorCol] || "").trim(),
-        rowIndex,
-      };
-    }
+  const resolved = resolveAssortmentFlavorRow(rows, block, labels);
+  if (resolved.row >= 0) {
+    return {
+      ok: true,
+      matchedLabel: resolved.label,
+      sheetLabel: String(rows[resolved.row]?.[block.flavorCol] || "").trim(),
+      rowIndex: resolved.row,
+      tier: resolved.tier,
+    };
   }
 
-  return { ok: false, triedLabels: labels };
+  return {
+    ok: false,
+    triedLabels: labels,
+    ambiguous: resolved.ambiguous,
+    candidates: resolved.candidates,
+  };
+}
+
+const negativeHighlightEnsured = new Set();
+
+/**
+ * Один раз на таблицю: умовне форматування на АССОРТИМЕНТ (NUMBER_LESS 0, не залежить від локалі) — будь-яке число < 0 (залишок −1, −2…) червоним.
+ * Ідемпотентно: якщо правило вже є, нічого не додає.
+ */
+export async function ensureNegativeStockHighlight(spreadsheetId) {
+  if (!spreadsheetId || negativeHighlightEnsured.has(spreadsheetId)) {
+    return { ok: true, skipped: true };
+  }
+
+  const meta = await getSpreadsheetMeta(
+    spreadsheetId,
+    "sheets(properties(sheetId,title),conditionalFormats(booleanRule(condition(type,values))))"
+  );
+  if (!meta) return { ok: false, reason: "SHEETS_DISABLED" };
+
+  const sheet = (meta.sheets || []).find(
+    (s) => s?.properties?.title === ASSORTMENT_SHEET_TITLE
+  );
+  if (!sheet) return { ok: false, reason: "ASSORTMENT_SHEET_NOT_FOUND" };
+
+  const exists = (sheet.conditionalFormats || []).some((rule) => {
+    const cond = rule?.booleanRule?.condition;
+    return (
+      cond?.type === "NUMBER_LESS" &&
+      (cond.values || []).some((v) => String(v?.userEnteredValue) === "0")
+    );
+  });
+
+  if (!exists) {
+    await batchUpdateSpreadsheet(spreadsheetId, [
+      {
+        addConditionalFormatRule: {
+          index: 0,
+          rule: {
+            ranges: [
+              {
+                sheetId: sheet.properties.sheetId,
+                startRowIndex: 0,
+                endRowIndex: 200,
+                startColumnIndex: 0,
+                endColumnIndex: 702,
+              },
+            ],
+            booleanRule: {
+              condition: {
+                type: "NUMBER_LESS",
+                values: [{ userEnteredValue: "0" }],
+              },
+              format: {
+                backgroundColor: { red: 0.92, green: 0.2, blue: 0.2 },
+                textFormat: {
+                  bold: true,
+                  foregroundColor: { red: 1, green: 1, blue: 1 },
+                },
+              },
+            },
+          },
+        },
+      },
+    ]);
+  }
+
+  negativeHighlightEnsured.add(spreadsheetId);
+  return { ok: true, added: !exists };
 }
 
 export async function loadAssortmentGrid(spreadsheetId) {
@@ -283,15 +439,24 @@ export async function applyAssortmentDelta({
       [flavorLabel, ...flavorLabelCandidates].map((x) => String(x || "").trim()).filter(Boolean)
     ),
   ];
-  let flavorRow = -1;
-  let matchedFlavorLabel = flavorLabels[0] || "";
+  const resolved = resolveAssortmentFlavorRow(rows, block, flavorLabels);
+  const flavorRow = resolved.row;
+  const matchedFlavorLabel = resolved.label || flavorLabels[0] || "";
 
-  for (const label of flavorLabels) {
-    flavorRow = findAssortmentFlavorRow(rows, block, label);
-    if (flavorRow >= 0) {
-      matchedFlavorLabel = label;
-      break;
-    }
+  if (flavorRow >= 0 && resolved.tier > 1 && !dryRun) {
+    await logSyncError(spreadsheetId, {
+      pointLabel,
+      dayKey,
+      reason: "ASSORTMENT_FUZZY_MATCH",
+      modelName,
+      productKey: productKey || "",
+      headerCandidates: headerCandidates.join(" | "),
+      normalizedModel: block.header,
+      flavorLabel: flavorLabels.join(" | "),
+      normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
+      qty: Math.abs(Number(deltaQty || 0)),
+      hint: `Нечіткий збіг: «${matchedFlavorLabel}» → «${String(rows[flavorRow]?.[block.flavorCol] || "").trim()}» — перевірте назву на листі`,
+    });
   }
 
   if (flavorRow < 0) {
@@ -299,7 +464,7 @@ export async function applyAssortmentDelta({
     await logSyncError(spreadsheetId, {
       pointLabel,
       dayKey,
-      reason: "FLAVOR_ROW_NOT_FOUND",
+      reason: resolved.ambiguous ? "FLAVOR_ROW_AMBIGUOUS" : "FLAVOR_ROW_NOT_FOUND",
       modelName,
       productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
@@ -307,16 +472,75 @@ export async function applyAssortmentDelta({
       flavorLabel: flavorLabels.join(" | "),
       normalizedFlavor: flavorLabels.map((l) => compactSheetFlavor(l)).join(" | "),
       qty: Math.abs(Number(deltaQty || 0)),
-      hint: sheetFlavors.length
-        ? `Блок «${block.header}»: додайте рядок як у каталозі або скопіюйте з листа: ${sheetFlavors.slice(0, 6).join(" | ")}`
-        : `Блок «${block.header}» без рядків смаків`,
+      hint: resolved.ambiguous
+        ? `Неоднозначно: кілька схожих рядків у «${block.header}»: ${(resolved.candidates || []).join(" | ")} — уточніть назву на листі`
+        : sheetFlavors.length
+          ? `Блок «${block.header}»: додайте рядок як у каталозі або скопіюйте з листа: ${sheetFlavors.slice(0, 6).join(" | ")}`
+          : `Блок «${block.header}» без рядків смаків`,
     });
 
-    return { ok: false, reason: "FLAVOR_ROW_NOT_FOUND", triedLabels: flavorLabels };
+    return {
+      ok: false,
+      reason: resolved.ambiguous ? "FLAVOR_ROW_AMBIGUOUS" : "FLAVOR_ROW_NOT_FOUND",
+      triedLabels: flavorLabels,
+    };
+  }
+
+  const duplicateFlavorRows = countAssortmentFlavorMatches(
+    rows,
+    block,
+    matchedFlavorLabel
+  );
+  if (duplicateFlavorRows > 1 && !dryRun) {
+    await logSyncError(spreadsheetId, {
+      pointLabel,
+      dayKey,
+      reason: "ASSORTMENT_DUPLICATE_FLAVOR_ROW",
+      modelName,
+      productKey: productKey || "",
+      headerCandidates: headerCandidates.join(" | "),
+      normalizedModel: block.header,
+      flavorLabel: matchedFlavorLabel,
+      normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
+      qty: Math.abs(Number(deltaQty || 0)),
+      hint: `У блоці «${block.header}» ${duplicateFlavorRows} рядків для цього смаку — списання йде в перший; приберіть дублікати на листі`,
+    });
   }
 
   const currentQty = parseQty(rows[flavorRow]?.[block.qtyCol]);
-  const nextQty = Math.max(0, currentQty + deltaQty);
+  const rawNext = currentQty + deltaQty;
+  // Продаж (мінус): дозволяємо від’ємний залишок (−1, −2…), щоб 0 не «залипав».
+  // Повернення / корекція в плюс — не нижче 0.
+  const nextQty =
+    deltaQty < 0 ? rawNext : Math.max(0, rawNext);
+
+  const soldAtZeroOrBelow = deltaQty < 0 && currentQty <= 0;
+  const noDeductionEffect = deltaQty < 0 && nextQty === currentQty;
+
+  if (noDeductionEffect) {
+    await logSyncError(spreadsheetId, {
+      pointLabel,
+      dayKey,
+      reason: "ASSORTMENT_NO_DEDUCT",
+      modelName,
+      productKey: productKey || "",
+      headerCandidates: headerCandidates.join(" | "),
+      normalizedModel: block.header,
+      flavorLabel: matchedFlavorLabel,
+      normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
+      qty: Math.abs(Number(deltaQty || 0)),
+      hint: `Залишок ${currentQty} не змінився після списання ${Math.abs(deltaQty)}`,
+    });
+
+    return {
+      ok: false,
+      reason: "ASSORTMENT_NO_DEDUCT",
+      currentQty,
+      nextQty,
+      header: block.header,
+      matchedFlavorLabel,
+    };
+  }
 
   const a1 = `${escapeSheetTitle(ASSORTMENT_SHEET_TITLE)}!${colToA1(block.qtyCol)}${flavorRow + 1}`;
 
@@ -329,6 +553,7 @@ export async function applyAssortmentDelta({
       nextQty,
       header: block.header,
       matchedFlavorLabel,
+      stockSoldAtZero: soldAtZeroOrBelow,
     };
   }
 
@@ -339,6 +564,30 @@ export async function applyAssortmentDelta({
     },
   ]);
 
+  if (nextQty < 0) {
+    try {
+      await ensureNegativeStockHighlight(spreadsheetId);
+    } catch (e) {
+      console.error("[googleSheets] negative highlight failed:", e?.message || e);
+    }
+  }
+
+  if (soldAtZeroOrBelow) {
+    await logSyncError(spreadsheetId, {
+      pointLabel,
+      dayKey,
+      reason: "ASSORTMENT_SOLD_AT_ZERO",
+      modelName,
+      productKey: productKey || "",
+      headerCandidates: headerCandidates.join(" | "),
+      normalizedModel: block.header,
+      flavorLabel: matchedFlavorLabel,
+      normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
+      qty: Math.abs(Number(deltaQty || 0)),
+      hint: `Було ${currentQty} → стало ${nextQty} (продаж при нульовому/від’ємному залишку на листі)`,
+    });
+  }
+
   return {
     ok: true,
     a1,
@@ -346,6 +595,7 @@ export async function applyAssortmentDelta({
     nextQty,
     header: block.header,
     matchedFlavorLabel,
+    stockSoldAtZero: soldAtZeroOrBelow,
   };
 }
 

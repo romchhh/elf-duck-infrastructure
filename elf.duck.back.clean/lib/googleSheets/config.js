@@ -22,14 +22,15 @@ export const DEFAULT_SERVICE_ACCOUNT_PATH = path.join(
 );
 
 /** Spreadsheet id per pickup / delivery point key */
+/** Бойові таблиці (жовтень 2026). InPost / wola-inpost — та сама, що wola. */
 export const SPREADSHEET_ID_BY_POINT_KEY = {
-  praga: "1JF6bs99j2GzstlhtDL8y2-5GwPdIPbv9REPyfs5xTUk",
-  "r-dmie-cie": "1Ds6xx1d03tAdU8pAy4lAi0LbsyLcuUMoJaxZDn3kTL0",
-  "mokot-w": "13YahfNpXkKKg8vN7mhius1jjr0YMRoP5-AsxB2nytKE",
-  wola: "1kLnMHbHwS5q-V6z4xfy6OSAEpe9IwMy3OhzTYMWydZ8",
-  "delivery-2": "1kLnMHbHwS5q-V6z4xfy6OSAEpe9IwMy3OhzTYMWydZ8",
-  delivery: "1OsKPgUUHJHlGHoCOlfcT3z7-13j-9zCa4my9__rY6TU",
-  "wola-inpost": "1kLnMHbHwS5q-V6z4xfy6OSAEpe9IwMy3OhzTYMWydZ8",
+  praga: "1iNQFLX0I3VKFcBW2SZwtLz2YkPMVNtrCMoTSq6oStSQ",
+  "r-dmie-cie": "1_NriybCDyUR2Aj-VeNj739pTZgK097cmLN_IuYfdPtY",
+  "mokot-w": "1iidmQHEUX20sfOxrDzFJfRevhNQYosWyK3J__GlKpKk",
+  wola: "1-LYkb8zbdJcIblnZskVndyhc2PdgtG_JxHcoy2kJj_w",
+  "delivery-2": "1-LYkb8zbdJcIblnZskVndyhc2PdgtG_JxHcoy2kJj_w",
+  delivery: "1LM_5g43L8unMbW-oN5DFmUf8FvgwHuCzf2m5nxWGeQ0",
+  "wola-inpost": "1-LYkb8zbdJcIblnZskVndyhc2PdgtG_JxHcoy2kJj_w",
 };
 
 export function isGoogleSheetsEnabled() {

@@ -23,6 +23,7 @@ import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import crmRouter from "../../../routes/crm.js";
+import { formatOrderFlavorCharacteristicLabel } from "../../orderFlavorLabel.js";
 
 const APP_URL = String(
   process.env.APP_URL ||
@@ -404,7 +405,7 @@ export async function sendOrderCreatedNotification(order, options = {}) {
 
         const flavorsText = (it.flavors || [])
           .map((f) => {
-            const flavor = f.flavorLabel || f.flavorKey || "Вкус";
+            const flavor = formatOrderFlavorCharacteristicLabel(it, f);
             const priceText = Number(f.unitPrice || 0) > 0
               ? ` • ${Number(f.unitPrice || 0)} zł/шт.`
               : "";
@@ -978,7 +979,7 @@ export async function refreshManagerOrderMessage(order) {
 
         const flavorsText = (it.flavors || [])
           .map((f) => {
-            const flavor = f.flavorLabel || f.flavorKey || "Вкус";
+            const flavor = formatOrderFlavorCharacteristicLabel(it, f);
             const priceText = Number(f.unitPrice || 0) > 0
               ? ` • ${Number(f.unitPrice || 0)} zł/шт.`
               : "";

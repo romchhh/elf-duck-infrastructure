@@ -132,6 +132,7 @@ for (const pointKey of pointKeys) {
   const flavorMissing = [];
   const modelOk = [];
   const flavorOk = [];
+  const flavorFuzzy = [];
 
   const blockCache = new Map();
 
@@ -178,7 +179,18 @@ for (const pointKey of pointKeys) {
         flavorLabel: item.flavorLabel,
         sheetLabel: match.sheetLabel,
         matchedLabel: match.matchedLabel,
+        tier: match.tier,
       });
+      if (match.tier > 1) {
+        flavorFuzzy.push({
+          productKey: item.productKey,
+          flavorKey: item.flavorKey,
+          catalogLabel: item.flavorLabel,
+          sheetLabel: match.sheetLabel,
+          matchedLabel: match.matchedLabel,
+          tier: match.tier,
+        });
+      }
     } else {
       const sheetFlavors = listAssortmentFlavorsInBlock(rows, block);
       flavorMissing.push({
@@ -221,6 +233,8 @@ for (const pointKey of pointKeys) {
       (x) => `${x.productKey}|${x.modelName}`
     ),
     flavorMissing,
+    flavorsFuzzy: flavorFuzzy.length,
+    flavorFuzzy,
     orphanSheetBlocks: orphanBlocks,
     allSheetHeaders: sheetHeaders,
   };
@@ -250,6 +264,8 @@ if (summaryJson || asJson) {
             modelsMissing: rep.modelsMissing,
             flavorsOk: rep.flavorsOk,
             flavorsMissing: rep.flavorsMissing,
+            flavorsFuzzy: rep.flavorsFuzzy,
+            flavorFuzzy: rep.flavorFuzzy,
             modelMissingUnique: rep.modelMissingUnique,
             flavorMissingKeys: (rep.flavorMissing || []).map(
               (f) => `${f.productKey}/${f.flavorKey}`
@@ -275,6 +291,15 @@ if (summaryJson || asJson) {
       console.log("\n— MODEL_BLOCK_NOT_FOUND (товар → заголовок на листі):");
       for (const m of rep.modelMissingUnique) {
         console.log(`  • ${m.productKey} → sync model «${m.modelName}»`);
+      }
+    }
+
+    if (rep.flavorFuzzy?.length) {
+      console.log(`\n— Нечіткі збіги (перевірити назву на листі), ${rep.flavorFuzzy.length}:`);
+      for (const f of rep.flavorFuzzy) {
+        console.log(
+          `  • ${f.productKey}/${f.flavorKey} «${f.catalogLabel}» → лист «${f.sheetLabel}» (tier ${f.tier})`
+        );
       }
     }
 

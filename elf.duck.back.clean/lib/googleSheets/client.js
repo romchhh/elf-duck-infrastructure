@@ -53,6 +53,24 @@ export async function batchUpdateValues(spreadsheetId, data) {
   });
 }
 
+export async function getSpreadsheetMeta(spreadsheetId, fields) {
+  const sheets = getSheetsApi();
+  if (!sheets) return null;
+
+  const res = await sheets.spreadsheets.get({ spreadsheetId, fields });
+  return res.data;
+}
+
+export async function batchUpdateSpreadsheet(spreadsheetId, requests) {
+  const sheets = getSheetsApi();
+  if (!sheets) return null;
+
+  return sheets.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: { requests },
+  });
+}
+
 export async function appendSheetRow(spreadsheetId, sheetTitle, values) {
   const sheets = getSheetsApi();
   if (!sheets) return null;

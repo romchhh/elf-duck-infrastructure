@@ -8,11 +8,11 @@ const credPath = path.resolve(
 );
 
 const SPREADSHEETS = [
-  { label: "praga", id: "1JF6bs99j2GzstlhtDL8y2-5GwPdIPbv9REPyfs5xTUk", gid: 1554750964 },
-  { label: "sheet1", id: "1Ds6xx1d03tAdU8pAy4lAi0LbsyLcuUMoJaxZDn3kTL0", gid: 1438599914 },
-  { label: "sheet2", id: "13YahfNpXkKKg8vN7mhius1jjr0YMRoP5-AsxB2nytKE", gid: 610356927 },
-  { label: "sheet3", id: "1kLnMHbHwS5q-V6z4xfy6OSAEpe9IwMy3OhzTYMWydZ8", gid: 1087382641 },
-  { label: "sheet4", id: "1OsKPgUUHJHlGHoCOlfcT3z7-13j-9zCa4my9__rY6TU", gid: 1463621849 },
+  { label: "praga", id: "1iNQFLX0I3VKFcBW2SZwtLz2YkPMVNtrCMoTSq6oStSQ", gid: 1554750964 },
+  { label: "delivery", id: "1LM_5g43L8unMbW-oN5DFmUf8FvgwHuCzf2m5nxWGeQ0", gid: 1463621849 },
+  { label: "wola", id: "1-LYkb8zbdJcIblnZskVndyhc2PdgtG_JxHcoy2kJj_w", gid: 1087382641 },
+  { label: "mokot-w", id: "1iidmQHEUX20sfOxrDzFJfRevhNQYosWyK3J__GlKpKk", gid: 610356927 },
+  { label: "r-dmie-cie", id: "1_NriybCDyUR2Aj-VeNj739pTZgK097cmLN_IuYfdPtY", gid: 1438599914 },
 ];
 
 const auth = new google.auth.GoogleAuth({

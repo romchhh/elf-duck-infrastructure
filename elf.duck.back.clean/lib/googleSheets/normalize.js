@@ -63,11 +63,27 @@ export function normalizeSheetModelName(value) {
     .trim();
 }
 
+/** Кирилічні літери, візуально ідентичні латинським («Bananа» з кирилічною а на листі). */
+const CYRILLIC_LATIN_LOOKALIKES = {
+  А: "A",
+  В: "B",
+  Е: "E",
+  К: "K",
+  М: "M",
+  Н: "H",
+  О: "O",
+  Р: "P",
+  С: "C",
+  Т: "T",
+  Х: "X",
+  У: "Y",
+  І: "I",
+};
+
 export function compactSheetFlavor(value) {
-  return normalizeSheetModelName(value).replace(
-    /[^A-ZА-ЯІЇЄҐ0-9]+/g,
-    ""
-  );
+  return normalizeSheetModelName(value)
+    .replace(/[^A-ZА-ЯІЇЄҐ0-9]+/g, "")
+    .replace(/[АВЕКМНОРСТХУІ]/g, (ch) => CYRILLIC_LATIN_LOOKALIKES[ch] || ch);
 }
 
 /** Report tab uses short model labels (column MODEL). */
@@ -131,7 +147,9 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
       "PUFFY 70%",
       "PUFFY 70",
     ],
-    "chaser-black-30-ml": ["LIQ BLACK", " BLACK"],
+    // Каталог: chaser-black-30-ml = HQD 30 ML → блок LIQ HQD.
+    "chaser-black-30-ml": ["LIQ HQD", "HQD"],
+    "chaser-black-30-ml-2": ["LIQ BLACK", " BLACK"],
     "chaser-for-pods-30-ml": ["LIQ FOR PODS", "FOR PODS"],
     "chaser-special-30-ml": ["LIQ SPECIAL", "SPECIAL"],
     "ethereum-30-ml": ["LIQ ETHEREUM", "ETHEREUM"],
@@ -202,7 +220,24 @@ export function headerMatchesWanted(header, wantedSet) {
 /**
  * Додаткові назви смаку на листі АССОРТИМЕНТ (ключ каталогу → flavorKey → варіанти).
  */
+const CARTRIDGE_RESISTANCE_ALIASES = {
+  "cartridge-3ml-0-4-1-szt": ["0.4", "0,4", "0.4 Ω", "0.4 ohm"],
+  "cartridge-3ml-0-6-1-szt": ["0.6", "0,6", "0.6 Ω", "0.6 ohm"],
+  "cartridge-3ml-0-8-1-szt": ["0.8", "0,8", "0.8 Ω", "0.8 ohm"],
+};
+
 export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
+  // Картриджі: у каталозі «CARTRIDGE 3ML 0.4 1 SZT.», на листі рядок «0.4».
+  "cartridge-oxva": CARTRIDGE_RESISTANCE_ALIASES,
+  "xros-cartridge": CARTRIDGE_RESISTANCE_ALIASES,
+  "xros-5-mini-pod": {
+    black: ["XROS Black"],
+    purple: ["XROS Purple"],
+    "sky-blue": ["XROS Blue", "XROS Sky Blue"],
+  },
+  "puffy-30-ml-70-mg": {
+    "grape-raspberry-black-plum": ["Grape Raspberry Plum"],
+  },
   "chaser-for-pods-30-ml": {
     "l-ch": ["Личи", "Лічі", "Личі", "Litchi", "Lychee"],
     "lichi": ["Личи", "Лічі", "Личі", "Litchi", "Lychee"],
@@ -227,8 +262,10 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
   },
   "puffy-30-ml": {
     "kiwi-berry": ["Berri kiwi", "Berry kiwi", "Kiwi Berry"],
+    "grape-raspberry-plum": ["Grape Raspberry Black Plum"],
   },
   "chaser-black-30-ml": {
+    "strawberry-raspberry-cherry-ice": ["Strawberry Raspberry Cherry"],
     "kiwi-wild-strawberry": [
       "Kiwi Wild Strawberry",
       "Wld Strawberry Kiwi",
@@ -275,6 +312,104 @@ function flavorTokens(compact) {
     .filter((t) => t.length > 2);
 }
 
+/**
+ * Рівень збігу смаку (щоб не списувати з «першого схожого» рядка):
+ * 1 — точний (compact), 2 — banana/banan або LUX-суфікс, 3 — число в кінці на листі («Aurora Blue 10»),
+ * 0 — немає збігу. Підрядки («Blueberry Lemon» ⊂ «Blueberry Lemonade») НЕ збігаються.
+ */
+export function flavorMatchTier(flavorCell, wantedCompact) {
+  const cell = compactSheetFlavor(flavorCell);
+  if (!cell || !wantedCompact) return 0;
+  if (cell === wantedCompact) return 1;
+
+  // banana ice vs banan ice (без викидання ICE — «Watermelon» ≠ «Watermelon Ice»)
+  const a = cell.replace(/BANANA/g, "BANAN");
+  const b = wantedCompact.replace(/BANANA/g, "BANAN");
+  if (a === b) return 2;
+
+  // «Cola Lux» ↔ «Cola» (на деяких точках рядок без LUX)
+  const aNoLux = a.replace(/LUX$/, "");
+  const bNoLux = b.replace(/LUX$/, "");
+  if (aNoLux.length >= 3 && aNoLux === bNoLux) return 2;
+
+  // «Scorching Cloud 15» ↔ «Scorching Cloud» (число в кінці назви на листі)
+  const aNoNum = aNoLux.replace(/\d+$/, "");
+  const bNoNum = bNoLux.replace(/\d+$/, "");
+  if (aNoNum.length >= 5 && aNoNum === bNoNum) return 3;
+
+  return 0;
+}
+
+const FLAVOR_IGNORED_WORDS = new Set(["LUX", "XROS"]);
+
+function foldLookalikes(s) {
+  return String(s || "").replace(
+    /[АВЕКМНОРСТХУІ]/g,
+    (ch) => CYRILLIC_LATIN_LOOKALIKES[ch] || ch
+  );
+}
+
+function flavorWords(value) {
+  return foldLookalikes(
+    normalizeSheetModelName(value).replace(/[^A-ZА-ЯІЇЄҐ0-9]+/g, " ")
+  )
+    .trim()
+    .split(" ")
+    .filter((w) => w && !FLAVOR_IGNORED_WORDS.has(w))
+    .map((w) => FLAVOR_WORD_ABBREVIATIONS[w] || w);
+}
+
+/** Відстань Дамерау–Левенштейна (OSA). */
+function editDistance(a, b) {
+  const la = a.length;
+  const lb = b.length;
+  const d = Array.from({ length: la + 1 }, () => new Array(lb + 1).fill(0));
+  for (let i = 0; i <= la; i++) d[i][0] = i;
+  for (let j = 0; j <= lb; j++) d[0][j] = j;
+  for (let i = 1; i <= la; i++) {
+    for (let j = 1; j <= lb; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+      }
+    }
+  }
+  return d[la][lb];
+}
+
+/** Скорочення на листах (лише явні, без «префіксів»: Blue ≠ Blueberry). */
+const FLAVOR_WORD_ABBREVIATIONS = { RASP: "RASPBERRY" };
+
+function flavorWordsEquivalent(a, b) {
+  if (a === b) return true;
+  const min = Math.min(a.length, b.length);
+  if (min < 5) return false;
+  const dist = editDistance(a, b);
+  if (dist <= 1) return true;
+  // довгі слова: допускаємо 2 помилки (Blackccurant ↔ Blackcurrant)
+  return min >= 9 && dist <= 2;
+}
+
+/**
+ * Рівень 4: ті ж слова (>= 2) в іншому порядку та/або з опечаткою в 1 літеру, без «LUX»/«XROS».
+ * Використовувати лише коли єдиний кандидат у блоці.
+ */
+export function flavorWordsMatch(flavorCell, label) {
+  const a = flavorWords(flavorCell);
+  const b = flavorWords(label);
+  if (a.length < 2 || a.length !== b.length) return false;
+
+  const used = new Array(b.length).fill(false);
+  for (const wa of a) {
+    const idx = b.findIndex((wb, i) => !used[i] && flavorWordsEquivalent(wa, wb));
+    if (idx < 0) return false;
+    used[idx] = true;
+  }
+  return true;
+}
+
+/** @deprecated використовуйте flavorMatchTier; лишено для зворотної сумісності. */
 export function flavorMatchesWanted(flavorCell, wantedCompact) {
   const cell = compactSheetFlavor(flavorCell);
   if (!cell || !wantedCompact) return false;

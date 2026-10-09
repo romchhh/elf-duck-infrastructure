@@ -160,11 +160,11 @@ export async function createMonthReportTabFromOctober(opts) {
 }
 
 export const REPORT_SPREADSHEET_IDS = [
-  { key: "praga", id: "1JF6bs99j2GzstlhtDL8y2-5GwPdIPbv9REPyfs5xTUk" },
-  { key: "r-dmie-cie", id: "1Ds6xx1d03tAdU8pAy4lAi0LbsyLcuUMoJaxZDn3kTL0" },
-  { key: "mokot-w", id: "13YahfNpXkKKg8vN7mhius1jjr0YMRoP5-AsxB2nytKE" },
-  { key: "wola", id: "1kLnMHbHwS5q-V6z4xfy6OSAEpe9IwMy3OhzTYMWydZ8" },
-  { key: "delivery", id: "1OsKPgUUHJHlGHoCOlfcT3z7-13j-9zCa4my9__rY6TU" },
+  { key: "praga", id: "1iNQFLX0I3VKFcBW2SZwtLz2YkPMVNtrCMoTSq6oStSQ" },
+  { key: "r-dmie-cie", id: "1_NriybCDyUR2Aj-VeNj739pTZgK097cmLN_IuYfdPtY" },
+  { key: "mokot-w", id: "1iidmQHEUX20sfOxrDzFJfRevhNQYosWyK3J__GlKpKk" },
+  { key: "wola", id: "1-LYkb8zbdJcIblnZskVndyhc2PdgtG_JxHcoy2kJj_w" },
+  { key: "delivery", id: "1LM_5g43L8unMbW-oN5DFmUf8FvgwHuCzf2m5nxWGeQ0" },
 ];
 
 export async function createNovember2026ReportTabsAll({ replace = false } = {}) {

@@ -1,3 +1,5 @@
+import { formatOrderItemSummaryLabel } from "../orderFlavorLabel.js";
+
 export function getCrmOrderStatus(status) {
   const value = String(status || "");
 
@@ -66,30 +68,7 @@ export function getCrmDeliveryLabel(order) {
 
 export function getCrmItemsLabel(items = []) {
   return items
-    .map((item) => {
-      const title = [
-        item?.productTitle1 || "",
-        item?.productTitle2 || "",
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-
-      const qty = (
-        item?.flavors || []
-      ).reduce(
-        (sum, flavor) =>
-          sum +
-          Number(flavor?.qty || 0),
-        0
-      );
-
-      if (!title) {
-        return "";
-      }
-
-      return `${title} ×${qty}`;
-    })
+    .map((item) => formatOrderItemSummaryLabel(item))
     .filter(Boolean)
-    .join(", ");
+    .join("; ");
 }

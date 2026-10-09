@@ -9,6 +9,7 @@
  *   --qty 2
  *   --product-key elfliq-30-ml --flavor-key blue-razz-ice --flavor-label "Blue Razz Ice"
  *   --force   (sale: перезаписати state, якщо вже є pending restore)
+ *   --allow-zero-stock  (sale: дозволити списання при 0 → −1, для перевірки після деплою)
  */
 import dotenv from "dotenv";
 import fs from "fs";
@@ -222,9 +223,10 @@ console.log({
   matchedFlavorLabel: before.matchedFlavorLabel,
 });
 
-if (before.currentQty < qty) {
+const allowZeroStock = process.argv.includes("--allow-zero-stock");
+if (!allowZeroStock && before.currentQty < qty) {
   console.error(
-    `Недостатньо на листі: ${before.currentQty} < ${qty}. Обери інший смак або --qty.`
+    `Недостатньо на листі: ${before.currentQty} < ${qty}. Обери інший смак, --qty або --allow-zero-stock.`
   );
   process.exit(1);
 }
