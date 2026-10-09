@@ -941,6 +941,11 @@ app.post("/orders/confirm", async (req, res) => {
       stockReleasedAt: null,
     });
 
+    // після кожного замовлення: Mongo ← Google Таблиця складу (debounce, у фоні)
+    import("../../lib/googleSheets/orderSync.js")
+      .then((m) => m.queueStockPullForOrder(created))
+      .catch((e) => console.error("[stockPull] queue after order create failed:", e?.message || e));
+
     // 9) clear cart
     console.time("orders/confirm clear cart");
     if (!isGuestOrder) {

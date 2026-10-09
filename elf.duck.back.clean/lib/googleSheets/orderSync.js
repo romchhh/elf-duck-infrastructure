@@ -11,6 +11,8 @@ import {
   resolveSpreadsheetIdForPointKey,
 } from "./config.js";
 import { getAssortmentSheetModelName } from "../server/helpers/chunk09.js";
+import { queueStockPullForPointKey } from "./stockPull.js";
+import { logOrderAssortmentSyncSummary } from "./syncErrorsLog.js";
 
 export async function resolveOrderPointKey(order) {
   if (!order) return "";
@@ -102,15 +104,22 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
         flavorLabel: step.matchedFlavorLabel,
         deltaQty: revQty,
         dryRun,
+        orderNo: order?.orderNo,
+        orderId: String(order?._id || ""),
       });
-      results.push({ kind: "assortment", assortmentResult });
+      results.push({
+        kind: "assortment",
+        productKey: step.productKey,
+        flavorKey: step.flavorKey,
+        assortmentResult,
+      });
     }
 
     const failed = results.filter(
       (r) => r.assortmentResult && r.assortmentResult.ok === false
     );
 
-    return {
+    const reverseResult = {
       ok: failed.length === 0,
       pointKey,
       spreadsheetId,
@@ -119,7 +128,14 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
       results,
       newSteps: [],
       clearAssortmentSteps: failed.length === 0 && !dryRun,
+      partial: failed.length > 0,
     };
+
+    if (!dryRun && failed.length > 0) {
+      await logOrderAssortmentSyncSummary(spreadsheetId, order, reverseResult);
+    }
+
+    return reverseResult;
   }
 
   for (const row of order?.items || []) {
@@ -151,9 +167,16 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
         flavorLabelCandidates: flavorLabels.slice(1),
         deltaQty,
         dryRun,
+        orderNo: order?.orderNo,
+        orderId: String(order?._id || ""),
       });
 
-      results.push({ kind: "assortment", assortmentResult });
+      results.push({
+        kind: "assortment",
+        productKey: row?.productKey,
+        flavorKey: flavor?.flavorKey,
+        assortmentResult,
+      });
 
       if (assortmentResult?.ok && !dryRun && direction === "apply") {
         newSteps.push({
@@ -172,7 +195,7 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
     (r) => r.assortmentResult && r.assortmentResult.ok === false
   );
 
-  return {
+  const syncResult = {
     ok: failed.length === 0,
     partial: failed.length > 0 && newSteps.length > 0,
     pointKey,
@@ -183,6 +206,12 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
     newSteps,
     mergedStepCount: priorSteps.length + newSteps.length,
   };
+
+  if (!dryRun && failed.length > 0) {
+    await logOrderAssortmentSyncSummary(spreadsheetId, order, syncResult);
+  }
+
+  return syncResult;
 }
 
 export async function applyOrderToGoogleSheets(order, options = {}) {
@@ -262,9 +291,14 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
             partial: Boolean(result.partial),
             failed: (result.results || []).filter(
               (r) => r.assortmentResult?.ok === false
-            ).length,
+            ).map((r) => ({
+              productKey: r.productKey,
+              flavorKey: r.flavorKey,
+              reason: r.assortmentResult?.reason,
+            })),
             pointKey: result.pointKey,
-          }).slice(0, 500),
+            orderNo: order?.orderNo,
+          }).slice(0, 2000),
           ...(mergedSteps.length
             ? { "googleSheetSync.assortmentAppliedSteps": mergedSteps }
             : {}),
@@ -337,6 +371,26 @@ export async function reverseOrderOnGoogleSheets(order, options = {}) {
         },
       }
     );
+  } else if (!options?.dryRun && !result.ok && result.spreadsheetId) {
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
+          "googleSheetSync.lastError": JSON.stringify({
+            ok: false,
+            direction: "reverse",
+            failed: (result.results || [])
+              .filter((r) => r.assortmentResult?.ok === false)
+              .map((r) => ({
+                productKey: r.productKey,
+                flavorKey: r.flavorKey,
+                reason: r.assortmentResult?.reason,
+              })),
+            orderNo: order?.orderNo,
+          }).slice(0, 2000),
+        },
+      }
+    );
   }
 
   return result;
@@ -359,8 +413,23 @@ export function queueGoogleSheetApplyForOrder(order) {
             result,
           });
         }
-      });
+      })
+      // таблиця щойно оновлена → вирівнюємо Mongo по ній
+      .then(() => queueStockPullForOrder(order));
   });
+}
+
+/** Після замовлення: підтягнути залишки з таблиці його складу у Mongo (debounce). */
+export function queueStockPullForOrder(order) {
+  if (!order || !isGoogleSheetsEnabled()) return Promise.resolve();
+
+  return resolveOrderPointKey(order)
+    .then((pointKey) => {
+      if (pointKey) queueStockPullForPointKey(pointKey);
+    })
+    .catch((e) => {
+      console.error("[stockPull] queue for order failed:", e?.message || e);
+    });
 }
 
 export function queueGoogleSheetReverseForOrder(order) {
@@ -371,6 +440,7 @@ export function queueGoogleSheetReverseForOrder(order) {
       .then((fresh) => reverseOrderOnGoogleSheets(fresh))
       .catch((e) => {
         console.error("[googleSheets] reverseOrder error:", e);
-      });
+      })
+      .then(() => queueStockPullForOrder(order));
   });
 }

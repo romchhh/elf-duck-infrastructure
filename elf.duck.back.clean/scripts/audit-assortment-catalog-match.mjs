@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(backendRoot, ".env") });
+if (!process.env.MONGODB_URI) dotenv.config({ path: path.join(backendRoot, "..", ".env") });
 
 import mongoose from "mongoose";
 import Product from "../models/Product.js";
@@ -58,7 +59,12 @@ const pointKeys = allPoints
   ? ASSORTMENT_RETRY_POINT_KEYS.filter((k) => SPREADSHEET_ID_BY_POINT_KEY[k])
   : [pointKeyArg];
 
-await mongoose.connect(process.env.MONGODB_URI);
+const dbi = args.indexOf("--db");
+await mongoose.connect(
+  process.env.MONGODB_URI,
+  dbi >= 0 && args[dbi + 1] ? { dbName: String(args[dbi + 1]).trim() } : undefined
+);
+console.error("db:", mongoose.connection.name, "| points:", pointKeys.join(", "));
 
 const productFilter = includeInactive ? {} : { isActive: true };
 const products = await Product.find(productFilter, {

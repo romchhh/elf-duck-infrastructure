@@ -218,6 +218,16 @@ app.post("/admin/products/:id/flavors", requireAdmin, async (req, res) => {
 
 // ===== Admin: обновить склад вкуса по точке самовывоза =====
 app.patch("/admin/products/:id/flavors/:flavorId/stock", requireAdmin, async (req, res) => {
+  // Залишки ведуться ТІЛЬКИ в Google Таблиці (АССОРТИМЕНТ) → Mongo синхронізується
+  // щодня о 08:00 і після кожного замовлення. Ручна правка в боті створювала розбіжності.
+  if (!["1", "true", "yes"].includes(String(process.env.ALLOW_MANUAL_STOCK_EDIT || "").trim().toLowerCase())) {
+    return res.status(403).json({
+      ok: false,
+      error: "MANUAL_STOCK_EDIT_DISABLED",
+      message: "Наличие меняется только в Google Таблице (АССОРТИМЕНТ).",
+    });
+  }
+
   try {
     const { id, flavorId } = req.params;
     const { pickupPointId, totalQty, updatedByTelegramId } = req.body || {};

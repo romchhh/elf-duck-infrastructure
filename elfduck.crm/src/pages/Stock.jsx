@@ -5,6 +5,10 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
 
+// Ручная правка остатков отключена (источник — Google Таблица). Включается только вместе с
+// ALLOW_MANUAL_STOCK_EDIT=1 на бэкенде и VITE_ALLOW_MANUAL_STOCK_EDIT=1 при сборке CRM.
+const MANUAL_EDIT_ENABLED = import.meta.env?.VITE_ALLOW_MANUAL_STOCK_EDIT === '1';
+
 export default function Stock() {
   const queryClient = useQueryClient();
   const [pickupPointId, setPickupPointId] = useState('');
@@ -131,7 +135,8 @@ export default function Stock() {
           Остатки на складе
         </h1>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Точка → товар → количество по вкусам (как быстрый режим в админ-боте).
+          Только просмотр. Наличие меняется в Google Таблице (АССОРТИМЕНТ): база
+          синхронизируется из таблицы каждый день в 08:00 и после каждого заказа.
         </p>
       </div>
 
@@ -149,17 +154,19 @@ export default function Stock() {
           ))}
         </select>
 
-        <Button
-          type="button"
-          disabled={
-            !dirtyUpdates.length || saveMutation.isPending
-          }
-          onClick={() => saveMutation.mutate()}
-        >
-          {saveMutation.isPending
-            ? 'Сохраняем…'
-            : `Сохранить (${dirtyUpdates.length})`}
-        </Button>
+        {MANUAL_EDIT_ENABLED && (
+          <Button
+            type="button"
+            disabled={
+              !dirtyUpdates.length || saveMutation.isPending
+            }
+            onClick={() => saveMutation.mutate()}
+          >
+            {saveMutation.isPending
+              ? 'Сохраняем…'
+              : `Сохранить (${dirtyUpdates.length})`}
+          </Button>
+        )}
       </div>
 
       {isLoading && (
@@ -204,6 +211,8 @@ export default function Stock() {
                         type="number"
                         min={0}
                         step={1}
+                        readOnly={!MANUAL_EDIT_ENABLED}
+                        disabled={!MANUAL_EDIT_ENABLED}
                         className={cn(
                           'input-base w-24 text-right tabular-nums',
                           Number(draftQty[key]) !==

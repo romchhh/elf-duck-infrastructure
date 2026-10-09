@@ -41,9 +41,29 @@ import { mainMenu } from "./menu.js";
 // ================== FLAVOR BUILDER ACTIONS ============
 // =====================================================
 
+// Наличие ведётся ТОЛЬКО в Google Таблице (АССОРТИМЕНТ). Бот синхронизирует базу из таблицы
+// каждый день в 08:00 и после каждого заказа, поэтому ручное редактирование отключено.
+const MANUAL_STOCK_EDIT_ENABLED = ["1", "true", "yes"].includes(
+  String(process.env.ALLOW_MANUAL_STOCK_EDIT || "").trim().toLowerCase()
+);
+
+const replyStockEditDisabled = async (ctx) => {
+  clearState(ctx.chat.id);
+  return ctx.reply(
+    "🔒 Наличие в боте больше не редактируется.\n\n" +
+      "Источник правды — Google Таблица (лист АССОРТИМЕНТ). " +
+      "База обновляется из таблицы автоматически каждый день в 08:00 " +
+      "и после каждого заказа.\n\n" +
+      "Чтобы изменить наличие — поправьте число в таблице вашей точки.",
+    mainMenu(ctx)
+  );
+};
+
 bot.action("fl_quick_start", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
+
+  if (!MANUAL_STOCK_EDIT_ENABLED) return replyStockEditDisabled(ctx);
 
   setState(ctx.chat.id, {
     mode: "fl_quick",
@@ -57,6 +77,8 @@ bot.action("fl_quick_start", async (ctx) => {
 bot.action("fl_builder_start", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
+
+  if (!MANUAL_STOCK_EDIT_ENABLED) return replyStockEditDisabled(ctx);
 
   setState(ctx.chat.id, {
     mode: "fl_builder",
@@ -319,6 +341,8 @@ bot.action(/fl_set_mode:(new|stock)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
 
+  if (!MANUAL_STOCK_EDIT_ENABLED) return replyStockEditDisabled(ctx);
+
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "fl_builder") return;
 
@@ -337,6 +361,8 @@ bot.action(/fl_set_mode:(new|stock)/, async (ctx) => {
 bot.action("fl_bulk_edit_start", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
+
+  if (!MANUAL_STOCK_EDIT_ENABLED) return replyStockEditDisabled(ctx);
 
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "fl_builder") return;
@@ -379,6 +405,8 @@ bot.action(/fl_pick_flavor:(.+)/, async (ctx) => {
 bot.action(/fl_pick_point:(.+)/, async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
+
+  if (!MANUAL_STOCK_EDIT_ENABLED) return replyStockEditDisabled(ctx);
 
   const id = String(ctx.match[1] || "");
   const st = getState(ctx.chat.id);
@@ -436,6 +464,8 @@ bot.action(/fl_pick_point:(.+)/, async (ctx) => {
 bot.action("fl_confirm", async (ctx) => {
   if (!isAdmin(ctx)) return ctx.answerCbQuery("No access");
   await ctx.answerCbQuery();
+
+  if (!MANUAL_STOCK_EDIT_ENABLED) return replyStockEditDisabled(ctx);
 
   const st = getState(ctx.chat.id);
   if (!st || st.mode !== "fl_builder") return;

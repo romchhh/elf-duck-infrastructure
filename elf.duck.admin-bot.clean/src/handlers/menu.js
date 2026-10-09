@@ -11,9 +11,7 @@ const managerMainMenu = () =>
 
     ["➕ Категория", "➕ Товар"],
 
-    ["📦 Наличие", "💰 Кэшбек"],
-
-    ["🎟 Промокоды"],
+    ["💰 Кэшбек", "🎟 Промокоды"],
 
     ["🏪 Самовывоз", "👨‍💻 Админ-панель"],
 
@@ -26,8 +24,7 @@ const managerMainMenu = () =>
 const superAdminMainMenu = () =>
   Markup.keyboard([
     ["➕ Категория", "➕ Товар"],
-    ["🍓 Вкусы / наличие", "💰 Кэшбек"],
-    ["🎟 Промокоды"],
+    ["💰 Кэшбек", "🎟 Промокоды"],
     ["🏪 Точки", "✏️ Категории"],
     ["📋 Список категорий"],
     ["👨‍💻 Админ-панель", "👥 Выгрузка базы"],
@@ -38,6 +35,7 @@ const superAdminMainMenu = () =>
 export const mainMenu = (ctx) => (isSuperAdmin(ctx) ? superAdminMainMenu() : managerMainMenu());
 
 const MAIN_MENU_TEXT_TO_CALLBACK = new Map([
+  // Кнопок в меню больше нет; остаются для старых клавиатур в чатах → покажет «наличие только в таблице».
   ["📦 Наличие", "fl_quick_start"],
   ["🍓 Вкусы / наличие", "fl_quick_start"],
   ["💰 Кэшбек", "cashback_menu_start"],

@@ -1,4 +1,5 @@
 import { getServerContext } from "./context.js";
+import { processDailyStockPull } from "../googleSheets/stockPullScheduler.js";
 
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(
   process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000
@@ -48,4 +49,17 @@ export function startServerIntervals() {
   processDailyPointStats().catch((e) => {
     console.error("daily point stats initial run error:", e);
   });
+
+  // Щоденно о 08:00 (Europe/Warsaw): всі склади Google Таблиця → Mongo
+  setInterval(() => {
+    processDailyStockPull().catch((e) => {
+      console.error("daily stock pull interval error:", e);
+    });
+  }, 60 * 1000);
+
+  setTimeout(() => {
+    processDailyStockPull().catch((e) => {
+      console.error("daily stock pull initial run error:", e);
+    });
+  }, 30 * 1000);
 }

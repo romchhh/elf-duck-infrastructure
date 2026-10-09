@@ -126,6 +126,13 @@ router.patch(
   "/inventory/stock",
   requireCrmPushAdmin,
   async (req, res) => {
+    if (!["1", "true", "yes"].includes(String(process.env.ALLOW_MANUAL_STOCK_EDIT || "").trim().toLowerCase())) {
+      return res.status(403).json({
+        ok: false,
+        error: "MANUAL_STOCK_EDIT_DISABLED",
+      });
+    }
+
     try {
       const pickupPointId = String(
         req.body?.pickupPointId || ""

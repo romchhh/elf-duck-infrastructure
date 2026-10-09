@@ -1,9 +1,6 @@
+import { ASSORTMENT_SHEET_TITLE } from "./config.js";
+import { logAssortmentSyncError } from "./syncErrorsLog.js";
 import {
-  ASSORTMENT_SHEET_TITLE,
-  SYNC_ERRORS_SHEET_TITLE,
-} from "./config.js";
-import {
-  appendSheetRow,
   batchUpdateSpreadsheet,
   batchUpdateValues,
   getSpreadsheetMeta,
@@ -54,6 +51,11 @@ function colToA1(colIndex) {
     n = Math.floor((n - 1) / 26);
   }
   return s;
+}
+
+/** Ціле значення клітинки залишку (може бути від’ємним). */
+export function parseAssortmentQty(cell) {
+  return parseQty(cell);
 }
 
 function parseQty(cell) {
@@ -407,9 +409,40 @@ export async function applyAssortmentDelta({
   flavorLabelCandidates = [],
   deltaQty,
   dryRun = false,
+  orderNo = "",
+  orderId = "",
 }) {
-  const rows = await loadAssortmentGrid(spreadsheetId);
+  const baseLog = {
+    pointLabel,
+    dayKey,
+    modelName,
+    productKey: productKey || "",
+    flavorLabel,
+    qty: Math.abs(Number(deltaQty || 0)),
+    deltaQty,
+    orderNo,
+    orderId,
+  };
+
+  let rows;
+  try {
+    rows = await loadAssortmentGrid(spreadsheetId);
+  } catch (e) {
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
+      reason: "ASSORTMENT_READ_FAILED",
+      errorMessage: e?.message || e,
+      hint: "Не вдалося прочитати лист АССОРТИМЕНТ",
+    });
+    return { ok: false, reason: "ASSORTMENT_READ_FAILED" };
+  }
+
   if (!rows) {
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
+      reason: "SHEETS_DISABLED",
+      hint: "Google Sheets вимкнено або немає доступу API",
+    });
     return { ok: false, reason: "SHEETS_DISABLED" };
   }
 
@@ -417,17 +450,12 @@ export async function applyAssortmentDelta({
 
   const block = findAssortmentBlockForModel(rows, modelName, productKey);
   if (!block) {
-    await logSyncError(spreadsheetId, {
-      pointLabel,
-      dayKey,
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
       reason: "MODEL_BLOCK_NOT_FOUND",
-      modelName,
-      productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
       normalizedModel: normalizeSheetModelName(modelName),
-      flavorLabel,
       normalizedFlavor: compactSheetFlavor(flavorLabel),
-      qty: Math.abs(Number(deltaQty || 0)),
       hint: `Заголовок блока на АССОРТИМЕНТ: один из «${headerCandidates.slice(0, 4).join(" / ")}»`,
     });
 
@@ -444,34 +472,27 @@ export async function applyAssortmentDelta({
   const matchedFlavorLabel = resolved.label || flavorLabels[0] || "";
 
   if (flavorRow >= 0 && resolved.tier > 1 && !dryRun) {
-    await logSyncError(spreadsheetId, {
-      pointLabel,
-      dayKey,
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
       reason: "ASSORTMENT_FUZZY_MATCH",
-      modelName,
-      productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
       normalizedModel: block.header,
       flavorLabel: flavorLabels.join(" | "),
       normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
-      qty: Math.abs(Number(deltaQty || 0)),
       hint: `Нечіткий збіг: «${matchedFlavorLabel}» → «${String(rows[flavorRow]?.[block.flavorCol] || "").trim()}» — перевірте назву на листі`,
     });
   }
 
   if (flavorRow < 0) {
     const sheetFlavors = listAssortmentFlavorsInBlock(rows, block);
-    await logSyncError(spreadsheetId, {
-      pointLabel,
-      dayKey,
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
       reason: resolved.ambiguous ? "FLAVOR_ROW_AMBIGUOUS" : "FLAVOR_ROW_NOT_FOUND",
-      modelName,
-      productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
       normalizedModel: block.header,
       flavorLabel: flavorLabels.join(" | "),
       normalizedFlavor: flavorLabels.map((l) => compactSheetFlavor(l)).join(" | "),
-      qty: Math.abs(Number(deltaQty || 0)),
+      triedLabels: flavorLabels,
       hint: resolved.ambiguous
         ? `Неоднозначно: кілька схожих рядків у «${block.header}»: ${(resolved.candidates || []).join(" | ")} — уточніть назву на листі`
         : sheetFlavors.length
@@ -492,17 +513,13 @@ export async function applyAssortmentDelta({
     matchedFlavorLabel
   );
   if (duplicateFlavorRows > 1 && !dryRun) {
-    await logSyncError(spreadsheetId, {
-      pointLabel,
-      dayKey,
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
       reason: "ASSORTMENT_DUPLICATE_FLAVOR_ROW",
-      modelName,
-      productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
       normalizedModel: block.header,
       flavorLabel: matchedFlavorLabel,
       normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
-      qty: Math.abs(Number(deltaQty || 0)),
       hint: `У блоці «${block.header}» ${duplicateFlavorRows} рядків для цього смаку — списання йде в перший; приберіть дублікати на листі`,
     });
   }
@@ -518,17 +535,15 @@ export async function applyAssortmentDelta({
   const noDeductionEffect = deltaQty < 0 && nextQty === currentQty;
 
   if (noDeductionEffect) {
-    await logSyncError(spreadsheetId, {
-      pointLabel,
-      dayKey,
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
       reason: "ASSORTMENT_NO_DEDUCT",
-      modelName,
-      productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
       normalizedModel: block.header,
       flavorLabel: matchedFlavorLabel,
       normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
-      qty: Math.abs(Number(deltaQty || 0)),
+      currentQty,
+      nextQty,
       hint: `Залишок ${currentQty} не змінився після списання ${Math.abs(deltaQty)}`,
     });
 
@@ -557,12 +572,41 @@ export async function applyAssortmentDelta({
     };
   }
 
-  await batchUpdateValues(spreadsheetId, [
-    {
-      range: a1,
-      values: [[nextQty]],
-    },
-  ]);
+  try {
+    const writeRes = await batchUpdateValues(spreadsheetId, [
+      {
+        range: a1,
+        values: [[nextQty]],
+      },
+    ]);
+    if (!writeRes) {
+      await logAssortmentSyncError(spreadsheetId, {
+        ...baseLog,
+        reason: "ASSORTMENT_WRITE_FAILED",
+        normalizedModel: block.header,
+        flavorLabel: matchedFlavorLabel,
+        normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
+        a1,
+        currentQty,
+        nextQty,
+        errorMessage: "batchUpdateValues повернув null (API недоступний)",
+      });
+      return { ok: false, reason: "ASSORTMENT_WRITE_FAILED", a1 };
+    }
+  } catch (e) {
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
+      reason: "ASSORTMENT_WRITE_FAILED",
+      normalizedModel: block.header,
+      flavorLabel: matchedFlavorLabel,
+      normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
+      a1,
+      currentQty,
+      nextQty,
+      errorMessage: e?.message || e,
+    });
+    return { ok: false, reason: "ASSORTMENT_WRITE_FAILED", a1 };
+  }
 
   if (nextQty < 0) {
     try {
@@ -573,17 +617,15 @@ export async function applyAssortmentDelta({
   }
 
   if (soldAtZeroOrBelow) {
-    await logSyncError(spreadsheetId, {
-      pointLabel,
-      dayKey,
+    await logAssortmentSyncError(spreadsheetId, {
+      ...baseLog,
       reason: "ASSORTMENT_SOLD_AT_ZERO",
-      modelName,
-      productKey: productKey || "",
       headerCandidates: headerCandidates.join(" | "),
       normalizedModel: block.header,
       flavorLabel: matchedFlavorLabel,
       normalizedFlavor: compactSheetFlavor(matchedFlavorLabel),
-      qty: Math.abs(Number(deltaQty || 0)),
+      currentQty,
+      nextQty,
       hint: `Було ${currentQty} → стало ${nextQty} (продаж при нульовому/від’ємному залишку на листі)`,
     });
   }
@@ -597,26 +639,4 @@ export async function applyAssortmentDelta({
     matchedFlavorLabel,
     stockSoldAtZero: soldAtZeroOrBelow,
   };
-}
-
-async function logSyncError(spreadsheetId, payload) {
-  try {
-    const now = new Date();
-    const createdAt = now.toLocaleDateString("uk-UA");
-
-    await appendSheetRow(spreadsheetId, SYNC_ERRORS_SHEET_TITLE, [
-      createdAt,
-      payload.pointLabel || "",
-      payload.dayKey || "",
-      payload.reason || "",
-      payload.modelName || "",
-      payload.normalizedModel || payload.productKey || "",
-      payload.flavorLabel || "",
-      payload.normalizedFlavor || "",
-      payload.qty != null && payload.qty !== "" ? String(payload.qty) : "",
-      payload.hint || payload.headerCandidates || "",
-    ]);
-  } catch (e) {
-    console.error("[googleSheets] SYNC_ERRORS append failed:", e);
-  }
 }
