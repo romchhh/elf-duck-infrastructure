@@ -646,468 +646,50 @@ app.patch("/admin/products/:id/flavors/:flavorId/stock", requireAdmin, async (re
 //   }
 // );
 
-app.post("/admin/products/manual-sheet-stock-sync", requireAdmin, async (req, res) => {
-    try {
-      const pointKey = String(
-        req.body?.pointKey || ""
-      )
-        .trim()
-        .replace(/,+$/, "");
-
-      const modelName = String(
-        req.body?.modelName || ""
-      ).trim();
-
-      const normalizedModel =
-        String(
-          req.body
-            ?.normalizedModel ||
-          modelName
-        )
-          .trim()
-          .toUpperCase();
-
-      const flavorLabel = String(
-        req.body?.flavorLabel || ""
-      ).trim();
-
-      const normalizedFlavor =
-        String(
-          req.body
-            ?.normalizedFlavor ||
-          flavorLabel
-        )
-          .trim()
-          .toUpperCase();
-
-      const qty =
-        Number(req.body?.qty);
-
-      if (
-        !pointKey ||
-        !modelName ||
-        !flavorLabel ||
-        !Number.isInteger(qty) ||
-        qty < 0
-      ) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "INVALID_MANUAL_STOCK_DATA",
-        });
-      }
-
-      const pickupPoint =
-        await PickupPoint.findOne({
-          key: {
-            $in: [
-              pointKey,
-              `${pointKey},`,
-            ],
-          },
-        });
-
-      if (!pickupPoint) {
-        return res.status(404).json({
-          ok: false,
-          error:
-            "PICKUP_POINT_NOT_FOUND",
-          pointKey,
-        });
-      }
-
-    const normalizeValue = (value) =>
-      String(value || "")
-        .toUpperCase()
-        .replace(/🦆/g, "")
-        .replace(/CARTRIDGE/g, "CATRIDGE")
-        .replace(/\s*30\s*ML/g, "")
-        .replace(/^CHASER\s+/g, "")
-
-        // жидкости
-        .replace(/\bLIQ\s+ELFLIQ\b/g, "ELFLIQ")
-        .replace(/\bLIQ\s+HQD\b/g, "HQD")
-        .replace(/\bLIQ\s+ETHEREUM\b/g, "ETHEREUM")
-        .replace(/\bLIQ\s+SPECIAL\b/g, "SPECIAL")
-        .replace(/\bLIQ\s+BLACK\b/g, "BLACK")
-        .replace(/\bLIQ\s+FOR\s+PODS\b/g, "FOR PODS")
-        .replace(/\bLIQ\s+VOZOL\s+PRIME\b/g, "VOZOL PRIME")
-        .replace(/\bLIQ\s+PUFFY\b/g, "PUFFY")
-
-        // ELF BAR / ELF DUCK
-        .replace(/\bELF\s+DUCK\s+D3\s+25K\b/g, "ELF BAR D3")
-        .replace(/\bELF\s+DUCK\s+D3\b/g, "ELF BAR D3")
-        .replace(/\bELF\s+BAR\s+D3\s+25K\b/g, "ELF BAR D3")
-
-        .replace(/\bELF\s+DUCK\s+1500\b/g, "ELF BAR 1500")
-        .replace(/\bELF\s+BAR\s+1500\b/g, "ELF BAR 1500")
-
-        .replace(/\bELF\s+DUCK\s+2000\b/g, "ELF BAR 2000")
-        .replace(/\bELF\s+BAR\s+2000\b/g, "ELF BAR 2000")
-
-        .replace(/\bELF\s+DUCK\s+3000\s+RI\b/g, "ELF BAR 3000")
-        .replace(/\bELF\s+DUCK\s+3000\b/g, "ELF BAR 3000")
-        .replace(/\bELF\s+3000\b/g, "ELF BAR 3000")
-        .replace(/\bELF\s+BAR\s+3000\s+RI\b/g, "ELF BAR 3000")
-        .replace(/\bELF\s+BAR\s+RI\s+3000\b/g, "ELF BAR 3000")
-        .replace(/\bELF\s+BAR\s+3000\b/g, "ELF BAR 3000")
-
-        .replace(/\bELF\s+DUCK\s+GH\s+33000\s+PRO\b/g, "ELF BAR GH 33000")
-        .replace(/\bELF\s+BAR\s+GH\s+33000\s+PRO\b/g, "ELF BAR GH 33000")
-        .replace(/\bELF\s+BAR\s+GH\s+33000\b/g, "ELF BAR GH 33000")
-
-        .replace(/\bELF\s+DUCK\s+MOON\s+40K\b/g, "ELF BAR MOON 40K")
-        .replace(/\bELF\s+BAR\s+MOON\s+40K\b/g, "ELF BAR MOON 40K")
-
-        .replace(/\bELF\s+DUCK\s+KING\s+30K\b/g, "ELF BAR KING 30K")
-        .replace(/\bELF\s+DUCK\s+ICE\s+KING\s+30K\b/g, "ELF BAR KING 30K")
-        .replace(/\bELF\s+BAR\s+KING\s+30K\b/g, "ELF BAR KING 30K")
-
-        .replace(/\bELF\s+DUCK\s+DUKE\s+30K\b/g, "ELF BAR DUKE 30K")
-        .replace(/\bELF\s+BAR\s+DUKE\s+30K\b/g, "ELF BAR DUKE 30K")
-
-        .replace(/\bELF\s+DUCK\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
-        .replace(/\bELF\s+BAR\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
-
-        .replace(/\s+/g, " ")
-        .trim();
-
-      const compactValue = (
-        value
-      ) =>
-        normalizeValue(value)
-          .replace(
-            /[^A-ZА-ЯІЇЄҐ0-9]+/g,
-            ""
-          );
-
-      const wantedModel =
-        normalizeValue(
-          normalizedModel
-        );
-
-      const wantedFlavor =
-        compactValue(
-          normalizedFlavor
-        );
-
-      const products =
-        await Product.find({});
-
-      let foundProduct = null;
-      let foundFlavor = null;
-
-      for (
-        const product of products
-      ) {
-        const productNames = [
-          product?.productKey,
-          product?.title,
-          product?.title1,
-          product?.title2,
-          [
-            product?.title1,
-            product?.title2,
-          ]
-            .filter(Boolean)
-            .join(" "),
-          product?.name,
-          product?.model,
-        ]
-          .map(normalizeValue)
-          .filter(Boolean);
-
-        const modelMatches =
-          productNames.some(
-            (candidate) =>
-              candidate ===
-                wantedModel ||
-              candidate.includes(
-                wantedModel
-              ) ||
-              wantedModel.includes(
-                candidate
-              )
-          );
-
-        if (!modelMatches) {
-          continue;
-        }
-
-        const flavors =
-          Array.isArray(
-            product?.flavors
-          )
-            ? product.flavors
-            : [];
-
-        for (
-          const flavor of flavors
-        ) {
-          const flavorNames = [
-            flavor?.flavorKey,
-            flavor?.flavorLabel,
-            flavor?.label,
-            flavor?.name,
-          ]
-            .map(compactValue)
-            .filter(Boolean);
-
-          if (
-            flavorNames.includes(
-              wantedFlavor
-            )
-          ) {
-            foundProduct =
-              product;
-
-            foundFlavor =
-              flavor;
-
-            break;
-          }
-        }
-
-        if (
-          foundProduct &&
-          foundFlavor
-        ) {
-          break;
-        }
-      }
-
-      console.log("=== MANUAL STOCK SEARCH ===");
-
-      console.log({
-        wantedModel,
-        wantedFlavor,
-      });
-
-      for (const product of products) {
-        console.log({
-          product: product.productKey,
-          names: [
-            product.productKey,
-            product.title,
-            product.title1,
-            product.title2,
-            product.name,
-            product.model,
-          ].map(normalizeValue),
-        });
-      }
-
-      if (!foundProduct) {
-        return res.status(404).json({
-          ok: false,
-          error:
-            "PRODUCT_NOT_FOUND",
-          modelName,
-          normalizedModel,
-        });
-      }
-
-      if (!foundFlavor) {
-        return res.status(404).json({
-          ok: false,
-          error:
-            "FLAVOR_NOT_FOUND",
-          modelName,
-          flavorLabel,
-          normalizedFlavor,
-        });
-      }
-
-      foundFlavor
-        .stockByPickupPoint =
-          Array.isArray(
-            foundFlavor
-              ?.stockByPickupPoint
-          )
-            ? foundFlavor
-                .stockByPickupPoint
-            : [];
-
-      let stockRow =
-        foundFlavor
-          .stockByPickupPoint
-          .find(
-            (row) =>
-              String(
-                row?.pickupPointId ||
-                ""
-              ) ===
-              String(
-                pickupPoint._id
-              )
-          );
-
-        const syncedPointIds =
-          await getSyncedPickupPointIdsByAnyPoint(
-            pickupPoint._id
-          );
-
-        const pointIdsToSync =
-          syncedPointIds.length
-            ? syncedPointIds
-            : [String(pickupPoint._id)];
-
-        const existingRows =
-          (foundFlavor.stockByPickupPoint || [])
-            .filter((row) =>
-              pointIdsToSync.includes(
-                String(row?.pickupPointId || "")
-              )
-            );
-
-        const syncedReservedQty =
-          existingRows.length
-            ? Math.max(
-                ...existingRows.map((row) =>
-                  Math.max(
-                    0,
-                    Number(row?.reservedQty || 0)
-                  )
-                )
-              )
-            : 0;
-
-        for (const syncPickupPointId of pointIdsToSync) {
-          const existing =
-            (foundFlavor.stockByPickupPoint || [])
-              .find(
-                (row) =>
-                  String(row?.pickupPointId || "") ===
-                  String(syncPickupPointId)
-              );
-
-          if (existing) {
-            existing.totalQty = qty;
-
-            existing.reservedQty = Math.min(
-              syncedReservedQty,
-              qty
-            );
-
-            existing.updatedAt = new Date();
-
-            existing.updatedByTelegramId =
-              "google-sheet";
-          } else {
-            foundFlavor.stockByPickupPoint.push({
-              pickupPointId:
-                syncPickupPointId,
-
-              totalQty:
-                qty,
-
-              reservedQty:
-                Math.min(
-                  syncedReservedQty,
-                  qty
-                ),
-
-              updatedAt:
-                new Date(),
-
-              updatedByTelegramId:
-                "google-sheet",
-            });
-          }
-        }
-
-      foundProduct.markModified(
-        "flavors"
-      );
-
-      await foundProduct.save();
-
-      cacheInvalidate("products:");
-
-      console.log(
-        "[MANUAL SHEET STOCK SYNC]",
-        {
-          source:
-            req.body?.source,
-
-          spreadsheetId:
-            req.body
-              ?.spreadsheetId,
-
-          sheetName:
-            req.body?.sheetName,
-
-          editorEmail:
-            req.body
-              ?.editorEmail,
-
-          pointKey,
-
-          pickupPointId:
-            String(
-              pickupPoint._id
-            ),
-
-          productId:
-            String(
-              foundProduct._id
-            ),
-
-          productKey:
-            String(
-              foundProduct
-                ?.productKey || ""
-            ),
-
-          modelName,
-
-          flavorLabel,
-
-          qty,
-        }
-      );
-
-      return res.json({
-        ok: true,
-
-        pointKey,
-
-        pickupPointId:
-          String(
-            pickupPoint._id
-          ),
-
-        productId:
-          String(
-            foundProduct._id
-          ),
-
-        productKey:
-          String(
-            foundProduct
-              ?.productKey || ""
-          ),
-
-        modelName,
-
-        flavorLabel,
-
-        qty,
-      });
-    } catch (error) {
-      console.error(
-        "POST /admin/products/manual-sheet-stock-sync error:",
-        error
-      );
-
-      return res.status(500).json({
+async function handleSheetStockPullWebhook(req, res) {
+  try {
+    const { syncMongoStockFromSheetWebhook } = await import(
+      "../../lib/googleSheets/stockPull.js"
+    );
+    const result = await syncMongoStockFromSheetWebhook(req.body || {});
+
+    if (!result.ok) {
+      const code =
+        result.error === "UNKNOWN_POINT_OR_SPREADSHEET"
+          ? 400
+          : result.error === "SHEETS_DISABLED"
+            ? 503
+            : 502;
+      return res.status(code).json({
         ok: false,
-        error:
-          "MANUAL_SHEET_STOCK_SYNC_FAILED",
+        error: result.error || "MANUAL_SHEET_STOCK_SYNC_FAILED",
+        message: result.message || "Не вдалося оновити БД",
+        pointKeys: result.pointKeys,
+        totals: result.totals,
       });
     }
+
+    return res.json({
+      ok: true,
+      message: result.message,
+      pointKeys: result.pointKeys,
+      totals: result.totals,
+      durationMs: result.durationMs,
+    });
+  } catch (error) {
+    console.error("sheet stock pull webhook error:", error);
+    return res.status(500).json({
+      ok: false,
+      error: "MANUAL_SHEET_STOCK_SYNC_FAILED",
+      message: "Не вдалося оновити БД",
+      detail: String(error?.message || error).slice(0, 300),
+    });
   }
-);
+}
+
+app.post("/admin/products/manual-sheet-stock-sync", requireAdmin, handleSheetStockPullWebhook);
+
+app.post("/admin/products/sheet-stock-pull", requireAdmin, handleSheetStockPullWebhook);
 
 app.get("/orders/:id/payment-config", async (req, res) => {
   try {

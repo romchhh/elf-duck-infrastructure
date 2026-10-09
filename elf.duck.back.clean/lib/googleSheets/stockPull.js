@@ -4,6 +4,7 @@
  * Джерело правди для залишків — лист АССОРТИМЕНТ. Mongo (те, що бачить міні-додаток)
  * вирівнюється по ньому:
  *  - щодня о 08:00 (Europe/Warsaw) — усі склади;
+ *  - cron ~кожні 5 хв — fingerprint по листу; Mongo лише якщо залишки змінились;
  *  - після кожного замовлення (створення, виконання, InPost-відправка, повернення) — відповідна таблиця.
  *
  * reservedQty (резерви кошиків) не змінюється, лише обрізається до totalQty.
@@ -15,11 +16,14 @@ import {
   buildAssortmentFlavorSearchLabels,
   findAssortmentBlockForModel,
   findAssortmentModelBlocks,
+  fingerprintAssortmentStockGrid,
   loadAssortmentGrid,
   parseAssortmentQty,
   resolveAssortmentFlavorRow,
 } from "./assortmentGrid.js";
+import SheetAssortmentFingerprint from "../../models/SheetAssortmentFingerprint.js";
 import {
+  getSheetStockPullCronConfig,
   isGoogleSheetsEnabled,
   resolveSpreadsheetIdForPointKey,
   SPREADSHEET_ID_BY_POINT_KEY,
@@ -39,6 +43,28 @@ export const STOCK_PULL_POINT_KEYS = [
 /** Мінімум блоків моделей на листі: менше — вважаємо, що лист порожній/зламаний і Mongo не чіпаємо. */
 const MIN_SHEET_BLOCKS = 20;
 const BULK_CHUNK = 400;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function upsertSheetFingerprint(spreadsheetId, rows, { synced = false } = {}) {
+  const fingerprint = fingerprintAssortmentStockGrid(rows);
+  const $set = { fingerprint, checkedAt: new Date() };
+  if (synced) $set.syncedAt = new Date();
+  await SheetAssortmentFingerprint.findOneAndUpdate(
+    { spreadsheetId },
+    { $set },
+    { upsert: true }
+  );
+}
+
+async function touchSheetChecked(spreadsheetId) {
+  await SheetAssortmentFingerprint.findOneAndUpdate(
+    { spreadsheetId },
+    { $set: { checkedAt: new Date() } },
+    { upsert: true }
+  );
+}
 
 function normKey(value) {
   return String(value || "")
@@ -82,7 +108,13 @@ async function flushBulk(ops) {
   return modified;
 }
 
-async function pullOneSpreadsheet({ spreadsheetId, pointKeys }, products, pointIdByKey, dryRun) {
+async function pullOneSpreadsheet(
+  { spreadsheetId, pointKeys },
+  products,
+  pointIdByKey,
+  dryRun,
+  prefetchedRows = null
+) {
   const result = {
     spreadsheetId,
     pointKeys,
@@ -105,7 +137,7 @@ async function pullOneSpreadsheet({ spreadsheetId, pointKeys }, products, pointI
     return result;
   }
 
-  const rows = await loadAssortmentGrid(spreadsheetId);
+  const rows = prefetchedRows ?? (await loadAssortmentGrid(spreadsheetId));
   if (!rows) {
     result.error = "SHEETS_DISABLED";
     return result;
@@ -250,13 +282,83 @@ async function pullOneSpreadsheet({ spreadsheetId, pointKeys }, products, pointI
   return result;
 }
 
+async function processSpreadsheetGroup(
+  group,
+  products,
+  pointIdByKey,
+  { dryRun, force }
+) {
+  const { spreadsheetId, pointKeys } = group;
+  let rows = null;
+  try {
+    rows = await loadAssortmentGrid(spreadsheetId);
+  } catch (e) {
+    return {
+      spreadsheetId,
+      pointKeys,
+      ok: false,
+      error: String(e?.message || e).slice(0, 300),
+      missingRows: [],
+      changes: [],
+    };
+  }
+
+  if (!rows) {
+    return {
+      spreadsheetId,
+      pointKeys,
+      ok: false,
+      error: "SHEETS_DISABLED",
+      missingRows: [],
+      changes: [],
+    };
+  }
+
+  if (!force && !dryRun) {
+    const fp = fingerprintAssortmentStockGrid(rows);
+    const prev = await SheetAssortmentFingerprint.findOne({ spreadsheetId })
+      .select("fingerprint")
+      .lean();
+    if (prev?.fingerprint && prev.fingerprint === fp) {
+      await touchSheetChecked(spreadsheetId);
+      return {
+        spreadsheetId,
+        pointKeys,
+        ok: true,
+        skipped: true,
+        flavorsChecked: 0,
+        updated: 0,
+        created: 0,
+        unchanged: 0,
+        missingRows: [],
+        changes: [],
+      };
+    }
+  }
+
+  const sheetResult = await pullOneSpreadsheet(
+    group,
+    products,
+    pointIdByKey,
+    dryRun,
+    rows
+  );
+
+  if (!dryRun && sheetResult.ok) {
+    await upsertSheetFingerprint(spreadsheetId, rows, { synced: true });
+  }
+
+  return sheetResult;
+}
+
 /**
- * @param {{ pointKeys?: string[], dryRun?: boolean, reason?: string }} opts
+ * @param {{ pointKeys?: string[], dryRun?: boolean, reason?: string, force?: boolean }} opts
  */
-export async function pullStockFromSheets(opts = {}) {
+async function syncStockPull(opts = {}) {
   const startedAt = Date.now();
   const dryRun = Boolean(opts.dryRun);
   const reason = String(opts.reason || "manual");
+  const force = opts.force !== false;
 
   if (!isGoogleSheetsEnabled()) {
     return { ok: false, reason: "DISABLED" };
@@ -277,10 +379,18 @@ export async function pullStockFromSheets(opts = {}) {
     pickupPointIdsByKey(),
   ]);
 
+  const { staggerMs } = getSheetStockPullCronConfig();
   const sheets = [];
-  for (const group of groups) {
+  for (let i = 0; i < groups.length; i++) {
+    if (i > 0 && staggerMs > 0) await sleep(staggerMs);
+    const group = groups[i];
     try {
-      sheets.push(await pullOneSpreadsheet(group, products, pointIdByKey, dryRun));
+      sheets.push(
+        await processSpreadsheetGroup(group, products, pointIdByKey, {
+          dryRun,
+          force,
+        })
+      );
     } catch (e) {
       sheets.push({
         spreadsheetId: group.spreadsheetId,
@@ -293,7 +403,10 @@ export async function pullStockFromSheets(opts = {}) {
     }
   }
 
-  if (!dryRun) {
+  const wroteMongo = sheets.some(
+    (s) => s.ok && !s.skipped && (Number(s.updated) > 0 || Number(s.created) > 0)
+  );
+  if (!dryRun && wroteMongo) {
     try {
       cacheInvalidate("products:");
     } catch (_) {}
@@ -304,11 +417,12 @@ export async function pullStockFromSheets(opts = {}) {
       acc.updated += Number(s.updated || 0);
       acc.created += Number(s.created || 0);
       acc.unchanged += Number(s.unchanged || 0);
+      acc.skipped += s.skipped ? 1 : 0;
       acc.missing += (s.missingRows || []).length;
       if (!s.ok) acc.failedSheets += 1;
       return acc;
     },
-    { updated: 0, created: 0, unchanged: 0, missing: 0, failedSheets: 0 }
+    { updated: 0, created: 0, unchanged: 0, skipped: 0, missing: 0, failedSheets: 0 }
   );
 
   const summary = {
@@ -335,6 +449,18 @@ export async function pullStockFromSheets(opts = {}) {
   }
 
   return summary;
+}
+
+/** Повний pull (оновлює fingerprint) — daily, onEdit, після замовлення, CLI. */
+export async function pullStockFromSheets(opts = {}) {
+  return syncStockPull({ ...opts, force: true });
+}
+
+/**
+ * Cron: один read на таблицю; bulkWrite у Mongo лише якщо fingerprint змінився.
+ */
+export async function pullStockFromSheetsIfChanged(opts = {}) {
+  return syncStockPull({ ...opts, force: false });
 }
 
 /* ---------------- черга після замовлень (debounce + один запуск за раз) ---------------- */
@@ -369,6 +495,67 @@ async function runQueued() {
 }
 
 /** Заплановано оновити Mongo з таблиці точки (кілька викликів поспіль зливаються в один). */
+/** pointKey / spreadsheetId з Apps Script onEdit або webhook. */
+export function resolvePointKeysFromSheetWebhook(body = {}) {
+  const explicit = String(
+    body.pointKey || body.pickupPointKey || body.warehouseKey || body.point || ""
+  )
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+
+  if (explicit) {
+    return resolveSpreadsheetIdForPointKey(explicit) ? [explicit] : [];
+  }
+
+  const sid = String(body.spreadsheetId || body.spreadsheet_id || "").trim();
+  if (!sid) return [];
+
+  const keys = [];
+  for (const key of STOCK_PULL_POINT_KEYS) {
+    if (SPREADSHEET_ID_BY_POINT_KEY[key] === sid) keys.push(key);
+  }
+  return [...new Set(keys)];
+}
+
+/**
+ * Таблиця → Mongo (для onEdit / webhook). Повертає зрозумілий результат для Apps Script.
+ */
+export async function syncMongoStockFromSheetWebhook(body = {}) {
+  const pointKeys = resolvePointKeysFromSheetWebhook(body);
+  if (!pointKeys.length) {
+    return {
+      ok: false,
+      error: "UNKNOWN_POINT_OR_SPREADSHEET",
+      message: "Не вказано pointKey або spreadsheetId таблиці складу",
+    };
+  }
+
+  if (!isGoogleSheetsEnabled()) {
+    return {
+      ok: false,
+      error: "SHEETS_DISABLED",
+      message: "Google Sheets вимкнено на сервері (config/googleSheets.json)",
+    };
+  }
+
+  const summary = await pullStockFromSheets({
+    pointKeys,
+    reason: String(body.source || "sheet-onedit"),
+  });
+
+  return {
+    ok: summary.ok,
+    pointKeys,
+    totals: summary.totals,
+    durationMs: summary.durationMs,
+    message: summary.ok
+      ? `БД оновлено з АССОРТИМЕНТ (${pointKeys.join(", ")}): змінено ${summary.totals.updated}, без змін ${summary.totals.unchanged}`
+      : `Не вдалося прочитати таблицю (перевірте доступ service account)`,
+    summary,
+  };
+}
+
 export function queueStockPullForPointKey(pointKey) {
   if (!isGoogleSheetsEnabled()) return;
   const key = normKey(pointKey);

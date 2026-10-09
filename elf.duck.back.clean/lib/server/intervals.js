@@ -1,5 +1,9 @@
 import { getServerContext } from "./context.js";
-import { processDailyStockPull } from "../googleSheets/stockPullScheduler.js";
+import {
+  processDailyStockPull,
+  processSheetStockPullCron,
+  startSheetStockPullInterval,
+} from "../googleSheets/stockPullScheduler.js";
 
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(
   process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000
@@ -62,4 +66,12 @@ export function startServerIntervals() {
       console.error("daily stock pull initial run error:", e);
     });
   }, 30 * 1000);
+
+  startSheetStockPullInterval();
+
+  setInterval(() => {
+    processSheetStockPullCron().catch((e) => {
+      console.error("sheet stock pull cron error:", e);
+    });
+  }, 60 * 1000);
 }

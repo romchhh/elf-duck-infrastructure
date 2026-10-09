@@ -32,6 +32,10 @@ export function getGoogleSheetsConfig() {
       enabled: true,
       serviceAccountJsonPath: "telebots-e-commerce-bc2114cbc876.json",
       spreadsheetOverrides: {},
+      stockPullCron: {
+        intervalMs: 300000,
+        staggerMs: 1500,
+      },
     });
   }
   return googleSheetsCache;

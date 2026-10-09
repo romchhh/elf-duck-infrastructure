@@ -23,9 +23,15 @@
 {
   "enabled": true,
   "serviceAccountJsonPath": "telebots-e-commerce-bc2114cbc876.json",
-  "spreadsheetOverrides": {}
+  "spreadsheetOverrides": {},
+  "stockPullCron": {
+    "intervalMs": 300000,
+    "staggerMs": 1500
+  }
 }
 ```
+
+`stockPullCron.intervalMs` — інтервал fingerprint-cron (мс); `0` вимикає. `staggerMs` — пауза між читаннями різних таблиць у одному циклі.
 
 Файл ключа лежить у корені репозиторію (не комітити; див. `.gitignore`). ID таблиць за замовчуванням у `lib/googleSheets/config.js`; перекриття — у `spreadsheetOverrides` по `pointKey`.
 
@@ -58,7 +64,7 @@ docker compose exec api node scripts/google-sheets-e2e-test.mjs
 | Таблиця → бот | `onEdit` → `manual-sheet-stock-sync` | **Без змін** (за потреби лишити легкий onEdit) |
 | Новий місяць | Вручну / скрипт у таблиці | Авто останні 3 дні місяця (`monthReportScheduler.js`) |
 
-Що API **ще не** робить: платні доставки по днях, зміна прайсу MODEL/ПРОДАЖА, повний «pull» асортименту в Mongo по крону (лише push при продажі + admin sync).
+Що API **ще не** робить: платні доставки по днях, зміна прайсу MODEL/ПРОДАЖА.
 
 ## Продаж → таблиця (автоматично)
 
@@ -82,15 +88,25 @@ docker compose exec api node scripts/google-sheets-e2e-test.mjs
 
 `sendDailyPointStatsToGoogleSheet` викликає **Google Sheets API** (перезапис міні-таблиці дня з замовлень Mongo). Старий **Apps Script webhook** (`GOOGLE_STATS_WEBHOOK_URL_*`) **не викликається**, поки `GOOGLE_SHEETS_ENABLED=1` і не задано `GOOGLE_STATS_WEBHOOK_FALLBACK=1`. У кожній таблиці вручну вимкніть тригери Apps Script (якщо лишились), щоб не було подвійного запису.
 
-## Таблиця → залишки в боті
+## Таблиця → Mongo / міні-додаток
+
+При зміні клітинки на **АССОРТИМЕНТ** Apps Script викликає API; сервер **тягне весь блок складу** з Google (той самий метч, що при замовленнях і `pull-stock-from-sheets.mjs`), оновлює Mongo і скидає кеш `/products`.
 
 ```http
 POST /admin/products/manual-sheet-stock-sync
 x-admin-token: <ADMIN_API_TOKEN>
+Content-Type: application/json
+
+{ "pointKey": "wola", "spreadsheetId": "<id таблиці>" }
 ```
 
-Тіло як раніше (`pointKey`, `modelName`, `flavorLabel`, `qty`, …).  
-Можна лишити легкий Apps Script `onEdit` → цей endpoint, або окремо зробити pull з API (асортимент читається тим самим service account).
+Альтернативний шлях: `POST /admin/products/sheet-stock-pull` (те саме).
+
+**Apps Script:** файл `elf.duck.back.clean/scripts/apps-script-assortment-onedit.gs` — у кожній таблиці в Script properties: `API_URL`, `ADMIN_API_TOKEN`, `POINT_KEY` (praga, wola, delivery, mokot-w, r-dmie-cie). Тригер **onEdit** → `onAssortmentEdit`.
+
+**Резерв без onEdit:** кожні ~5 хв cron (`stockPullCron` у `googleSheets.json`) — **одне читання** листа АССОРТИМЕНТ на таблицю, порівняння SHA-256 fingerprint у Mongo (`SheetAssortmentFingerprint`); bulkWrite у продукти лише якщо залишки змінились. Також щодня о 08:00 повний pull + після кожного замовлення.
+
+Помилка в таблиці «Не вдалося оновити БД» — перевірте `ADMIN_API_TOKEN` у Script properties і в `.env` на VPS, `docker compose logs api | grep stockPull`, доступ service account до таблиці.
 
 ## Перевірка локально
 

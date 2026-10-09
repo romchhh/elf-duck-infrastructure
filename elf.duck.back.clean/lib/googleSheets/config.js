@@ -89,3 +89,14 @@ export function resolveServiceAccountPath() {
 
   return candidates[candidates.length - 1] || DEFAULT_SERVICE_ACCOUNT_PATH;
 }
+
+/** Cron fingerprint pull: інтервал між циклами; stagger між читаннями таблиць. intervalMs 0 = вимкнено. */
+export function getSheetStockPullCronConfig() {
+  const raw = getGoogleSheetsConfig().stockPullCron || {};
+  const intervalMs = Number(raw.intervalMs ?? 300000);
+  const staggerMs = Number(raw.staggerMs ?? 1500);
+  return {
+    intervalMs: Number.isFinite(intervalMs) ? intervalMs : 300000,
+    staggerMs: Number.isFinite(staggerMs) ? staggerMs : 1500,
+  };
+}

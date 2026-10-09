@@ -7,7 +7,61 @@ import {
   claimDailyStatsDispatch,
   releaseDailyStatsDispatch,
 } from "../server/dailyStatsDedupe.js";
-import { pullStockFromSheets } from "./stockPull.js";
+import {
+  getSheetStockPullCronConfig,
+  isGoogleSheetsEnabled,
+} from "./config.js";
+import {
+  pullStockFromSheets,
+  pullStockFromSheetsIfChanged,
+} from "./stockPull.js";
+
+let cronLastRunAt = 0;
+let cronInFlight = false;
+
+/**
+ * Викликається щохвилини з intervals.js: раз на stockPullCron.intervalMs
+ * читає кожну таблицю (з паузою між ними) і пише в Mongo лише при зміні залишків.
+ * intervalMs 0 = вимкнено (config/googleSheets.json).
+ */
+export async function processSheetStockPullCron() {
+  const { intervalMs } = getSheetStockPullCronConfig();
+  if (!intervalMs || intervalMs < 60000) return;
+  if (!isGoogleSheetsEnabled()) return;
+
+  const now = Date.now();
+  if (now - cronLastRunAt < intervalMs) return;
+  if (cronInFlight) return;
+
+  cronInFlight = true;
+  cronLastRunAt = now;
+  try {
+    const summary = await pullStockFromSheetsIfChanged({ reason: "cron" });
+    console.log(
+      `[stockPull] cron fingerprint check:`,
+      JSON.stringify({
+        ok: summary.ok,
+        skipped: summary.totals?.skipped,
+        updated: summary.totals?.updated,
+        durationMs: summary.durationMs,
+      })
+    );
+  } catch (e) {
+    console.error("[stockPull] cron error:", e?.message || e);
+    cronLastRunAt = 0;
+  } finally {
+    cronInFlight = false;
+  }
+}
+
+/** @deprecated використовуй processSheetStockPullCron з intervals */
+export function startSheetStockPullInterval() {
+  const { intervalMs } = getSheetStockPullCronConfig();
+  if (!intervalMs || intervalMs < 60000) return;
+  console.log(
+    `[stockPull] cron via intervals every ${Math.round(intervalMs / 1000)}s (fingerprint)`
+  );
+}
 
 const TIME_ZONE = "Europe/Warsaw";
 const RUN_HOUR = Number(process.env.STOCK_PULL_DAILY_HOUR ?? 8);

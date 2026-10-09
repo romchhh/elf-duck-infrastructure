@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { ASSORTMENT_SHEET_TITLE } from "./config.js";
 import { logAssortmentSyncError } from "./syncErrorsLog.js";
 import {
@@ -199,6 +200,26 @@ function collectBlockFlavorRows(rows, block) {
   }
 
   return out;
+}
+
+/**
+ * Хеш залишків на листі (блок + смак + qty). Один read → порівняння → Mongo лише якщо змінилось.
+ */
+export function fingerprintAssortmentStockGrid(rows) {
+  if (!rows?.length) return "";
+
+  const blocks = findAssortmentModelBlocks(rows);
+  const parts = [];
+
+  for (const block of blocks) {
+    for (const { row, cell } of collectBlockFlavorRows(rows, block)) {
+      const qty = parseAssortmentQty(rows[row]?.[block.qtyCol]);
+      parts.push(`${block.header}\x00${cell}\x00${qty}`);
+    }
+  }
+
+  parts.sort();
+  return createHash("sha256").update(parts.join("\n"), "utf8").digest("hex");
 }
 
 function countAssortmentFlavorMatches(rows, block, flavorLabel) {
