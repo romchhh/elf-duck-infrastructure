@@ -1,9 +1,17 @@
 /**
  * Відправити «СТАТИСТИКА ДНЯ» в Telegram-групу точки (не Google Sheets).
  *
- * docker compose exec api node scripts/send-daily-stats-telegram.mjs --point mokot-w --day 2026-10-07
- * docker compose exec api node scripts/send-daily-stats-telegram.mjs --point delivery-2 --day 2026-10-08 --test
- * docker compose exec api node scripts/send-daily-stats-telegram.mjs --point mokot-w --day 2026-10-07 --to 7119952932
+ * Кур'єр:  --point delivery   (замовлення з deliveredAt, кнопка «🚚 Заказ доставлен»)
+ * InPost:   --point delivery-2 (status shipped + shippedAt)
+ *
+ * 1) Тест одному адміну (ADMIN_TEST_TELEGRAM_ID у .env або --to):
+ *    docker compose exec api node scripts/send-daily-stats-telegram.mjs --point delivery --day 2026-10-09 --test --force
+ *
+ * 2) У групу точки (statsChatId у CRM):
+ *    docker compose exec api node scripts/send-daily-stats-telegram.mjs --point delivery --day 2026-10-09 --force
+ *
+ * Діагностика порожнього звіту:
+ *    docker compose exec api node scripts/audit-delivery-stats-day.mjs --point delivery --day 2026-10-09
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -24,7 +32,9 @@ import {
 } from "../lib/server/helpers/chunk08.js";
 import {
   buildStatsOrdersMongoFilter,
+  getOrderStatsFulfillmentKind,
   orderBelongsToStatsDay,
+  shouldCountOrderInDailyStats,
   STATS_ORDER_LIST_PROJECTION,
 } from "../lib/server/helpers/orderStatsDay.js";
 
@@ -37,9 +47,14 @@ function arg(name) {
 const pointKey = arg("--point");
 const dayKey = arg("--day");
 const force = args.includes("--force");
+const diag = args.includes("--diag");
 const testMode = args.includes("--test");
-const TEST_TELEGRAM_USER_ID = "7119952932";
-const toTelegramId = testMode ? TEST_TELEGRAM_USER_ID : arg("--to", "");
+const TEST_TELEGRAM_USER_ID = String(
+  process.env.ADMIN_TEST_TELEGRAM_ID || "7119952932"
+).trim();
+const toTelegramId = testMode
+  ? TEST_TELEGRAM_USER_ID
+  : arg("--to");
 
 if (!pointKey || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
   console.error(
@@ -101,6 +116,41 @@ const orders = await Order.find(
 const dayOrders = orders.filter((o) => orderBelongsToStatsDay(o, dayKey));
 
 console.log({ completedOrders: dayOrders.length });
+
+if (diag || (dayOrders.length === 0 && ["delivery", "delivery-2"].includes(pointKey.toLowerCase()))) {
+  const wide = await Order.find(
+    {
+      deliveryType: "delivery",
+      deliveryMethod:
+        pointKey.toLowerCase().replace(/,+$/, "") === "delivery-2"
+          ? "inpost"
+          : "courier",
+      status: { $nin: ["canceled", "annulled"] },
+      createdAt: { $gte: ordersSince },
+    },
+    STATS_ORDER_LIST_PROJECTION
+  ).lean();
+
+  const gaps = wide.filter((o) => !orderBelongsToStatsDay(o, dayKey));
+  console.log("[diag] recent delivery orders not in this stats day:", gaps.length);
+  for (const o of gaps.slice(0, 15)) {
+    const kind = getOrderStatsFulfillmentKind(o);
+    let hint = "";
+    if (kind === "courier" && !o.deliveredAt) {
+      hint = " → потрібен deliveredAt (кнопка «Заказ доставлен»)";
+    } else if (kind === "inpost") {
+      if (String(o.status) !== "shipped" || !o.shippedAt) {
+        hint = " → потрібен shipped + shippedAt";
+      }
+    }
+    console.log(
+      `  #${o.orderNo} status=${o.status} completed=${Boolean(o.completedAt)} delivered=${Boolean(o.deliveredAt)} shippedAt=${Boolean(o.shippedAt)} counts=${shouldCountOrderInDailyStats(o)}${hint}`
+    );
+  }
+  if (diag && !testMode && !toTelegramId) {
+    console.log("[diag] use --test or --to before sending if dayOrders=0");
+  }
+}
 
 const dedupeKey = `${String(point._id)}:${dayKey}`;
 
