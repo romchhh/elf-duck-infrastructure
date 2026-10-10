@@ -1,6 +1,6 @@
 /**
  * Перерахунок tiers + СКИДКИ в Google Sheets і (опційно) Telegram за діапазон днів.
- * Правила дня: orderStatsDay.js (кур'єр deliveredAt, InPost shippedAt, pickup completedAt).
+ * Правила дня: orderStatsDay.js (кур'єр completedAt, InPost shippedAt, pickup completedAt).
  *
  * docker compose exec api node scripts/backfill-stats-anchors.mjs
  * docker compose exec api node scripts/resync-stats-days.mjs --from 2026-10-01 --to 2026-10-07

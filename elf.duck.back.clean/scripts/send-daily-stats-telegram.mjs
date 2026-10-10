@@ -1,7 +1,7 @@
 /**
  * Відправити «СТАТИСТИКА ДНЯ» в Telegram-групу точки (не Google Sheets).
  *
- * Кур'єр:  --point delivery   (замовлення з deliveredAt, кнопка «🚚 Заказ доставлен»)
+ * Кур'єр:  --point delivery   (status completed — як у ТГ «Доставлен»)
  * InPost:   --point delivery-2 (status shipped + shippedAt)
  *
  * 1) Тест одному адміну (ADMIN_TEST_TELEGRAM_ID у .env або --to):
@@ -136,8 +136,8 @@ if (diag || (dayOrders.length === 0 && ["delivery", "delivery-2"].includes(point
   for (const o of gaps.slice(0, 15)) {
     const kind = getOrderStatsFulfillmentKind(o);
     let hint = "";
-    if (kind === "courier" && !o.deliveredAt) {
-      hint = " → потрібен deliveredAt (кнопка «Заказ доставлен»)";
+    if (kind === "courier" && !["completed", "done"].includes(String(o.status || "").toLowerCase())) {
+      hint = " → потрібен status completed";
     } else if (kind === "inpost") {
       if (String(o.status) !== "shipped" || !o.shippedAt) {
         hint = " → потрібен shipped + shippedAt";

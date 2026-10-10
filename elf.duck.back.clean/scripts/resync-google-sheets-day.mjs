@@ -93,7 +93,7 @@ console.log({
   completedOrders: dayOrders.length,
   dryRun,
   statsDayRule:
-    "pickup: completedAt | courier: deliveredAt | inpost: shippedAt",
+    "pickup: completedAt | courier: completedAt | inpost: shippedAt",
 });
 
 const products = buildProductAggregates(dayOrders);

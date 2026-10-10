@@ -2,7 +2,7 @@
  * Чому «СТАТИСТИКА ДНЯ» для delivery / delivery-2 може бути порожньою.
  *
  * Правила (orderStatsDay.js):
- *   кур'єр (delivery): у звіті лише з deliveredAt («🚚 Заказ доставлен» після completed)
+ *   кур'єр (delivery): completed/done (день = completedAt; у ТГ це «Доставлен»)
  *   InPost (delivery-2): status shipped + shippedAt («📦 отправлен» / трек)
  *
  * docker compose exec api node scripts/audit-delivery-stats-day.mjs --point delivery --day 2026-10-09
@@ -80,9 +80,8 @@ const inStatsDay = inMongoWindow.filter((o) => orderBelongsToStatsDay(o, dayKey)
 
 function courierGapReason(o) {
   const st = String(o.status || "").toLowerCase();
-  if (o.deliveredAt) return null;
-  if (["completed", "done"].includes(st)) {
-    return "COMPLETED_BUT_NO_DELIVERED_AT (натисніть «🚚 Заказ доставлен» у боті)";
+  if (["completed", "done"].includes(st) && (o.completedAt || o.stockCommittedAt)) {
+    return null;
   }
   return `STATUS_${st || "?"}`;
 }

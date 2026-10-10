@@ -1093,7 +1093,7 @@ export async function restoreCommittedOrderStock(
   return true;
 }
 
-/** Кур’єр: «🚚 Заказ доставлен» — день у статистиці (deliveredAt). */
+/** Кур’єр: опційно оновити deliveredAt (день у статистиці вже є з completedAt). */
 export async function markCourierOrderDeliveredByManager(
   order,
   managerTelegramId = ""
@@ -1314,6 +1314,13 @@ export async function changePickupOrderStatusByManager(
   fresh.status = "completed";
 
   fresh.completedAt = new Date();
+
+  if (
+    getOrderStatsFulfillmentKind(fresh) === "courier" &&
+    !fresh.deliveredAt
+  ) {
+    fresh.deliveredAt = fresh.completedAt;
+  }
 
   fresh.shippedAt = null;
 

@@ -39,9 +39,9 @@ export function getOrderStatsFulfillmentKind(order) {
 
 /**
  * День у «СТАТИСТИКА ДНЯ» / Google tiers:
- * - pickup: «виконано» (completed/done)
- * - courier: «🚚 Заказ доставлен» (deliveredAt)
- * - inpost: «📦 отправлен» (shipped + shippedAt)
+ * - pickup: completed/done
+ * - courier: completed/done (у ТГ підпис «Доставлен»; день = completedAt, або deliveredAt якщо пізніше натиснули)
+ * - inpost: shipped + shippedAt
  */
 export function shouldCountOrderInDailyStats(order) {
   if (!order) return false;
@@ -56,7 +56,7 @@ export function shouldCountOrderInDailyStats(order) {
   }
 
   if (kind === "courier") {
-    return Boolean(order?.deliveredAt);
+    return ["completed", "done"].includes(status);
   }
 
   if (kind === "pickup") {
@@ -76,7 +76,12 @@ export function getOrderStatsDayAnchor(order) {
   }
 
   if (kind === "courier") {
-    return order.deliveredAt || null;
+    return (
+      order.deliveredAt ||
+      order.completedAt ||
+      order.stockCommittedAt ||
+      null
+    );
   }
 
   return order.completedAt || order.stockCommittedAt || order.createdAt || null;
@@ -125,8 +130,16 @@ export function buildStatsOrdersMongoFilter(match, sinceDate) {
       ...rest,
       deliveryType: "delivery",
       deliveryMethod: "courier",
-      deliveredAt: { $gte: since },
-      status: { $nin: ["canceled", "annulled"] },
+      status: { $in: ["completed", "done"] },
+      $or: [
+        { completedAt: { $gte: since } },
+        { deliveredAt: { $gte: since } },
+        {
+          completedAt: null,
+          deliveredAt: null,
+          stockCommittedAt: { $gte: since },
+        },
+      ],
     };
   }
 
@@ -160,8 +173,16 @@ export function buildStatsOrdersMongoFilter(match, sinceDate) {
       {
         deliveryType: "delivery",
         deliveryMethod: "courier",
-        deliveredAt: { $gte: since },
-        status: { $nin: ["canceled", "annulled"] },
+        status: { $in: ["completed", "done"] },
+        $or: [
+          { completedAt: { $gte: since } },
+          { deliveredAt: { $gte: since } },
+          {
+            completedAt: null,
+            deliveredAt: null,
+            stockCommittedAt: { $gte: since },
+          },
+        ],
       },
       {
         deliveryType: "delivery",
