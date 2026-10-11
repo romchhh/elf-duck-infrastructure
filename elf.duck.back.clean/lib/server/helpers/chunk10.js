@@ -599,8 +599,6 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
     }
   }
 
-  const ordersCount = (Array.isArray(orders) ? orders : []).length;
-
   const kasaNetByMethodKey = new Map();
   let kasaNetOtherZl = 0;
   for (const order of Array.isArray(orders) ? orders : []) {
@@ -621,18 +619,12 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
   lines.push(`<b>🏦 ФИНАНСЫ :</b> `);
   lines.push(DAILY_STATS_SEP);
-  lines.push(`📦Заказов: <b>${ordersCount}</b>`);
-  lines.push(
-    `💰Оборот (все способы оплаты): <b>${formatDailyStatsZl(kasaTotalZl)}</b> PLN`
-  );
   if (!isDeliveryChannelPoint && deliveryFeesTotalZl > 0) {
     lines.push(
       `🚚Минус доставка: <b>${formatDailyStatsZl(deliveryFeesTotalZl)}</b> PLN`
     );
   }
-  lines.push(
-    `💵Касса (товар, без доставки): <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`
-  );
+  lines.push(`💵Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`);
   for (const section of DAILY_STATS_KASA_METHOD_SECTIONS) {
     const amount = Number(kasaNetByMethodKey.get(section.key) || 0);
     lines.push(`   ${section.label}: <b>${formatDailyStatsZl(amount)}</b> PLN`);

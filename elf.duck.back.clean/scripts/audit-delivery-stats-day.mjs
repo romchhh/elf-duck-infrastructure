@@ -38,10 +38,11 @@ function arg(name) {
 
 const pointKey = arg("--point");
 const dayKey = arg("--day");
+const verbose = args.includes("--verbose");
 
 if (!pointKey || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
   console.error(
-    "Usage: node scripts/audit-delivery-stats-day.mjs --point delivery|delivery-2 --day YYYY-MM-DD"
+    "Usage: node scripts/audit-delivery-stats-day.mjs --point delivery|delivery-2 --day YYYY-MM-DD [--verbose]"
   );
   process.exit(1);
 }
@@ -97,63 +98,77 @@ function inpostGapReason(o) {
 }
 
 const kind = match.deliveryMethod === "inpost" ? "inpost" : "courier";
+
+const gaps = wide.filter((o) => !orderBelongsToStatsDay(o, dayKey));
+const otherCompletedDays = gaps.filter((o) => shouldCountOrderInDailyStats(o));
+const notCounted = gaps.filter((o) => !shouldCountOrderInDailyStats(o));
+
+const byOtherDay = new Map();
+for (const o of otherCompletedDays) {
+  const k = getOrderStatsDayKey(o) || "?";
+  byOtherDay.set(k, (byOtherDay.get(k) || 0) + 1);
+}
+
 console.log({
   db: mongoose.connection.name,
   point: point.key,
   dayKey,
   channel: kind,
-  wideRecentOrders: wide.length,
-  mongoStatsWindow: inMongoWindow.length,
-  inStatsDay: inStatsDay.length,
+  telegramAndSheetsForThisDayOnly: inStatsDay.length,
+  note:
+    "У групу/Telegram і Google за цей день потрапляють ЛИШЕ замовлення з блоку нижче (statsDay = dayKey).",
+  mongoLookback10d: inMongoWindow.length,
+  recentCourierInpostAllStatuses: wide.length,
+  otherCompletedGoesToOtherDays: otherCompletedDays.length,
+  notCompletedYet: notCounted.length,
 });
 
-console.log("\n— У звіті за день —");
+console.log("\n— У звіті за", dayKey, `(тільки ці ${inStatsDay.length}) —`);
 for (const o of inStatsDay) {
   console.log(
     `#${o.orderNo}`,
     `status=${o.status}`,
+    `completedAt=${o.completedAt?.toISOString?.().slice(0, 16) || "—"}`,
     kind === "courier"
-      ? `deliveredAt=${o.deliveredAt?.toISOString?.() || "—"}`
-      : `shippedAt=${o.shippedAt?.toISOString?.() || "—"}`,
+      ? `deliveredAt=${o.deliveredAt?.toISOString?.().slice(0, 16) || "—"}`
+      : `shippedAt=${o.shippedAt?.toISOString?.().slice(0, 16) || "—"}`,
     `statsDay=${getOrderStatsDayKey(o)}`
   );
 }
 
-const gaps = wide.filter((o) => !orderBelongsToStatsDay(o, dayKey));
-const sameDayWrongAnchor = gaps.filter(
-  (o) => shouldCountOrderInDailyStats(o) && getOrderStatsDayKey(o) !== dayKey
-);
-const notCounted = gaps.filter((o) => !shouldCountOrderInDailyStats(o));
-
-console.log("\n— Не в звіті за цей день (але кур'єр/InPost недавно) —");
-for (const o of notCounted.slice(0, 40)) {
-  const reason =
-    kind === "courier" ? courierGapReason(o) : inpostGapReason(o);
+if (otherCompletedDays.length) {
   console.log(
-    `#${o.orderNo}`,
-    `status=${o.status}`,
-    `completedAt=${o.completedAt?.toISOString?.().slice(0, 10) || "—"}`,
-    `deliveredAt=${o.deliveredAt?.toISOString?.().slice(0, 10) || "—"}`,
-    `shippedAt=${o.shippedAt?.toISOString?.().slice(0, 10) || "—"}`,
-    reason ? `→ ${reason}` : `→ other_day statsDay=${getOrderStatsDayKey(o)}`
+    "\n— Інші виконані за ~10 дн. (НЕ в цьому звіті; кожен у свій день completedAt/shippedAt, Warsaw) —"
   );
-}
-if (notCounted.length > 40) {
-  console.log(`… ще ${notCounted.length - 40}`);
+  const sorted = [...byOtherDay.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [d, n] of sorted) {
+    console.log(`  ${d}: ${n} замовлень`);
+  }
+  if (verbose) {
+    for (const o of otherCompletedDays) {
+      console.log(
+        `  #${o.orderNo} → ${getOrderStatsDayKey(o)} completedAt=${o.completedAt?.toISOString?.().slice(0, 10) || "—"}`
+      );
+    }
+  } else {
+    console.log("  (деталі: додай --verbose)");
+  }
 }
 
-if (sameDayWrongAnchor.length) {
-  console.log("\n— Рахуються в статистиці, але інший день (Warsaw) —");
-  for (const o of sameDayWrongAnchor) {
-    console.log(`#${o.orderNo} statsDay=${getOrderStatsDayKey(o)}`);
+if (notCounted.length) {
+  console.log("\n— Ще не виконані (у звіт не потрапляють) —");
+  for (const o of notCounted.slice(0, 15)) {
+    const reason =
+      kind === "courier" ? courierGapReason(o) : inpostGapReason(o);
+    console.log(`#${o.orderNo} status=${o.status} → ${reason || "?"}`);
+  }
+  if (notCounted.length > 15) {
+    console.log(`… ще ${notCounted.length - 15}`);
   }
 }
 
 console.log(
-  "\nВиправлення кур'єра без deliveredAt: scripts/backfill-stats-anchors.mjs або fix-courier-delivered-day.mjs"
-);
-console.log(
-  "Тест звіту адміну: node scripts/send-daily-stats-telegram.mjs --point",
+  "\nТест звіту: node scripts/send-daily-stats-telegram.mjs --point",
   pointKey,
   "--day",
   dayKey,
