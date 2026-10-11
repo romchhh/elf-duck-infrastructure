@@ -627,11 +627,13 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   lines.push(`💵Касса: <b>${formatDailyStatsZl(kasaNetTotalZl)}</b> PLN`);
   for (const section of DAILY_STATS_KASA_METHOD_SECTIONS) {
     const amount = Number(kasaNetByMethodKey.get(section.key) || 0);
-    lines.push(`   ${section.label}: <b>${formatDailyStatsZl(amount)}</b> PLN`);
+    lines.push(
+      `▫️${section.label}: <b>${formatDailyStatsZl(amount)}</b> PLN`
+    );
   }
   if (kasaNetOtherZl > 0) {
     lines.push(
-      `   Прочее (кэшбек и др.): <b>${formatDailyStatsZl(kasaNetOtherZl)}</b> PLN`
+      `▫️Прочее (кэшбек и др.): <b>${formatDailyStatsZl(kasaNetOtherZl)}</b> PLN`
     );
   }
   if (isDeliveryChannelPoint) {
