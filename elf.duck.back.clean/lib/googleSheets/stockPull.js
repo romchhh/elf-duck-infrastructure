@@ -508,7 +508,7 @@ async function syncStockPull(opts = {}) {
       console.error("[stockPull] sheet failed:", s.pointKeys.join("+"), s.error);
     } else if ((s.missingRows || []).length) {
       console.warn(
-        `[stockPull] ${s.pointKeys.join("+")}: немає рядка на листі для ${s.missingRows.length} позицій (Mongo не змінено)`
+        `[stockPull] ${s.pointKeys.join("+")}: немає рядка на листі для ${s.missingRows.length} позицій (у Mongo: listedOnAssortment=false, залишок не обнуляється)`
       );
     }
   }

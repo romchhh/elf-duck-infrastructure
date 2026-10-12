@@ -52,7 +52,7 @@ export async function runGoogleSheetsOrderSync(order, options = {}) {
 
 /**
  * Per-order Google Sheets: only АССОРТИМЕНТ (склад).
- * ОТЧЁТ (tiers + СКИДКИ) — reportOrderSync.js на «виконано»; ввечері ще раз writeDayBlockFromAggregates.
+ * ОТЧЁТ (tiers + СКИДКИ) — reportOrderSync.js на «виконано»; ввечері writeDayBlockFromAggregates (крім skipOrderReportSyncPointKeys).
  */
 function assortmentStepId(productKey, flavorKey) {
   return `${String(productKey || "").trim().toLowerCase()}|${String(flavorKey || "").trim().toLowerCase()}`;

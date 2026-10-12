@@ -1,6 +1,7 @@
 import { appendSheetRow } from "./client.js";
 import {
   isGoogleSheetsEnabled,
+  isOrderReportSyncDisabledForPointKey,
   resolveSpreadsheetIdForPointKey,
   STATS_LOG_SHEET_TITLE,
 } from "./config.js";
@@ -75,6 +76,15 @@ export async function sendDailyPointStatsToGoogleSheetsApi(
     .trim()
     .toLowerCase()
     .replace(/,+$/, "");
+
+  if (isOrderReportSyncDisabledForPointKey(pointKey)) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "DAY_REPORT_SYNC_DISABLED",
+      pointKey,
+    };
+  }
 
   const spreadsheetId = resolveSpreadsheetIdForPointKey(pointKey);
   if (!spreadsheetId) {

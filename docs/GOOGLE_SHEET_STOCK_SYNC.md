@@ -74,7 +74,7 @@ docker compose exec api node scripts/google-sheets-e2e-test.mjs
 
 Після **списання складу** (`commitOrderStock`):
 
-Для **`wola`** і **`delivery-2`** (одна таблиця InPost/Wola) **не** викликається per-order запис у блок **MODEL / tiers / КАССА** на листі місяця — лише **АССОРТИМЕНТ** і stock pull, як раніше. Список у `config/googleSheets.json` → `skipOrderReportSyncPointKeys`. Інші точки без змін. Вечірній `writeDayBlockFromAggregates` (денний звіт) для Wola лишається, якщо не вимкнено окремо.
+Для **`wola`** і **`delivery-2`** (та вечірній блок **Wola + InPost** → `wola-inpost`) бот **не** пише в **MODEL / tiers / КАССА / денний міні-звіт** — ні при виконанні замовлення, ні вечірнім cron. Лишаються **АССОРТИМЕНТ** і stock pull. Список у `config/googleSheets.json` → `skipOrderReportSyncPointKeys`. Інші точки без змін.
 
 1. Лист місяця `ОТЧЕТ 01.MM.YYYY` — міні-таблиця дня (`DD.MM`): лише колонки **1шт / 2шт / 3-4шт / 5шт** (+ скидки в рядку підсумків). `БЫЛО` / `СТАЛО` / `ПРОДАНО` / `КАССА` — **формули в таблиці**, API їх не перезаписує.
 2. **Нижній місячний блок** (заголовок `01.MM–31.MM` на тому ж листі):

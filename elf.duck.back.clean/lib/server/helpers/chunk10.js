@@ -111,15 +111,23 @@ export async function sendDailyPointStatsToGoogleSheet(point, orders, dayKey) {
     };
   }
 
-  const { isGoogleSheetsEnabled } = await import(
-    "../../googleSheets/config.js"
-  );
+  const { isGoogleSheetsEnabled, isOrderReportSyncDisabledForPointKey } =
+    await import("../../googleSheets/config.js");
   const { sendDailyPointStatsToGoogleSheetsApi } = await import(
     "../../googleSheets/dailyStatsSync.js"
   );
 
   if (!isGoogleSheetsEnabled()) {
     return { ok: false, reason: "SHEETS_DISABLED", pointKey };
+  }
+
+  if (isOrderReportSyncDisabledForPointKey(pointKey)) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "DAY_REPORT_SYNC_DISABLED",
+      pointKey,
+    };
   }
 
   try {
@@ -1105,7 +1113,15 @@ export async function processDailyPointStats() {
 
     const sharedSheetsDedupeKey = `wola-inpost:${dayKey}:google_sheets`;
 
+    const { isOrderReportSyncDisabledForPointKey } = await import(
+      "../../googleSheets/config.js"
+    );
+    const skipWolaInpostSheets = isOrderReportSyncDisabledForPointKey(
+      "wola-inpost"
+    );
+
     if (
+      !skipWolaInpostSheets &&
       wolaPoint &&
       inpostPoint &&
       !(await isDailyStatsDispatchRecorded(sharedSheetsDedupeKey))

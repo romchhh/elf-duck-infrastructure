@@ -97,14 +97,29 @@ export function normalizeGoogleSheetsPointKey(value) {
     .replace(/,+$/, "");
 }
 
-/** Таблиця ОТЧЁТ (MODEL / tiers / КАССА) при виконанні замовлення — не чіпати; АССОРТИМЕНТ лишається. */
+function getSkipOrderReportSyncPointKeys() {
+  const cfg = getGoogleSheetsConfig().skipOrderReportSyncPointKeys;
+  const list = Array.isArray(cfg) ? cfg : ["wola", "delivery-2"];
+  return list.map((k) => normalizeGoogleSheetsPointKey(k)).filter(Boolean);
+}
+
+/**
+ * Лист місяця ОТЧЁТ (MODEL / tiers / КАССА / денний блок) — не писати з бота.
+ * `skipOrderReportSyncPointKeys`: при виконанні замовлення + вечірній cron (wola-inpost).
+ * АССОРТИМЕНТ і stock pull не чіпаються.
+ */
 export function isOrderReportSyncDisabledForPointKey(pointKey) {
   const key = normalizeGoogleSheetsPointKey(pointKey);
   if (!key) return false;
 
-  const cfg = getGoogleSheetsConfig().skipOrderReportSyncPointKeys;
-  const list = Array.isArray(cfg) ? cfg : ["wola", "delivery-2"];
-  return list.map((k) => normalizeGoogleSheetsPointKey(k)).includes(key);
+  const skip = new Set(getSkipOrderReportSyncPointKeys());
+  if (skip.has(key)) return true;
+
+  if (key === "wola-inpost") {
+    return skip.has("wola") || skip.has("delivery-2");
+  }
+
+  return false;
 }
 
 /** Cron fingerprint pull: інтервал між циклами; stagger між читаннями таблиць. intervalMs 0 = вимкнено. */
