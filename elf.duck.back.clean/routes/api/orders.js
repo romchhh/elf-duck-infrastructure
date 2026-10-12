@@ -1485,15 +1485,21 @@ app.post("/orders/:id/arrived-at-pickup", async (req, res) => {
 
     const notifyResult = await notifyManagerClientArrived(order);
 
-    if (notifyResult?.ok) {
-      order.arrivedNotifiedAt = new Date();
-      await order.save();
-    } else if (notifyResult?.reason === "NO_MANAGER_MESSAGE") {
-      return res.status(409).json({
+    if (!notifyResult?.ok) {
+      if (notifyResult?.reason === "NO_MANAGER_MESSAGE") {
+        return res.status(409).json({
+          ok: false,
+          error: "MANAGER_ORDER_MESSAGE_MISSING",
+        });
+      }
+      return res.status(502).json({
         ok: false,
-        error: "MANAGER_ORDER_MESSAGE_MISSING",
+        error: String(notifyResult?.reason || "ARRIVAL_NOTIFY_FAILED"),
       });
     }
+
+    order.arrivedNotifiedAt = new Date();
+    await order.save();
 
     return res.json({ ok: true, order });
   } catch (e) {

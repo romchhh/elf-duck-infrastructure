@@ -67,7 +67,17 @@ export async function computeBotSheetDelta({
     }
   } else {
     delta = mongoTotal - lastSynced;
+    // Per-order вже оновив sheet, але знімок відстає (перший день після деплою).
+    if (prevCellQty !== null && prevCellQty !== undefined) {
+      const prevRounded = Number(Math.max(0, Number(prevCellQty || 0)).toFixed(2));
+      const mongoRounded = Number(mongoTotal.toFixed(2));
+      if (prevRounded >= mongoRounded && lastSynced < mongoRounded) {
+        delta = 0;
+      }
+    }
   }
+
+  delta = Math.max(0, Number(delta || 0));
 
   const nextBotSynced = mongoTotal;
 

@@ -720,7 +720,7 @@ export async function writeDayBlockFromAggregates({
   }
 
   if (!data.length) {
-    return { ok: false, reason: "NO_REPORT_ROWS" };
+    return { ok: true, updates: 0, skipped: true, reason: "NOTHING_TO_WRITE" };
   }
 
   if (dryRun) {
