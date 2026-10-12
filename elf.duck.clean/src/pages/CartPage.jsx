@@ -438,17 +438,8 @@ const CartPage = () => {
     if (!p || !fl) return 0;
 
     const row = getStockRow(fl, contextId);
-    const total = Number(row?.totalQty || 0);
-    const reserved = Number(row?.reservedQty || 0);
+    const maxForMe = Math.max(0, Number(row?.totalQty || 0));
 
-    // qty, которые УЖЕ были сохранены (и уже сидят в reservedQty на бэке)
-    const k = cartItemKey(it);
-    const syncedMyQty = Number(syncedCartQtyRef.current.get(k) || 0);
-
-    // доступно без нас + наш уже сохраненный резерв
-    const maxForMe = Math.max(0, (total - reserved) + syncedMyQty);
-
-    // не даём вернуть меньше текущего UI qty (чтобы не ломать UX во время лагов)
     const currentQty = Math.max(1, Number(it.qty || 1));
     return Math.max(currentQty, maxForMe);
   };
@@ -1902,15 +1893,6 @@ const getAvailabilityByLocations = (it) => {
   const fl = getFlavorByKey(p, it.flavorKey);
   if (!p || !fl) return [];
 
-  const currentKey = cartItemKey(it);
-  const syncedMyQty = Number(syncedCartQtyRef.current.get(currentKey) || 0);
-
-  const currentContextId = getStockContextIdFor({
-    type: deliveryType,
-    method: deliveryMethod,
-    pickupPointId: checkoutPickupPointId,
-  });
-
   const out = [];
 
   for (const pp of Array.isArray(pickupPoints) ? pickupPoints : []) {
@@ -1918,13 +1900,7 @@ const getAvailabilityByLocations = (it) => {
     if (!ppId) continue;
 
     const row = getStockRow(fl, ppId);
-    const total = Number(row?.totalQty || 0);
-    const reserved = Number(row?.reservedQty || 0);
-
-    const available =
-      String(ppId) === String(currentContextId || "")
-        ? Math.max(0, total - reserved + syncedMyQty)
-        : Math.max(0, total - reserved);
+    const available = Math.max(0, Number(row?.totalQty || 0));
 
     if (available <= 0) continue;
 
@@ -2898,60 +2874,28 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
     return out;
   };
 
-  const buildOrderStockMismatchMessage = (missing, targetLabel) => {
+  const buildOrderStockMismatchMessage = (missing, _targetLabel) => {
     const first = Array.isArray(missing) ? missing[0] : null;
-    if (!first) {
-      return t(
-        `На складе «${targetLabel}» доступное количество больше не соответствует наличию. Проверьте корзину и попробуйте снова.`,
-        `W magazynie „${targetLabel}” dostępna ilość nie zgadza się już ze stanem magazynowym. Sprawdź koszyk i spróbuj ponownie.`
-      );
-    }
-
-    const title = [first.title1, first.title2].filter(Boolean).join(" ").trim() || first.productKey;
-    const flavor = first.flavorLabel || first.flavorKey;
-    const have = Math.max(0, Number(first.have || 0));
-    const need = Math.max(1, Number(first.need || 1));
-
-    const alternatives = getLocationsForMissingItem(first);
-    const enoughElsewhere = alternatives.filter((x) => x.enough).slice(0, 4);
-    const partialElsewhere = alternatives.filter((x) => !x.enough).slice(0, 4);
+    const title = first
+      ? [first.title1, first.title2].filter(Boolean).join(" ").trim() || first.productKey
+      : "";
+    const flavor = first ? first.flavorLabel || first.flavorKey : "";
 
     let msg = t(
-      `На складе «${targetLabel}» доступное количество больше не соответствует наличию.\n\n` +
-        `${title} — ${flavor}\n` +
-        `Нужно: ${need} шт.\n` +
-        `Сейчас доступно на этом складе: ${have} шт.`,
-      `W magazynie „${targetLabel}” dostępna ilość nie zgadza się już ze stanem magazynowym.\n\n` +
-        `${title} — ${flavor}\n` +
-        `Potrzeba: ${need} szt.\n` +
-        `Obecnie dostępne w tym magazynie: ${have} szt.`
+      "Хтось вже встиг придбати товар. Перевірте кошик і спробуйте ще раз.",
+      "Ktoś już zdążył kupić ten towar. Sprawdź koszyk i spróbuj ponownie."
     );
 
-    if (enoughElsewhere.length) {
-      msg +=
-        t(`\n\nГде можно заказать нужное количество полностью:\n`, `\n\nGdzie można zamówić pełną potrzebną ilość:\n`) +
-        enoughElsewhere.map((x) => `• ${x.label}: ${x.available} ${t("шт.", "szt.")}`).join("\n");
+    if (title) {
+      msg += t(`\n\n${title}`, `\n\n${title}`);
+      if (flavor) msg += ` — ${flavor}`;
     }
-
-    if (partialElsewhere.length) {
-      msg +=
-        t(`\n\nГде есть часть количества:\n`, `\n\nGdzie dostępna jest część ilości:\n`) +
-        partialElsewhere.map((x) => `• ${x.label}: ${x.available} ${t("шт.", "szt.")}`).join("\n");
-    }
-
-    msg += t(
-      `\n\nЧто можно сделать:` +
-        `\n• перейти на другой склад, где есть нужное количество;` +
-        `\n• заказать доступное количество на текущем складе и отдельно оформить остаток на другом;` +
-        `\n• выбрать другой вкус.`,
-      `\n\nCo można zrobić:` +
-        `\n• przejść do innego magazynu, gdzie jest potrzebna ilość;` +
-        `\n• zamówić dostępną ilość w bieżącym magazynie i osobno dokończyć resztę w innym;` +
-        `\n• wybrać inny smak.`
-    );
 
     if (Array.isArray(missing) && missing.length > 1) {
-      msg += t(`\n\nТакже проверьте остальные позиции в корзине.`, `\n\nSprawdź także pozostałe pozycje w koszyku.`);
+      msg += t(
+        `\n\nТакож перевірте інші позиції в кошику.`,
+        `\n\nSprawdź także pozostałe pozycje w koszyku.`
+      );
     }
 
     return msg;
@@ -3009,39 +2953,7 @@ const checkCartAvailability = (contextId) => {
 
 const row = getStockRow(fl, contextId);
 const total = Number(row?.totalQty || 0);
-const reserved = Number(row?.reservedQty || 0);
-
-// IMPORTANT:
-// add back synced qty ONLY when we check the CURRENT active context,
-// because reservedQty includes our synced reserve only on the currently selected stock context.
-// When we validate switching to ANOTHER pickup point / warehouse,
-// we must NOT add back our qty from the old context.
-const currentContextId = getStockContextIdFor({
-  type: deliveryType,
-  method: deliveryType === "delivery" ? deliveryMethod : null,
-  pickupPointId: deliveryType === "pickup" ? checkoutPickupPointId : null,
-});
-
-const syncedMyQty = Number(syncedCartQtyRef.current.get(k) || 0);
-const addBackMyQty =
-  String(contextId || "") === String(currentContextId || "")
-    ? syncedMyQty
-    : 0;
-
-const have = Math.max(0, total - reserved + addBackMyQty);
-
-  console.log("[CART][CHECK_AVAIL]", {
-    productKey,
-    flavorKey,
-    contextId: String(contextId || ""),
-    currentContextId: String(currentContextId || ""),
-    total,
-    reserved,
-    syncedMyQty,
-    addBackMyQty,
-    need,
-    have,
-  });
+const have = Math.max(0, total);
 
     if (have < need) {
       missing.push({

@@ -3,6 +3,14 @@ import {
   escapeSheetTitle,
   readSheetValues,
 } from "./client.js";
+import {
+  computeBotSheetDelta,
+  dayKassaSnapshotKey,
+  dayModelTierSnapshotKey,
+  monthItogoSnapshotKey,
+  monthModelTierSnapshotKey,
+  recordPerOrderBotSheetIncrement,
+} from "./dayReportBotSnapshot.js";
 import { normalizeSheetModelName, toReportModelLabel } from "./normalize.js";
 
 /** Right monthly block: MODEL + КАССА + ЗАРПЛАТА + sales columns */
@@ -310,8 +318,23 @@ export async function applyMonthSummaryTiersFromProductRows({
     if (modelRow < 0) continue;
 
     for (const tierKey of MONTH_TIER_KEYS) {
-      const soldQty = Number(product[tierKey] || 0);
-      if (soldQty <= 0) continue;
+      const mongoTotal = Number(product[tierKey] || 0);
+      if (mongoTotal <= 0) continue;
+
+      const rightTierCol =
+        section.rightStartCol + (MONTH_RIGHT_COL[tierKey] ?? MONTH_RIGHT_COL.tier1);
+      const prevCell = parseNumberCell(rows[modelRow]?.[rightTierCol]);
+
+      const { delta } = await computeBotSheetDelta({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: monthModelTierSnapshotKey(label, tierKey),
+        mongoTotalQty: mongoTotal,
+        prevCellQty: prevCell,
+        persist: !dryRun,
+      });
+
+      if (delta <= 0) continue;
 
       updates.push(
         ...buildMonthSummaryModelUpdates({
@@ -319,7 +342,7 @@ export async function applyMonthSummaryTiersFromProductRows({
           rows,
           section,
           modelRow,
-          soldQty,
+          soldQty: delta,
           tierKey,
         })
       );
@@ -348,6 +371,8 @@ export async function applyMonthItogoDelta({
   soldUnitsDelta = 0,
   tierDeltas = {},
   dryRun = false,
+  /** Вечірній sync: tierDeltas/discounts — підсумки з Mongo, додаємо лише різницю. */
+  syncMongoTotals = false,
 }) {
   // kasaDeltaZl / soldUnitsDelta залишені в сигнатурі для сумісності викликів — не пишемо в sheet
   void kasaDeltaZl;
@@ -365,23 +390,54 @@ export async function applyMonthItogoDelta({
   const base = section.rightStartCol;
   const updates = [];
 
-  for (const [tierKey, delta] of Object.entries(tierDeltas)) {
+  for (const [tierKey, rawDelta] of Object.entries(tierDeltas)) {
     if (!Object.prototype.hasOwnProperty.call(MONTH_RIGHT_COL, tierKey)) continue;
     if (tierKey === "sold" || tierKey === "discounts" || tierKey === "model") continue;
     const col = base + MONTH_RIGHT_COL[tierKey];
     const prev = parseNumberCell(rows[itogoRow]?.[col]);
+
+    let addQty = Number(rawDelta || 0);
+    if (syncMongoTotals) {
+      const { delta } = await computeBotSheetDelta({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: monthItogoSnapshotKey(tierKey),
+        mongoTotalQty: addQty,
+        prevCellQty: prev,
+        persist: !dryRun,
+      });
+      addQty = delta;
+    }
+
+    if (addQty === 0) continue;
+
     updates.push({
       range: `${escapeSheetTitle(tabTitle)}!${colToA1(col)}${itogoRow + 1}`,
-      values: [[Math.max(0, prev + Number(delta || 0))]],
+      values: [[Math.max(0, prev + addQty)]],
     });
   }
 
   const discCol = base + MONTH_RIGHT_COL.discounts;
   const prevDisc = parseNumberCell(rows[itogoRow]?.[discCol]);
-  updates.push({
-    range: `${escapeSheetTitle(tabTitle)}!${colToA1(discCol)}${itogoRow + 1}`,
-    values: [[Math.max(0, Number((prevDisc + discountsDeltaZl).toFixed(2)))]],
-  });
+  let addDisc = Number(discountsDeltaZl || 0);
+  if (syncMongoTotals) {
+    const { delta } = await computeBotSheetDelta({
+      spreadsheetId,
+      dayKey,
+      snapshotKey: monthItogoSnapshotKey("discounts"),
+      mongoTotalQty: addDisc,
+      prevCellQty: prevDisc,
+      persist: !dryRun,
+    });
+    addDisc = delta;
+  }
+
+  if (addDisc !== 0) {
+    updates.push({
+      range: `${escapeSheetTitle(tabTitle)}!${colToA1(discCol)}${itogoRow + 1}`,
+      values: [[Math.max(0, Number((prevDisc + addDisc).toFixed(2)))]],
+    });
+  }
 
   if (dryRun) {
     return { ok: true, dryRun: true, updates: updates.length };
@@ -521,6 +577,22 @@ export async function applyReportModelDelta({
 
   await batchUpdateValues(spreadsheetId, updates);
 
+  if (!dryRun) {
+    await recordPerOrderBotSheetIncrement({
+      spreadsheetId,
+      dayKey,
+      snapshotKey: dayModelTierSnapshotKey(reportModelLabel, tierKey),
+      soldQty,
+    });
+
+    await recordPerOrderBotSheetIncrement({
+      spreadsheetId,
+      dayKey,
+      snapshotKey: monthModelTierSnapshotKey(reportModelLabel, tierKey),
+      soldQty,
+    });
+  }
+
   return {
     ok: true,
     dayHeader,
@@ -533,6 +605,7 @@ export async function applyReportModelDelta({
 /**
  * Вечірній sync дня: лише tiers + СКИДКИ.
  * Не чіпає БЫЛО / СТАЛО / ПРОДАНО / КАССА (формули в таблиці).
+ * До наявних у клітинці значень додає лише нову частину з Mongo (ручні правки зберігаються).
  */
 export async function writeDayBlockFromAggregates({
   spreadsheetId,
@@ -560,16 +633,6 @@ export async function writeDayBlockFromAggregates({
   const blockStart = block.blockStart;
   const data = [];
 
-  // Повний зліпок дня з Mongo: спочатку обнуляємо tier-колонки всіх моделей (інакше лишаються старі цифри).
-  for (const modelRow of listDayBlockModelRowIndexes(rows, block)) {
-    for (const off of [4, 5, 6, 7]) {
-      data.push({
-        range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + off)}${modelRow + 1}`,
-        values: [[0]],
-      });
-    }
-  }
-
   for (const product of productRows || []) {
     const label = toReportModelLabel(product.model);
     const modelRow = findReportModelRowInDayBlock(rows, block, label);
@@ -580,39 +643,78 @@ export async function writeDayBlockFromAggregates({
       continue;
     }
 
-    const tier1 = Number(product.tier1 || 0);
-    const tier2 = Number(product.tier2 || 0);
-    const tier34 = Number(product.tier34 || 0);
-    const tier5 = Number(product.tier5 || 0);
+    const tierEntries = [
+      ["tier1", 4, Number(product.tier1 || 0)],
+      ["tier2", 5, Number(product.tier2 || 0)],
+      ["tier34", 6, Number(product.tier34 || 0)],
+      ["tier5", 7, Number(product.tier5 || 0)],
+    ];
 
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 4)}${modelRow + 1}`,
-      values: [[tier1]],
-    });
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 5)}${modelRow + 1}`,
-      values: [[tier2]],
-    });
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 6)}${modelRow + 1}`,
-      values: [[tier34]],
-    });
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 7)}${modelRow + 1}`,
-      values: [[tier5]],
-    });
+    for (const [tierKey, colOff, mongoTotal] of tierEntries) {
+      if (mongoTotal <= 0) continue;
+
+      const prev = parseNumberCell(rows[modelRow]?.[blockStart + colOff]);
+
+      const { delta } = await computeBotSheetDelta({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: dayModelTierSnapshotKey(label, tierKey),
+        mongoTotalQty: mongoTotal,
+        prevCellQty: prev,
+        persist: !dryRun,
+      });
+
+      if (delta <= 0) continue;
+      data.push({
+        range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + colOff)}${modelRow + 1}`,
+        values: [[Math.max(0, prev + delta)]],
+      });
+    }
   }
 
   const kassaRow = findKassaRowInDayBlock(rows, block);
   if (kassaRow >= 0) {
-    data.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`,
-      values: [[discounts]],
-    });
+    const mongoDisc = Number(discounts || 0);
+    if (mongoDisc > 0) {
+      const prevDisc = parseNumberCell(rows[kassaRow]?.[blockStart + 8]);
+
+      const { delta: discDelta } = await computeBotSheetDelta({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: dayKassaSnapshotKey("discounts"),
+        mongoTotalQty: mongoDisc,
+        prevCellQty: prevDisc,
+        persist: !dryRun,
+      });
+
+      if (discDelta > 0) {
+        data.push({
+          range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`,
+          values: [[Math.max(0, Number((prevDisc + discDelta).toFixed(2)))]],
+        });
+      }
+    }
+
     for (const tierKey of ["tier1", "tier2", "tier34", "tier5"]) {
+      const mongoTotal = Number(tierTotals[tierKey] || 0);
+      if (mongoTotal <= 0) continue;
+
+      const col = blockStart + TIER_COL_OFFSET[tierKey];
+      const prev = parseNumberCell(rows[kassaRow]?.[col]);
+
+      const { delta } = await computeBotSheetDelta({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: dayKassaSnapshotKey(tierKey),
+        mongoTotalQty: mongoTotal,
+        prevCellQty: prev,
+        persist: !dryRun,
+      });
+
+      if (delta <= 0) continue;
       data.push({
-        range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + TIER_COL_OFFSET[tierKey])}${kassaRow + 1}`,
-        values: [[Number(tierTotals[tierKey] || 0)]],
+        range: `${escapeSheetTitle(tabTitle)}!${colToA1(col)}${kassaRow + 1}`,
+        values: [[Math.max(0, prev + delta)]],
       });
     }
   }

@@ -147,6 +147,7 @@ export async function sendDailyPointStatsToGoogleSheetsApi(
       soldUnitsDelta: soldUnitsTotal,
       tierDeltas: tierTotals,
       dryRun,
+      syncMongoTotals: true,
     });
   }
 

@@ -1,6 +1,7 @@
 import Order from "../../models/Order.js";
 import {
   isGoogleSheetsEnabled,
+  isOrderReportSyncDisabledForPointKey,
   resolveSpreadsheetIdForPointKey,
 } from "./config.js";
 import {
@@ -31,6 +32,19 @@ function tierKeyFromTierQty(qty) {
 
 async function syncOrderReportItems(order, { direction, dryRun = false }) {
   const pointKey = await resolveOrderPointKey(order);
+
+  if (
+    direction === "apply" &&
+    isOrderReportSyncDisabledForPointKey(pointKey)
+  ) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "ORDER_REPORT_SYNC_DISABLED",
+      pointKey,
+    };
+  }
+
   const spreadsheetId = resolveSpreadsheetIdForPointKey(pointKey);
 
   if (!spreadsheetId) {
@@ -146,6 +160,19 @@ export async function applyOrderReportToGoogleSheets(order, options = {}) {
     return { ok: false, reason: "DISABLED" };
   }
 
+  const pointKey = await resolveOrderPointKey(order);
+  if (
+    !options?.force &&
+    isOrderReportSyncDisabledForPointKey(pointKey)
+  ) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "ORDER_REPORT_SYNC_DISABLED",
+      pointKey,
+    };
+  }
+
   if (order?.googleSheetSync?.reportAppliedAt && !options?.force) {
     return { ok: true, reason: "ALREADY_APPLIED" };
   }
@@ -181,13 +208,23 @@ export async function applyOrderReportToGoogleSheets(order, options = {}) {
     dryRun: options?.dryRun,
   });
 
-  if (!options?.dryRun && result.ok) {
+  if (!options?.dryRun && result.ok && !result.skipped) {
     await Order.updateOne(
       { _id: order._id },
       {
         $set: {
           "googleSheetSync.reportAppliedAt": new Date(),
           "googleSheetSync.reportReversedAt": null,
+          "googleSheetSync.reportSyncInProgress": false,
+          "googleSheetSync.reportLastError": "",
+        },
+      }
+    );
+  } else if (!options?.dryRun && result.ok && result.skipped) {
+    await Order.updateOne(
+      { _id: order._id },
+      {
+        $set: {
           "googleSheetSync.reportSyncInProgress": false,
           "googleSheetSync.reportLastError": "",
         },
@@ -267,7 +304,19 @@ export function queueGoogleSheetReportApplyForOrder(order) {
 
   setImmediate(() => {
     Order.findById(order._id)
-      .then((fresh) => applyOrderReportToGoogleSheets(fresh))
+      .then(async (fresh) => {
+        if (!fresh) return null;
+        const pointKey = await resolveOrderPointKey(fresh);
+        if (isOrderReportSyncDisabledForPointKey(pointKey)) {
+          return {
+            ok: true,
+            skipped: true,
+            reason: "ORDER_REPORT_SYNC_DISABLED",
+            pointKey,
+          };
+        }
+        return applyOrderReportToGoogleSheets(fresh);
+      })
       .catch((e) => {
         console.error("[googleSheets] applyOrderReport error:", e);
       })

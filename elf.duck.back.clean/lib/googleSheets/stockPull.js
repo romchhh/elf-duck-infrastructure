@@ -13,13 +13,12 @@ import mongoose from "mongoose";
 import Product from "../../models/Product.js";
 import PickupPoint from "../../models/PickupPoint.js";
 import {
-  buildAssortmentFlavorSearchLabels,
   findAssortmentBlockForModel,
   findAssortmentModelBlocks,
   fingerprintAssortmentStockGrid,
   loadAssortmentGrid,
+  matchCatalogFlavorInAssortmentBlock,
   parseAssortmentQty,
-  resolveAssortmentFlavorRow,
 } from "./assortmentGrid.js";
 import SheetAssortmentFingerprint from "../../models/SheetAssortmentFingerprint.js";
 import {
@@ -108,6 +107,96 @@ async function flushBulk(ops) {
   return modified;
 }
 
+function stockRowNeedsAssortmentMetaUpdate(existing, meta) {
+  if (!existing) return true;
+  if (existing.listedOnAssortment !== meta.listedOnAssortment) return true;
+  if (String(existing.sheetLabel || "") !== String(meta.sheetLabel || "")) return true;
+  if (Number(existing.assortmentRowIndex ?? -1) !== Number(meta.assortmentRowIndex ?? -1)) {
+    return true;
+  }
+  return false;
+}
+
+function queueAssortmentStockOp(
+  ops,
+  result,
+  { product, flavor, pointId, pointKeysLabel, existing, sheetQty, meta }
+) {
+  const total = Math.max(0, Number(existing?.totalQty ?? sheetQty ?? 0));
+  const reserved = Math.max(0, Number(existing?.reservedQty || 0));
+  const nextReserved =
+    meta.listedOnAssortment === false ? reserved : Math.min(reserved, sheetQty);
+  const nextTotal = meta.listedOnAssortment === false ? total : sheetQty;
+
+  const qtyUnchanged =
+    existing &&
+    total === nextTotal &&
+    reserved === nextReserved &&
+    !stockRowNeedsAssortmentMetaUpdate(existing, meta);
+
+  if (qtyUnchanged) {
+    result.unchanged += 1;
+    return;
+  }
+
+  if (existing) {
+    result.updated += 1;
+    if (result.changes.length < 200 && meta.listedOnAssortment !== false) {
+      result.changes.push({
+        productKey: product.productKey,
+        flavorKey: flavor.flavorKey,
+        point: pointKeysLabel,
+        from: total,
+        to: nextTotal,
+      });
+    }
+
+    ops.push({
+      updateOne: {
+        filter: { _id: product._id },
+        update: {
+          $set: {
+            "flavors.$[f].stockByPickupPoint.$[s].totalQty": nextTotal,
+            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": nextReserved,
+            "flavors.$[f].stockByPickupPoint.$[s].listedOnAssortment":
+              meta.listedOnAssortment,
+            "flavors.$[f].stockByPickupPoint.$[s].sheetLabel": meta.sheetLabel,
+            "flavors.$[f].stockByPickupPoint.$[s].assortmentRowIndex":
+              meta.assortmentRowIndex,
+            "flavors.$[f].stockByPickupPoint.$[s].updatedAt": new Date(),
+            "flavors.$[f].stockByPickupPoint.$[s].updatedByTelegramId":
+              "google-sheet-sync",
+          },
+        },
+        arrayFilters: [{ "f._id": flavor._id }, { "s.pickupPointId": pointId }],
+      },
+    });
+    return;
+  }
+
+  result.created += 1;
+  ops.push({
+    updateOne: {
+      filter: { _id: product._id },
+      update: {
+        $push: {
+          "flavors.$[f].stockByPickupPoint": {
+            pickupPointId: pointId,
+            totalQty: nextTotal,
+            reservedQty: nextReserved,
+            listedOnAssortment: meta.listedOnAssortment,
+            sheetLabel: meta.sheetLabel,
+            assortmentRowIndex: meta.assortmentRowIndex,
+            updatedAt: new Date(),
+            updatedByTelegramId: "google-sheet-sync",
+          },
+        },
+      },
+      arrayFilters: [{ "f._id": flavor._id }],
+    },
+  });
+}
+
 async function pullOneSpreadsheet(
   { spreadsheetId, pointKeys },
   products,
@@ -177,27 +266,46 @@ async function pullOneSpreadsheet(
       continue;
     }
 
+    const pointKeysLabel = pointKeys.join("+");
+
     for (const flavor of product.flavors || []) {
       result.flavorsChecked += 1;
 
-      const labels = buildAssortmentFlavorSearchLabels(
-        {
-          flavorKey: flavor.flavorKey,
-          flavorLabel: flavor.label,
-          label: flavor.label,
-        },
+      const match = matchCatalogFlavorInAssortmentBlock(
+        rows,
+        block,
+        flavor,
         product.productKey
       );
-      const resolved = resolveAssortmentFlavorRow(rows, block, labels);
 
-      if (resolved.row < 0) {
+      if (!match.ok) {
         if (activeProduct && flavor.isActive !== false) {
           result.missingRows.push({
-            kind: resolved.ambiguous ? "AMBIGUOUS" : "NO_ROW",
+            kind: match.ambiguous ? "AMBIGUOUS" : "NO_ROW",
             productKey: product.productKey,
             flavorKey: flavor.flavorKey,
             label: flavor.label,
             block: block.header,
+          });
+        }
+
+        const meta = {
+          listedOnAssortment: false,
+          sheetLabel: "",
+          assortmentRowIndex: -1,
+        };
+        for (const pointId of pointIds) {
+          const existing = (flavor.stockByPickupPoint || []).find(
+            (s) => String(s.pickupPointId) === String(pointId)
+          );
+          queueAssortmentStockOp(ops, result, {
+            product,
+            flavor,
+            pointId,
+            pointKeysLabel,
+            existing,
+            sheetQty: 0,
+            meta,
           });
         }
         continue;
@@ -206,70 +314,27 @@ async function pullOneSpreadsheet(
       // На листі від’ємне значення = «продано більше, ніж було» → у Mongo 0.
       const sheetQty = Math.max(
         0,
-        parseAssortmentQty(rows[resolved.row]?.[block.qtyCol])
+        parseAssortmentQty(rows[match.rowIndex]?.[block.qtyCol])
       );
+      const meta = {
+        listedOnAssortment: true,
+        sheetLabel: match.sheetLabel || "",
+        assortmentRowIndex: Number(match.rowIndex),
+      };
 
       for (const pointId of pointIds) {
         const existing = (flavor.stockByPickupPoint || []).find(
           (s) => String(s.pickupPointId) === String(pointId)
         );
-
-        if (existing) {
-          const total = Math.max(0, Number(existing.totalQty || 0));
-          const reserved = Math.max(0, Number(existing.reservedQty || 0));
-          const nextReserved = Math.min(reserved, sheetQty);
-
-          if (total === sheetQty && reserved === nextReserved) {
-            result.unchanged += 1;
-            continue;
-          }
-
-          result.updated += 1;
-          if (result.changes.length < 200) {
-            result.changes.push({
-              productKey: product.productKey,
-              flavorKey: flavor.flavorKey,
-              point: pointKeys.join("+"),
-              from: total,
-              to: sheetQty,
-            });
-          }
-
-          ops.push({
-            updateOne: {
-              filter: { _id: product._id },
-              update: {
-                $set: {
-                  "flavors.$[f].stockByPickupPoint.$[s].totalQty": sheetQty,
-                  "flavors.$[f].stockByPickupPoint.$[s].reservedQty": nextReserved,
-                  "flavors.$[f].stockByPickupPoint.$[s].updatedAt": new Date(),
-                  "flavors.$[f].stockByPickupPoint.$[s].updatedByTelegramId":
-                    "google-sheet-sync",
-                },
-              },
-              arrayFilters: [{ "f._id": flavor._id }, { "s.pickupPointId": pointId }],
-            },
-          });
-        } else {
-          result.created += 1;
-          ops.push({
-            updateOne: {
-              filter: { _id: product._id },
-              update: {
-                $push: {
-                  "flavors.$[f].stockByPickupPoint": {
-                    pickupPointId: pointId,
-                    totalQty: sheetQty,
-                    reservedQty: 0,
-                    updatedAt: new Date(),
-                    updatedByTelegramId: "google-sheet-sync",
-                  },
-                },
-              },
-              arrayFilters: [{ "f._id": flavor._id }],
-            },
-          });
-        }
+        queueAssortmentStockOp(ops, result, {
+          product,
+          flavor,
+          pointId,
+          pointKeysLabel,
+          existing,
+          sheetQty,
+          meta,
+        });
       }
     }
   }

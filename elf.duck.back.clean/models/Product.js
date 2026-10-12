@@ -17,6 +17,13 @@ const stockByPickupPointSchema = new mongoose.Schema(
 
     updatedByTelegramId: { type: String, default: "" },
     updatedAt: { type: Date, default: Date.now },
+
+    // АССОРТИМЕНТ: чи є рядок смаку/характеристики для цієї точки (google-sheet-sync)
+    listedOnAssortment: { type: Boolean, default: true },
+    // Текст з колонки смаку на листі (для відображення в міні-додатку)
+    sheetLabel: { type: String, default: "" },
+    // Порядок рядка на листі (для сортування в UI)
+    assortmentRowIndex: { type: Number, default: -1 },
   },
   { _id: false }
 );

@@ -36,6 +36,7 @@ export function getGoogleSheetsConfig() {
         intervalMs: 300000,
         staggerMs: 1500,
       },
+      skipOrderReportSyncPointKeys: ["wola", "delivery-2"],
     });
   }
   return googleSheetsCache;

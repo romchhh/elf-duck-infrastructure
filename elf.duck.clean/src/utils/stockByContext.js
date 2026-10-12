@@ -41,6 +41,38 @@ export function getLinkedPickupPointIds(pickupPoints, contextId) {
   return ids.length ? Array.from(new Set(ids)) : [ctx];
 }
 
+export function getAssortmentStockRowsForContext(flavor, contextId, pickupPoints) {
+  const linkedIds = getLinkedPickupPointIds(pickupPoints, contextId);
+  return (flavor?.stockByPickupPoint || []).filter((s) =>
+    linkedIds.includes(String(s?.pickupPointId || ""))
+  );
+}
+
+/** Чи показувати смак/характеристику для обраного складу (після sheet pull). */
+export function isFlavorListedOnAssortmentForContext(flavor, contextId, pickupPoints) {
+  const stockRows = getAssortmentStockRowsForContext(flavor, contextId, pickupPoints);
+  if (!stockRows.length) return true;
+  return stockRows.some((row) => row?.listedOnAssortment !== false);
+}
+
+export function getFlavorSheetLabelForContext(flavor, contextId, pickupPoints) {
+  const stockRows = getAssortmentStockRowsForContext(flavor, contextId, pickupPoints);
+  for (const row of stockRows) {
+    const label = String(row?.sheetLabel || "").trim();
+    if (label) return label;
+  }
+  return String(flavor?.label || "").trim();
+}
+
+export function getFlavorAssortmentSortIndexForContext(flavor, contextId, pickupPoints) {
+  const stockRows = getAssortmentStockRowsForContext(flavor, contextId, pickupPoints);
+  const indices = stockRows
+    .map((row) => Number(row?.assortmentRowIndex))
+    .filter((n) => Number.isFinite(n) && n >= 0);
+  if (!indices.length) return Number.MAX_SAFE_INTEGER;
+  return Math.min(...indices);
+}
+
 /** Same aggregation as API cart/orders: min(total), max(reserved) across linked rows. */
 export function getAggregatedStockForFlavor(flavor, contextId, pickupPoints) {
   const linkedIds = getLinkedPickupPointIds(pickupPoints, contextId);
@@ -48,8 +80,8 @@ export function getAggregatedStockForFlavor(flavor, contextId, pickupPoints) {
     return { total: 0, reserved: 0, available: 0 };
   }
 
-  const stockRows = (flavor?.stockByPickupPoint || []).filter((s) =>
-    linkedIds.includes(String(s?.pickupPointId || ""))
+  const stockRows = getAssortmentStockRowsForContext(flavor, contextId, pickupPoints).filter(
+    (row) => row?.listedOnAssortment !== false
   );
 
   if (!stockRows.length) {
@@ -57,8 +89,8 @@ export function getAggregatedStockForFlavor(flavor, contextId, pickupPoints) {
   }
 
   const total = Math.min(...stockRows.map((row) => Number(row?.totalQty || 0)));
-  const reserved = Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)));
-  const available = Math.max(0, total - reserved);
+  const reserved = 0;
+  const available = Math.max(0, total);
 
   return { total, reserved, available };
 }

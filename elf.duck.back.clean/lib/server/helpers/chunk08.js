@@ -242,6 +242,9 @@ export async function releaseReservedStockForCart(cart) {
 }
 
 export async function processStaleCarts() {
+  // Бронювання в кошику вимкнено — автоочищення за таймером не потрібне.
+  return;
+
   try {
     const timeoutMinutes = Math.max(1, Number(CART_AUTO_CLEAR_AFTER_MINUTES || 10));
     const cutoff = new Date(Date.now() - timeoutMinutes * 60 * 1000);

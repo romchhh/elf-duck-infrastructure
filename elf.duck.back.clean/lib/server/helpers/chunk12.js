@@ -304,7 +304,7 @@ export async function commitOrderStock(order) {
       );
     for (const pointObjId of pointObjIds) {
 
-      // 1) totalQty -= qty, reservedQty -= qty
+      // 1) totalQty -= qty (reservedQty у кошику більше не використовується)
       await Product.updateOne(
         {
           productKey,
@@ -314,7 +314,6 @@ export async function commitOrderStock(order) {
         {
           $inc: {
             "flavors.$[f].stockByPickupPoint.$[s].totalQty": -qty,
-            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": -qty,
           },
         },
         {

@@ -567,8 +567,7 @@ app.post("/orders/confirm", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Stock context is not set (pickup point / delivery warehouse)" });
     }
 
-    // Availability check: available = totalQty - reservedQty.
-    // BUT reservedQty already includes THIS cart reservation, so for self-check we add back my qty.
+    // Availability check: лише фактичний totalQty (без бронювання в кошику).
     const cartSum = new Map(); // key -> qty
     for (const it of cart.items) {
       const pk = String(it.productKey || "").trim();
@@ -623,13 +622,7 @@ app.post("/orders/confirm", async (req, res) => {
         ? Math.min(...stockRows.map((row) => Number(row?.totalQty || 0)))
         : 0;
 
-      const reserved = stockRows.length
-        ? Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)))
-        : 0;
-
-      const effectiveHave = isGuestOrder
-        ? Math.max(0, total - reserved)
-        : Math.max(0, total - reserved + myQty);
+      const effectiveHave = Math.max(0, total);
 
       if (effectiveHave < myQty) {
         missing.push({
@@ -638,7 +631,6 @@ app.post("/orders/confirm", async (req, res) => {
           need: myQty,
           have: effectiveHave,
           total,
-          reserved,
           syncedContextIds: pointIdsToCheck,
           reason: "not_enough_stock",
         });
@@ -647,7 +639,12 @@ app.post("/orders/confirm", async (req, res) => {
 
     if (missing.length) {
       console.warn("[ORDER][CONFIRM][STOCK][MISSING]", JSON.stringify({ telegramId, contextId: String(contextId), missing }));
-      return res.status(409).json({ ok: false, error: "Not enough stock", missing });
+      return res.status(409).json({
+        ok: false,
+        error: "Not enough stock",
+        code: "STOCK_TAKEN",
+        missing,
+      });
     }
 
     // ================= /STOCK CHECK =================
@@ -935,8 +932,7 @@ app.post("/orders/confirm", async (req, res) => {
       },
 
       status: "created",
-      // ✅ заказ создан: товар остаётся в reservedQty (как в корзине)
-      stockReservedAt: new Date(),
+      stockReservedAt: null,
       stockCommittedAt: null,
       stockReleasedAt: null,
     });
@@ -1487,10 +1483,17 @@ app.post("/orders/:id/arrived-at-pickup", async (req, res) => {
       return res.json({ ok: true, order, alreadyCompleted: true });
     }
 
-    order.arrivedNotifiedAt = new Date();
-    await order.save();
+    const notifyResult = await notifyManagerClientArrived(order);
 
-    await notifyManagerClientArrived(order);
+    if (notifyResult?.ok) {
+      order.arrivedNotifiedAt = new Date();
+      await order.save();
+    } else if (notifyResult?.reason === "NO_MANAGER_MESSAGE") {
+      return res.status(409).json({
+        ok: false,
+        error: "MANAGER_ORDER_MESSAGE_MISSING",
+      });
+    }
 
     return res.json({ ok: true, order });
   } catch (e) {

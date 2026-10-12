@@ -51,6 +51,8 @@ docker compose exec api node scripts/google-sheets-e2e-test.mjs
 
 Продажі в таблиці з’являються **після підтвердження оплати менеджером** (списання складу). Помилки: `docker compose logs api | grep googleSheets`.
 
+**Денний ОТЧЁТ (tiers / СКИДКИ):** sync **не перезаписує** ручні правки — додає лише **нову частину з Mongo** (`SheetDayReportBotSnapshot`). Перший sync після деплою: якщо в клітинці вже **≥** суми з Mongo (старі записи бота + ручне), у таблицю **нічого не додається**, знімок лише фіксується. Колонки БЫЛО / СТАЛО / ПРОДАНО / КАССА zł не чіпаються.
+
 Тестовий ±1 продаж (без Mongo): `node scripts/google-sheets-mark-test-sale.mjs --point praga` / `--reverse`.
 
 ## Було (Apps Script) → стало (API)
@@ -71,6 +73,8 @@ docker compose exec api node scripts/google-sheets-e2e-test.mjs
 Після кнопки **«Заказ выполнен»** (статус `completed`): **списання складу** (`commitOrderStock`) і запис у таблицю. До этого момента (оплата, InPost «отправлен» и т.д.) склад и tier-колонки **не** меняются.
 
 Після **списання складу** (`commitOrderStock`):
+
+Для **`wola`** і **`delivery-2`** (одна таблиця InPost/Wola) **не** викликається per-order запис у блок **MODEL / tiers / КАССА** на листі місяця — лише **АССОРТИМЕНТ** і stock pull, як раніше. Список у `config/googleSheets.json` → `skipOrderReportSyncPointKeys`. Інші точки без змін. Вечірній `writeDayBlockFromAggregates` (денний звіт) для Wola лишається, якщо не вимкнено окремо.
 
 1. Лист місяця `ОТЧЕТ 01.MM.YYYY` — міні-таблиця дня (`DD.MM`): лише колонки **1шт / 2шт / 3-4шт / 5шт** (+ скидки в рядку підсумків). `БЫЛО` / `СТАЛО` / `ПРОДАНО` / `КАССА` — **формули в таблиці**, API їх не перезаписує.
 2. **Нижній місячний блок** (заголовок `01.MM–31.MM` на тому ж листі):
@@ -105,6 +109,8 @@ Content-Type: application/json
 **Apps Script:** файл `elf.duck.back.clean/scripts/apps-script-assortment-onedit.gs` — у кожній таблиці в Script properties: `API_URL`, `ADMIN_API_TOKEN`, `POINT_KEY` (praga, wola, delivery, mokot-w, r-dmie-cie). Тригер **onEdit** → `onAssortmentEdit`.
 
 **Резерв без onEdit:** кожні ~5 хв cron (`stockPullCron` у `googleSheets.json`) — **одне читання** листа АССОРТИМЕНТ на таблицю, порівняння SHA-256 fingerprint у Mongo (`SheetAssortmentFingerprint`); bulkWrite у продукти лише якщо залишки змінились. Також щодня о 08:00 повний pull + після кожного замовлення.
+
+Для кожної точки в `flavors[].stockByPickupPoint[]` зберігаються також **`listedOnAssortment`** (рядок є на листі для цього складу), **`sheetLabel`** (текст з колонки смаку/характеристики) і **`assortmentRowIndex`** (порядок на листі). Міні-додаток показує **лише** смаки з `listedOnAssortment !== false` для обраного складу/доставки — у т.ч. з нульовим залишком («немає в наявності»); позиції каталогу без рядка на листі для цієї таблиці приховані.
 
 Помилка в таблиці «Не вдалося оновити БД» — перевірте `ADMIN_API_TOKEN` у Script properties і в `.env` на VPS, `docker compose logs api | grep stockPull`, доступ service account до таблиці.
 

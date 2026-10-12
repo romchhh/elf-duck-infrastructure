@@ -90,6 +90,23 @@ export function resolveServiceAccountPath() {
   return candidates[candidates.length - 1] || DEFAULT_SERVICE_ACCOUNT_PATH;
 }
 
+export function normalizeGoogleSheetsPointKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+}
+
+/** Таблиця ОТЧЁТ (MODEL / tiers / КАССА) при виконанні замовлення — не чіпати; АССОРТИМЕНТ лишається. */
+export function isOrderReportSyncDisabledForPointKey(pointKey) {
+  const key = normalizeGoogleSheetsPointKey(pointKey);
+  if (!key) return false;
+
+  const cfg = getGoogleSheetsConfig().skipOrderReportSyncPointKeys;
+  const list = Array.isArray(cfg) ? cfg : ["wola", "delivery-2"];
+  return list.map((k) => normalizeGoogleSheetsPointKey(k)).includes(key);
+}
+
 /** Cron fingerprint pull: інтервал між циклами; stagger між читаннями таблиць. intervalMs 0 = вимкнено. */
 export function getSheetStockPullCronConfig() {
   const raw = getGoogleSheetsConfig().stockPullCron || {};

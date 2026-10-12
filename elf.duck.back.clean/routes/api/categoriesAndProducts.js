@@ -143,6 +143,7 @@ app.get("/products", async (req, res) => {
         for (const s of fl.stockByPickupPoint || []) {
           const mid = String(s.pickupPointId || "");
           if (!mid) continue;
+          if (s.listedOnAssortment === false) continue;
 
           const qty = Number(s.totalQty || 0);
           const cur = map.get(mid) || { pickupPointId: mid, totalQty: 0, availableFlavorsCount: 0 };

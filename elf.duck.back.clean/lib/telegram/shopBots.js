@@ -3166,6 +3166,15 @@ if (
       await ctx.answerCbQuery("Заказ отмечен как выполненный");
 
       try {
+        const { onPickupOrderCompletedByManager } = await import(
+          "../server/pickupShiftClose.js"
+        );
+        await onPickupOrderCompletedByManager(changedOrder);
+      } catch (shiftErr) {
+        console.error("onPickupOrderCompletedByManager error:", shiftErr);
+      }
+
+      try {
         await ctx.deleteMessage();
       } catch (_) {}
     } catch (e) {

@@ -4,6 +4,7 @@ import {
   processSheetStockPullCron,
   startSheetStockPullInterval,
 } from "../googleSheets/stockPullScheduler.js";
+import { processPickupShiftCloseReminders } from "./pickupShiftClose.js";
 
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(
   process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000
@@ -33,6 +34,12 @@ export function startServerIntervals() {
   setInterval(() => {
     processStaleCarts();
   }, CART_AUTO_CLEAR_INTERVAL_MS);
+
+  setInterval(() => {
+    processPickupShiftCloseReminders().catch((e) => {
+      console.error("pickup shift close reminder error:", e);
+    });
+  }, 60 * 1000);
 
   setTimeout(() => {
     processStaleCarts();

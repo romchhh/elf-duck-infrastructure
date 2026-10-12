@@ -26,7 +26,12 @@ import {
   orderProductsForTwoColumnGrid,
   resolveProductActionsClass,
 } from "../lib/productCardLayout.js";
-import { getAggregatedStockForFlavor } from "../utils/stockByContext";
+import {
+  getAggregatedStockForFlavor,
+  getFlavorAssortmentSortIndexForContext,
+  getFlavorSheetLabelForContext,
+  isFlavorListedOnAssortmentForContext,
+} from "../utils/stockByContext";
 import { API_URL } from "../api.js";
 
 
@@ -2094,35 +2099,11 @@ const savePromise = saveCart(
   haptic.heavy();
 
   if (msg === "OUT_OF_STOCK" || msg === "RESERVE_CONFLICT") {
-    const detailText = meta
-      ? [
-          meta?.productKey ? t(`Товар: ${String(meta.productKey)}`, `Towar: ${String(meta.productKey)}`) : null,
-          meta?.flavorKey ? t(`Вкус: ${String(meta.flavorKey)}`, `Smak: ${String(meta.flavorKey)}`) : null,
-          Number.isFinite(Number(meta?.delta)) ? t(`Нужно: ${Number(meta.delta)}`, `Potrzeba: ${Number(meta.delta)}`) : null,
-          Number.isFinite(Number(meta?.total)) ? t(`Всего на складе: ${Number(meta.total)}`, `Łącznie w magazynie: ${Number(meta.total)}`) : null,
-          Number.isFinite(Number(meta?.reserved)) ? t(`В резерве: ${Number(meta.reserved)}`, `W rezerwie: ${Number(meta.reserved)}`) : null,
-          Number.isFinite(Number(meta?.total)) && Number.isFinite(Number(meta?.reserved))
-            ? t(
-                `Доступно: ${Math.max(0, Number(meta.total) - Number(meta.reserved))}`,
-                `Dostępne: ${Math.max(0, Number(meta.total) - Number(meta.reserved))}`
-              )
-            : null,
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : "";
-
     showTgAlert(
       t(
-        "⚠️ На выбранном складе доставки сейчас недостаточно наличия для этого товара.",
-        "⚠️ W wybranym magazynie dostawy nie ma obecnie wystarczającej ilości tego produktu."
-      ) +
-        (detailText ? `\n\n${detailText}` : "") +
-        "\n\n" +
-        t(
-          "Попробуйте уменьшить количество, выбрать другой вкус или сменить способ получения.",
-          "Spróbuj zmniejszyć ilość, wybrać inny smak lub zmienić sposób odbioru."
-        )
+        "Хтось вже встиг придбати товар. Спробуйте зменшити кількість або обрати інший смак.",
+        "Ktoś już zdążył kupić ten towar. Spróbuj zmniejszyć ilość lub wybrać inny smak."
+      )
     );
   } else {
     showTgAlert(msg || t("Не удалось добавить товар в корзину", "Nie udało się dodać produktu do koszyka"));
@@ -2970,8 +2951,28 @@ navigate("/cart");
     return agg.available;
   };
 
-  const getActiveProductFlavors = () =>
-    (activeProduct?.flavors || []).filter((flavor) => flavor?.isActive !== false);
+  const getActiveProductFlavors = () => {
+    const base = (activeProduct?.flavors || []).filter(
+      (flavor) => flavor?.isActive !== false
+    );
+    if (!stockContextId) return base;
+
+    const listed = base.filter((flavor) =>
+      isFlavorListedOnAssortmentForContext(flavor, stockContextId, pickupPoints)
+    );
+
+    return listed.slice().sort((a, b) => {
+      const ai = getFlavorAssortmentSortIndexForContext(a, stockContextId, pickupPoints);
+      const bi = getFlavorAssortmentSortIndexForContext(b, stockContextId, pickupPoints);
+      if (ai !== bi) return ai - bi;
+      return String(a?.label || "").localeCompare(String(b?.label || ""), "uk");
+    });
+  };
+
+  const getFlavorDisplayLabel = (flavor) => {
+    if (!stockContextId) return String(flavor?.label || "").trim();
+    return getFlavorSheetLabelForContext(flavor, stockContextId, pickupPoints);
+  };
 
   const showTgAlert = (text) => {
     try {
@@ -4628,7 +4629,7 @@ navigate("/cart");
 
                             <span className="checkoutSelectText">
                               {selectedFlavor
-                                ? selectedFlavor.label
+                                ? getFlavorDisplayLabel(selectedFlavor)
                                 : (isCartridgeProduct(activeProduct)
                                 ? t("Выберите картридж", "Wybierz kartridż")
                                 : isPodProduct(activeProduct)
@@ -4663,7 +4664,7 @@ navigate("/cart");
                                 const fid = getFlavorId(flavor);
                                 const isOutOfStock =
                                   isFlavorOutOfStockForCurrentContext(flavor);
-                                const flavorLabelText = flavor.label;
+                                const flavorLabelText = getFlavorDisplayLabel(flavor);
 
                                 return (
                                   <div
@@ -4739,7 +4740,7 @@ navigate("/cart");
                                         background: `linear-gradient(180deg, ${flavor.gradient[0]} 0%, ${flavor.gradient[1]} 100%)`,
                                       }}
                                     />
-                                    <span className="flavorLabel">{flavor.label}</span>
+                                    <span className="flavorLabel">{getFlavorDisplayLabel(flavor)}</span>
                                   </div>
 
                                   <div className="addedFlavorControls">
