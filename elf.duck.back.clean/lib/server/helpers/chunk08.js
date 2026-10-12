@@ -276,8 +276,25 @@ export async function processStaleCarts() {
           firstItem: Array.isArray(cart?.items) && cart.items.length ? cart.items[0] : null,
         });
 
+        if (releaseResult?.ok === false && cart?.checkoutPickupPointId) {
+          releaseResult = await releaseReservedStockForCart({
+            ...cart.toObject?.() ? cart.toObject() : cart,
+            stockContextId: String(cart.checkoutPickupPointId),
+            reservedContextId: String(cart.checkoutPickupPointId),
+          });
+          console.log("[CART AUTO CLEAR] release retry via checkoutPickupPointId", {
+            cartId: String(cart?._id || ""),
+            ok: releaseResult?.ok,
+            released: Number(releaseResult?.released || 0),
+          });
+        }
+
         if (releaseResult?.ok === false) {
-          continue;
+          console.warn("[CART AUTO CLEAR] release failed — cart cleared anyway (check reservedQty)", {
+            cartId: String(cart?._id || ""),
+            reason: releaseResult?.reason || "",
+            telegramId: String(cart?.telegramId || ""),
+          });
         }
 
         cart.items = [];
