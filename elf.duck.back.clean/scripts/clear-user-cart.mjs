@@ -8,8 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
 import Cart from "../models/Cart.js";
-import { releaseReservedStockForCart } from "../lib/server/helpers/chunk08.js";
-import { cacheInvalidate } from "../lib/server/helpers/chunk01.js";
+import { releaseReservedStockForCart } from "../lib/cart/cartStockReserve.js";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(backendRoot, ".env") });
@@ -60,7 +59,6 @@ cart.cartAutoClearAt = null;
 cart.staleClearedAt = new Date();
 await cart.save();
 
-cacheInvalidate("products:");
-
 console.log("after", { released: release?.released, releaseOk: release?.ok, reason: release?.reason });
+console.log("hint: docker compose restart api — оновити кеш каталогу");
 await mongoose.disconnect();

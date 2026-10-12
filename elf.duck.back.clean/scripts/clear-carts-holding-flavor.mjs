@@ -15,13 +15,12 @@ import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import PickupPoint from "../models/PickupPoint.js";
 import Cart from "../models/Cart.js";
-import { cacheInvalidate } from "../lib/server/helpers/chunk01.js";
-import { getSyncedPickupPointIdsByAnyPoint } from "../lib/server/helpers/chunk04.js";
 import {
   getCartItemFlavorRows,
+  getCartStockContextId,
   releaseReservedStockForCart,
-} from "../lib/server/helpers/chunk08.js";
-import { getCartStockContextId } from "../lib/server/helpers/chunk07.js";
+} from "../lib/cart/cartStockReserve.js";
+import { getSyncedPickupPointIdsByAnyPoint } from "../lib/server/pickupPointSync.js";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(backendRoot, ".env") });
@@ -207,8 +206,7 @@ for (const pointId of targetPointIds) {
 console.log("\nreserved reconcile:", reconcileRows);
 
 if (!dryRun) {
-  cacheInvalidate("products:");
-  console.log("products cache invalidated");
+  console.log("hint: docker compose restart api — щоб міні-додаток побачив нові залишки (кеш /products у процесі api)");
 }
 
 await mongoose.disconnect();

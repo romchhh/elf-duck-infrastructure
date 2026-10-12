@@ -11,7 +11,6 @@ import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import PickupPoint from "../models/PickupPoint.js";
 import Cart from "../models/Cart.js";
-import { cacheInvalidate } from "../lib/server/helpers/chunk01.js";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(backendRoot, ".env") });
@@ -105,8 +104,7 @@ if (fixReserved && reserved > 0 && cartQty === 0) {
       ],
     }
   );
-  cacheInvalidate("products:");
-  console.log("fixed: reservedQty=0, products cache invalidated");
+  console.log("fixed: reservedQty=0 — потім: docker compose restart api");
 }
 
 if (total === 0) {
