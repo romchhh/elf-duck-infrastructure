@@ -3,8 +3,8 @@
  *  - кінець зміни: нагадування X/Y закрито;
  *  - коли Y/Y — рання відправка «СТАТИСТИКА ДНЯ» в Telegram (і Google Sheets, як у cron).
  */
-import Order from "../models/Order.js";
-import PickupPoint from "../models/PickupPoint.js";
+import Order from "../../models/Order.js";
+import PickupPoint from "../../models/PickupPoint.js";
 import { bot } from "./botRegistry.js";
 import {
   claimDailyStatsDispatch,
