@@ -39,7 +39,6 @@ const CARD_BY_KEY = {
 const SALE_LIQUID_KEYS = new Set([
   "ethereum-30-ml",
   "chaser-special-30-ml",
-  "chaser-black-30-ml",
 ]);
 
 const SALE_BADGE = {
