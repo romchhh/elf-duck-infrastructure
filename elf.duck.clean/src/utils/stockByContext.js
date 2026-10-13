@@ -89,8 +89,8 @@ export function getAggregatedStockForFlavor(flavor, contextId, pickupPoints) {
   }
 
   const total = Math.min(...stockRows.map((row) => Number(row?.totalQty || 0)));
-  const reserved = 0;
-  const available = Math.max(0, total);
+  const reserved = Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)));
+  const available = Math.max(0, total - reserved);
 
   return { total, reserved, available };
 }

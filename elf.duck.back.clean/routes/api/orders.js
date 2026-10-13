@@ -567,7 +567,7 @@ app.post("/orders/confirm", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Stock context is not set (pickup point / delivery warehouse)" });
     }
 
-    // Availability check: лише фактичний totalQty (без бронювання в кошику).
+    // Availability: min(total) − max(reserved) по звʼязаних складах (без броні кошика).
     const cartSum = new Map(); // key -> qty
     for (const it of cart.items) {
       const pk = String(it.productKey || "").trim();
@@ -622,7 +622,11 @@ app.post("/orders/confirm", async (req, res) => {
         ? Math.min(...stockRows.map((row) => Number(row?.totalQty || 0)))
         : 0;
 
-      const effectiveHave = Math.max(0, total);
+      const reserved = stockRows.length
+        ? Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)))
+        : 0;
+
+      const effectiveHave = Math.max(0, total - reserved);
 
       if (effectiveHave < myQty) {
         missing.push({
@@ -631,6 +635,7 @@ app.post("/orders/confirm", async (req, res) => {
           need: myQty,
           have: effectiveHave,
           total,
+          reserved,
           syncedContextIds: pointIdsToCheck,
           reason: "not_enough_stock",
         });
@@ -1554,6 +1559,27 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       return res.json({ ok: true, order });
     }
 
+    const reserveResult = await reserveOrderReservedStock(order);
+    const didReserveNow = Boolean(reserveResult?.ok && !reserveResult?.skipped);
+
+    if (!reserveResult?.ok) {
+      if (reserveResult?.reason === "OUT_OF_STOCK") {
+        return res.status(409).json({
+          ok: false,
+          error: "OUT_OF_STOCK",
+          missing: reserveResult.missing || [],
+        });
+      }
+      return res.status(409).json({
+        ok: false,
+        error: String(reserveResult?.reason || "RESERVE_FAILED"),
+      });
+    }
+
+    if (!order.stockReservedAt) {
+      order.stockReservedAt = new Date();
+    }
+
     const prevPayment = order.payment?.toObject
       ? order.payment.toObject()
       : (order.payment || {});
@@ -1664,7 +1690,20 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       checkedByTelegramId: "",
     };
 
-    await order.save();
+    try {
+      await order.save();
+    } catch (saveErr) {
+      if (didReserveNow) {
+        try {
+          await releaseOrderReservedStock(order);
+          order.stockReservedAt = null;
+          order.stockReleasedAt = new Date();
+        } catch (rollbackErr) {
+          console.error("payment-check reserve rollback error:", rollbackErr);
+        }
+      }
+      throw saveErr;
+    }
 
     stopPaymentReminder(order._id);
 
@@ -1699,6 +1738,16 @@ app.patch("/admin/orders/:id/payment-status", requireAdmin, async (req, res) => 
     const order = await Order.findById(id);
     if (!order) {
       return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    if (
+      status === "unpaid" &&
+      order.stockReservedAt &&
+      !order.stockReleasedAt &&
+      !order.stockCommittedAt
+    ) {
+      await releaseOrderReservedStock(order);
+      order.stockReleasedAt = new Date();
     }
 
     order.payment = {

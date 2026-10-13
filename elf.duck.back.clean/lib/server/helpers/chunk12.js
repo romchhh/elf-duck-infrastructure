@@ -164,8 +164,236 @@ export async function resolveOrderReservePickupPointIds(order) {
   return [];
 }
 
+function aggregateStockForLinkedPoints(flavor, pointObjIds) {
+  const idSet = new Set(pointObjIds.map((id) => String(id)));
+  const stockRows = (flavor?.stockByPickupPoint || []).filter((s) =>
+    idSet.has(String(s?.pickupPointId || ""))
+  );
+
+  if (!stockRows.length) {
+    return { total: 0, reserved: 0, available: 0 };
+  }
+
+  const total = Math.min(...stockRows.map((row) => Number(row?.totalQty || 0)));
+  const reserved = Math.max(...stockRows.map((row) => Number(row?.reservedQty || 0)));
+  const available = Math.max(0, total - reserved);
+
+  return { total, reserved, available };
+}
+
+/** Бронь смаків замовлення (лише після відправки оплати на перевірку). */
+export async function reserveOrderReservedStock(order) {
+  if (!order || order.stockCommittedAt) {
+    return { ok: false, reason: "ALREADY_COMMITTED" };
+  }
+
+  if (order.stockReleasedAt) {
+    return { ok: false, reason: "ALREADY_RELEASED" };
+  }
+
+  if (order.stockReservedAt) {
+    return { ok: true, skipped: true };
+  }
+
+  const pickupPointIds = await resolveOrderReservePickupPointIds(order);
+  if (!pickupPointIds.length) {
+    return { ok: false, reason: "NO_PICKUP_POINTS" };
+  }
+
+  const pointObjIds = pickupPointIds
+    .map((pickupPointId) =>
+      pickupPointId instanceof mongoose.Types.ObjectId
+        ? pickupPointId
+        : new mongoose.Types.ObjectId(String(pickupPointId))
+    )
+    .filter(Boolean);
+
+  const normFlavorKey = (v) => String(v || "").trim().replace(/,+$/, "");
+  const missing = [];
+
+  const productKeys = Array.from(
+    new Set(
+      (order.items || [])
+        .map((item) => String(item?.productKey || "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const products = await Product.find(
+    { productKey: { $in: productKeys } },
+    { productKey: 1, flavors: 1 }
+  ).lean();
+
+  const prodByKey = new Map(products.map((p) => [String(p.productKey), p]));
+
+  for (const item of order.items || []) {
+    const productKey = String(item.productKey || "").trim();
+    if (!productKey) continue;
+
+    const p = prodByKey.get(productKey);
+    if (!p) {
+      for (const fl of item.flavors || []) {
+        const qty = Math.max(0, Number(fl.qty || 0));
+        if (!qty) continue;
+        missing.push({
+          productKey,
+          flavorKey: fl.flavorKey,
+          need: qty,
+          have: 0,
+          reason: "product_not_found",
+        });
+      }
+      continue;
+    }
+
+    for (const fl of item.flavors || []) {
+      const qty = Math.max(0, Number(fl.qty || 0));
+      if (!qty) continue;
+
+      const fkNorm = normFlavorKey(fl.flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(fl.flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+
+      const flavor = (p.flavors || []).find((f) =>
+        fkCandidates.includes(String(f.flavorKey || "").trim())
+      );
+
+      if (!flavor) {
+        missing.push({
+          productKey,
+          flavorKey: fl.flavorKey,
+          need: qty,
+          have: 0,
+          reason: "flavor_not_found",
+        });
+        continue;
+      }
+
+      const { available } = aggregateStockForLinkedPoints(flavor, pointObjIds);
+
+      if (available < qty) {
+        missing.push({
+          productKey,
+          flavorKey: fl.flavorKey,
+          need: qty,
+          have: available,
+          reason: "not_enough_stock",
+        });
+      }
+    }
+  }
+
+  if (missing.length) {
+    return { ok: false, reason: "OUT_OF_STOCK", missing };
+  }
+
+  for (const item of order.items || []) {
+    const productKey = String(item.productKey || "").trim();
+    if (!productKey) continue;
+
+    for (const fl of item.flavors || []) {
+      const qty = Math.max(0, Number(fl.qty || 0));
+      if (!qty) continue;
+
+      const fkNorm = normFlavorKey(fl.flavorKey);
+      const fkCandidates = Array.from(
+        new Set([String(fl.flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
+      );
+
+      for (const pointObjId of pointObjIds) {
+        await Product.updateOne(
+          {
+            productKey,
+            "flavors.flavorKey": { $in: fkCandidates },
+            "flavors.stockByPickupPoint.pickupPointId": pointObjId,
+          },
+          {
+            $inc: {
+              "flavors.$[f].stockByPickupPoint.$[s].reservedQty": qty,
+            },
+          },
+          {
+            arrayFilters: [
+              { "f.flavorKey": { $in: fkCandidates } },
+              { "s.pickupPointId": pointObjId },
+            ],
+          }
+        );
+
+        await Product.updateOne(
+          { productKey },
+          [
+            {
+              $set: {
+                flavors: {
+                  $map: {
+                    input: "$flavors",
+                    as: "f",
+                    in: {
+                      $cond: [
+                        { $in: ["$$f.flavorKey", fkCandidates] },
+                        {
+                          $mergeObjects: [
+                            "$$f",
+                            {
+                              stockByPickupPoint: {
+                                $map: {
+                                  input: "$$f.stockByPickupPoint",
+                                  as: "s",
+                                  in: {
+                                    $cond: [
+                                      { $eq: ["$$s.pickupPointId", pointObjId] },
+                                      {
+                                        $let: {
+                                          vars: {
+                                            safeTotal: {
+                                              $max: [0, { $ifNull: ["$$s.totalQty", 0] }],
+                                            },
+                                            safeReservedRaw: {
+                                              $max: [0, { $ifNull: ["$$s.reservedQty", 0] }],
+                                            },
+                                          },
+                                          in: {
+                                            $mergeObjects: [
+                                              "$$s",
+                                              {
+                                                reservedQty: {
+                                                  $min: ["$$safeReservedRaw", "$$safeTotal"],
+                                                },
+                                              },
+                                            ],
+                                          },
+                                        },
+                                      },
+                                      "$$s",
+                                    ],
+                                  },
+                                },
+                              },
+                            },
+                          ],
+                        },
+                        "$$f",
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          ]
+        );
+      }
+    }
+  }
+
+  return { ok: true };
+}
+
 export async function releaseOrderReservedStock(order) {
   if (!order || order.stockReleasedAt) return false;
+
+  if (!order.stockReservedAt) return true;
 
   const pickupPointIds = await resolveOrderReservePickupPointIds(order);
   if (!pickupPointIds.length) return false;
@@ -302,9 +530,17 @@ export async function commitOrderStock(order) {
       const fkCandidates = Array.from(
         new Set([String(fl.flavorKey || "").trim(), fkNorm, `${fkNorm},`].filter(Boolean))
       );
+    const hadActiveReserve = Boolean(order.stockReservedAt && !order.stockReleasedAt);
+
     for (const pointObjId of pointObjIds) {
 
-      // 1) totalQty -= qty (reservedQty у кошику більше не використовується)
+      const incFields = {
+        "flavors.$[f].stockByPickupPoint.$[s].totalQty": -qty,
+      };
+      if (hadActiveReserve) {
+        incFields["flavors.$[f].stockByPickupPoint.$[s].reservedQty"] = -qty;
+      }
+
       await Product.updateOne(
         {
           productKey,
@@ -312,9 +548,7 @@ export async function commitOrderStock(order) {
           "flavors.stockByPickupPoint.pickupPointId": pointObjId,
         },
         {
-          $inc: {
-            "flavors.$[f].stockByPickupPoint.$[s].totalQty": -qty,
-          },
+          $inc: incFields,
         },
         {
           arrayFilters: [

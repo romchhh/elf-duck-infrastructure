@@ -645,6 +645,40 @@ export async function processOrdersWithoutPaymentConfirm() {
         );
       }
     }
+
+    const checkingTimeoutMinutes = Number(
+      process.env.ORDER_PAYMENT_CHECKING_TIMEOUT_MINUTES ||
+        process.env.ORDER_PAYMENT_CONFIRM_TIMEOUT_MINUTES ||
+        10
+    );
+    const checkingTimeoutMs = checkingTimeoutMinutes * 60 * 1000;
+    const checkingCutoff = new Date(now - checkingTimeoutMs);
+
+    const stuckCheckingOrders = await Order.find({
+      status: { $in: ["created", "processing"] },
+      "payment.status": "checking",
+      stockReservedAt: { $ne: null },
+      stockReleasedAt: null,
+      stockCommittedAt: null,
+      $or: [
+        { "payment.checkedAt": { $lte: checkingCutoff } },
+        { stockReservedAt: { $lte: checkingCutoff } },
+      ],
+    });
+
+    for (const order of stuckCheckingOrders) {
+      try {
+        await annulOrderBecausePaymentCheckingTimeout(order, {
+          reason: "PAYMENT_CHECKING_TIMEOUT",
+        });
+      } catch (checkingErr) {
+        console.error("processOrdersWithoutPaymentConfirm checking timeout error:", {
+          orderId: String(order?._id || ""),
+          orderNo: String(order?.orderNo || ""),
+          error: checkingErr?.message || checkingErr,
+        });
+      }
+    }
   } catch (e) {
     console.error(
       "processOrdersWithoutPaymentConfirm error:",

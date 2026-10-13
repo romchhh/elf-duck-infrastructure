@@ -4509,10 +4509,11 @@ navigate("/cart");
 
                         <div className="checkoutName">
                           {String(
-                            activeProduct.titleModal ||
-                              [activeProduct.title1, activeProduct.title2]
-                                .filter(Boolean)
-                                .join(" ")
+                            [activeProduct.title1, activeProduct.title2]
+                              .filter(Boolean)
+                              .join(" ") ||
+                              activeProduct.titleModal ||
+                              ""
                           ).trim()}
                         </div>
 

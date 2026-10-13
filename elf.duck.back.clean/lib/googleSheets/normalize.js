@@ -433,7 +433,15 @@ export function getAssortmentFlavorAliasLabels(productKey = "", flavorKey = "") 
   const byProduct = ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT[pk];
   if (!byProduct) return [];
 
-  return Array.isArray(byProduct[fk]) ? byProduct[fk] : [];
+  const fkCandidates = [fk];
+  if (pk === "puffy-30-ml-70-mg" && fk.startsWith("70mg-")) {
+    fkCandidates.push(fk.slice("70mg-".length));
+  }
+
+  for (const key of fkCandidates) {
+    if (Array.isArray(byProduct[key])) return byProduct[key];
+  }
+  return [];
 }
 
 function flavorTokens(compact) {

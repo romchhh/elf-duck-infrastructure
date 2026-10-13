@@ -160,9 +160,14 @@ export function buildAssortmentFlavorSearchLabels(flavor = {}, productKey = "") 
 
   const fk = String(flavor?.flavorKey || "").trim();
   if (fk) {
-    push(flavorSlugToTitleLabel(fk));
+    const pk = String(productKey || "").trim().toLowerCase();
+    const fkForSlug =
+      pk === "puffy-30-ml-70-mg" && fk.startsWith("70mg-")
+        ? fk.slice("70mg-".length)
+        : fk;
+    push(flavorSlugToTitleLabel(fkForSlug));
 
-    const segments = fk.split(/[-_/]/).filter(Boolean);
+    const segments = fkForSlug.split(/[-_/]/).filter(Boolean);
     const last = segments[segments.length - 1];
     if (
       last &&

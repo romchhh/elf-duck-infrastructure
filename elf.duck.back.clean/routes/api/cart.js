@@ -249,9 +249,42 @@ app.put("/cart", async (req, res) => {
     const pricingProducts = pricingProductKeys.length
       ? await Product.find(
           { productKey: { $in: pricingProductKeys } },
-          { productKey: 1, categoryKey: 1, price: 1, title1: 1, title2: 1, newBadge: 1 }
+          {
+            productKey: 1,
+            categoryKey: 1,
+            price: 1,
+            title1: 1,
+            title2: 1,
+            newBadge: 1,
+            flavors: 1,
+          }
         ).lean()
       : [];
+
+    const prodByKeyForValidation = new Map(
+      pricingProducts.map((p) => [String(p.productKey), p])
+    );
+    for (const it of cleanItemsBase) {
+      const prod = prodByKeyForValidation.get(it.productKey);
+      if (!prod) {
+        return res.status(400).json({
+          ok: false,
+          error: "PRODUCT_NOT_FOUND",
+          productKey: it.productKey,
+        });
+      }
+      const hasFlavor = (prod.flavors || []).some(
+        (f) => String(f?.flavorKey || "").trim() === it.flavorKey
+      );
+      if (!hasFlavor) {
+        return res.status(400).json({
+          ok: false,
+          error: "FLAVOR_NOT_IN_PRODUCT",
+          productKey: it.productKey,
+          flavorKey: it.flavorKey,
+        });
+      }
+    }
 
   const { repricedItems: smartPricedItems, smartPricingMeta } =
     repriceCartItemsWithSmartPricing(cleanItemsBase, pricingProducts);
