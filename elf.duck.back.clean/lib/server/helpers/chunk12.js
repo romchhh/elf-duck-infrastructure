@@ -181,7 +181,7 @@ function aggregateStockForLinkedPoints(flavor, pointObjIds) {
   return { total, reserved, available };
 }
 
-/** Бронь смаків замовлення (лише після відправки оплати на перевірку). */
+/** Бронь смаків у момент створення замовлення. Знімається, якщо спосіб оплати не обрано за 10 хв, менеджер відхилив або скасував. */
 export async function reserveOrderReservedStock(order) {
   if (!order || order.stockCommittedAt) {
     return { ok: false, reason: "ALREADY_COMMITTED" };
