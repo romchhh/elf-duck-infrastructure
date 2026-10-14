@@ -24,6 +24,7 @@ import banerIMG from "../assets/referralBanner.webp";
 import baner2IMG from "../assets/cashbackBanner.webp";
 import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
+import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import pickupIcon from "../assets/pickupIcon.webp";
 import deliveryIcon from "../assets/deliveryIcon.webp";
 import managerTgIcon from "../assets/managerTgIcon.webp";
@@ -58,16 +59,12 @@ const ManagersPage = () => {
   const [avatarLoaded, setAvatarLoaded] = useState(false);
 
   const banners = [
-
+      assortmentRestockBannerIMG,
       deliveryBannerIMG,
-
       banerIMG,
-
       baner2IMG,
-
       baner3IMG,
-
-  ]; // потом заменишь на реальные изображения
+  ];
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
   useEffect(() => {

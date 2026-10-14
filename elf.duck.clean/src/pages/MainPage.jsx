@@ -63,6 +63,7 @@ import banerIMG from "../assets/referralBanner.webp";
 import baner2IMG from "../assets/cashbackBanner.webp";
 import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
+import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import categoriesIcon from "../assets/categoriesIcon.webp";
 import allItemsIcon from "../assets/allItemsIcon.webp";    
   
@@ -1551,16 +1552,12 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
   /* ================= BANNER DOTS SECTION ================= */
 
   const banners = [
-
+    assortmentRestockBannerIMG,
     deliveryBannerIMG,
-
     banerIMG,
-
     baner2IMG,
-
     baner3IMG,
-
-  ]; // потом заменишь на реальные изображения
+  ];
   
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 

@@ -32,6 +32,7 @@ import banerIMG from "../assets/referralBanner.webp";
 import baner2IMG from "../assets/cashbackBanner.webp";
 import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
+import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
 import buyIcon from "../assets/buyIcon.webp";
@@ -293,16 +294,12 @@ const FavoritePage = () => {
     /* ================= BANNER DOTS SECTION ================= */
 
     const banners = [
-  
+        assortmentRestockBannerIMG,
         deliveryBannerIMG,
-  
         banerIMG,
-  
         baner2IMG,
-  
         baner3IMG,
-  
-    ]; // потом заменишь на реальные изображения 
+    ];
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
