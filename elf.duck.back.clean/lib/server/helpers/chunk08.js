@@ -355,6 +355,12 @@ export async function processOrdersWithoutPaymentConfirm() {
 
       "payment.status": "unpaid",
 
+      $or: [
+        { "payment.method": { $exists: false } },
+        { "payment.method": null },
+        { "payment.method": "" },
+      ],
+
       createdAt: {
         $lte: new Date(
           now - fiveMinutesMs
@@ -547,6 +553,12 @@ export async function processOrdersWithoutPaymentConfirm() {
             },
 
             "payment.status": "unpaid",
+
+            $or: [
+              { "payment.method": { $exists: false } },
+              { "payment.method": null },
+              { "payment.method": "" },
+            ],
           });
 
         if (!stillUnpaidOrder) {

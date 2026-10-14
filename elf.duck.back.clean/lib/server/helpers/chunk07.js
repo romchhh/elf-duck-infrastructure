@@ -1536,68 +1536,59 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
     if (!order) return { ok: false, reason: "NO_ORDER" };
 
     const reason = String(options?.reason || "NO_PAYMENT_CONFIRM").trim() || "NO_PAYMENT_CONFIRM";
+    const orderId = String(order._id || "").trim();
+    if (!orderId) return { ok: false, reason: "NO_ORDER" };
 
-    const freshOrder = await Order.findById(String(order._id || ""));
+    /*
+     * Атомарно: якщо клієнт уже обрав оплату (cash → awaiting тощо),
+     * не перезаписуємо замовлення і не шлемо «аннулирован».
+     */
+    const claimed = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        status: { $in: ["created", "processing"] },
+        "payment.status": "unpaid",
+        $or: [
+          { "payment.method": { $exists: false } },
+          { "payment.method": null },
+          { "payment.method": "" },
+        ],
+        stockCommittedAt: null,
+      },
+      {
+        $set: {
+          status: "annulled",
+          annulledAt: new Date(),
+          annulledReason: reason,
+        },
+      },
+      { new: false }
+    );
+
+    if (!claimed) {
+      return { ok: false, reason: "PAYMENT_ALREADY_IN_PROGRESS_OR_FINAL" };
+    }
+
+    const freshOrder = await Order.findById(orderId);
     if (!freshOrder) return { ok: false, reason: "NOT_FOUND" };
 
-    if (isExemptFromPaymentTimeoutAnnul(freshOrder)) {
-      return { ok: false, reason: "PAYMENT_TIMEOUT_EXEMPT" };
-    }
-
-    const currentStatus = String(freshOrder.status || "").toLowerCase();
-    const paymentStatus = String(freshOrder?.payment?.status || "").toLowerCase();
-
-    if (["completed", "done", "shipped", "canceled", "annulled"].includes(currentStatus)) {
-      return { ok: false, reason: "ALREADY_FINAL" };
-    }
-
-    if (
-      paymentStatus === "paid" ||
-      paymentStatus === "checking" ||
-      paymentStatus === "awaiting"
-    ) {
-      return { ok: false, reason: "PAYMENT_ALREADY_IN_PROGRESS" };
-    }
-
-    if (!freshOrder.stockCommittedAt && !freshOrder.stockReleasedAt) {
+    if (!freshOrder.stockReleasedAt) {
       try {
         await releaseOrderReservedStock(freshOrder);
         freshOrder.stockReleasedAt = new Date();
+        await freshOrder.save();
       } catch (releaseErr) {
         console.error("annulOrderBecauseNoPaymentConfirm releaseOrderReservedStock error:", releaseErr);
       }
     }
 
-    freshOrder.status = "annulled";
-    freshOrder.annulledAt = new Date();
-    freshOrder.annulledReason = reason;
-    await freshOrder.save();
-
     await refreshManagerOrderMessage(freshOrder);
 
-    try {
-      if (freshOrder?.userTelegramId && getActiveUserBots().length) {
-        const orderNo = escapeHtml(freshOrder?.orderNo || "—");
-
-        await sendClientTelegramMessage(
-          freshOrder.userTelegramId,
-          [
-            `⌛️ <b>ЗАКАЗ АННУЛИРОВАН</b>`,
-            ``,
-            `Заказ <b>#${orderNo}</b> аннулирован: способ оплаты не был выбран в течение 10 минут.`,
-            ``,
-            `Товар снова доступен в ассортименте. Можно оформить заказ заново.`,
-          ].join("\n"),
-          {
-            parse_mode: "HTML",
-            disable_web_page_preview: true,
-          },
-          { order: freshOrder }
-        );
-      }
-    } catch (notifyErr) {
-      console.error("annulOrderBecauseNoPaymentConfirm notify client error:", notifyErr);
-    }
+    /*
+     * Клієнту НЕ пишемо «ЗАКАЗ АННУЛИРОВАН» — плутає, особливо якщо
+     * майже одночасно обрали наличные / менеджер уже веде замовлення.
+     * Смак просто повертається в асортимент; у міні-апі статус annulled.
+     */
 
     return { ok: true, order: freshOrder };
   } catch (e) {
