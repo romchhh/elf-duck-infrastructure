@@ -6,5 +6,6 @@
     "intervalMs": 300000,
     "staggerMs": 1500
   },
-  "skipOrderReportSyncPointKeys": ["wola", "delivery-2"]
+  "skipOrderReportSyncPointKeys": ["wola", "delivery-2"],
+  "skipOrderAssortmentSyncPointKeys": ["wola", "delivery-2", "delivery"]
 }

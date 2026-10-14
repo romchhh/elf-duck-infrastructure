@@ -392,6 +392,10 @@ export async function processOrdersWithoutPaymentConfirm() {
         const orderAgeMs =
           now - createdAtMs;
 
+        if (isExemptFromPaymentTimeoutAnnul(order)) {
+          continue;
+        }
+
         /*
          * Сначала проверяем аннуляцию.
          *
@@ -657,6 +661,7 @@ export async function processOrdersWithoutPaymentConfirm() {
     const stuckCheckingOrders = await Order.find({
       status: { $in: ["created", "processing"] },
       "payment.status": "checking",
+      "payment.method": { $nin: ["cash", "cashback"] },
       stockReservedAt: { $ne: null },
       stockReleasedAt: null,
       stockCommittedAt: null,

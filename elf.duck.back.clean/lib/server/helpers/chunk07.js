@@ -1449,6 +1449,27 @@ export async function notifyManagerClientArrived(order) {
   }
 }
 
+export function isCashPaymentOrder(order) {
+  return (
+    String(order?.payment?.method || "")
+      .trim()
+      .toLowerCase() === "cash"
+  );
+}
+
+/** Наличные / «ожидаю клиента» — не гонять таймеры онлайн-оплаты. */
+export function isExemptFromPaymentTimeoutAnnul(order) {
+  if (!order) return false;
+  if (isCashPaymentOrder(order)) return true;
+
+  const paymentStatus = String(order?.payment?.status || "")
+    .trim()
+    .toLowerCase();
+  if (paymentStatus === "awaiting") return true;
+
+  return false;
+}
+
 export async function annulOrderBecausePaymentCheckingTimeout(order, options = {}) {
   try {
     if (!order) return { ok: false, reason: "NO_ORDER" };
@@ -1459,6 +1480,10 @@ export async function annulOrderBecausePaymentCheckingTimeout(order, options = {
 
     const freshOrder = await Order.findById(String(order._id || ""));
     if (!freshOrder) return { ok: false, reason: "NOT_FOUND" };
+
+    if (isExemptFromPaymentTimeoutAnnul(freshOrder)) {
+      return { ok: false, reason: "PAYMENT_TIMEOUT_EXEMPT" };
+    }
 
     const currentStatus = String(freshOrder.status || "").toLowerCase();
     const paymentStatus = String(freshOrder?.payment?.status || "").toLowerCase();
@@ -1532,6 +1557,10 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
     const freshOrder = await Order.findById(String(order._id || ""));
     if (!freshOrder) return { ok: false, reason: "NOT_FOUND" };
 
+    if (isExemptFromPaymentTimeoutAnnul(freshOrder)) {
+      return { ok: false, reason: "PAYMENT_TIMEOUT_EXEMPT" };
+    }
+
     const currentStatus = String(freshOrder.status || "").toLowerCase();
     const paymentStatus = String(freshOrder?.payment?.status || "").toLowerCase();
 
@@ -1539,7 +1568,11 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
       return { ok: false, reason: "ALREADY_FINAL" };
     }
 
-    if (paymentStatus === "paid" || paymentStatus === "checking") {
+    if (
+      paymentStatus === "paid" ||
+      paymentStatus === "checking" ||
+      paymentStatus === "awaiting"
+    ) {
       return { ok: false, reason: "PAYMENT_ALREADY_IN_PROGRESS" };
     }
 

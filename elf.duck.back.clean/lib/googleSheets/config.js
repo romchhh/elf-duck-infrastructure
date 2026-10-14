@@ -103,16 +103,41 @@ function getSkipOrderReportSyncPointKeys() {
   return list.map((k) => normalizeGoogleSheetsPointKey(k)).filter(Boolean);
 }
 
+function getSkipOrderAssortmentSyncPointKeys() {
+  const cfg = getGoogleSheetsConfig().skipOrderAssortmentSyncPointKeys;
+  const list = Array.isArray(cfg)
+    ? cfg
+    : ["wola", "delivery-2", "delivery"];
+  return list.map((k) => normalizeGoogleSheetsPointKey(k)).filter(Boolean);
+}
+
 /**
  * Лист місяця ОТЧЁТ (MODEL / tiers / КАССА / денний блок) — не писати з бота.
  * `skipOrderReportSyncPointKeys`: при виконанні замовлення + вечірній cron (wola-inpost).
- * АССОРТИМЕНТ і stock pull не чіпаються.
  */
 export function isOrderReportSyncDisabledForPointKey(pointKey) {
   const key = normalizeGoogleSheetsPointKey(pointKey);
   if (!key) return false;
 
   const skip = new Set(getSkipOrderReportSyncPointKeys());
+  if (skip.has(key)) return true;
+
+  if (key === "wola-inpost") {
+    return skip.has("wola") || skip.has("delivery-2");
+  }
+
+  return false;
+}
+
+/**
+ * Лист АССОРТИМЕНТ — не мінусувати з замовлень (лише pull таблиця → Mongo).
+ * `skipOrderAssortmentSyncPointKeys`: wola, dostawa (delivery), InPost (delivery-2).
+ */
+export function isOrderAssortmentSyncDisabledForPointKey(pointKey) {
+  const key = normalizeGoogleSheetsPointKey(pointKey);
+  if (!key) return false;
+
+  const skip = new Set(getSkipOrderAssortmentSyncPointKeys());
   if (skip.has(key)) return true;
 
   if (key === "wola-inpost") {

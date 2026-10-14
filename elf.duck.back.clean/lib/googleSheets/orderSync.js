@@ -8,6 +8,7 @@ import {
 import { reportTabTitleForDayKey } from "./dailyReportGrid.js";
 import {
   isGoogleSheetsEnabled,
+  isOrderAssortmentSyncDisabledForPointKey,
   resolveSpreadsheetIdForPointKey,
 } from "./config.js";
 import { getAssortmentSheetModelName } from "../server/helpers/chunk09.js";
@@ -64,6 +65,25 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
 
   if (!spreadsheetId) {
     return { ok: false, reason: "NO_SPREADSHEET_FOR_POINT", pointKey };
+  }
+
+  const priorStepsEarly = Array.isArray(order?.googleSheetSync?.assortmentAppliedSteps)
+    ? order.googleSheetSync.assortmentAppliedSteps
+    : [];
+
+  if (
+    isOrderAssortmentSyncDisabledForPointKey(pointKey) &&
+    !(direction === "reverse" && priorStepsEarly.length > 0)
+  ) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "ASSORTMENT_SYNC_DISABLED_FOR_POINT",
+      pointKey,
+      spreadsheetId,
+      results: [],
+      newSteps: [],
+    };
   }
 
   let pointLabel = String(pointKey || "");
@@ -262,16 +282,20 @@ export async function applyOrderToGoogleSheets(order, options = {}) {
         : []),
       ...(result.newSteps || []),
     ];
+    const setFields = {
+      "googleSheetSync.appliedAt": new Date(),
+      "googleSheetSync.reversedAt": null,
+      "googleSheetSync.syncInProgress": false,
+      "googleSheetSync.lastError": "",
+      "googleSheetSync.assortmentAppliedSteps": mergedSteps,
+    };
+    if (result.skipped) {
+      setFields["googleSheetSync.assortmentSyncDisabled"] = true;
+    }
     await Order.updateOne(
       { _id: order._id },
       {
-        $set: {
-          "googleSheetSync.appliedAt": new Date(),
-          "googleSheetSync.reversedAt": null,
-          "googleSheetSync.syncInProgress": false,
-          "googleSheetSync.lastError": "",
-          "googleSheetSync.assortmentAppliedSteps": mergedSteps,
-        },
+        $set: setFields,
       }
     );
   } else if (!options?.dryRun && !result.ok) {
@@ -330,11 +354,23 @@ export function ensureGoogleSheetAssortmentForFulfilledOrder(order) {
   if (!order?._id || !isGoogleSheetsEnabled()) return;
   if (!orderQualifiesForAssortmentGoogleSync(order)) return;
 
-  if (order?.googleSheetSync?.appliedAt && !order?.googleSheetSync?.reversedAt) {
-    return;
-  }
+  setImmediate(() => {
+    resolveOrderPointKey(order)
+      .then((pointKey) => {
+        if (isOrderAssortmentSyncDisabledForPointKey(pointKey)) {
+          return queueStockPullForOrder(order);
+        }
 
-  queueGoogleSheetApplyForOrder(order);
+        if (order?.googleSheetSync?.appliedAt && !order?.googleSheetSync?.reversedAt) {
+          return;
+        }
+
+        queueGoogleSheetApplyForOrder(order);
+      })
+      .catch((e) => {
+        console.error("[googleSheets] ensureGoogleSheetAssortment point resolve error:", e);
+      });
+  });
 }
 
 /** @deprecated alias */

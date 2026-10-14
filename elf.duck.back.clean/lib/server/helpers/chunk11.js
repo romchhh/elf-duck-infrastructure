@@ -445,8 +445,15 @@ export async function sendOrderCreatedNotification(order, options = {}) {
         : String(inviterUser?.firstName || "").trim() || String(inviterUser?.telegramId || "").trim();
     }
 
+    const isCashOrderNotification =
+      String(order?.payment?.method || "")
+        .trim()
+        .toLowerCase() === "cash";
+
     const lines = [
-      `🛒 <b>ОПЛАТА ОТПРАВЛЕНА НА ПРОВЕРКУ</b>`,
+      isCashOrderNotification
+        ? `🛒 <b>НОВЫЙ ЗАКАЗ — ОПЛАТА НАЛИЧНЫМИ</b>`
+        : `🛒 <b>ОПЛАТА ОТПРАВЛЕНА НА ПРОВЕРКУ</b>`,
       ``,
       `🔢 <b>Номер:</b> #${escapeHtml(order.orderNo)}`,
       ``,
@@ -479,6 +486,8 @@ export async function sendOrderCreatedNotification(order, options = {}) {
       ``,
       order?.payment?.cashbackFullyPaid
         ? `💳 <b>Статус оплаты:</b> ✅ Полностью оплачено`
+        : isCashOrderNotification
+        ? `💳 <b>Статус оплаты:</b> 🕒 Оплата при встрече (наличные)`
         : `💳 <b>Статус оплаты:</b> 🟠 Оплата на проверке`,
       ``,
     ];
@@ -1033,9 +1042,16 @@ export async function refreshManagerOrderMessage(order) {
 
     const paymentStatusKey = String(order?.payment?.status || "").trim().toLowerCase();
 
+    const isCashOrderCard =
+      String(order?.payment?.method || "")
+        .trim()
+        .toLowerCase() === "cash";
+
     const paymentStatusLabel =
       orderStatusKey === "annulled"
-        ? "⌛️ Аннулирован из-за отсутствия подтверждения оплаты"
+        ? isCashOrderCard
+          ? "⌛️ Заказ аннулирован"
+          : "⌛️ Аннулирован из-за отсутствия подтверждения оплаты"
         : orderStatusKey === "canceled"
         ? canceledByClient
           ? "❌ Отменен клиентом"
@@ -1100,7 +1116,9 @@ export async function refreshManagerOrderMessage(order) {
         : null,
       ``,
       orderStatusKey === "annulled"
-        ? `💳 <b>Статус оплаты:</b> ⌛️ Аннулирован из-за отсутствия подтверждения оплаты`
+        ? isCashOrderCard
+          ? `💳 <b>Статус оплаты:</b> ⌛️ Заказ аннулирован`
+          : `💳 <b>Статус оплаты:</b> ⌛️ Аннулирован из-за отсутствия подтверждения оплаты`
         : order?.payment?.cashbackFullyPaid
         ? `💳 <b>Статус оплаты:</b> ✅ Полностью оплачено`
         : String(order?.payment?.status || "") === "paid"

@@ -37,6 +37,7 @@ export function getGoogleSheetsConfig() {
         staggerMs: 1500,
       },
       skipOrderReportSyncPointKeys: ["wola", "delivery-2"],
+      skipOrderAssortmentSyncPointKeys: ["wola", "delivery-2", "delivery"],
     });
   }
   return googleSheetsCache;

@@ -74,13 +74,13 @@ docker compose exec api node scripts/google-sheets-e2e-test.mjs
 
 Після **списання складу** (`commitOrderStock`):
 
-Для **`wola`** і **`delivery-2`** (та вечірній блок **Wola + InPost** → `wola-inpost`) бот **не** пише в **MODEL / tiers / КАССА / денний міні-звіт** — ні при виконанні замовлення, ні вечірнім cron. Лишаються **АССОРТИМЕНТ** і stock pull. Список у `config/googleSheets.json` → `skipOrderReportSyncPointKeys`. Інші точки без змін.
+Для **`wola`**, **`delivery`** (курʼєр) і **`delivery-2`** (InPost; та вечірній **wola-inpost**) бот **не** змінює Google Sheets від замовлень: ні **ОТЧЁТ** (`skipOrderReportSyncPointKeys`), ні мінус на листі **АССОРТИМЕНТ** (`skipOrderAssortmentSyncPointKeys`). Склад у **Mongo** оновлюється лише **з таблиці в бот** (stock pull / cron / `manual-sheet-stock-sync` після замовлення). Інші точки (Praga, Mokotów, Śródmieście…) — як раніше: мінус у **АССОРТИМЕНТ** при виконанні.
 
 1. Лист місяця `ОТЧЕТ 01.MM.YYYY` — міні-таблиця дня (`DD.MM`): лише колонки **1шт / 2шт / 3-4шт / 5шт** (+ скидки в рядку підсумків). `БЫЛО` / `СТАЛО` / `ПРОДАНО` / `КАССА` — **формули в таблиці**, API їх не перезаписує.
 2. **Нижній місячний блок** (заголовок `01.MM–31.MM` на тому ж листі):
    - зліва (`31.MM`) — `БЫЛО` / `СТАЛО` лишаються формулами (API не чіпає);
    - справа — лише tier-колонки (+ `СКИДКИ` в `ИТОГО`); `ПРОДАНО` / `КАССА` / `ЗАРПЛАТА` — формули.
-3. Лист `АССОРТИМЕНТ` — мінус кількість по смаку (`lib/googleSheets/normalize.js`).
+3. Лист `АССОРТИМЕНТ` — мінус кількість по смаку (`lib/googleSheets/normalize.js`), **крім** точок з `skipOrderAssortmentSyncPointKeys`.
 
 Довідкові блоки **MODEL / ПРОДАЖА** (ціни) та **ПЛАТНЫЕ ДОСТАВКИ** (доставка) API не змінює.
 

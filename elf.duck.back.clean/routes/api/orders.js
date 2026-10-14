@@ -1662,14 +1662,19 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       );
     }
 
+    const resolvedPaymentMethod = finalCashbackFullyPaid
+      ? "cashback"
+      : (req.body?.paymentMethod
+          ? String(req.body.paymentMethod).trim()
+          : (prevPayment?.method || null));
+
+    const isCashPaymentSubmit =
+      String(resolvedPaymentMethod || "").trim().toLowerCase() === "cash";
+
     order.payment = {
       ...prevPayment,
-      status: "checking",
-      method: finalCashbackFullyPaid
-        ? "cashback"
-        : (req.body?.paymentMethod
-            ? String(req.body.paymentMethod)
-            : (prevPayment?.method || null)),
+      status: isCashPaymentSubmit ? "awaiting" : "checking",
+      method: resolvedPaymentMethod,
       cashChangeType: finalCashbackFullyPaid
         ? null
         : (req.body?.cashChangeType
