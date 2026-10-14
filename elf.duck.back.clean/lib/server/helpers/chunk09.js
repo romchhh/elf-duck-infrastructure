@@ -186,7 +186,11 @@ export function getAssortmentSheetModelName(row = {}) {
 export function getStatsSheetReportModelKey(row = {}) {
   const pk = String(row?.productKey || "").trim().toLowerCase();
   if (STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk]) {
-    return STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk];
+    return toReportModelLabel(STATS_REPORT_MODEL_BY_PRODUCT_KEY[pk]);
+  }
+
+  if (ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY[pk]) {
+    return toReportModelLabel(ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY[pk]);
   }
 
   const title = getStatsSheetProductTitle(row);

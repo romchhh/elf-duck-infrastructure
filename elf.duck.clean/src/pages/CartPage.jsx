@@ -2882,7 +2882,7 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
     const flavor = first ? first.flavorLabel || first.flavorKey : "";
 
     let msg = t(
-      "Хтось вже встиг придбати товар. Перевірте кошик і спробуйте ще раз.",
+      "Кто-то уже успел купить этот товар. Проверьте корзину и попробуйте ещё раз.",
       "Ktoś już zdążył kupić ten towar. Sprawdź koszyk i spróbuj ponownie."
     );
 
@@ -2893,7 +2893,7 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
 
     if (Array.isArray(missing) && missing.length > 1) {
       msg += t(
-        `\n\nТакож перевірте інші позиції в кошику.`,
+        `\n\nТакже проверьте другие позиции в корзине.`,
         `\n\nSprawdź także pozostałe pozycje w koszyku.`
       );
     }

@@ -2101,7 +2101,7 @@ const savePromise = saveCart(
   if (msg === "OUT_OF_STOCK" || msg === "RESERVE_CONFLICT") {
     showTgAlert(
       t(
-        "Хтось вже встиг придбати товар. Спробуйте зменшити кількість або обрати інший смак.",
+        "Кто-то уже успел купить этот товар. Попробуйте уменьшить количество или выбрать другой вкус.",
         "Ktoś już zdążył kupić ten towar. Spróbuj zmniejszyć ilość lub wybrać inny smak."
       )
     );

@@ -518,18 +518,18 @@ export async function processOrdersWithoutPaymentConfirm() {
         const reminderText =
           shouldSendNineMinuteReminder
             ? [
-                "⚠️ <b>ПОСЛЕДНЕЕ НАПОМИНАНИЕ ОБ ОПЛАТЕ</b>",
+                "⚠️ <b>ПОСЛЕДНИЙ ШАГ</b>",
                 "",
-                `Заказ <b>#${orderNo}</b> всё ещё не оплачен.`,
+                `Заказ <b>#${orderNo}</b> ещё не передан менеджеру.`,
                 "",
-                "Заказ будет автоматически аннулирован примерно через 1 минуту.",
+                "Выберите способ оплаты примерно в течение 1 минуты, иначе заказ будет аннулирован.",
               ].join("\n")
             : [
-                "⏳ <b>НАПОМИНАНИЕ ОБ ОПЛАТЕ</b>",
+                "⏳ <b>ОСТАЛСЯ ПОСЛЕДНИЙ ШАГ</b>",
                 "",
-                `Заказ <b>#${orderNo}</b> ещё не оплачен.`,
+                `Заказ <b>#${orderNo}</b> создан, но менеджер его ещё не получил.`,
                 "",
-                "Пожалуйста, завершите оплату.",
+                "Выберите способ оплаты, чтобы заказ ушёл менеджеру.",
               ].join("\n");
 
         /*
@@ -650,40 +650,10 @@ export async function processOrdersWithoutPaymentConfirm() {
       }
     }
 
-    const checkingTimeoutMinutes = Number(
-      process.env.ORDER_PAYMENT_CHECKING_TIMEOUT_MINUTES ||
-        process.env.ORDER_PAYMENT_CONFIRM_TIMEOUT_MINUTES ||
-        10
-    );
-    const checkingTimeoutMs = checkingTimeoutMinutes * 60 * 1000;
-    const checkingCutoff = new Date(now - checkingTimeoutMs);
-
-    const stuckCheckingOrders = await Order.find({
-      status: { $in: ["created", "processing"] },
-      "payment.status": "checking",
-      "payment.method": { $nin: ["cash", "cashback"] },
-      stockReservedAt: { $ne: null },
-      stockReleasedAt: null,
-      stockCommittedAt: null,
-      $or: [
-        { "payment.checkedAt": { $lte: checkingCutoff } },
-        { stockReservedAt: { $lte: checkingCutoff } },
-      ],
-    });
-
-    for (const order of stuckCheckingOrders) {
-      try {
-        await annulOrderBecausePaymentCheckingTimeout(order, {
-          reason: "PAYMENT_CHECKING_TIMEOUT",
-        });
-      } catch (checkingErr) {
-        console.error("processOrdersWithoutPaymentConfirm checking timeout error:", {
-          orderId: String(order?._id || ""),
-          orderNo: String(order?.orderNo || ""),
-          error: checkingErr?.message || checkingErr,
-        });
-      }
-    }
+    /*
+     * Після вибору способу оплати замовлення лишається у менеджера.
+     * Повернення в асортимент: таймаут без способу оплати, відхилення або «заказ отменен».
+     */
   } catch (e) {
     console.error(
       "processOrdersWithoutPaymentConfirm error:",

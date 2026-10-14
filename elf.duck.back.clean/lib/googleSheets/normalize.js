@@ -59,6 +59,9 @@ export function normalizeSheetModelName(value) {
     .replace(/\bELF\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
     .replace(/\b70\s*MG\b/g, "7%")
     .replace(/\b50\s*MG\b/g, "5%")
+    .replace(/\bOXVA\s*\/\s*\d+\s*MG\b/g, "OXVA")
+    .replace(/\bOXVA\s+\d+\s*MG\b/g, "OXVA")
+    .replace(/\bLIQ\s+OXVA\b/g, "OXVA")
     .replace(/\s+/g, " ")
     .trim();
 }

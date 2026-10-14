@@ -861,16 +861,18 @@ try {
 
     if (safeTelegramId) {
       const clientLines = [
-        `🛒 <b>ЗАКАЗ СОЗДАН</b>`,
+        `🛒 <b>ЗАКАЗ ПОЧТИ ГОТОВ!</b>`,
         ``,
         `🔢 <b>Номер заказа:</b> #${escapeHtml(order.orderNo)}`,
         `💰 <b>Сумма:</b> ${managerAmountText}`,
         ``,
-        `ℹ️ <b>Важно:</b> менеджер получит информацию о вашем заказе только после оплаты.`,
+        `⚠️ <b>Остался последний шаг!</b>`,
         ``,
-        `💵 Вы также можете выбрать способ оплаты <b>Наличные</b> и оплатить заказ на месте — в этом случае менеджер тоже получит уведомление и начнёт готовить заказ.`,
+        `Ваш заказ пока не передан менеджеру. Чтобы менеджер получил заказ и начал его готовить, необходимо выбрать способ оплаты.`,
         ``,
-        `👉 Откройте страницу заказа, чтобы выбрать способ оплаты и отправить его на проверку менеджеру.`,
+        `☑ После этого заказ будет отправлен менеджеру.`,
+        ``,
+        `Не забудьте выбрать способ оплаты — без этого менеджер не получит ваш заказ. На это есть 10 минут.`,
       ];
 
       const clientText = clientLines.join("\n");
@@ -1047,11 +1049,22 @@ export async function refreshManagerOrderMessage(order) {
         .trim()
         .toLowerCase() === "cash";
 
+    const isPickupOrderCard =
+      String(order?.deliveryType || "")
+        .trim()
+        .toLowerCase() === "pickup";
+
+    const isRecoverableAnnul =
+      orderStatusKey === "annulled" &&
+      (isPickupOrderCard || isCashOrderCard);
+
     const paymentStatusLabel =
-      orderStatusKey === "annulled"
+      isRecoverableAnnul
         ? isCashOrderCard
-          ? "⌛️ Заказ аннулирован"
-          : "⌛️ Аннулирован из-за отсутствия подтверждения оплаты"
+          ? "🕒 Оплата наличными при встрече"
+          : "🕒 Ожидаем клиента на точке"
+        : orderStatusKey === "annulled"
+        ? "⌛️ Аннулирован из-за отсутствия подтверждения оплаты"
         : orderStatusKey === "canceled"
         ? canceledByClient
           ? "❌ Отменен клиентом"
@@ -1071,6 +1084,8 @@ export async function refreshManagerOrderMessage(order) {
           : "✅ Выполнен"
         : orderStatusKey === "shipped"
         ? "📦 Отправлен"
+        : isRecoverableAnnul
+        ? "🕒 Ожидаем клиента"
         : orderStatusKey === "annulled"
         ? "⌛️ Аннулирован"
         : orderStatusKey === "canceled"
@@ -1083,8 +1098,15 @@ export async function refreshManagerOrderMessage(order) {
         ? "🟠 В процессе"
         : "⚪️ Создан";
 
+    const managerHeader =
+      isCashOrderCard && !isRecoverableAnnul
+        ? `🛒 <b>НОВЫЙ ЗАКАЗ — ОПЛАТА НАЛИЧНЫМИ</b>`
+        : isRecoverableAnnul
+        ? `🛒 <b>ЗАКАЗ (САМОВЫВОЗ / НАЛИЧНЫЕ)</b>`
+        : `🛒 <b>ОПЛАТА ОТПРАВЛЕНА НА ПРОВЕРКУ</b>`;
+
     const lines = [
-      `🛒 <b>ОПЛАТА ОТПРАВЛЕНА НА ПРОВЕРКУ</b>`,
+      managerHeader,
       ``,
       `🔢 <b>Номер:</b> #${escapeHtml(order.orderNo)}`,
       ``,
@@ -1115,10 +1137,10 @@ export async function refreshManagerOrderMessage(order) {
         ? `🎁 <b>Реферальная скидка:</b> ${referralFirstOrderDiscountPercent || 10}% на первый заказ${referralFirstOrderDiscountAppliedZl > 0 ? ` (${referralFirstOrderDiscountAppliedZl.toFixed(2)} PLN)` : ""}${inviterLabel ? `\n👤 <b>Пригласитель:</b> ${escapeHtml(inviterLabel)}` : ""}`
         : null,
       ``,
-      orderStatusKey === "annulled"
-        ? isCashOrderCard
-          ? `💳 <b>Статус оплаты:</b> ⌛️ Заказ аннулирован`
-          : `💳 <b>Статус оплаты:</b> ⌛️ Аннулирован из-за отсутствия подтверждения оплаты`
+      isRecoverableAnnul
+        ? `💳 <b>Статус оплаты:</b> ${escapeHtml(paymentStatusLabel)}`
+        : orderStatusKey === "annulled"
+        ? `💳 <b>Статус оплаты:</b> ⌛️ Аннулирован из-за отсутствия подтверждения оплаты`
         : order?.payment?.cashbackFullyPaid
         ? `💳 <b>Статус оплаты:</b> ✅ Полностью оплачено`
         : String(order?.payment?.status || "") === "paid"
@@ -1261,6 +1283,25 @@ export async function refreshManagerOrderMessage(order) {
 
                 callback_data:
                   `mgr_order_shipped_done:${order._id}`,
+              },
+            ],
+          ]
+
+        : isRecoverableAnnul
+        ? [
+            [
+              {
+                text: "🕒 Ожидаю",
+
+                callback_data:
+                  `mgr_pay_paid:${order._id}`,
+              },
+
+              {
+                text: "❌ Отклонить",
+
+                callback_data:
+                  `mgr_pay_unpaid:${order._id}`,
               },
             ],
           ]
@@ -2016,17 +2057,20 @@ export async function sendClientOrderCreatedInfo(order) {
       resolveTelegramMediaUrl("orderPhotoDefault")
     );
 
+    const amountText = `${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`;
     const lines = [
-      `🛒 <b>ЗАКАЗ СОЗДАН</b>`,
+      `🛒 <b>ЗАКАЗ ПОЧТИ ГОТОВ!</b>`,
       ``,
       `🔢 <b>Номер заказа:</b> #${escapeHtml(orderNo)}`,
-      `💰 <b>Сумма:</b> ${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`,
+      `💰 <b>Сумма:</b> ${amountText}`,
       ``,
-      `ℹ️ <b>Важно:</b> менеджер получит информацию о вашем заказе <b>только после оплаты</b>.`,
+      `⚠️ <b>Остался последний шаг!</b>`,
       ``,
-      `💵 Вы также можете выбрать способ оплаты <b>Наличные</b> и оплатить заказ на месте — в этом случае менеджер тоже получит уведомление и начнёт готовить заказ.`,
+      `Ваш заказ пока не передан менеджеру. Чтобы менеджер получил заказ и начал его готовить, необходимо выбрать способ оплаты.`,
       ``,
-      `👉 Откройте страницу заказа, чтобы выбрать способ оплаты и отправить его на проверку менеджеру.`,
+      `☑ После этого заказ будет отправлен менеджеру.`,
+      ``,
+      `Не забудьте выбрать способ оплаты — без этого менеджер не получит ваш заказ. На это есть 10 минут.`,
     ];
 
     const extra = {

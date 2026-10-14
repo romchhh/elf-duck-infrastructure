@@ -942,6 +942,20 @@ app.post("/orders/confirm", async (req, res) => {
       stockReleasedAt: null,
     });
 
+    const reserveResult = await reserveOrderReservedStock(created);
+    if (!reserveResult?.ok) {
+      await Order.deleteOne({ _id: created._id });
+      return res.status(409).json({
+        ok: false,
+        error: "Not enough stock",
+        code: "STOCK_TAKEN",
+        missing: reserveResult?.missing || [],
+      });
+    }
+
+    created.stockReservedAt = new Date();
+    await created.save();
+
     // після кожного замовлення: Mongo ← Google Таблиця складу (debounce, у фоні)
     import("../../lib/googleSheets/orderSync.js")
       .then((m) => m.queueStockPullForOrder(created))

@@ -1457,17 +1457,70 @@ export function isCashPaymentOrder(order) {
   );
 }
 
-/** Наличные / «ожидаю клиента» — не гонять таймеры онлайн-оплаты. */
+export function isPickupOrder(order) {
+  return (
+    String(order?.deliveryType || "")
+      .trim()
+      .toLowerCase() === "pickup"
+  );
+}
+
+/** Самовывоз с временем — клиент платит на точке, не по онлайн-таймеру. */
+export function isPickupWithArrivalOrder(order) {
+  return (
+    isPickupOrder(order) &&
+    Boolean(String(order?.arrivalTime || "").trim())
+  );
+}
+
+/**
+ * 10 хвилин — лише поки спосіб оплати не обрано.
+ * Після payment-check (checking / awaiting / paid / є method) таймер не анулює.
+ */
 export function isExemptFromPaymentTimeoutAnnul(order) {
   if (!order) return false;
-  if (isCashPaymentOrder(order)) return true;
 
   const paymentStatus = String(order?.payment?.status || "")
     .trim()
     .toLowerCase();
-  if (paymentStatus === "awaiting") return true;
+  if (["paid", "checking", "awaiting"].includes(paymentStatus)) return true;
+
+  const method = String(order?.payment?.method || "").trim();
+  if (method) return true;
 
   return false;
+}
+
+/** Ошибочно аннулированные pickup / наличные — менеджер может снова принять оплату. */
+export function isRecoverablePaymentAnnulOrder(order) {
+  if (!order) return false;
+  if (String(order?.status || "").trim().toLowerCase() !== "annulled") {
+    return false;
+  }
+  return isPickupOrder(order) || isCashPaymentOrder(order);
+}
+
+export async function restoreAnnulledOrderForManagerPayment(order) {
+  if (!isRecoverablePaymentAnnulOrder(order)) return false;
+
+  order.status = "created";
+  order.annulledAt = null;
+  order.annulledReason = "";
+
+  if (
+    order.stockReservedAt &&
+    order.stockReleasedAt &&
+    !order.stockCommittedAt
+  ) {
+    order.stockReleasedAt = null;
+    try {
+      await reserveOrderReservedStock(order);
+    } catch (e) {
+      console.error("restoreAnnulledOrderForManagerPayment reserve error:", e);
+    }
+  }
+
+  return true;
 }
 
 export async function annulOrderBecausePaymentCheckingTimeout(order, options = {}) {
@@ -1601,7 +1654,9 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
           [
             `⌛️ <b>ЗАКАЗ АННУЛИРОВАН</b>`,
             ``,
-            `Твой заказ <b>#${orderNo}</b> аннулирован из-за отсутствия подтверждения оплаты.`,
+            `Заказ <b>#${orderNo}</b> аннулирован: способ оплаты не был выбран в течение 10 минут.`,
+            ``,
+            `Товар снова доступен в ассортименте. Можно оформить заказ заново.`,
           ].join("\n"),
           {
             parse_mode: "HTML",

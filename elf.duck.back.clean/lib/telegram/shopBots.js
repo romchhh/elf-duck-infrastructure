@@ -1539,6 +1539,20 @@ if (photoFileId) {
       );
       if (!order) return;
 
+      const annulledStatus = String(order?.status || "")
+        .trim()
+        .toLowerCase();
+      if (annulledStatus === "annulled") {
+        const restored = await restoreAnnulledOrderForManagerPayment(order);
+        if (!restored) {
+          await ctx.answerCbQuery(
+            "Заказ аннулирован — восстановление недоступно",
+            { show_alert: true }
+          ).catch(() => {});
+          return;
+        }
+      }
+
       const previousPaymentStatus =
       String(
         order?.payment?.status || ""
