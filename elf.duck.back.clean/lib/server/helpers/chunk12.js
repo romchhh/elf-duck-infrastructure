@@ -390,10 +390,10 @@ export async function reserveOrderReservedStock(order) {
   return { ok: true };
 }
 
-export async function releaseOrderReservedStock(order) {
+export async function releaseOrderReservedStock(order, options = {}) {
   if (!order || order.stockReleasedAt) return false;
 
-  if (!order.stockReservedAt) return true;
+  if (!order.stockReservedAt && !options?.force) return true;
 
   const pickupPointIds = await resolveOrderReservePickupPointIds(order);
   if (!pickupPointIds.length) return false;

@@ -1714,9 +1714,8 @@ app.post("/orders/:id/payment-check", async (req, res) => {
     } catch (saveErr) {
       if (didReserveNow) {
         try {
-          await releaseOrderReservedStock(order);
+          await releaseOrderReservedStock(order, { force: true });
           order.stockReservedAt = null;
-          order.stockReleasedAt = new Date();
         } catch (rollbackErr) {
           console.error("payment-check reserve rollback error:", rollbackErr);
         }

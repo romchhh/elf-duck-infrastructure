@@ -1513,10 +1513,18 @@ export async function restoreAnnulledOrderForManagerPayment(order) {
     !order.stockCommittedAt
   ) {
     order.stockReleasedAt = null;
+    order.stockReservedAt = null;
     try {
-      await reserveOrderReservedStock(order);
+      const reserved = await reserveOrderReservedStock(order);
+      if (!reserved?.ok) {
+        order.stockReleasedAt = new Date();
+        return false;
+      }
+      order.stockReservedAt = new Date();
     } catch (e) {
       console.error("restoreAnnulledOrderForManagerPayment reserve error:", e);
+      order.stockReleasedAt = new Date();
+      return false;
     }
   }
 

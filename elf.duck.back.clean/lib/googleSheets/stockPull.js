@@ -124,8 +124,8 @@ function queueAssortmentStockOp(
 ) {
   const total = Math.max(0, Number(existing?.totalQty ?? sheetQty ?? 0));
   const reserved = Math.max(0, Number(existing?.reservedQty || 0));
-  const nextReserved =
-    meta.listedOnAssortment === false ? reserved : Math.min(reserved, sheetQty);
+  // reservedQty не перезаписуємо зі знімка: інакше pull затирає бронь замовлення.
+  const nextReserved = reserved;
   const nextTotal = meta.listedOnAssortment === false ? total : sheetQty;
 
   const qtyUnchanged =
@@ -157,7 +157,6 @@ function queueAssortmentStockOp(
         update: {
           $set: {
             "flavors.$[f].stockByPickupPoint.$[s].totalQty": nextTotal,
-            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": nextReserved,
             "flavors.$[f].stockByPickupPoint.$[s].listedOnAssortment":
               meta.listedOnAssortment,
             "flavors.$[f].stockByPickupPoint.$[s].sheetLabel": meta.sheetLabel,

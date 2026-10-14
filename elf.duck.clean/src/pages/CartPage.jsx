@@ -438,7 +438,7 @@ const CartPage = () => {
     if (!p || !fl) return 0;
 
     const row = getStockRow(fl, contextId);
-    const maxForMe = Math.max(0, Number(row?.totalQty || 0));
+    const maxForMe = calcAvailableQty(row);
 
     const currentQty = Math.max(1, Number(it.qty || 1));
     return Math.max(currentQty, maxForMe);
@@ -1900,7 +1900,7 @@ const getAvailabilityByLocations = (it) => {
     if (!ppId) continue;
 
     const row = getStockRow(fl, ppId);
-    const available = Math.max(0, Number(row?.totalQty || 0));
+    const available = calcAvailableQty(row);
 
     if (available <= 0) continue;
 
@@ -2952,8 +2952,7 @@ const checkCartAvailability = (contextId) => {
     }
 
 const row = getStockRow(fl, contextId);
-const total = Number(row?.totalQty || 0);
-const have = Math.max(0, total);
+const have = calcAvailableQty(row);
 
     if (have < need) {
       missing.push({
