@@ -930,6 +930,25 @@ export function getPointStatsSendTime(point, dateLike = new Date()) {
     return null;
   }
 
+  const pointKey = String(point?.key || "")
+    .split(/[,;]/)[0]
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+
+  /*
+   * Курʼєр (доставка по Варшаві): статистика після зміни,
+   * а не в момент закриття прийому замовлень у графіку (часто 22:00).
+   */
+  if (pointKey === "delivery") {
+    const courierRaw = String(
+      point?.statsSendTime || "23:00"
+    ).trim();
+    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(courierRaw)
+      ? courierRaw
+      : "23:00";
+  }
+
   const raw = String(
     rawSchedule?.to ||
       point?.statsSendTime ||
