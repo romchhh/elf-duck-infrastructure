@@ -60,8 +60,6 @@ import logo from "../assets/logo3.webp";
 import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
 import banerIMG from "../assets/referralBanner.webp";
-import baner2IMG from "../assets/cashbackBanner.webp";
-import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
 import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import categoriesIcon from "../assets/categoriesIcon.webp";
@@ -1555,8 +1553,6 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     assortmentRestockBannerIMG,
     deliveryBannerIMG,
     banerIMG,
-    baner2IMG,
-    baner3IMG,
   ];
   
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -1595,14 +1591,6 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
       setActiveBannerIndex((prev) => (prev === idx ? prev : idx));
     });
-  };
-
-  const getDotCount = (n) => (n <= 3 ? n : 3);
-  const getActiveDotIndex = (index, n) => {
-    if (n <= 3) return index;
-    if (index === 0) return 0;
-    if (index === n - 1) return 2;
-    return 1;
   };
 
   /* ================= CATALOG VIEW STATE ================= */
@@ -3948,38 +3936,6 @@ navigate("/cart");
                         navigate("/referral");
                         return;
                       }
-
-                      if (src === baner2IMG) {
-                        showCashbackInfoAlert();
-                        return;
-                      }
-
-                      if (src === baner3IMG) {
-                        showTgAlert(
-                          [
-                            t("SMART CENA / SMART SYSTEM", "SMART CENA / SMART SYSTEM"),
-                            "",
-                            t("Берёшь больше — платишь меньше", "Bierzesz więcej — płacisz mniej"),
-                            t(
-                              "• Миксуй любые модели и вкусы внутри одной категории — цена считается от общего количества твоего заказа",
-                              "• Mieszaj dowolne modele i smaki w ramach jednej kategorii — cena liczona jest od łącznej liczby produktów w Twoim zamówieniu"
-                            ),
-                            t(
-                              "• Каждая категория товара считается отдельно друг от друга",
-                              "• Każda kategoria produktów liczona jest oddzielnie"
-                            ),
-                            t(
-                              "• Смарт цена на поды не распространяется",
-                              "• Smart cena nie dotyczy podów"
-                            ),
-                            "",
-                            t(
-                              "Собирай корзину и система сама посчитает лучшую цену!",
-                              "Zbieraj koszyk, a system sam obliczy najlepszą cenę!"
-                            ),
-                          ].join("\n")
-                        );
-                      }
                     }}
                   >
                     <img
@@ -3995,10 +3951,12 @@ navigate("/cart");
               </div>
 
               <div className="bannerPagination">
-                {Array.from({ length: getDotCount(banners.length) }).map((_, i) => {
-                  const activeDot = getActiveDotIndex(activeBannerIndex, banners.length);
-                  return <span key={i} className={`dot ${i === activeDot ? "active" : ""}`} />;
-                })}
+                {banners.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`dot ${i === activeBannerIndex ? "active" : ""}`}
+                  />
+                ))}
               </div>
             </div>
           )}

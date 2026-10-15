@@ -29,8 +29,6 @@ import {
 } from "../utils/i18n";
 
 import banerIMG from "../assets/referralBanner.webp";
-import baner2IMG from "../assets/cashbackBanner.webp";
-import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
 import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import menuIcon from "../assets/menuIcon.webp";
@@ -297,8 +295,6 @@ const FavoritePage = () => {
         assortmentRestockBannerIMG,
         deliveryBannerIMG,
         banerIMG,
-        baner2IMG,
-        baner3IMG,
     ];
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -337,14 +333,6 @@ const FavoritePage = () => {
 
         setActiveBannerIndex((prev) => (prev === idx ? prev : idx));
     });
-    };
-
-    const getDotCount = (n) => (n <= 3 ? n : 3);
-    const getActiveDotIndex = (index, n) => {
-    if (n <= 3) return index;
-    if (index === 0) return 0;
-    if (index === n - 1) return 2;
-    return 1;
     };
 
       const showTgAlert = (text) => {
@@ -780,26 +768,6 @@ const FavoritePage = () => {
                       navigate("/referral");
                       return;
                     }
-
-                    if (src === baner2IMG) {
-                      showCashbackInfoAlert();
-                      return;
-                    }
-
-                    if (src === baner3IMG) {
-                      showTgAlert(
-                        [
-                          "SMART CENA / SMART SYSTEM",
-                          "",
-                          "Берёшь больше — платишь меньше",
-                          "• Миксуй любые модели и вкусы внутри одной категории — цена считается от общего количества твоего заказа",
-                          "• Каждая категория товара считается отдельно друг от друга",
-                          "• Смарт цена на поды не распространяется",
-                          "",
-                          "Собирай корзину и система сама посчитает лучшую цену!",
-                        ].join("\n")
-                      );
-                    }
                   }}
                 >
                   <img src={src} alt={`Banner ${i + 1}`} className="bannerImage" />
@@ -808,10 +776,12 @@ const FavoritePage = () => {
             </div>
 
             <div className="bannerPagination">
-                {Array.from({ length: getDotCount(banners.length) }).map((_, i) => {
-                const activeDot = getActiveDotIndex(activeBannerIndex, banners.length);
-                return <span key={i} className={`dot ${i === activeDot ? "active" : ""}`} />;
-                })}
+                {banners.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`dot ${i === activeBannerIndex ? "active" : ""}`}
+                  />
+                ))}
             </div>
             </div>
 
