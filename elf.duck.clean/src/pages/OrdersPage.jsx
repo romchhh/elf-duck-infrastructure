@@ -29,6 +29,8 @@ const API_URL =
   "https://elfduck-api.telebots.site";
 
 import banerIMG from "../assets/referralBanner.webp";
+import baner2IMG from "../assets/cashbackBanner.webp";
+import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
 import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import menuIcon from "../assets/menuIcon.webp";
@@ -247,11 +249,18 @@ useEffect(() => {
         activePaymentOrder?.payment?.cashbackRemainingToPayZl || activeOrderTotal || 0
     );
     const maxAvailableCashbackZl = roundMoney(cashbackBalance + cashbackAppliedZl);
+    const CASHBACK_ORDER_SHARE_LIMIT = 0.4;
+    const maxCashbackByOrderLimitZl = roundMoney(activeOrderTotal * CASHBACK_ORDER_SHARE_LIMIT);
+    const maxCashbackApplicableZl = roundMoney(
+        Math.min(maxAvailableCashbackZl, maxCashbackByOrderLimitZl)
+    );
     const cashbackFullyPaid = Boolean(activePaymentOrder?.payment?.cashbackFullyPaid);
 
 
-    const canUseCashback = cashbackBalance > 0 && activeOrderTotal > 0 && !cashbackFullyPaid;
-    const canFullyPayWithCashback = cashbackBalance >= activeOrderTotal && activeOrderTotal > 0 && !cashbackFullyPaid;
+    const canUseCashback =
+        maxAvailableCashbackZl > 0 && activeOrderTotal > 0 && !cashbackFullyPaid;
+    const canFullyPayWithCashback =
+        maxCashbackApplicableZl >= activeOrderTotal && activeOrderTotal > 0 && !cashbackFullyPaid;
     const shouldAllowDirectCashbackConfirm = cashbackFullyPaid;
 
     const [paymentConfigLoading, setPaymentConfigLoading] = useState(false);
@@ -340,6 +349,12 @@ useEffect(() => {
         setCashChangeType("");
         setIsCashAmountEditing(false);
         setCashAmountDraft("");
+        setIsCashbackEditing(false);
+        setCashbackDraft(
+            Number(order?.payment?.cashbackAppliedZl || 0) > 0
+                ? String(Math.floor(Number(order.payment.cashbackAppliedZl)))
+                : ""
+        );
         setPaymentConfig({ methods: [] });
         setIsPaymentOpen(true);
 
@@ -631,17 +646,22 @@ useEffect(() => {
     };
 
     const openCashbackEditor = () => {
-    setCashbackDraft(
-        cashbackAppliedZl > 0
-        ? String(Math.floor(cashbackAppliedZl))
-        : String(Math.floor(Math.min(cashbackBalance, cashbackRemainingToPayZl)))
-    );
-    setIsCashbackEditing(true);
+        setCashbackDraft(
+            cashbackAppliedZl > 0
+                ? String(Math.floor(cashbackAppliedZl))
+                : String(Math.floor(maxCashbackApplicableZl))
+        );
+        setIsCashbackEditing(true);
     };
 
     const closeCashbackEditor = () => {
-    setIsCashbackEditing(false);
-    setCashbackDraft("");
+        setIsCashbackEditing(false);
+        setCashbackDraft("");
+    };
+
+    const fillMaxCashback = () => {
+        haptic.light();
+        setCashbackDraft(String(Math.floor(maxCashbackApplicableZl)));
     };
 
     const saveCashbackAmount = async () => {
@@ -665,6 +685,16 @@ useEffect(() => {
                 return;
             }
 
+            if (value > maxCashbackByOrderLimitZl) {
+                showTgAlert(
+                    t(
+                        "Кешбэком можно оплатить до 40% стоимости вашего заказа",
+                        "Cashbackiem można opłacić do 40% wartości Twojego zamówienia"
+                    )
+                );
+                return;
+            }
+
             if (value > activeOrderTotal) {
                 showTgAlert(t("Сумма превышает стоимость заказа", "Kwota przekracza zamówienie"));
                 return;
@@ -672,7 +702,8 @@ useEffect(() => {
 
             await applyCashbackToOrder("custom", value);
 
-            closeCashbackEditor();
+            setIsCashbackEditing(false);
+            setCashbackDraft(String(Math.floor(value)));
         } catch (e) {
             console.error("saveCashbackAmount error", e);
             showTgAlert(
@@ -827,9 +858,9 @@ useEffect(() => {
         let requestedCashbackAmountZl = 0;
 
         if (mode === "full") {
-            requestedCashbackAmountZl = activeOrderTotal;
+            requestedCashbackAmountZl = maxCashbackApplicableZl;
         } else if (mode === "partial") {
-            requestedCashbackAmountZl = Math.min(maxAvailableCashbackZl, activeOrderTotal);
+            requestedCashbackAmountZl = maxCashbackApplicableZl;
         } else if (mode === "custom") {
             requestedCashbackAmountZl = customAmount;
         }
@@ -1582,6 +1613,8 @@ useEffect(() => {
         assortmentRestockBannerIMG,
         deliveryBannerIMG,
         banerIMG,
+        baner2IMG,
+        baner3IMG,
     ];
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -1913,22 +1946,39 @@ useEffect(() => {
                         {t("Введите сумму кэшбека", "Podaj kwotę cashbacku")}
                     </div>
 
-                    <input
-                        type="tel"
-                        inputMode="numeric"
-                        className="paymentInputField"
-                        placeholder={t("Например: 20", "Na przykład: 20")}
-                        value={cashbackDraft}
-                        disabled={isSavingCashback}
-                        onChange={(e) => {
-                        setCashbackDraft(
-                            String(e.target.value || "").replace(/[^0-9]/g, "")
-                        );
-                        }}
-                        onKeyDown={(e) => {
-                        if (e.key === "Enter") saveCashbackAmount();
-                        }}
-                    />
+                    <div className="paymentCashbackInputRow">
+                        <input
+                            type="tel"
+                            inputMode="numeric"
+                            className="paymentInputField paymentCashbackAmountInput"
+                            placeholder={t("Например: 20", "Na przykład: 20")}
+                            value={cashbackDraft}
+                            disabled={isSavingCashback}
+                            onChange={(e) => {
+                            setCashbackDraft(
+                                String(e.target.value || "").replace(/[^0-9]/g, "")
+                            );
+                            }}
+                            onKeyDown={(e) => {
+                            if (e.key === "Enter") saveCashbackAmount();
+                            }}
+                        />
+                        <button
+                            type="button"
+                            className="paymentCashbackMaxBtn"
+                            onClick={fillMaxCashback}
+                            disabled={isSavingCashback || maxCashbackApplicableZl <= 0}
+                        >
+                            Max
+                        </button>
+                    </div>
+
+                    <div className="paymentCashbackHint">
+                        {t(
+                            "Кешбэком можно оплатить до 40% стоимости вашего заказа",
+                            "Cashbackiem można opłacić do 40% wartości Twojego zamówienia"
+                        )}
+                    </div>
 
                     <div className="paymentInputActions">
                         <button
@@ -2135,30 +2185,55 @@ useEffect(() => {
                     </span>
                     </div>
 
+                    {!cashbackFullyPaid && canUseCashback && (
+                    <>
+                        <div className="paymentCashbackInputRow">
+                            <input
+                                type="tel"
+                                inputMode="numeric"
+                                className="paymentInputField paymentCashbackAmountInput"
+                                placeholder={t("Сумма", "Kwota")}
+                                value={cashbackDraft}
+                                disabled={isSavingCashback || paymentSubmitting}
+                                onChange={(e) => {
+                                    setCashbackDraft(
+                                        String(e.target.value || "").replace(/[^0-9]/g, "")
+                                    );
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        saveCashbackAmount();
+                                    }
+                                }}
+                            />
+                            <button
+                                type="button"
+                                className="paymentCashbackMaxBtn"
+                                onClick={fillMaxCashback}
+                                disabled={
+                                    isSavingCashback ||
+                                    paymentSubmitting ||
+                                    maxCashbackApplicableZl <= 0
+                                }
+                            >
+                                Max
+                            </button>
+                        </div>
+
+                        <div className="paymentCashbackHint">
+                            {t(
+                                "Кешбэком можно оплатить до 40% стоимости вашего заказа",
+                                "Cashbackiem można opłacić do 40% wartości Twojego zamówienia"
+                            )}
+                        </div>
+                    </>
+                    )}
+
                     <button
                     type="button"
                     className={`checkoutActionBtn paymentCashbackBtn ${canUseCashback ? "active" : ""}`}
-                    disabled={cashbackFullyPaid ? true : (!canUseCashback || paymentSubmitting)}
-                    // onClick={async () => {
-                    //     if (cashbackFullyPaid) {
-                    //     return;
-                    //     }
-
-                    //     if (!canUseCashback) {
-                    //     haptic.heavy();
-                    //     alert(t("У вас пока нет кэшбека для скидки", "Na razie nie masz cashbacku do wykorzystania na zniżkę"));
-                    //     return;
-                    //     }
-
-                    //     haptic.light();
-
-                    //     if (canFullyPayWithCashback) {
-                    //     await applyCashbackToOrder("full");
-                    //     return;
-                    //     }
-
-                    //     await applyCashbackToOrder("partial");
-                    // }}
+                    disabled={cashbackFullyPaid ? true : (!canUseCashback || paymentSubmitting || isSavingCashback)}
                     onClick={async () => {
 
                         if (cashbackFullyPaid) return;
@@ -2175,7 +2250,16 @@ useEffect(() => {
 
                         haptic.light();
 
-                        openCashbackEditor();
+                        if (!String(cashbackDraft || "").trim()) {
+                            const maxVal = Math.floor(maxCashbackApplicableZl);
+                            setCashbackDraft(String(maxVal));
+                            if (maxVal > 0) {
+                                await applyCashbackToOrder("custom", maxVal);
+                            }
+                            return;
+                        }
+
+                        await saveCashbackAmount();
 
                     }}
                     >
@@ -2774,6 +2858,38 @@ useEffect(() => {
                                     if (src === banerIMG) {
                                     navigate("/referral");
                                     return;
+                                    }
+
+                                    if (src === baner2IMG) {
+                                    showCashbackInfoAlert();
+                                    return;
+                                    }
+
+                                    if (src === baner3IMG) {
+                                    showTgAlert(
+                                        [
+                                        t("SMART CENA / SMART SYSTEM", "SMART CENA / SMART SYSTEM"),
+                                        "",
+                                        t("Берёшь больше — платишь меньше", "Bierzesz więcej — płacisz mniej"),
+                                        t(
+                                            "• Миксуй любые модели и вкусы внутри одной категории — цена считается от общего количества твоего заказа",
+                                            "• Mieszaj dowolne modele i smaki w ramach jednej kategorii — cena liczona jest od łącznej liczby produktów w Twoim zamówieniu"
+                                        ),
+                                        t(
+                                            "• Каждая категория товара считается отдельно друг от друга",
+                                            "• Każda kategoria produktów liczona jest oddzielnie"
+                                        ),
+                                        t(
+                                            "• Смарт цена на поды не распространяется",
+                                            "• Smart cena nie dotyczy podów"
+                                        ),
+                                        "",
+                                        t(
+                                            "Собирай корзину и система сама посчитает лучшую цену!",
+                                            "Zbieraj koszyk, a system sam obliczy najlepszą cenę!"
+                                        ),
+                                        ].join("\n")
+                                    );
                                     }
                                 }}
                                 >

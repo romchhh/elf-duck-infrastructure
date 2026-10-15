@@ -546,38 +546,86 @@ body {
 }
 
 .catalogSearchWrap {
-  width: 75%;
-  margin: 10px auto 4px auto;
+  width: 100%;
+  margin: 12px auto 4px auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0 16px;
+  box-sizing: border-box;
 }
 
-.catalogSearchInput {
-  width: 100%;
-  box-sizing: border-box;
-  height: 35px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 1);
+.catalogSearchField {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: max-content;
+  max-width: calc(100% - 8px);
+  min-height: 32px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.95);
   background: rgba(0, 0, 0, 0.85);
-  color: #fff;
-  font-size: 13px;
-  font-family: Unbounded-Medium;
-  outline: none;
+  box-sizing: border-box;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
     0 4px 10px rgba(0, 0, 0, 0.25);
+}
+
+.catalogSearchIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 0;
+}
+
+.catalogSearchInput {
+  /* «Szukaj modelu i smaku» / «Поиск модели и вкуса» */
+  width: 21ch;
+  max-width: min(72vw, 240px);
+  min-width: 0;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  font-family: Unbounded-Medium;
+  outline: none;
+  box-shadow: none;
+  overflow-x: auto;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.catalogSearchInput::-webkit-search-decoration,
+.catalogSearchInput::-webkit-search-cancel-button,
+.catalogSearchInput::-webkit-search-results-button,
+.catalogSearchInput::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .catalogSearchInput::placeholder {
   color: rgba(255, 255, 255, 0.55);
   font-family: Unbounded-Regular;
   font-size: 12px;
+  white-space: nowrap;
 }
 
-.catalogSearchInput:focus {
-  border-color: rgba(255, 255, 255, 0.7);
+.catalogSearchField:focus-within {
+  border-color: rgba(255, 255, 255, 1);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.15),
     0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.catalogSearchInput:focus {
+  border: none;
+  box-shadow: none;
 }
 
 .catalogButton {
@@ -3962,7 +4010,26 @@ body {
   }
 
   .catalogSearchWrap {
-    width: 95%;
+    width: 100%;
+    margin: 10px auto 2px auto;
+    padding: 0 12px;
+  }
+
+  .catalogSearchField {
+    min-height: 30px;
+    gap: 6px;
+    padding: 0 10px 0 8px;
+  }
+
+  .catalogSearchInput {
+    width: 20ch;
+    max-width: min(78vw, 210px);
+    height: 28px;
+    font-size: 11px;
+  }
+
+  .catalogSearchInput::placeholder {
+    font-size: 11px;
   }
 
   .newDropBadge {

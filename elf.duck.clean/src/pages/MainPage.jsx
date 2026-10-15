@@ -60,6 +60,8 @@ import logo from "../assets/logo3.webp";
 import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
 import banerIMG from "../assets/referralBanner.webp";
+import baner2IMG from "../assets/cashbackBanner.webp";
+import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
 import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import categoriesIcon from "../assets/categoriesIcon.webp";
@@ -1553,6 +1555,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     assortmentRestockBannerIMG,
     deliveryBannerIMG,
     banerIMG,
+    baner2IMG,
+    baner3IMG,
   ];
   
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -3936,6 +3940,38 @@ navigate("/cart");
                         navigate("/referral");
                         return;
                       }
+
+                      if (src === baner2IMG) {
+                        showCashbackInfoAlert();
+                        return;
+                      }
+
+                      if (src === baner3IMG) {
+                        showTgAlert(
+                          [
+                            t("SMART CENA / SMART SYSTEM", "SMART CENA / SMART SYSTEM"),
+                            "",
+                            t("Берёшь больше — платишь меньше", "Bierzesz więcej — płacisz mniej"),
+                            t(
+                              "• Миксуй любые модели и вкусы внутри одной категории — цена считается от общего количества твоего заказа",
+                              "• Mieszaj dowolne modele i smaki w ramach jednej kategorii — cena liczona jest od łącznej liczby produktów w Twoim zamówieniu"
+                            ),
+                            t(
+                              "• Каждая категория товара считается отдельно друг от друга",
+                              "• Każda kategoria produktów liczona jest oddzielnie"
+                            ),
+                            t(
+                              "• Смарт цена на поды не распространяется",
+                              "• Smart cena nie dotyczy podów"
+                            ),
+                            "",
+                            t(
+                              "Собирай корзину и система сама посчитает лучшую цену!",
+                              "Zbieraj koszyk, a system sam obliczy najlepszą cenę!"
+                            ),
+                          ].join("\n")
+                        );
+                      }
                     }}
                   >
                     <img
@@ -3960,6 +3996,46 @@ navigate("/cart");
               </div>
             </div>
           )}
+
+          <div className={`catalogSearchWrap reveal delay-4 ${mounted ? "visible" : ""}`}>
+            <label className="catalogSearchField">
+              <span className="catalogSearchIcon" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                  <circle
+                    cx="11"
+                    cy="11"
+                    r="6.5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                  />
+                  <path
+                    d="M16.5 16.5L21 21"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+              <input
+                type="search"
+                className="catalogSearchInput"
+                value={catalogSearchQuery}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCatalogSearchQuery(v);
+                  if (String(v || "").trim() && catalogView !== "all") {
+                    switchCatalog("all");
+                  }
+                }}
+                placeholder={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
+                aria-label={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
+                enterKeyHint="search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+            </label>
+          </div>
 
           {showActiveOrderArrivalBlock && (
               <div className="mainActiveOrderArrivalCard"
@@ -4039,23 +4115,6 @@ navigate("/cart");
               <img src={allItemsIcon} />
               <span>{t("Все товары", "Wszystkie produkty")}</span>
             </button>
-          </div>
-
-          <div className={`catalogSearchWrap reveal delay-4 ${mounted ? "visible" : ""}`}>
-            <input
-              type="search"
-              className="catalogSearchInput"
-              value={catalogSearchQuery}
-              onChange={(e) => {
-                const v = e.target.value;
-                setCatalogSearchQuery(v);
-                if (String(v || "").trim() && catalogView !== "all") {
-                  switchCatalog("all");
-                }
-              }}
-              placeholder={t("Поиск модели или вкуса…", "Szukaj modelu lub smaku…")}
-              aria-label={t("Поиск", "Szukaj")}
-            />
           </div>
 
           <div className="catalogContent">

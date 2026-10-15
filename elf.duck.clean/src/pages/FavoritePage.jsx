@@ -29,6 +29,8 @@ import {
 } from "../utils/i18n";
 
 import banerIMG from "../assets/referralBanner.webp";
+import baner2IMG from "../assets/cashbackBanner.webp";
+import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
 import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import menuIcon from "../assets/menuIcon.webp";
@@ -295,6 +297,8 @@ const FavoritePage = () => {
         assortmentRestockBannerIMG,
         deliveryBannerIMG,
         banerIMG,
+        baner2IMG,
+        baner3IMG,
     ];
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -767,6 +771,38 @@ const FavoritePage = () => {
                     if (src === banerIMG) {
                       navigate("/referral");
                       return;
+                    }
+
+                    if (src === baner2IMG) {
+                      showCashbackInfoAlert();
+                      return;
+                    }
+
+                    if (src === baner3IMG) {
+                      showTgAlert(
+                        [
+                          t("SMART CENA / SMART SYSTEM", "SMART CENA / SMART SYSTEM"),
+                          "",
+                          t("Берёшь больше — платишь меньше", "Bierzesz więcej — płacisz mniej"),
+                          t(
+                            "• Миксуй любые модели и вкусы внутри одной категории — цена считается от общего количества твоего заказа",
+                            "• Mieszaj dowolne modele i smaki w ramach jednej kategorii — cena liczona jest od łącznej liczby produktów w Twoim zamówieniu"
+                          ),
+                          t(
+                            "• Каждая категория товара считается отдельно друг от друга",
+                            "• Każda kategoria produktów liczona jest oddzielnie"
+                          ),
+                          t(
+                            "• Смарт цена на поды не распространяется",
+                            "• Smart cena nie dotyczy podów"
+                          ),
+                          "",
+                          t(
+                            "Собирай корзину и система сама посчитает лучшую цену!",
+                            "Zbieraj koszyk, a system sam obliczy najlepszą cenę!"
+                          ),
+                        ].join("\n")
+                      );
                     }
                   }}
                 >

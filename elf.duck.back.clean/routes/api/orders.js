@@ -1368,25 +1368,31 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
 
     user.cashbackLedger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
 
+    const CASHBACK_ORDER_SHARE_LIMIT = 0.4;
     const orderTotalZl = Number(order.totalZl || 0);
     const cashbackBalance = Number(user.cashbackBalance || 0);
     const alreadyAppliedZl = Number(order?.payment?.cashbackAppliedZl || 0);
     const maxAvailableCashbackZl = Number((cashbackBalance + alreadyAppliedZl).toFixed(2));
+    const maxByOrderShareZl = Number((orderTotalZl * CASHBACK_ORDER_SHARE_LIMIT).toFixed(2));
+    const maxApplicableCashbackZl = Number(
+      Math.min(maxAvailableCashbackZl, maxByOrderShareZl, orderTotalZl).toFixed(2)
+    );
 
     if (maxAvailableCashbackZl <= 0) {
       return res.status(400).json({ ok: false, error: "NO_CASHBACK_BALANCE" });
     }
 
+    if (maxApplicableCashbackZl <= 0) {
+      return res.status(400).json({ ok: false, error: "CASHBACK_EXCEEDS_ORDER_SHARE_LIMIT" });
+    }
+
     const targetAppliedCashbackZl = (() => {
       if (safeMode === "custom") {
-        return Number(Math.min(requestedCashbackAmountZl, maxAvailableCashbackZl, orderTotalZl).toFixed(2));
+        return Number(Math.min(requestedCashbackAmountZl, maxApplicableCashbackZl).toFixed(2));
       }
 
-      if (safeMode === "full") {
-        return Number(orderTotalZl.toFixed(2));
-      }
-
-      return Number(Math.min(alreadyAppliedZl + cashbackBalance, orderTotalZl).toFixed(2));
+      // full / partial — максимум в пределах баланса и 40% заказа
+      return maxApplicableCashbackZl;
     })();
 
     if (!Number.isFinite(targetAppliedCashbackZl) || targetAppliedCashbackZl < 0) {
@@ -1403,8 +1409,8 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
 
     }
 
-    if (safeMode === "full" && maxAvailableCashbackZl < orderTotalZl) {
-      return res.status(400).json({ ok: false, error: "INSUFFICIENT_CASHBACK_FOR_FULL_PAYMENT" });
+    if (safeMode === "custom" && requestedCashbackAmountZl > maxByOrderShareZl) {
+      return res.status(400).json({ ok: false, error: "CASHBACK_EXCEEDS_ORDER_SHARE_LIMIT" });
     }
 
     const cashbackDeltaZl = Number((targetAppliedCashbackZl - alreadyAppliedZl).toFixed(2));
