@@ -1022,31 +1022,44 @@ const CartPage = () => {
 
 
   // ================= PRODUCTS REFRESH (for reservedQty updates) =================
-  const productsRefreshInFlightRef = useRef(false);
+  const productsRefreshInFlightRef = useRef(null);
 
-  const refreshProducts = async () => {
-    if (productsRefreshInFlightRef.current) return;
-    productsRefreshInFlightRef.current = true;
-
-    try {
-      const list = await fetchProductsCached(API_URL, { active: "0" });
-
-      const map = {};
-      for (const p of list) {
-        if (!p) continue;
-        const k = String(p.productKey || "").trim();
-        if (!k) continue;
-        map[k] = p;
-      }
-
-      setProductsByKey(map);
-      writeProductVisualCache(list);
-    } catch (e) {
-      console.error("products refresh failed", e);
-      // ВАЖНО: не затираем productsByKey, иначе ломаем лимиты
-    } finally {
-      productsRefreshInFlightRef.current = false;
+  const refreshProducts = async ({ force = false } = {}) => {
+    if (productsRefreshInFlightRef.current && !force) {
+      return productsRefreshInFlightRef.current;
     }
+
+    const run = (async () => {
+      try {
+        const list = await fetchProductsCached(API_URL, {
+          active: "0",
+          force: Boolean(force),
+        });
+
+        const map = {};
+        for (const p of list) {
+          if (!p) continue;
+          const k = String(p.productKey || "").trim();
+          if (!k) continue;
+          map[k] = p;
+        }
+
+        setProductsByKey(map);
+        writeProductVisualCache(list);
+        return map;
+      } catch (e) {
+        console.error("products refresh failed", e);
+        // ВАЖНО: не затираем productsByKey, иначе ломаем лимиты
+        return null;
+      } finally {
+        if (productsRefreshInFlightRef.current === run) {
+          productsRefreshInFlightRef.current = null;
+        }
+      }
+    })();
+
+    productsRefreshInFlightRef.current = run;
+    return run;
   };
 
   // Prevent initial empty autosave before we hydrate cart from backend
@@ -2913,11 +2926,12 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
     );
   };
 
-const checkCartAvailability = (contextId) => {
+const checkCartAvailability = (contextId, productsMap = productsByKey) => {
   if (!contextId) return { ok: true, missing: [] };
 
-  // reservedQty уже включает ПОСЛЕДНЮЮ синхронизированную корзину этого пользователя.
-  // Поэтому обратно добавляем только synced qty, а не текущий optimistic UI qty.
+  const catalog = productsMap && typeof productsMap === "object" ? productsMap : productsByKey;
+
+  // reservedQty — бронь інших замовлень (кошик більше не резервує).
   const currentSum = new Map(); // productKey__flavorKey -> current UI qty
 
   for (const it of cartItems) {
@@ -2935,7 +2949,7 @@ const checkCartAvailability = (contextId) => {
   for (const [k, need] of currentSum.entries()) {
     const [productKey, flavorKey] = k.split("__");
 
-    const p = productsByKey[String(productKey || "")] || null;
+    const p = catalog[String(productKey || "")] || null;
     const fl = getFlavorByKey(p, flavorKey);
 
     if (!p || !fl) {
@@ -2951,8 +2965,8 @@ const checkCartAvailability = (contextId) => {
       continue;
     }
 
-const row = getStockRow(fl, contextId);
-const have = calcAvailableQty(row);
+    const row = getStockRow(fl, contextId);
+    const have = calcAvailableQty(row);
 
     if (have < need) {
       missing.push({
@@ -5852,23 +5866,28 @@ if (pointBlob.includes("srodmiescie")) {
                           }
                         }
 
-                        // 1) Дожидаемся фонового PUT /cart (debounce), иначе reservedQty на бэке отстаёт
+                        // 1) Дожидаемся фонового PUT /cart (debounce)
                         await waitForCartSaveIdle();
 
-                        // 2) Свежие остатки перед локальной проверкой (устраняет ложные «нет на складе»)
-                        await refreshProducts();
-
+                        // 2) Свіжий каталог: перевіряємо по map з відповіді, не по старому React state
                         const contextId = getStockContextIdFor({
                           type: deliveryType,
                           method: deliveryType === "delivery" ? deliveryMethod : null,
                           pickupPointId: deliveryType === "pickup" ? checkoutPickupPointId : null,
                         });
 
-                        let availability = checkCartAvailability(contextId);
+                        let freshProducts = await refreshProducts({ force: true });
+                        let availability = checkCartAvailability(
+                          contextId,
+                          freshProducts || productsByKey
+                        );
                         if (!availability.ok) {
                           await new Promise((resolve) => setTimeout(resolve, 350));
-                          await refreshProducts();
-                          availability = checkCartAvailability(contextId);
+                          freshProducts = await refreshProducts({ force: true });
+                          availability = checkCartAvailability(
+                            contextId,
+                            freshProducts || productsByKey
+                          );
                         }
 
                         if (!availability.ok) {

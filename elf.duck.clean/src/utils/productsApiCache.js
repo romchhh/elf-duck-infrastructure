@@ -18,16 +18,21 @@ function cacheKey(apiUrl, active) {
  */
 export async function fetchProductsCached(apiUrl, options = {}) {
   const active = String(options.active ?? "1");
+  const force = Boolean(options.force);
   const key = cacheKey(apiUrl, active);
   const now = Date.now();
 
-  const entry = store.get(key);
-  if (entry?.data && now - entry.at < CACHE_MS) {
-    return entry.data;
+  if (force) {
+    store.delete(key);
+  } else {
+    const entry = store.get(key);
+    if (entry?.data && now - entry.at < CACHE_MS) {
+      return entry.data;
+    }
   }
 
   const pending = inflight.get(key);
-  if (pending) {
+  if (pending && !force) {
     return pending;
   }
 
