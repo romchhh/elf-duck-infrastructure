@@ -13,6 +13,7 @@ import "../styles/OrdersPage.css";
 import { useUser } from "../UserContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
+import { scrollBannerToIndex, useBannerAutoplay } from "../utils/useBannerAutoplay";
 import { preloadImage, preloadImages } from "../utils/preloadImage";
 import {
 
@@ -1655,6 +1656,10 @@ useEffect(() => {
     });
     };
 
+    useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
+      intervalMs: 5000,
+    });
+
     const showTgAlert = (text) => {
     try {
         const tg = window?.Telegram?.WebApp;
@@ -2898,11 +2903,18 @@ useEffect(() => {
                             ))}
                             </div>
 
-                            <div className="bannerPagination">
+                            <div className="bannerPagination" role="tablist" aria-label="Banners">
                                 {banners.map((_, i) => (
-                                  <span
+                                  <button
                                     key={i}
+                                    type="button"
                                     className={`dot ${i === activeBannerIndex ? "active" : ""}`}
+                                    aria-label={`Banner ${i + 1}`}
+                                    aria-current={i === activeBannerIndex ? "true" : undefined}
+                                    onClick={() => {
+                                      haptic.light();
+                                      scrollBannerToIndex(bannerScrollRef.current, i);
+                                    }}
                                   />
                                 ))}
                             </div>

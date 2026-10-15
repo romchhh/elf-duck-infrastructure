@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import "../styles/ManagersPage.css";
+import "../styles/MainPage.css";
 import "../styles/sideMenuLanguage.css";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext";
 import { haptic } from "../utils/haptics";
+import { scrollBannerToIndex, useBannerAutoplay } from "../utils/useBannerAutoplay";
 import {
 
   getCurrentLanguage,
@@ -373,6 +375,10 @@ const ManagersPage = () => {
           setActiveBannerIndex((prev) => (prev === idx ? prev : idx));
         });
       };
+
+      useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
+        intervalMs: 5000,
+      });
     
     /* ================= SIDE MENU STATE ================= */
 
@@ -903,11 +909,18 @@ const ManagersPage = () => {
               ))}
             </div>
 
-            <div className="bannerPagination">
+            <div className="bannerPagination" role="tablist" aria-label="Banners">
               {banners.map((_, i) => (
-                <span
+                <button
                   key={i}
+                  type="button"
                   className={`dot ${i === activeBannerIndex ? "active" : ""}`}
+                  aria-label={`Banner ${i + 1}`}
+                  aria-current={i === activeBannerIndex ? "true" : undefined}
+                  onClick={() => {
+                    haptic.light();
+                    scrollBannerToIndex(bannerScrollRef.current, i);
+                  }}
                 />
               ))}
             </div>

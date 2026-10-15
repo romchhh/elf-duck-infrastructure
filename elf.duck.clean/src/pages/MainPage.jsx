@@ -14,6 +14,7 @@ import "../styles/MainPage.css";
 import { useUser } from "../UserContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
+import { scrollBannerToIndex, useBannerAutoplay } from "../utils/useBannerAutoplay";
 import { preloadImage, preloadImages } from "../utils/preloadImage";
 import { writeProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
@@ -1596,6 +1597,12 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
       setActiveBannerIndex((prev) => (prev === idx ? prev : idx));
     });
   };
+
+  const bannersVisible = !activeOrderLoading && !activeOrder;
+  useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
+    intervalMs: 5000,
+    enabled: bannersVisible,
+  });
 
   /* ================= CATALOG VIEW STATE ================= */
 
@@ -3986,11 +3993,18 @@ navigate("/cart");
                 ))}
               </div>
 
-              <div className="bannerPagination">
+              <div className="bannerPagination" role="tablist" aria-label="Banners">
                 {banners.map((_, i) => (
-                  <span
+                  <button
                     key={i}
+                    type="button"
                     className={`dot ${i === activeBannerIndex ? "active" : ""}`}
+                    aria-label={`Banner ${i + 1}`}
+                    aria-current={i === activeBannerIndex ? "true" : undefined}
+                    onClick={() => {
+                      haptic.light();
+                      scrollBannerToIndex(bannerScrollRef.current, i);
+                    }}
                   />
                 ))}
               </div>
