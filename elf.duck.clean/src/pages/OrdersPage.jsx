@@ -30,8 +30,6 @@ const API_URL =
   "https://elfduck-api.telebots.site";
 
 import banerIMG from "../assets/referralBanner.webp";
-import baner2IMG from "../assets/cashbackBanner.webp";
-import baner3IMG from "../assets/smartPriceBanner.webp";
 import deliveryBannerIMG from "../assets/deliveryBanner.webp";
 import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
 import menuIcon from "../assets/menuIcon.webp";
@@ -76,7 +74,16 @@ import { getGuestOrders } from "../utils/guestLocalStore";
 
 const OrdersPage = () => {
 
-    const { user, userLoading, isGuestBrowser, telegramId: sessionTelegramId, initials, displayName, displayUsername } = useUser();
+    const {
+        user,
+        setUser,
+        userLoading,
+        isGuestBrowser,
+        telegramId: sessionTelegramId,
+        initials,
+        displayName,
+        displayUsername,
+    } = useUser();
     const navigate = useNavigate();
 
     const location = useLocation();
@@ -213,16 +220,21 @@ useEffect(() => {
 
     const [nowTs, setNowTs] = useState(Date.now());
 
+    const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+    const [activePaymentOrder, setActivePaymentOrder] = useState(null);
+    const activePaymentOrderRef = useRef(null);
+    const isPaymentOpenRef = useRef(false);
+    isPaymentOpenRef.current = isPaymentOpen;
+
     useEffect(() => {
+        // Avoid re-rendering the whole page every second while payment sheet is open.
+        if (isPaymentOpen) return;
         const t = setInterval(() => {
             setNowTs(Date.now());
         }, 1000);
         return () => clearInterval(t);
-    }, []);
+    }, [isPaymentOpen]);
 
-    const [isPaymentOpen, setIsPaymentOpen] = useState(false);
-    const [activePaymentOrder, setActivePaymentOrder] = useState(null);
-    const activePaymentOrderRef = useRef(null);
     const [paymentSheetOffsetY, setPaymentSheetOffsetY] = useState(0);
     const [isPaymentDragging, setIsPaymentDragging] = useState(false);
 
@@ -249,11 +261,13 @@ useEffect(() => {
     const cashbackRemainingToPayZl = roundMoney(
         activePaymentOrder?.payment?.cashbackRemainingToPayZl || activeOrderTotal || 0
     );
+    // Wallet left + already applied on this order = total cashback that can still be assigned.
+    // Requires cashbackBalance to stay in sync after apply (see setUser below).
     const maxAvailableCashbackZl = roundMoney(cashbackBalance + cashbackAppliedZl);
     const CASHBACK_ORDER_SHARE_LIMIT = 0.4;
     const maxCashbackByOrderLimitZl = roundMoney(activeOrderTotal * CASHBACK_ORDER_SHARE_LIMIT);
     const maxCashbackApplicableZl = roundMoney(
-        Math.min(maxAvailableCashbackZl, maxCashbackByOrderLimitZl)
+        Math.min(maxAvailableCashbackZl, maxCashbackByOrderLimitZl, activeOrderTotal)
     );
     const cashbackFullyPaid = Boolean(activePaymentOrder?.payment?.cashbackFullyPaid);
 
@@ -662,7 +676,13 @@ useEffect(() => {
 
     const fillMaxCashback = () => {
         haptic.light();
-        setCashbackDraft(String(Math.floor(maxCashbackApplicableZl)));
+        // Total cashback that can be assigned to this order (wallet left + already applied),
+        // capped by 40% of order total — never above the real available pool.
+        const maxVal = Math.max(
+            0,
+            Math.min(maxCashbackApplicableZl, maxAvailableCashbackZl, maxCashbackByOrderLimitZl)
+        );
+        setCashbackDraft(String(Math.floor(maxVal)));
     };
 
     const saveCashbackAmount = async () => {
@@ -901,6 +921,13 @@ useEffect(() => {
                     )
                 );
                 setActivePaymentOrder(updatedOrder);
+            }
+
+            if (Number.isFinite(Number(data?.cashbackBalance))) {
+                const nextBalance = roundMoney(data.cashbackBalance);
+                setUser((prev) =>
+                    prev ? { ...prev, cashbackBalance: nextBalance } : prev
+                );
             }
         } catch (e) {
             console.error("applyCashbackToOrder error", e);
@@ -1493,10 +1520,13 @@ useEffect(() => {
         loadOrders();
 
         const intervalId = setInterval(() => {
+            // Polling while payment sheet is open causes lag and stale cashback math.
+            if (isPaymentOpenRef.current) return;
             loadOrders({ silent: true });
-        }, 3000);
+        }, 5000);
 
         const handleFocusRefresh = () => {
+            if (isPaymentOpenRef.current) return;
             if (document.visibilityState === "visible") {
                 loadOrders({ silent: true });
             }
@@ -1575,6 +1605,8 @@ useEffect(() => {
     }, []);
 
     useEffect(() => {
+        if (isPaymentOpen) return;
+
         const timer = setInterval(() => {
             setArrivalNotifyCooldowns((prev) => {
                 const now = Date.now();
@@ -1594,7 +1626,7 @@ useEffect(() => {
         }, 1000);
 
         return () => clearInterval(timer);
-    }, []);
+    }, [isPaymentOpen]);
 
     const getArrivalCooldownLeftMs = (orderId) => {
         const until = Number(arrivalNotifyCooldowns?.[String(orderId || "")] || 0);
@@ -1614,8 +1646,6 @@ useEffect(() => {
         assortmentRestockBannerIMG,
         deliveryBannerIMG,
         banerIMG,
-        baner2IMG,
-        baner3IMG,
     ];
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -1658,6 +1688,7 @@ useEffect(() => {
 
     useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
       intervalMs: 5000,
+      enabled: !isPaymentOpen,
     });
 
     const showTgAlert = (text) => {
@@ -2177,14 +2208,16 @@ useEffect(() => {
                         <img src={selectPaymentMethod} className="checkoutSelectIcon" alt="" />
                         <span className="checkoutSelectText">
                         {cashbackAppliedZl > 0
-                            ? t("ОПЛАЧЕНО КЭШБЕКОМ", "OPŁACONO CASHBACKIEM")
+                            ? t("БАЛАНС / СПИСАНО", "SALDO / UŻYTO")
                             : t("КЭШБЕК", "CASHBACK")}
                         </span>
                     </span>
 
                     <span className="paymentCashbackValueWrap">
                         <span className="paymentCashbackValue">
-                        {formatMoney(cashbackAppliedZl > 0 ? cashbackAppliedZl : cashbackBalance)}
+                        {cashbackAppliedZl > 0
+                            ? `${formatMoney(cashbackBalance)} / ${formatMoney(cashbackAppliedZl)}`
+                            : formatMoney(cashbackBalance)}
                         </span>
                         <img className="paymentCashbackCoin" src={zlotyIcon} alt="" />
                     </span>
@@ -2256,7 +2289,13 @@ useEffect(() => {
                         haptic.light();
 
                         if (!String(cashbackDraft || "").trim()) {
-                            const maxVal = Math.floor(maxCashbackApplicableZl);
+                            const maxVal = Math.floor(
+                                Math.min(
+                                    maxCashbackApplicableZl,
+                                    maxAvailableCashbackZl,
+                                    maxCashbackByOrderLimitZl
+                                )
+                            );
                             setCashbackDraft(String(maxVal));
                             if (maxVal > 0) {
                                 await applyCashbackToOrder("custom", maxVal);
@@ -2863,38 +2902,6 @@ useEffect(() => {
                                     if (src === banerIMG) {
                                     navigate("/referral");
                                     return;
-                                    }
-
-                                    if (src === baner2IMG) {
-                                    showCashbackInfoAlert();
-                                    return;
-                                    }
-
-                                    if (src === baner3IMG) {
-                                    showTgAlert(
-                                        [
-                                        t("SMART CENA / SMART SYSTEM", "SMART CENA / SMART SYSTEM"),
-                                        "",
-                                        t("Берёшь больше — платишь меньше", "Bierzesz więcej — płacisz mniej"),
-                                        t(
-                                            "• Миксуй любые модели и вкусы внутри одной категории — цена считается от общего количества твоего заказа",
-                                            "• Mieszaj dowolne modele i smaki w ramach jednej kategorii — cena liczona jest od łącznej liczby produktów w Twoim zamówieniu"
-                                        ),
-                                        t(
-                                            "• Каждая категория товара считается отдельно друг от друга",
-                                            "• Każda kategoria produktów liczona jest oddzielnie"
-                                        ),
-                                        t(
-                                            "• Смарт цена на поды не распространяется",
-                                            "• Smart cena nie dotyczy podów"
-                                        ),
-                                        "",
-                                        t(
-                                            "Собирай корзину и система сама посчитает лучшую цену!",
-                                            "Zbieraj koszyk, a system sam obliczy najlepszą cenę!"
-                                        ),
-                                        ].join("\n")
-                                    );
                                     }
                                 }}
                                 >
