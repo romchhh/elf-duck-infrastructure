@@ -343,6 +343,7 @@ export async function refundOrderCashback(order) {
     return {
       refunded: false,
       amount: 0,
+      cashbackBalance: null,
     };
   }
 
@@ -355,6 +356,7 @@ export async function refundOrderCashback(order) {
     return {
       refunded: false,
       amount: 0,
+      cashbackBalance: null,
     };
   }
 
@@ -370,9 +372,14 @@ export async function refundOrderCashback(order) {
   );
 
   if (!(originalAppliedZl > 0)) {
+    const userBalance = await User.findOne(
+      { telegramId: String(freshOrder.userTelegramId || "") },
+      { cashbackBalance: 1 }
+    ).lean();
     return {
       refunded: false,
       amount: 0,
+      cashbackBalance: Number(userBalance?.cashbackBalance || 0),
     };
   }
 
@@ -380,9 +387,14 @@ export async function refundOrderCashback(order) {
    * Повторную отмену не обрабатываем.
    */
   if (payment?.cashbackRefundedAt) {
+    const userBalance = await User.findOne(
+      { telegramId: String(freshOrder.userTelegramId || "") },
+      { cashbackBalance: 1 }
+    ).lean();
     return {
       refunded: false,
       amount: originalAppliedZl,
+      cashbackBalance: Number(userBalance?.cashbackBalance || 0),
     };
   }
 
@@ -396,6 +408,7 @@ export async function refundOrderCashback(order) {
     return {
       refunded: false,
       amount: 0,
+      cashbackBalance: null,
     };
   }
 
@@ -405,40 +418,25 @@ export async function refundOrderCashback(order) {
     ? user.cashbackLedger
     : [];
 
+  const refundAmount = Number(originalAppliedZl.toFixed(2));
+
   user.cashbackLedger.push({
-    sourceOrderId:
-      freshOrder._id,
-
-    source:
-      "order_payment_refund",
-
-    amountZl: Number(
-      originalAppliedZl.toFixed(2)
-    ),
-
-    remainingZl: Number(
-      originalAppliedZl.toFixed(2)
-    ),
-
+    sourceOrderId: freshOrder._id,
+    orderId: freshOrder._id,
+    source: "order_payment_refund",
+    type: "refund",
+    amountZl: refundAmount,
+    remainingZl: refundAmount,
     earnedAt: new Date(),
-
-    expiresAt: addDays(
-      new Date(),
-      40
-    ),
-
+    expiresAt: addDays(new Date(), 40),
     warnedAt: null,
-
     expiredAt: null,
+    expiredAmountZl: 0,
   });
 
-  recalcUserCashbackBalanceFromLedger(
-    user
-  );
+  recalcUserCashbackBalanceFromLedger(user);
 
-  user.markModified?.(
-    "cashbackLedger"
-  );
+  user.markModified?.("cashbackLedger");
 
   await user.save();
 
@@ -449,41 +447,26 @@ export async function refundOrderCashback(order) {
      * Сохраняем первоначальную сумму,
      * даже после обнуления cashbackAppliedZl.
      */
-    cashbackOriginalAppliedZl:
-      Number(
-        originalAppliedZl.toFixed(2)
-      ),
-
-    cashbackRefundedAmountZl:
-      Number(
-        originalAppliedZl.toFixed(2)
-      ),
-
-    cashbackRefundedAt:
-      new Date(),
-
+    cashbackOriginalAppliedZl: refundAmount,
+    cashbackRefundedAmountZl: refundAmount,
+    cashbackRefundedAt: new Date(),
     cashbackAppliedZl: 0,
-
-    cashbackRemainingToPayZl:
-      Number(
-        freshOrder.totalZl || 0
-      ),
-
+    cashbackRemainingToPayZl: Number(freshOrder.totalZl || 0),
     cashbackFullyPaid: false,
-
     cashbackAppliedAt: null,
-
     method:
       payment?.method === "cashback"
         ? null
         : payment?.method || null,
   };
 
+  freshOrder.markModified?.("payment");
   await freshOrder.save();
 
   return {
     refunded: true,
-    amount: originalAppliedZl,
+    amount: refundAmount,
+    cashbackBalance: Number(user.cashbackBalance || 0),
   };
 }
 
@@ -1580,6 +1563,16 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
       } catch (releaseErr) {
         console.error("annulOrderBecauseNoPaymentConfirm releaseOrderReservedStock error:", releaseErr);
       }
+    }
+
+    // Partial cashback can leave payment.method empty → timeout annul must still refund.
+    try {
+      await refundOrderCashback(freshOrder);
+    } catch (refundErr) {
+      console.error(
+        "annulOrderBecauseNoPaymentConfirm refundOrderCashback error:",
+        refundErr
+      );
     }
 
     await refreshManagerOrderMessage(freshOrder);

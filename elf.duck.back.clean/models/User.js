@@ -20,12 +20,16 @@ const userSchema = new mongoose.Schema(
         new mongoose.Schema(
           {
             sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null },
+            orderId: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null },
+            source: { type: String, default: "" },
+            type: { type: String, default: "" },
             amountZl: { type: Number, default: 0 },
             remainingZl: { type: Number, default: 0 },
             earnedAt: { type: Date, default: Date.now },
             expiresAt: { type: Date, default: null },
             warnedAt: { type: Date, default: null },
             expiredAt: { type: Date, default: null },
+            expiredAmountZl: { type: Number, default: 0 },
           },
           { _id: true }
         ),

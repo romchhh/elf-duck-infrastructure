@@ -1054,8 +1054,18 @@ app.post("/orders/:id/cancel", async (req, res) => {
       });
     }
 
-    if (status === "canceled") {
-      return res.json({ ok: true, order });
+    // Already canceled / annulled: still try to refund leftover applied cashback.
+    if (status === "canceled" || status === "annulled") {
+      const repairRefund = await refundOrderCashback(order);
+      const fresh = await Order.findById(order._id);
+      return res.json({
+        ok: true,
+        order: fresh || order,
+        cashbackBalance: repairRefund?.cashbackBalance,
+        cashbackRefundedZl: repairRefund?.refunded
+          ? repairRefund.amount
+          : 0,
+      });
     }
 
     if (!order.stockReleasedAt) {
@@ -1063,14 +1073,14 @@ app.post("/orders/:id/cancel", async (req, res) => {
       order.stockReleasedAt = new Date();
     }
 
-    await refundOrderCashback(order);
+    const refundResult = await refundOrderCashback(order);
 
     const freshOrderAfterRefund = await Order.findById(order._id);
     if (!freshOrderAfterRefund) {
       throw new Error("ORDER_NOT_FOUND_AFTER_REFUND");
     }
 
-    order.payment = {
+    freshOrderAfterRefund.payment = {
       ...(freshOrderAfterRefund.payment?.toObject
         ? freshOrderAfterRefund.payment.toObject()
         : freshOrderAfterRefund.payment || {}),
@@ -1080,19 +1090,28 @@ app.post("/orders/:id/cancel", async (req, res) => {
       checkedByTelegramId: telegramId,
     };
 
-    order.status = "canceled";
-    order.canceledAt = new Date();
-    order.canceledByTelegramId = telegramId;
+    freshOrderAfterRefund.status = "canceled";
+    freshOrderAfterRefund.canceledAt = new Date();
+    freshOrderAfterRefund.canceledByTelegramId = telegramId;
+    if (order.stockReleasedAt && !freshOrderAfterRefund.stockReleasedAt) {
+      freshOrderAfterRefund.stockReleasedAt = order.stockReleasedAt;
+    }
 
-    await order.save();
+    freshOrderAfterRefund.markModified?.("payment");
+    await freshOrderAfterRefund.save();
 
-    await refreshManagerOrderMessage(order);
+    await refreshManagerOrderMessage(freshOrderAfterRefund);
 
     try {
-      stopPaymentReminder(order._id);
+      stopPaymentReminder(freshOrderAfterRefund._id);
     } catch {}
 
-    return res.json({ ok: true, order });
+    return res.json({
+      ok: true,
+      order: freshOrderAfterRefund,
+      cashbackBalance: refundResult?.cashbackBalance,
+      cashbackRefundedZl: refundResult?.refunded ? refundResult.amount : 0,
+    });
   } catch (e) {
     console.error("POST /orders/:id/cancel error:", e);
     return res.status(500).json({ ok: false, error: "Server error" });

@@ -1117,6 +1117,13 @@ useEffect(() => {
                 }
             }
 
+            if (Number.isFinite(Number(data?.cashbackBalance))) {
+                const nextBalance = roundMoney(data.cashbackBalance);
+                setUser((prev) =>
+                    prev ? { ...prev, cashbackBalance: nextBalance } : prev
+                );
+            }
+
             haptic.heavy();
         } catch (e) {
             console.error("handleCancelOrder error", e);

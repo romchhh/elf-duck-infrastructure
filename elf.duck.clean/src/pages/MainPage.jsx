@@ -212,7 +212,16 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 const MainPage = () => {
   console.count("[PERF][MainPage] render");
 
-  const { user, userLoading, isGuestBrowser, telegramId, initials, displayName, displayUsername } = useUser();
+  const {
+    user,
+    setUser,
+    userLoading,
+    isGuestBrowser,
+    telegramId,
+    initials,
+    displayName,
+    displayUsername,
+  } = useUser();
 
   const preloadProductVisuals = useCallback((product) => {
     if (!product) return;
@@ -714,6 +723,13 @@ const MainPage = () => {
       }
 
       haptic.heavy();
+
+      if (Number.isFinite(Number(data?.cashbackBalance))) {
+        const nextBalance = Number(Number(data.cashbackBalance || 0).toFixed(2));
+        setUser((prev) =>
+          prev ? { ...prev, cashbackBalance: nextBalance } : prev
+        );
+      }
 
       // Сразу скрываем карточку активного заказа.
       // Баннеры появятся без ожидания polling.
