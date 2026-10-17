@@ -2201,13 +2201,34 @@ useEffect(() => {
                     </button>
 
                     {paymentMethod === "blik" && (
-
-                    <div className="paymentHintText">
-
-                        {t("В описании ничего не пишите!", "W opisie nic nie pisz!")}
-
+                    <div className="paymentBlikNotice" role="note">
+                        <div className="paymentBlikNoticeTitle">
+                            {t(
+                                "⚠️ Важно при переводе BLIK",
+                                "⚠️ Ważne przy przelewie BLIK"
+                            )}
+                        </div>
+                        <div className="paymentBlikNoticeBody">
+                            <div className="paymentBlikNoticeRow">
+                                {t("Укажите в поле", "W polu")}{" "}
+                                <span className="paymentBlikNoticeKey">Tytuł</span>
+                                {": "}
+                                <span className="paymentBlikNoticeValue">zwrot</span>
+                            </div>
+                            <div className="paymentBlikNoticeRow">
+                                {t("В поле", "W polu")}{" "}
+                                <span className="paymentBlikNoticeKey">Imię</span>
+                                {": "}
+                                <span className="paymentBlikNoticeValue">Dmytro</span>
+                            </div>
+                            <div className="paymentBlikNoticeFoot">
+                                {t(
+                                    "В имя можете написать как вы хотите себя назвать",
+                                    "W Imię możesz wpisać dowolne imię, jak chcesz się nazwać"
+                                )}
+                            </div>
+                        </div>
                     </div>
-
                     )}
 
                     <div className="paymentCashbackField">

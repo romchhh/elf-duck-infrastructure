@@ -1757,6 +1757,67 @@ body {
   margin-top: 2px;
 }
 
+.paymentBlikNotice {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 196, 86, 0.85);
+  background:
+    linear-gradient(
+      180deg,
+      rgba(255, 180, 60, 0.22) 0%,
+      rgba(0, 0, 0, 0.55) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 220, 140, 0.12),
+    0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+.paymentBlikNoticeTitle {
+  font-family: Unbounded-Medium;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #ffe29a;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.paymentBlikNoticeBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.paymentBlikNoticeRow {
+  font-family: Unbounded-Regular;
+  font-size: 12px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.92);
+  text-align: center;
+}
+
+.paymentBlikNoticeKey {
+  font-family: Unbounded-Medium;
+  color: #fff;
+}
+
+.paymentBlikNoticeValue {
+  font-family: Unbounded-Medium;
+  color: #ffe29a;
+  letter-spacing: 0.02em;
+}
+
+.paymentBlikNoticeFoot {
+  margin-top: 4px;
+  font-family: Unbounded-Regular;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.62);
+  text-align: center;
+}
+
 .paymentConfirmBtn {
   margin-top: 2px;
   margin-bottom: 2px;

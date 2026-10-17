@@ -566,12 +566,11 @@ body {
 }
 
 .catalogSearchWrap {
-  width: 100%;
-  margin: 12px auto 4px auto;
+  width: 75%;
+  margin: 10px auto 4px auto;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 0 16px;
   box-sizing: border-box;
 }
 
@@ -579,40 +578,49 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
   width: max-content;
-  max-width: calc(100% - 8px);
-  min-height: 32px;
-  padding: 0 12px 0 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.95);
+  max-width: 100%;
+  height: 35px;
+  min-height: 35px;
+  padding: 0 14px 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 1);
   background: rgba(0, 0, 0, 0.85);
   box-sizing: border-box;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 4px 10px rgba(0, 0, 0, 0.25);
+  cursor: text;
 }
 
 .catalogSearchIcon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  color: rgba(255, 255, 255, 0.72);
+  width: 20px;
+  height: 20px;
+  color: rgba(255, 255, 255, 0.92);
   line-height: 0;
+}
+
+.catalogSearchIcon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 .catalogSearchInput {
   /* «Szukaj modelu i smaku» / «Поиск модели и вкуса» */
   width: 21ch;
-  max-width: min(72vw, 240px);
+  max-width: min(58vw, 220px);
   min-width: 0;
   box-sizing: border-box;
-  height: 30px;
+  height: 100%;
   padding: 0;
   border: none;
   border-radius: 0;
   background: transparent;
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-family: Unbounded-Medium;
   outline: none;
   box-shadow: none;
@@ -631,16 +639,17 @@ body {
 
 .catalogSearchInput::placeholder {
   color: rgba(255, 255, 255, 0.55);
-  font-family: Unbounded-Regular;
-  font-size: 12px;
+  font-family: Unbounded-Medium;
+  font-size: 13px;
   white-space: nowrap;
 }
 
 .catalogSearchField:focus-within {
-  border-color: rgba(255, 255, 255, 1);
+  background: #454545;
+  border-color: rgba(255, 255, 255, 0.7);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.15),
-    0 4px 12px rgba(0, 0, 0, 0.35);
+    0 4px 10px rgba(0, 0, 0, 0.25);
 }
 
 .catalogSearchInput:focus {
@@ -4030,26 +4039,32 @@ body {
   }
 
   .catalogSearchWrap {
-    width: 100%;
-    margin: 10px auto 2px auto;
-    padding: 0 12px;
+    width: 95%;
+    margin: 8px auto 2px auto;
   }
 
   .catalogSearchField {
-    min-height: 30px;
-    gap: 6px;
-    padding: 0 10px 0 8px;
+    height: 35px;
+    min-height: 35px;
+    gap: 7px;
+    padding: 0 12px 0 10px;
+    border-radius: 12px;
+  }
+
+  .catalogSearchIcon,
+  .catalogSearchIcon svg {
+    width: 18px;
+    height: 18px;
   }
 
   .catalogSearchInput {
     width: 20ch;
-    max-width: min(78vw, 210px);
-    height: 28px;
-    font-size: 11px;
+    max-width: min(70vw, 200px);
+    font-size: 12px;
   }
 
   .catalogSearchInput::placeholder {
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .newDropBadge {

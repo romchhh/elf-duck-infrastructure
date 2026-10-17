@@ -4086,18 +4086,18 @@ navigate("/cart");
           <div className={`catalogSearchWrap reveal delay-4 ${mounted ? "visible" : ""}`}>
             <label className="catalogSearchField">
               <span className="catalogSearchIcon" aria-hidden="true">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                   <circle
                     cx="11"
                     cy="11"
-                    r="6.5"
+                    r="6.25"
                     stroke="currentColor"
-                    strokeWidth="2"
+                    strokeWidth="2.25"
                   />
                   <path
-                    d="M16.5 16.5L21 21"
+                    d="M16.4 16.4L21 21"
                     stroke="currentColor"
-                    strokeWidth="2"
+                    strokeWidth="2.25"
                     strokeLinecap="round"
                   />
                 </svg>
