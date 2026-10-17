@@ -232,7 +232,10 @@ const ReferralPage = () => {
         return;
     }
 
-    const text = `🦆 ELF DUCK\n${t("Залетай по моей ссылке и получи бонус 👇", "Wejdź z mojego linku i odbierz bonus 👇")}`;
+    const text = `🦆 ELF DUCK\n${t(
+        "Залетай по моей ссылке — 10% на первый заказ от 65 zł 👇",
+        "Wejdź z mojego linku — 10% na pierwsze zamówienie od 65 zł 👇"
+    )}`;
     const shareLink = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(text)}`;
 
     if (tg?.openTelegramLink) tg.openTelegramLink(shareLink);
@@ -246,12 +249,18 @@ const ReferralPage = () => {
         
     const referralGroups = Array.isArray(referralStatus?.groups) ? referralStatus.groups : [];
 
-    const hasPendingSingleGroup = referralGroups.some(
-      (group) => Array.isArray(group.members) && group.members.length === 1
+    // Группа ждёт первую покупку реферала (ещё нельзя забрать 25 zł)
+    const hasPendingPurchaseGroup = referralGroups.some(
+      (group) =>
+        Array.isArray(group.members) &&
+        group.members.length >= 1 &&
+        group?.isClaimed !== true &&
+        group?.rewardClaimed !== true &&
+        group?.isClaimable !== true &&
+        group.members.some((m) => m?.completed !== true)
     );
 
-    // показываем ожидающий блок если есть хотя бы один незавершённый реферал (1 из 2)
-    const shouldRenderWaitingCard = hasPendingSingleGroup;
+    const shouldRenderWaitingCard = hasPendingPurchaseGroup;
 
     const showPopupMessage = (title, message) => {
         const tg = window.Telegram?.WebApp;
@@ -296,18 +305,19 @@ const claimReferralReward = async (targetGroup = null) => {
         const pendingMembers = members.filter((m) => m?.completed !== true);
 
         const showGroupRequirementAlert = () => {
-            if (members.length < 2) {
+            if (members.length < 1) {
                 showPopupMessage(
                     t("Реферальная программа", "Program poleceń"),
                     t(
-                        "Чтобы получить награду 25 zł за эту группу, нужно пригласить ещё одного реферала.\n\nПосле этого каждый из двух рефералов в группе должен совершить минимум одну покупку.",
-                        "Aby otrzymać nagrodę 25 zł za tę grupę, musisz zaprosić jeszcze jednego poleconego.\n\nNastępnie każdy z dwóch poleconych w tej grupie musi złożyć co najmniej jedno zamówienie."
+                        "Пригласите друга по своей ссылке. Когда он совершит покупку — вы получите 25 zł на баланс.",
+                        "Zaproś znajomego swoim linkiem. Gdy zrobi zakup — otrzymasz 25 zł na saldo."
                     )
                 );
                 return true;
             }
 
-            if (completedMembers.length === 1 && pendingMembers.length === 1) {
+            // Legacy: пара из 2 рефералов
+            if (members.length === 2 && completedMembers.length === 1 && pendingMembers.length === 1) {
                 showPopupMessage(
                     t("Реферальная программа", "Program poleceń"),
                     `${completedMembers[0]?.displayName || t("Один из рефералов", "Jeden z poleconych")} ${t("уже совершил первую покупку.", "już złożył pierwsze zamówienie.")}\n\n` +
@@ -317,17 +327,15 @@ const claimReferralReward = async (targetGroup = null) => {
                 return true;
             }
 
-            if (members.length >= 2 && completedMembers.length === 0) {
-                const usersText = `\n\n${t("Рефералы в этой группе:", "Poleceni w tej grupie:")}\n• ${members
-                    .slice(0, 2)
-                    .map((m) => m?.displayName || t("Пользователь", "Użytkownik"))
-                    .join("\n• ")}`;
-
+            if (completedMembers.length === 0) {
+                const name =
+                    members[0]?.displayName || t("Ваш реферал", "Twój polecony");
                 showPopupMessage(
                     t("Реферальная программа", "Program poleceń"),
-                    t("Эти рефералы ещё не совершили ни одной покупки.\n\n", "Ci poleceni nie złożyli jeszcze żadnego zamówienia.\n\n") +
-                    t("Чтобы вы получили награду 25 zł, каждому из них нужно оформить хотя бы один заказ.", "Aby otrzymać nagrodę 25 zł, każdy z nich musi złożyć przynajmniej jedno zamówienie.") +
-                    usersText
+                    `${name} ${t(
+                        "ещё не совершил покупку.\n\nКак только он оформит заказ — вы сможете получить 25 zł на баланс.",
+                        "jeszcze nie zrobił zakupu.\n\nGdy złoży zamówienie — będziesz mógł otrzymać 25 zł na saldo."
+                    )}`
                 );
                 return true;
             }
@@ -338,7 +346,10 @@ const claimReferralReward = async (targetGroup = null) => {
         if (!groupForCheck) {
             showPopupMessage(
                 t("Реферальная программа", "Program poleceń"),
-                t("Для получения награды необходимо пригласить двух рефералов в одну группу награды.", "Aby otrzymać nagrodę, trzeba zaprosić dwóch poleconych do jednej grupy nagrody.")
+                t(
+                    "Пригласите друга по своей ссылке. Когда он совершит покупку — вы получите 25 zł на баланс.",
+                    "Zaproś znajomego swoim linkiem. Gdy zrobi zakup — otrzymasz 25 zł na saldo."
+                )
             );
             return;
         }
@@ -346,7 +357,10 @@ const claimReferralReward = async (targetGroup = null) => {
         if (groupForCheck?.isClaimed === true || groupForCheck?.rewardClaimed === true) {
             showPopupMessage(
                 t("Реферальная программа", "Program poleceń"),
-                t("Награда за эту группу уже была начислена на ваш кэшбек баланс. Чтобы получить следующую награду, пригласите ещё двух рефералов.", "Nagroda za tę grupę została już naliczona na Twój balans cashback. Aby otrzymać kolejną nagrodę, zaproś jeszcze dwóch poleconych.")
+                t(
+                    "Награда за этого реферала уже начислена. Пригласите следующего друга, чтобы получить ещё 25 zł.",
+                    "Nagroda za tego poleconego została już naliczona. Zaproś kolejnego znajomego, aby dostać kolejne 25 zł."
+                )
             );
             return;
         }
@@ -365,7 +379,7 @@ const claimReferralReward = async (targetGroup = null) => {
                 const firstWaitingPurchaseGroup = referralGroups.find((group) => {
                     const members = Array.isArray(group?.members) ? group.members : [];
                     return (
-                        members.length === 2 &&
+                        members.length >= 1 &&
                         group?.isClaimed !== true &&
                         group?.rewardClaimed !== true
                     );
@@ -373,15 +387,6 @@ const claimReferralReward = async (targetGroup = null) => {
 
                 if (firstWaitingPurchaseGroup) {
                     groupForCheck = firstWaitingPurchaseGroup;
-                } else {
-                    const firstIncompleteGroup = referralGroups.find((group) => {
-                        const members = Array.isArray(group?.members) ? group.members : [];
-                        return members.length < 2;
-                    });
-
-                    if (firstIncompleteGroup) {
-                        groupForCheck = firstIncompleteGroup;
-                    }
                 }
             }
         }
@@ -413,24 +418,31 @@ const claimReferralReward = async (targetGroup = null) => {
             );
         } else if (data?.status === "NONE_COMPLETED") {
             const usersText = Array.isArray(data?.users) && data.users.length
-                ? `\n\n${t("Рефералы в этой группе:", "Poleceni w tej grupie:")}\n• ${data.users.join("\n• ")}`
+                ? `\n\n${t("Реферал:", "Polecony:")}\n• ${data.users.join("\n• ")}`
                 : "";
 
             showPopupMessage(
                 t("Реферальная программа", "Program poleceń"),
-                t("Эти рефералы ещё не совершили ни одной покупки.\n\n", "Ci poleceni nie złożyli jeszcze żadnego zamówienia.\n\n") +
-                t("Чтобы вы получили награду 25 zł, каждому из них нужно оформить хотя бы один заказ.", "Aby otrzymać nagrodę 25 zł, każdy z nich musi złożyć przynajmniej jedno zamówienie.") +
-                usersText
+                t(
+                    "Реферал ещё не совершил покупку.\n\nКак только он оформит заказ — вы получите 25 zł на баланс.",
+                    "Polecony jeszcze nie zrobił zakupu.\n\nGdy złoży zamówienie — otrzymasz 25 zł na saldo."
+                ) + usersText
             );
         } else if (data?.status === "NOT_ENOUGH_REFERRALS") {
             showPopupMessage(
                 t("Реферальная программа", "Program poleceń"),
-                t("Чтобы получить награду 25 zł за эту группу, нужно пригласить ещё одного реферала.\n\nПосле этого каждый из двух рефералов в группе должен совершить минимум одну покупку.", "Aby otrzymać nagrodę 25 zł za tę grupę, musisz zaprosić jeszcze jednego poleconego.\n\nNastępnie każdy z dwóch poleconych w tej grupie musi złożyć co najmniej jedno zamówienie.")
+                t(
+                    "Пригласите друга по своей ссылке. Когда он совершит покупку — вы получите 25 zł на баланс.",
+                    "Zaproś znajomego swoim linkiem. Gdy zrobi zakup — otrzymasz 25 zł na saldo."
+                )
             );
         } else if (data?.status === "ALREADY_CLAIMED") {
             showPopupMessage(
                 t("Реферальная программа", "Program poleceń"),
-                t("Награда за эту группу уже была начислена на ваш кэшбек баланс. Чтобы получить следующую награду, пригласите ещё двух рефералов.", "Nagroda za tę grupę została już naliczona na Twój balans cashback. Aby otrzymać kolejną nagrodę, zaproś jeszcze dwóch poleconych.")
+                t(
+                    "Награда за этого реферала уже начислена. Пригласите следующего друга, чтобы получить ещё 25 zł.",
+                    "Nagroda za tego poleconego została już naliczona. Zaproś kolejnego znajomego, aby dostać kolejne 25 zł."
+                )
             );
         } else if (data?.ok === false) {
             throw new Error(data?.message || data?.error || t("Не удалось забрать награду", "Nie udało się odebrać nagrody"));
@@ -881,16 +893,16 @@ const claimReferralReward = async (targetGroup = null) => {
                         <div className={`refInviteCard reveal delay-4 ${mounted ? "visible" : ""}`}>
                             <div className="refInviteInner">
                             <div className="refInviteTitle">
-                                {t("ПРИГЛАСИТЕ", "ZAPROŚ")} <span className="refAccent">2 {t("РЕФЕРАЛА", "POLECONYCH")}</span>
+                                {t("ПРИГЛАСИ", "ZAPROŚ")} <span className="refAccent">{t("ДРУГА", "ZNAJOMEGO")}</span>
                             </div>
 
                             <div className="refInviteInfo">
                                 <div className="refInviteInfoRow">
                                 <div className="refInfoIcon">i</div>
                                 <div className="refInviteInfoText">
-                                    {t("ЗА КАЖДЫХ ДВУХ ДРУЗЕЙ, КОТОРЫЕ", "ZA KAŻDYCH DWÓCH ZNAJOMYCH, KTÓRZY")}
+                                    {t("ЗА КАЖДОГО ДРУГА, КОТОРЫЙ", "ZA KAŻDEGO ZNAJOMEGO, KTÓRY")}
                                     <br />
-                                    {t("СОВЕРШАТ ПОКУПКУ,", "DOKONAJĄ ZAKUPU,")} <span className="refAccent">{t("ВЫ ПОЛУЧИТЕ", "OTRZYMASZ")}</span>
+                                    {t("СОВЕРШИТ ПОКУПКУ,", "DOKONA ZAKUPU,")} <span className="refAccent">{t("ВЫ ПОЛУЧИТЕ", "OTRZYMASZ")}</span>
                                     <br />
                                     <span className="refAccent">25 ZŁ {t("БОНУСА НА СВОЙ БАЛАНС", "BONUSU NA SWOJE SALDO")}</span>
                                 </div>
@@ -947,7 +959,9 @@ const claimReferralReward = async (targetGroup = null) => {
                                 <div className="refListInfoText">
                                 {t("ПОКА ЧТО У ВАС НЕТ РЕФЕРАЛОВ.", "NA RAZIE NIE MASZ JESZCZE POLECONYCH.")}
                                 <br />
-                                {t("ПРИГЛАСИТЕ", "ZAPROŚ")} <span className="refAccent">{t("ДВОИХ РЕФЕРАЛОВ", "DWÓCH POLECONYCH")}</span>
+                                {t("ПРИГЛАСИТЕ", "ZAPROŚ")} <span className="refAccent">{t("ДРУГА", "ZNAJOMEGO")}</span>
+                                {" — "}
+                                <span className="refAccent">25 ZŁ</span>
                                 </div>
                             </div>
 
@@ -969,9 +983,9 @@ const claimReferralReward = async (targetGroup = null) => {
                             <div className="refListInfoRow">
                                 <div className="refInfoIcon">i</div>
                                 <div className="refListInfoText">
-                                    {t("ЧТОБЫ ПОЛУЧИТЬ НАГРАДУ, НЕОБХОДИМО", "ABY OTRZYMAĆ NAGRODĘ, MUSISZ")}
+                                    {t("ЧТОБЫ ПОЛУЧИТЬ НАГРАДУ,", "ABY OTRZYMAĆ NAGRODĘ,")}
                                     <br />
-                                    {t("ПРИГЛАСИТЬ", "ZAPROSIĆ")} <span className="refAccent">{t("ДВОИХ РЕФЕРАЛОВ", "DWÓCH POLECONYCH")}</span>
+                                    {t("ДРУГ ДОЛЖЕН", "ZNAJOMY MUSI")} <span className="refAccent">{t("СОВЕРШИТЬ ПОКУПКУ", "DOKONAĆ ZAKUPU")}</span>
                                 </div>
                             </div>
 
@@ -991,11 +1005,15 @@ const claimReferralReward = async (targetGroup = null) => {
                         </div>
 
                         {referralGroups.map((group) => {
+                        const canClaim = Boolean(group?.isClaimable) && !group?.isClaimed;
+                        const isClaimed = Boolean(group?.isClaimed || group?.rewardClaimed);
+
                         if (group.members.length === 1) {
                             const ref = group.members[0];
+                            const waitingPurchase = !isClaimed && !canClaim;
 
                             return (
-                            <div className="refListCard" key={`group-${group.pairIndex}`}>
+                            <div className="refListCard" key={`group-${group.pairIndex || group.id}`}>
                                 <div className="refReferralTopRow">
                                 <div className="refReferralLeft">
                                     <img
@@ -1004,7 +1022,7 @@ const claimReferralReward = async (targetGroup = null) => {
                                     alt=""
                                     />
                                     <div className="refReferralNameBlock">
-                                    <div className="refReferralName">
+                                    <div className={`refReferralName ${canClaim || isClaimed ? "refReferralNameGreen" : ""}`}>
                                         {ref.firstName || ref.username || t("Реферал", "Polecony")}
                                     </div>
                                     <div className="refReferralUsername">
@@ -1018,28 +1036,33 @@ const claimReferralReward = async (targetGroup = null) => {
                                 </div>
                                 </div>
 
+                                {waitingPurchase && (
                                 <div className="refListInfoRow refListInfoRowCompact">
                                 <div className="refInfoIcon">i</div>
                                 <div className="refListInfoText">
-                                    {t("ЧТОБЫ ПОЛУЧИТЬ НАГРАДУ, НЕОБХОДИМО", "ABY OTRZYMAĆ NAGRODĘ, MUSISZ")}
+                                    {t("ЖДЁМ ПЕРВУЮ ПОКУПКУ РЕФЕРАЛА", "CZEKAMY NA PIERWSZY ZAKUP POLECONEGO")}
                                     <br />
-                                    {t("ПРИГЛАСИТЬ", "ZAPROSIĆ")} <span className="refAccent">{t("ЕЩЁ ОДНОГО РЕФЕРАЛА", "JESZCZE JEDNEGO POLECONEGO")}</span>
+                                    {t("ПОТОМ МОЖНО ЗАБРАТЬ", "POTEM MOŻESZ ODEBRAĆ")} <span className="refAccent">25 ZŁ</span>
                                 </div>
                                 </div>
+                                )}
 
                             <button
                                 type="button"
-                                className="refListActionBtn refListActionBtnDisabled"
-                                onClick={() => claimReferralReward(group)}
+                                className={isClaimed ? "refRewardBtn" : canClaim ? "refListActionBtn" : "refListActionBtn refListActionBtnDisabled"}
+                                disabled={claimingReward || isClaimed || !canClaim}
+                                onClick={isClaimed || !canClaim ? undefined : () => claimReferralReward(group)}
                             >
-                                {t("ПОЛУЧИТЬ 25 ZŁ НА БАЛАНС", "OTRZYMAJ 25 ZŁ NA SALDO")}
+                                {isClaimed
+                                  ? t("НАГРАДА ПОЛУЧЕНА!", "NAGRODA ODEBRANA!")
+                                  : t("ПОЛУЧИТЬ 25 ZŁ НА БАЛАНС", "OTRZYMAJ 25 ZŁ NA SALDO")}
                             </button>
                             </div>
                             );
                         }
 
                         return (
-                            <div className="refListCard" key={`group-${group.pairIndex}`}>
+                            <div className="refListCard" key={`group-${group.pairIndex || group.id}`}>
                             <div className="refReferralPeople">
                                 {group.members.map((ref) => (
                                 <div className="refReferralPerson" key={ref.telegramId}>
@@ -1049,7 +1072,7 @@ const claimReferralReward = async (targetGroup = null) => {
                                     alt=""
                                     />
                                     <div className="refReferralNameBlock">
-                                    <div className={`refReferralName ${group.isClaimed || group.isClaimable ? "refReferralNameGreen" : ""}`}>
+                                    <div className={`refReferralName ${isClaimed || canClaim ? "refReferralNameGreen" : ""}`}>
                                         {ref.firstName || ref.username || t("Реферал", "Polecony")}
                                     </div>
                                     <div className="refReferralUsername">
@@ -1066,11 +1089,11 @@ const claimReferralReward = async (targetGroup = null) => {
 
                             <button
                                 type="button"
-                                className={group.isClaimed ? "refRewardBtn" : "refListActionBtn"}
-                                disabled={claimingReward || group.isClaimed}
-                                onClick={group.isClaimed ? undefined : () => claimReferralReward(group)}
+                                className={isClaimed ? "refRewardBtn" : canClaim ? "refListActionBtn" : "refListActionBtn refListActionBtnDisabled"}
+                                disabled={claimingReward || isClaimed || !canClaim}
+                                onClick={isClaimed || !canClaim ? undefined : () => claimReferralReward(group)}
                             >
-                                {group.isClaimed
+                                {isClaimed
                                   ? t("НАГРАДА ПОЛУЧЕНА!", "NAGRODA ODEBRANA!")
                                   : t("ПОЛУЧИТЬ 25 ZŁ НА БАЛАНС", "OTRZYMAJ 25 ZŁ NA SALDO")}
                             </button>

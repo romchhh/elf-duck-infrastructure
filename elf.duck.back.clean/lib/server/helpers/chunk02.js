@@ -165,9 +165,15 @@ export async function buildReferralStatusForUser(ownerUser) {
     });
 
     const completedCount = members.filter((m) => m.completed === true).length;
-    const isComplete = members.length === 2;
+    // Новая модель: 1 реферал с покупкой = награда.
+    // Старые пары (2 участника) остаются claimable только когда оба купили.
+    const isComplete = members.length >= 1;
     const isClaimed = group?.rewardClaimed === true;
-    const readyToClaim = isComplete && completedCount === 2 && !isClaimed;
+    const readyToClaim =
+      isComplete &&
+      members.length > 0 &&
+      completedCount === members.length &&
+      !isClaimed;
 
     return {
       id: String(group?._id || ""),

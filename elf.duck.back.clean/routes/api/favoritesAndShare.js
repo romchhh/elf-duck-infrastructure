@@ -134,7 +134,8 @@ app.post("/tg/prepared-referral-message", async (req, res) => {
 
     const caption =
       `🦆 ELF DUCK\n\n` +
-      `💸 Залетай по моей ссылке и получи 10% скидки на заказ!`;
+      `💸 Wejdź z mojego linku — masz 10% zniżki na pierwsze zamówienie (min. 65 zł)!\n` +
+      `🎁 A ja dostaję 25 zł na saldo, gdy zrobisz zakup.`;
 
     // Уникальный id для inline-result (обязателен)
     const resultId = crypto

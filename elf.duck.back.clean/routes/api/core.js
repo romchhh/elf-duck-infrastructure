@@ -214,7 +214,7 @@ app.post("/referral/claim", async (req, res) => {
       ? selectedGroup.members.map((m) => String(m?.telegramId || "").trim()).filter(Boolean)
       : [];
 
-    if (memberIds.length < 2) {
+    if (memberIds.length < 1) {
       return res.json({ ok: false, status: "NOT_ENOUGH_REFERRALS" });
     }
 
@@ -254,7 +254,8 @@ app.post("/referral/claim", async (req, res) => {
     const completedMembers = members.filter((m) => m?.completed === true);
     const pendingMembers = members.filter((m) => m?.completed !== true);
 
-    if (completedMembers.length === 1 && pendingMembers.length === 1) {
+    // Legacy pair groups (2 members): keep partial-progress messaging
+    if (memberIds.length === 2 && completedMembers.length === 1 && pendingMembers.length === 1) {
       return res.json({
         ok: false,
         status: "ONE_COMPLETED",
@@ -271,7 +272,8 @@ app.post("/referral/claim", async (req, res) => {
       });
     }
 
-    if (completedMembers.length !== 2) {
+    // Need every member in the group to have purchased (1 for new model, 2 for legacy pairs)
+    if (completedMembers.length !== memberIds.length) {
       return res.json({ ok: false, status: "GROUP_NOT_READY" });
     }
 

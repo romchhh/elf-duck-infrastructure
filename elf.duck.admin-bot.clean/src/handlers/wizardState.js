@@ -228,9 +228,16 @@ export const defaultBroadcastData = () => ({
 
   text: "",
 
-  buttonText: "Открыть ELF DUCK",
+  buttonText: "Zaproszenia — 25 zł",
 
   buttonUrl: `${WEBAPP_URL}/referral`,
+
+  // Готовый текст для периодического пуша рефералки (можно править в шаге text)
+  text:
+    "🦆 ELF DUCK\n\n" +
+    "🎁 Zaproś znajomego — zgarnij 25 zł na saldo, gdy zrobi zakup.\n" +
+    "💸 Twój znajomy dostaje 10% zniżki na pierwsze zamówienie od 65 zł.\n\n" +
+    "Udostępnij link w Mini App → Program poleceń",
 
 });
 

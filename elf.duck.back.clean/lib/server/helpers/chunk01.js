@@ -542,6 +542,8 @@ export function ensureReferralGroupsArray(user) {
   return user.referral.rewardGroups;
 }
 
+export const REFERRAL_REWARD_ZL = 25;
+
 export function attachReferralToRewardGroup(ownerUser, referredTelegramId) {
   const referralId = String(referredTelegramId || "").trim();
   if (!ownerUser || !referralId) return false;
@@ -554,38 +556,14 @@ export function attachReferralToRewardGroup(ownerUser, referredTelegramId) {
   );
   if (alreadyAdded) return false;
 
-  let targetGroup = groups.find(
-    (group) =>
-      group?.rewardClaimed !== true &&
-      Array.isArray(group?.memberTelegramIds) &&
-      group.memberTelegramIds.length < 2
-  );
-
-  if (!targetGroup) {
-    groups.push({
-      pairIndex: groups.length + 1,
-      memberTelegramIds: [referralId],
-      rewardClaimed: false,
-      rewardClaimedAt: null,
-      rewardAmountZl: 25,
-    });
-
-    if (typeof ownerUser.markModified === "function") {
-      ownerUser.markModified("referral.rewardGroups");
-    }
-
-    return true;
-  }
-
-  const currentIds = Array.isArray(targetGroup.memberTelegramIds)
-    ? targetGroup.memberTelegramIds.map((x) => String(x)).filter(Boolean)
-    : [];
-
-  if (!currentIds.includes(referralId)) {
-    currentIds.push(referralId);
-  }
-
-  targetGroup.memberTelegramIds = currentIds;
+  // 1 друг = 1 группа награды: 25 zł после его первой покупки
+  groups.push({
+    pairIndex: groups.length + 1,
+    memberTelegramIds: [referralId],
+    rewardClaimed: false,
+    rewardClaimedAt: null,
+    rewardAmountZl: REFERRAL_REWARD_ZL,
+  });
 
   if (typeof ownerUser.markModified === "function") {
     ownerUser.markModified("referral.rewardGroups");

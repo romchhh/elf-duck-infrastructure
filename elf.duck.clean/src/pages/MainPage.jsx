@@ -16,7 +16,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
 import { scrollBannerToIndex, useBannerAutoplay } from "../utils/useBannerAutoplay";
 import { preloadImage, preloadImages } from "../utils/preloadImage";
-import { writeProductVisualCache } from "../utils/visualCache";
+import { scheduleWriteProductVisualCache } from "../utils/visualCache";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { hexToRgbTriplet } from "../lib/flavorGradients.js";
 import {
@@ -902,50 +902,65 @@ const MainPage = () => {
 
     (async () => {
       setCatalogLoadError("");
-      const [catResult, prodResult] = await Promise.allSettled([
-        fetch(`${API_URL}/categories?active=1`).then(async (r) => {
+
+      // Categories are small and enough for the default catalog view —
+      // don't block the spinner on the heavy /products payload.
+      const categoriesPromise = fetch(`${API_URL}/categories?active=1`).then(
+        async (r) => {
           const data = await r.json().catch(() => ({}));
           if (!r.ok) {
             throw new Error(data?.error || `HTTP ${r.status}`);
           }
           return data;
-        }),
-        fetchProductsCached(API_URL, { active: "1" }),
-      ]);
-      if (!alive) return;
+        }
+      );
+      const productsPromise = fetchProductsCached(API_URL, { active: "1" });
 
       let catList = [];
-      if (catResult.status === "fulfilled") {
-        const data = catResult.value;
-        catList = Array.isArray(data)
-          ? data
-          : (data?.categories || []);
+      let catOk = false;
+      let catErr = "";
+      try {
+        const data = await categoriesPromise;
+        if (!alive) return;
+        catList = Array.isArray(data) ? data : data?.categories || [];
         setCategories(catList);
-      } else {
-        console.error("Failed to load categories:", catResult.reason);
+        catOk = true;
+      } catch (reason) {
+        console.error("Failed to load categories:", reason);
+        catErr = reason?.message || String(reason || "");
+        if (!alive) return;
         setCategories([]);
       }
+      if (!alive) return;
       setCategoriesLoading(false);
 
+      // Unlock category grid as soon as categories are ready
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (alive) setCatalogReady(true);
+        });
+      });
+
       let prodList = [];
-      if (prodResult.status === "fulfilled") {
-        prodList = prodResult.value;
+      let prodOk = false;
+      let prodErr = "";
+      try {
+        prodList = await productsPromise;
+        if (!alive) return;
         setProducts(prodList);
-        writeProductVisualCache(prodList);
-      } else {
-        console.error("Failed to load products:", prodResult.reason);
+        scheduleWriteProductVisualCache(prodList);
+        prodOk = true;
+      } catch (reason) {
+        console.error("Failed to load products:", reason);
+        prodErr = reason?.message || String(reason || "");
+        if (!alive) return;
         setProducts([]);
       }
+      if (!alive) return;
       setProductsLoading(false);
 
-      if (
-        catResult.status !== "fulfilled" &&
-        prodResult.status !== "fulfilled"
-      ) {
-        const reason =
-          catResult.reason?.message ||
-          prodResult.reason?.message ||
-          "";
+      if (!catOk && !prodOk) {
+        const reason = catErr || prodErr;
         const devHint = import.meta.env.DEV
           ? t(
               " Запустите API: cd elf.duck.back.clean && npm start (порт 3000).",
@@ -968,14 +983,11 @@ const MainPage = () => {
           )
         );
       }
-
-      // wait for React to render cards at opacity:0, then trigger fade-in
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => setCatalogReady(true));
-      });
     })();
 
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -4096,7 +4108,18 @@ navigate("/cart");
           </div>
 
           <div className="catalogContent">
-            {!catalogReady && (categoriesLoading || productsLoading) && (
+            {!catalogReady &&
+              (catalogView === "categories"
+                ? categoriesLoading
+                : categoriesLoading || productsLoading) && (
+              <div className="loadingSpinner">
+                <div className="loadingRing" />
+              </div>
+            )}
+            {catalogView === "all" &&
+              productsLoading &&
+              catalogReady &&
+              !categoriesLoading && (
               <div className="loadingSpinner">
                 <div className="loadingRing" />
               </div>

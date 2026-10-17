@@ -158,7 +158,8 @@ app.get("/products", async (req, res) => {
     });
 
     const payload = { ok: true, products: withTotals };
-    cacheSet(cacheKey, payload, 60 * 1000);
+    // Catalog payload is large (~stock trees); keep warm longer to avoid rebuild storms.
+    cacheSet(cacheKey, payload, 5 * 60 * 1000);
     res.json(payload);
   } catch (e) {
     console.error("GET /products error:", e);

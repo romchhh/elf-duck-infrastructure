@@ -44,7 +44,17 @@ export function readProductVisualCache() {
 
 export function writeProductVisualCache(products) {
   try {
-    const current = readProductVisualCache();
+    // Do NOT call readProductVisualCache() — it re-enriches the entire
+    // stored map via enrichProductVisuals and stalls the main thread.
+    let current = {};
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      if (parsed && typeof parsed === "object") current = parsed;
+    } catch {
+      current = {};
+    }
+
     const next = { ...current };
 
     for (const product of Array.isArray(products) ? products : []) {
@@ -57,4 +67,14 @@ export function writeProductVisualCache(products) {
   } catch {
     // ignore cache write errors
   }
+}
+
+/** Schedule visual-cache write off the critical catalog paint path. */
+export function scheduleWriteProductVisualCache(products) {
+  const run = () => writeProductVisualCache(products);
+  if (typeof requestIdleCallback === "function") {
+    requestIdleCallback(run, { timeout: 2500 });
+    return;
+  }
+  setTimeout(run, 0);
 }
