@@ -10,8 +10,19 @@ export function normalizeSheetModelName(value) {
     .replace(/\bPUFFY\s+30\s*ML\s*\/\s*70\s*MG\b/g, "PUFFY 7%")
     .replace(/\bPUFFY\s+30\s*ML\s*\/\s*50\s*MG\b/g, "PUFFY 5%")
     .replace(/\bPUFFY\s+30\s*ML\b/g, "PUFFY 5%")
+    // Praga sheet: «LIQ PUFFY \ 70 MG» — before PUFFY 70 → 7% (else «LIQ PUFFY 7% MG»).
+    // Do not use trailing \b after `%` (JS word-boundary fails after non-word `%`).
+    .replace(/\bLIQ\s+PUFFY\s*[\\/]?\s*70\s*MG\b/g, "PUFFY 7%")
+    .replace(/\bLIQ\s+PUFFY\s*[\\/]?\s*50\s*MG\b/g, "PUFFY 5%")
+    .replace(/\bLIQ\s+PUFFY\s*[\\/]?\s*7\s*%/g, "PUFFY 7%")
+    .replace(/\bLIQ\s+PUFFY\s*[\\/]?\s*5\s*%/g, "PUFFY 5%")
+    .replace(/\bLIQ\s+PUFFY\s+7%/g, "PUFFY 7%")
+    .replace(/\bLIQ\s+PUFFY\s+5%/g, "PUFFY 5%")
+    .replace(/\bLIQ\s+PUFFY\b/g, "PUFFY 5%")
     .replace(/\bPUFFY\s+70\s*%/g, "PUFFY 7%")
     .replace(/\bPUFFY\s+50\s*%/g, "PUFFY 5%")
+    .replace(/\bPUFFY\s+70\s*MG\b/g, "PUFFY 7%")
+    .replace(/\bPUFFY\s+50\s*MG\b/g, "PUFFY 5%")
     .replace(/\bPUFFY\s+70\b/g, "PUFFY 7%")
     .replace(/\bPUFFY\s+50\b/g, "PUFFY 5%")
     .replace(/\s*30\s*ML/g, "")
@@ -23,9 +34,8 @@ export function normalizeSheetModelName(value) {
     .replace(/\bLIQ\s+BLACK\b/g, "BLACK")
     .replace(/\bLIQ\s+FOR\s+PODS\b/g, "FOR PODS")
     .replace(/\bLIQ\s+VOZOL\s+PRIME\b/g, "VOZOL PRIME")
-    .replace(/\bLIQ\s+PUFFY\s+7%\b/g, "PUFFY 7%")
-    .replace(/\bLIQ\s+PUFFY\s+5%\b/g, "PUFFY 5%")
-    .replace(/\bLIQ\s+PUFFY\b/g, "PUFFY 5%")
+    .replace(/\bPUFFY\s+7%\s*MG\b/g, "PUFFY 7%")
+    .replace(/\bPUFFY\s+5%\s*MG\b/g, "PUFFY 5%")
     .replace(/\bELF\s+DUCK\s+D3\s+25K\b/g, "ELF BAR D3")
     .replace(/\bELF\s+DUCK\s+D3\b/g, "ELF BAR D3")
     .replace(/\bELF\s+BAR\s+D3\s+25K\b/g, "ELF BAR D3")
@@ -145,10 +155,14 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
       "PUFFY 50",
     ],
     "puffy-30-ml-70-mg": [
+      "LIQ PUFFY \\ 70 MG",
+      "LIQ PUFFY / 70 MG",
+      "LIQ PUFFY 70 MG",
       "LIQ PUFFY 7%",
       "PUFFY 7%",
       "PUFFY 70%",
       "PUFFY 70",
+      "PUFFY 70 MG",
     ],
     // Каталог: chaser-black-30-ml = HQD 30 ML → блок LIQ HQD.
     "chaser-black-30-ml": ["LIQ HQD", "HQD"],
@@ -313,6 +327,16 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
     ],
   },
   "puffy-30-ml-70-mg": {
+    "70mg-strawberry-lime": [
+      "Strawberry Lime",
+      "Strawberry lime",
+      "STRAWBERRY LIME",
+    ],
+    "strawberry-lime": [
+      "Strawberry Lime",
+      "Strawberry lime",
+      "STRAWBERRY LIME",
+    ],
     "grape-raspberry-black-plum": [
       "Grape Raspberry Plum",
       "Grape Raspberry Black Plum",

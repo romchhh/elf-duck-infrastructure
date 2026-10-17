@@ -91,15 +91,35 @@ export function findAssortmentModelBlocks(rows) {
   return blocks;
 }
 
-function pickBestAssortmentBlock(rows, hits) {
+function puffyBlockTier(header, productKey) {
+  const pk = String(productKey || "").trim().toLowerCase();
+  const h = normalizeSheetModelName(header);
+  const is70 = /7\s*%/.test(h) || /\b70\b/.test(h);
+  const is5 = /5\s*%/.test(h) && !is70;
+
+  if (pk === "puffy-30-ml-70-mg") {
+    if (is70) return 2;
+    if (is5) return 0;
+    return 1;
+  }
+  if (pk === "puffy-30-ml") {
+    if (is5) return 2;
+    if (is70) return 0;
+    return 1;
+  }
+  return 0;
+}
+
+function pickBestAssortmentBlock(rows, hits, productKey = "") {
   if (!hits.length) return null;
   if (hits.length === 1) return hits[0];
   return hits
     .map((block) => ({
       block,
       n: listAssortmentFlavorsInBlock(rows, block).length,
+      tier: puffyBlockTier(block.header, productKey),
     }))
-    .sort((a, b) => b.n - a.n)[0].block;
+    .sort((a, b) => b.tier - a.tier || b.n - a.n)[0].block;
 }
 
 export function findAssortmentBlockForModel(rows, modelName, productKey = "") {
@@ -118,13 +138,13 @@ export function findAssortmentBlockForModel(rows, modelName, productKey = "") {
     }
   }
   if (exactHits.length) {
-    return pickBestAssortmentBlock(rows, exactHits);
+    return pickBestAssortmentBlock(rows, exactHits, productKey);
   }
 
   const fuzzyHits = blocks.filter((block) =>
     headerMatchesWanted(block.header, wanted)
   );
-  return pickBestAssortmentBlock(rows, fuzzyHits);
+  return pickBestAssortmentBlock(rows, fuzzyHits, productKey);
 }
 
 function flavorSlugToTitleLabel(slug = "") {
