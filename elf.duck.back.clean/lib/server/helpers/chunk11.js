@@ -138,6 +138,29 @@ export function formatManagerOrderClientLabel(user, order, username = "") {
   return "—";
 }
 
+/** Перший активний заказ клієнта в боті (без скасованих/анульованих попередніх). */
+export async function isCustomerFirstBotOrder(order) {
+  const userTelegramId = String(order?.userTelegramId || "").trim();
+  if (!userTelegramId || !order?._id) return false;
+
+  const previousOrders = await Order.countDocuments({
+    userTelegramId,
+    _id: { $ne: order._id },
+    status: { $nin: ["canceled", "annulled"] },
+  });
+
+  return previousOrders === 0;
+}
+
+export function buildManagerOrderClientChannelLine(
+  customerName,
+  isFirstOrder = false
+) {
+  const label = escapeHtml(String(customerName || "—"));
+  const badge = isFirstOrder ? " 🆕 NEW" : "";
+  return `👤 <b>Клиент:</b> ${label}${badge}`;
+}
+
 export async function resolveManagerOrderClientContact(order) {
   const telegramId = String(order?.userTelegramId || "").trim();
   let user = null;
@@ -392,6 +415,7 @@ export async function sendOrderCreatedNotification(order, options = {}) {
       await resolveManagerOrderClientContact(order);
     const customerName = clientContact.displayLabel;
     const user = clientContact.user;
+    const isFirstOrder = await isCustomerFirstBotOrder(order);
 
     const managerAmountText = escapeHtml(formatManagerOrderTotalZlText(order));
     const managerForeignPaymentSubline = formatManagerForeignPaymentSubline(order);
@@ -457,7 +481,7 @@ export async function sendOrderCreatedNotification(order, options = {}) {
       ``,
       `🔢 <b>Номер:</b> #${escapeHtml(order.orderNo)}`,
       ``,
-      `👤 <b>Клиент:</b> ${escapeHtml(customerName)}`,
+      buildManagerOrderClientChannelLine(customerName, isFirstOrder),
       `🕒 <b>Создан:</b> ${escapeHtml(formatOrderDate(order.createdAt))}`,
       ``,
       `📋 <b>Состав заказа:</b>`,
@@ -980,6 +1004,7 @@ export async function refreshManagerOrderMessage(order) {
       await resolveManagerOrderClientContact(order);
     const customerName = clientContact.displayLabel;
     const user = clientContact.user;
+    const isFirstOrder = await isCustomerFirstBotOrder(order);
 
     const itemsText = (order.items || [])
       .map((it) => {
@@ -1110,7 +1135,7 @@ export async function refreshManagerOrderMessage(order) {
       ``,
       `🔢 <b>Номер:</b> #${escapeHtml(order.orderNo)}`,
       ``,
-      `👤 <b>Клиент:</b> ${escapeHtml(customerName)}`,
+      buildManagerOrderClientChannelLine(customerName, isFirstOrder),
       `🕒 <b>Создан:</b> ${escapeHtml(formatOrderDate(order.createdAt))}`,
       ``,
       `📋 <b>Состав заказа:</b>`,
