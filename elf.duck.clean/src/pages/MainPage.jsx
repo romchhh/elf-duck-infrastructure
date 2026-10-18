@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useDeferredValue,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1641,9 +1642,42 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
   const initialCatalogView = location.state?.openCatalogView === "all" ? "all" : "categories";
   const [catalogView, setCatalogView] = useState(initialCatalogView);
   const [catalogSearchQuery, setCatalogSearchQuery] = useState("");
+  const catalogSearchPlaceholder = t(
+    "Поиск модели и вкуса",
+    "Szukaj modelu i smaku"
+  );
+  const catalogSearchSizerRef = useRef(null);
+  const [catalogSearchTextWidth, setCatalogSearchTextWidth] = useState(null);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState(
     initialCategoryFilter?.key ? initialCategoryFilter : null
   );
+
+  useLayoutEffect(() => {
+    const el = catalogSearchSizerRef.current;
+    if (!el) return;
+
+    const measure = () => {
+      const w = Math.ceil(el.getBoundingClientRect().width);
+      if (w > 0) setCatalogSearchTextWidth(w);
+    };
+
+    measure();
+
+    let alive = true;
+    const fontsReady = document.fonts?.ready;
+    if (fontsReady) {
+      fontsReady.then(() => {
+        if (alive) measure();
+      });
+    }
+
+    window.addEventListener("resize", measure);
+
+    return () => {
+      alive = false;
+      window.removeEventListener("resize", measure);
+    };
+  }, [catalogSearchPlaceholder, lang]);
   const pendingOpenProductKey = String(location.state?.openProductKey || "").trim();
 
   const [initialEnterPlayed, setInitialEnterPlayed] = useState(false);
@@ -4084,7 +4118,23 @@ navigate("/cart");
           </div>
 
           <div className={`catalogSearchWrap reveal delay-4 ${mounted ? "visible" : ""}`}>
-            <label className="catalogSearchField">
+            <label
+              className="catalogSearchField"
+              style={
+                catalogSearchTextWidth
+                  ? {
+                      ["--catalog-search-text-width"]: `${catalogSearchTextWidth}px`,
+                    }
+                  : undefined
+              }
+            >
+              <span
+                ref={catalogSearchSizerRef}
+                className="catalogSearchSizer"
+                aria-hidden="true"
+              >
+                {catalogSearchPlaceholder}
+              </span>
               <span className="catalogSearchIcon" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
                   <circle
@@ -4102,30 +4152,24 @@ navigate("/cart");
                   />
                 </svg>
               </span>
-              <span className="catalogSearchInputSlot">
-                {/* ширина поля = повний placeholder, не росте від вводу */}
-                <span className="catalogSearchSizer" aria-hidden="true">
-                  {t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
-                </span>
-                <input
-                  type="search"
-                  className="catalogSearchInput"
-                  value={catalogSearchQuery}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setCatalogSearchQuery(v);
-                    if (String(v || "").trim() && catalogView !== "all") {
-                      switchCatalog("all");
-                    }
-                  }}
-                  placeholder={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
-                  aria-label={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
-                  enterKeyHint="search"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-              </span>
+              <input
+                type="search"
+                className="catalogSearchInput"
+                value={catalogSearchQuery}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCatalogSearchQuery(v);
+                  if (String(v || "").trim() && catalogView !== "all") {
+                    switchCatalog("all");
+                  }
+                }}
+                placeholder={catalogSearchPlaceholder}
+                aria-label={catalogSearchPlaceholder}
+                enterKeyHint="search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
             </label>
           </div>
 

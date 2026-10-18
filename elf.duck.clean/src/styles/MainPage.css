@@ -576,16 +576,16 @@ body {
 }
 
 .catalogSearchField {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 6px;
+  gap: 7px;
   width: fit-content;
   max-width: 100%;
   height: 35px;
   min-height: 35px;
-  /* лише рамка вужча (~5%), шрифт не чіпаємо */
-  padding: 0 7px 0 5px;
+  padding: 0 10px 0 8px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 1);
   background: rgba(0, 0, 0, 0.85);
@@ -611,45 +611,44 @@ body {
   display: block;
 }
 
-/* ширина = рівно placeholder; ввід довший — обрізається */
-.catalogSearchInputSlot {
-  position: relative;
-  display: inline-grid;
-  align-items: center;
-  max-width: 100%;
-  min-width: 0;
-}
-
-.catalogSearchSizer,
-.catalogSearchInput {
-  grid-area: 1 / 1;
+/* прихований вимірник — рівно ширина тексту placeholder */
+.catalogSearchSizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
   font-size: 12px;
   font-family: Unbounded-Medium;
   line-height: 1.2;
-  white-space: nowrap;
-}
-
-.catalogSearchSizer {
-  visibility: hidden;
-  pointer-events: none;
-  padding: 0 1px;
+  letter-spacing: normal;
 }
 
 .catalogSearchInput {
-  width: 100%;
+  /* рівно як «Поиск модели и вкуса» / PL — не росте від вводу */
+  width: var(--catalog-search-text-width, 12ch);
+  flex: 0 0 auto;
   min-width: 0;
-  box-sizing: border-box;
+  max-width: 100%;
+  box-sizing: content-box;
   height: 100%;
   min-height: 20px;
   padding: 0;
+  margin: 0;
   border: none;
   border-radius: 0;
   background: transparent;
   color: #fff;
+  font-size: 12px;
+  font-family: Unbounded-Medium;
+  line-height: 1.2;
+  letter-spacing: normal;
   outline: none;
   box-shadow: none;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -666,7 +665,9 @@ body {
   color: rgba(255, 255, 255, 0.55);
   font-family: Unbounded-Medium;
   font-size: 12px;
+  letter-spacing: normal;
   white-space: nowrap;
+  opacity: 1;
 }
 
 .catalogSearchField:focus-within {
@@ -4072,8 +4073,8 @@ body {
   .catalogSearchField {
     height: 35px;
     min-height: 35px;
-    gap: 5px;
-    padding: 0 6px 0 5px;
+    gap: 6px;
+    padding: 0 9px 0 7px;
     border-radius: 12px;
   }
 
