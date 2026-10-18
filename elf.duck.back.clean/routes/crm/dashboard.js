@@ -1,6 +1,5 @@
 import express from "express";
 import {
-  loadFirstSales,
   buildMetrics,
   buildProductPerformance,
   buildLocationPerformance,
@@ -37,9 +36,6 @@ router.get(
 
         let currentCanceled = 0;
         let previousCanceled = 0;
-
-        const firstSalesPromise =
-        loadFirstSales();
 
         if (range.key === "all") {
         [
@@ -85,9 +81,6 @@ router.get(
         ]);
         }
 
-        const firstSales =
-        await firstSalesPromise;
-
         // Історія лише по клієнтах періоду (повна історія = 502 / timeout).
         // Для «всё время» currentOrders уже вся історія продажів.
         let salesHistory;
@@ -108,17 +101,23 @@ router.get(
           salesHistory = historyIds.size
             ? await loadSalesHistory(range.to, {
                 telegramIds: [...historyIds],
+                slimItems: true,
               })
             : [];
         }
 
-        const firstSaleByUser =
-        new Map(
-            firstSales.map((row) => [
-            String(row?._id || ""),
-            new Date(row.firstSaleAt),
-            ])
-        );
+        // firstSale з історії клієнтів періоду — без повного scan loadFirstSales (~30s+)
+        const firstSaleByUser = new Map();
+        for (const order of salesHistory || []) {
+          const tgId = String(order?.userTelegramId || "").trim();
+          if (!tgId || !order?.crmSaleDate) continue;
+          const saleAt = new Date(order.crmSaleDate);
+          if (Number.isNaN(saleAt.getTime())) continue;
+          const prev = firstSaleByUser.get(tgId);
+          if (!prev || saleAt < prev) {
+            firstSaleByUser.set(tgId, saleAt);
+          }
+        }
 
         const current =
         buildMetrics(

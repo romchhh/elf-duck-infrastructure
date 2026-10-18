@@ -269,7 +269,10 @@ export async function applyOrderCashback(order) {
   });
 
   if (!freshOrder) return { applied: false, cashbackZl: 0, percent: 0 };
-  await markReferralFirstOrderDoneIfNeeded(freshOrder.userTelegramId);
+  await markReferralFirstOrderDoneIfNeeded(
+    freshOrder.userTelegramId,
+    freshOrder
+  );
 
   // защита от повторного начисления
   if (freshOrder.cashbackAppliedAt) {
@@ -1196,6 +1199,17 @@ export async function changePickupOrderStatusByManager(
 
     await refundOrderCashback(order);
 
+    try {
+      await clearReferralFirstOrderDoneIfNoPurchase(
+        order?.userTelegramId
+      );
+    } catch (e) {
+      console.error(
+        "cancel clearReferralFirstOrderDoneIfNoPurchase error:",
+        e
+      );
+    }
+
     const fresh =
       await Order.findById(
         order._id
@@ -1572,6 +1586,17 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
       console.error(
         "annulOrderBecauseNoPaymentConfirm refundOrderCashback error:",
         refundErr
+      );
+    }
+
+    try {
+      await clearReferralFirstOrderDoneIfNoPurchase(
+        freshOrder?.userTelegramId
+      );
+    } catch (e) {
+      console.error(
+        "annul clearReferralFirstOrderDoneIfNoPurchase error:",
+        e
       );
     }
 

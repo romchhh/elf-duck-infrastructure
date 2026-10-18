@@ -234,9 +234,10 @@ app.post("/referral/claim", async (req, res) => {
 
     const paidOrderTelegramIds = await Order.distinct("userTelegramId", {
       userTelegramId: { $in: memberIds },
+      status: { $nin: ["canceled", "annulled"] },
       $or: [
         { "payment.status": "paid" },
-        { status: { $in: ["processing", "done"] } },
+        { status: { $in: ["processing", "done", "completed", "shipped"] } },
       ],
     });
 
@@ -246,8 +247,7 @@ app.post("/referral/claim", async (req, res) => {
 
     const members = memberIds.map((tgId) => {
       const refUser = referredById.get(tgId);
-      const completed =
-        Boolean(refUser?.referral?.firstOrderDoneAt) || paidSet.has(tgId);
+      const completed = paidSet.has(tgId);
 
       return {
         telegramId: tgId,

@@ -202,7 +202,8 @@ export async function buildSalesByCustomerMap(
 /**
  * Історія завершених продажів до `to`.
  * options.telegramIds — обмежити клієнтами (дашборд: лише хто купив у періоді).
- * Без цього фільтра тягне ВСЮ історію → 502 на CRM dashboard.
+ * options.slimItems — без важких полів смаків (дашборд ~10× швидше).
+ * Без telegramIds тягне ВСЮ історію → 502 на CRM dashboard.
  */
 export async function loadSalesHistory(to, options = {}) {
   const telegramIds = Array.isArray(options?.telegramIds)
@@ -235,7 +236,38 @@ export async function loadSalesHistory(to, options = {}) {
     dateMatch.crmSaleDate.$gte = options.from;
   }
 
-  return Order.aggregate([
+  const slimItems = Boolean(options?.slimItems);
+  const projectStage = slimItems
+    ? {
+        userTelegramId: 1,
+        totalZl: 1,
+        crmSaleDate: 1,
+        deliveryType: 1,
+        deliveryMethod: 1,
+        pickupPointId: 1,
+        items: {
+          $map: {
+            input: { $ifNull: ["$items", []] },
+            as: "it",
+            in: {
+              productKey: "$$it.productKey",
+              productId: "$$it.productId",
+            },
+          },
+        },
+      }
+    : {
+        userTelegramId: 1,
+        totalZl: 1,
+        payment: 1,
+        crmSaleDate: 1,
+        items: 1,
+        deliveryType: 1,
+        deliveryMethod: 1,
+        pickupPointId: 1,
+      };
+
+  const rows = await Order.aggregate([
     {
       $match: matchStage,
     },
@@ -252,25 +284,21 @@ export async function loadSalesHistory(to, options = {}) {
     },
 
     {
-    $project: {
-        userTelegramId: 1,
-        totalZl: 1,
-        payment: 1,
-        crmSaleDate: 1,
-        items: 1,
-        deliveryType: 1,
-        deliveryMethod: 1,
-        pickupPointId: 1,
-    },
-    },
-
-    {
-      $sort: {
-        userTelegramId: 1,
-        crmSaleDate: 1,
-      },
+      $project: projectStage,
     },
   ]).option({ allowDiskUse: true });
+
+  rows.sort((a, b) => {
+    const ua = String(a?.userTelegramId || "");
+    const ub = String(b?.userTelegramId || "");
+    if (ua !== ub) return ua.localeCompare(ub);
+    return (
+      new Date(a?.crmSaleDate || 0).getTime() -
+      new Date(b?.crmSaleDate || 0).getTime()
+    );
+  });
+
+  return rows;
 }
 
 export async function loadCanceledCount(from, to) {

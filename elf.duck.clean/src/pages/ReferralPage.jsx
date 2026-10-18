@@ -297,9 +297,16 @@ const claimReferralReward = async (targetGroup = null) => {
             selectedGroup ||
             groups.find(
                 (group) =>
+                    group?.isClaimable === true &&
+                    group?.isClaimed !== true &&
+                    group?.rewardClaimed !== true
+            ) ||
+            groups.find(
+                (group) =>
                     Array.isArray(group?.members) &&
                     group.members.length > 0 &&
-                    group?.isClaimed !== true
+                    group?.isClaimed !== true &&
+                    group?.rewardClaimed !== true
             ) ||
             null;
 

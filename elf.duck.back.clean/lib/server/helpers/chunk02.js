@@ -84,9 +84,110 @@ export function getReferralDisplayName(user) {
   return String(user.telegramId || "Пользователь");
 }
 
-export async function markReferralFirstOrderDoneIfNeeded(telegramId) {
+/** Замовлення рахується як перша покупка для рефералки (не canceled/annulled). */
+export function orderCountsAsReferralFirstPurchase(order) {
+  if (!order) return false;
+  const status = String(order?.status || "")
+    .trim()
+    .toLowerCase();
+  if (status === "canceled" || status === "annulled") return false;
+
+  const pay = String(order?.payment?.status || "")
+    .trim()
+    .toLowerCase();
+  if (pay === "paid") return true;
+
+  return ["completed", "done", "processing", "shipped"].includes(status);
+}
+
+export function referralQualifyingOrderMongoFilter(telegramId) {
+  return {
+    userTelegramId: String(telegramId || "").trim(),
+    status: { $nin: ["canceled", "annulled"] },
+    $or: [
+      { "payment.status": "paid" },
+      { status: { $in: ["processing", "done", "completed", "shipped"] } },
+    ],
+  };
+}
+
+/** Особисте повідомлення інвайтеру: бонус 25 zł можна забрати в кабінеті. */
+export async function notifyInviterReferralBonusReady(referredUser) {
+  const inviterId = String(
+    referredUser?.referral?.invitedByTelegramId || ""
+  ).trim();
+  if (!inviterId) return false;
+
+  const inviter = await User.findOne(
+    { telegramId: inviterId },
+    { telegramId: 1, shopBotIndex: 1, shopBotKnown: 1 }
+  ).lean();
+
+  const refLabel = getReferralDisplayName(referredUser);
+  const text = [
+    "🎁 <b>Реферальный бонус готов!</b>",
+    "",
+    `Ваш реферал <b>${String(refLabel || "друг")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")}</b> совершил покупку.`,
+    "",
+    "Заберите бонус за реферала в кабинете — <b>25 zł</b> на баланс.",
+  ].join("\n");
+
+  const webAppBase = String(
+    process.env.WEBAPP_URL || process.env.APP_URL || ""
+  )
+    .trim()
+    .replace(/\/$/, "");
+
+  const extra = {
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+  };
+
+  if (webAppBase) {
+    extra.reply_markup = {
+      inline_keyboard: [
+        [
+          {
+            text: "Забрать бонус в кабинете",
+            web_app: { url: `${webAppBase}/referral` },
+          },
+        ],
+      ],
+    };
+  }
+
+  try {
+    if (typeof sendClientTelegramMessage !== "function") {
+      return false;
+    }
+    await sendClientTelegramMessage(inviterId, text, extra, {
+      user: inviter || { telegramId: inviterId },
+    });
+    return true;
+  } catch (e) {
+    console.error("notifyInviterReferralBonusReady error:", e);
+    return false;
+  }
+}
+
+export async function markReferralFirstOrderDoneIfNeeded(telegramId, order = null) {
   const safeTelegramId = String(telegramId || "").trim();
   if (!safeTelegramId) return false;
+
+  // Без реального виконаного/оплаченого замовлення прапорець не ставимо
+  // (інакше після cancel реферал «світиться» як completed).
+  if (order && !orderCountsAsReferralFirstPurchase(order)) {
+    return false;
+  }
+  if (!order) {
+    const exists = await Order.exists(
+      referralQualifyingOrderMongoFilter(safeTelegramId)
+    );
+    if (!exists) return false;
+  }
 
   const referredUser = await User.findOne({ telegramId: safeTelegramId });
   if (!referredUser) return false;
@@ -98,8 +199,42 @@ export async function markReferralFirstOrderDoneIfNeeded(telegramId) {
 
   referredUser.referral = referredUser.referral || {};
   referredUser.referral.firstOrderDoneAt = new Date();
+  if (typeof referredUser.markModified === "function") {
+    referredUser.markModified("referral");
+  }
   await referredUser.save();
 
+  // Не блокуємо нарахування прапорця, якщо Telegram недоступний
+  try {
+    await notifyInviterReferralBonusReady(referredUser);
+  } catch (e) {
+    console.error(
+      "markReferralFirstOrderDoneIfNeeded notify inviter error:",
+      e
+    );
+  }
+
+  return true;
+}
+
+/** Після cancel/annul — зняти firstOrderDoneAt, якщо валідних покупок більше немає. */
+export async function clearReferralFirstOrderDoneIfNoPurchase(telegramId) {
+  const safeTelegramId = String(telegramId || "").trim();
+  if (!safeTelegramId) return false;
+
+  const stillHas = await Order.exists(
+    referralQualifyingOrderMongoFilter(safeTelegramId)
+  );
+  if (stillHas) return false;
+
+  const referredUser = await User.findOne({ telegramId: safeTelegramId });
+  if (!referredUser?.referral?.firstOrderDoneAt) return false;
+
+  referredUser.referral.firstOrderDoneAt = null;
+  if (typeof referredUser.markModified === "function") {
+    referredUser.markModified("referral");
+  }
+  await referredUser.save();
   return true;
 }
 
@@ -136,9 +271,10 @@ export async function buildReferralStatusForUser(ownerUser) {
   const paidOrderTelegramIds = memberIds.length
     ? await Order.distinct("userTelegramId", {
         userTelegramId: { $in: memberIds },
+        status: { $nin: ["canceled", "annulled"] },
         $or: [
           { "payment.status": "paid" },
-          { status: { $in: ["processing", "done"] } },
+          { status: { $in: ["processing", "done", "completed", "shipped"] } },
         ],
       })
     : [];
@@ -149,8 +285,8 @@ export async function buildReferralStatusForUser(ownerUser) {
     const members = (Array.isArray(group?.memberTelegramIds) ? group.memberTelegramIds : []).map((tgId) => {
       const safeTgId = String(tgId || "");
       const refUser = referredById.get(safeTgId);
-      const hasConfirmedFirstPurchase =
-        Boolean(refUser?.referral?.firstOrderDoneAt) || paidSet.has(safeTgId);
+      // Лише реальна покупка в Mongo — не довіряємо «залиплому» firstOrderDoneAt після cancel
+      const hasConfirmedFirstPurchase = paidSet.has(safeTgId);
 
       return {
         telegramId: safeTgId,
