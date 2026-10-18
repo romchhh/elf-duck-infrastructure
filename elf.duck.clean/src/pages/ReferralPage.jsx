@@ -1278,8 +1278,7 @@ const claimReferralReward = async (targetGroup = null) => {
                             </div>
                         ) : (
                         <>
-                        <div className="refClaimPanel">
-                            <div className="refListCard refClaimPanelCard">
+                            <div className="refListCard">
                                 <div className="refListCardTitle">
                                     {t("ПОЛУЧЕНИЕ", "ODBIERANIE")}{" "}
                                     <span className="refAccent">{t("НАГРАД", "NAGRÓD")}</span>
@@ -1345,7 +1344,6 @@ const claimReferralReward = async (targetGroup = null) => {
                                     </>
                                 )}
                             </div>
-                        </div>
 
                         <div className={`sectionReferralSubTitle reveal delay-3 ${mounted ? "visible" : ""}`}>
                             <span className="sectionReferralLine" />

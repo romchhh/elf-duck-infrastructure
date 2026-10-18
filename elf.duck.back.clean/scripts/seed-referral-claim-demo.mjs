@@ -3,6 +3,7 @@
  *
  *   node scripts/seed-referral-claim-demo.mjs
  *   node scripts/seed-referral-claim-demo.mjs --inviter 7119952932
+ *   node scripts/seed-referral-claim-demo.mjs --db test
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -65,15 +66,27 @@ function arg(name, fallback = "") {
 
 const INVITER_TG = arg("--inviter", "7119952932");
 const TEST_INVITEE_TG = arg("--invitee", "79997119952");
-const DEMO_ORDER_NO = "ED-REFDEMO711";
+const DEFAULT_DB = "test";
+const DEMO_ORDER_NO = `ED-REFDEMO${String(TEST_INVITEE_TG).slice(-6)}`;
+
+function resolveMongoUri(rawUri, dbName = "") {
+  const uri = String(rawUri || "").trim();
+  const targetDb = String(dbName || process.env.MONGODB_DB_NAME || "").trim();
+  if (!uri || !targetDb) return uri;
+  if (/\/[^/?]+(\?|$)/.test(uri)) {
+    return uri.replace(/(mongodb(?:\+srv)?:\/\/[^/]+)\/[^?]+/, `$1/${targetDb}`);
+  }
+  return `${uri.replace(/\/?$/, "")}/${targetDb}`;
+}
 
 async function main() {
-  const uri = String(process.env.MONGODB_URI || "").trim();
-  if (!uri) {
+  const baseUri = String(process.env.MONGODB_URI || "").trim();
+  if (!baseUri) {
     console.error("MONGODB_URI missing");
     process.exit(1);
   }
 
+  const uri = resolveMongoUri(baseUri, arg("--db", DEFAULT_DB));
   await mongoose.connect(uri);
   console.log("db:", mongoose.connection.db.databaseName);
 

@@ -1650,32 +1650,25 @@ body {
   pointer-events: none;
 }
 
-.refClaimPanel {
-  width: 100%;
-  padding: 0 18px;
-  box-sizing: border-box;
-}
-
-.refClaimPanelCard {
-  margin-bottom: 4px;
-}
-
 .refClaimList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-top: 6px;
+  width: 100%;
 }
 
 .refClaimRow {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px 14px;
   border-radius: 14px;
   background: rgba(83, 255, 67, 0.08);
   border: 1px solid rgba(83, 255, 67, 0.22);
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .refClaimRowText {
@@ -1706,8 +1699,8 @@ body {
 }
 
 .refListActionBtnReady {
-  width: auto;
-  min-width: 88px;
+  width: 100%;
+  min-width: 0;
   flex-shrink: 0;
   background: rgba(83, 255, 67, 0.55);
   color: #fff;
