@@ -132,15 +132,23 @@ app.post("/tg/prepared-referral-message", async (req, res) => {
     // Твой баннер/картинка для карточки
     const photo = "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeifdnnsv4ddcjyorb3xrf6fvzi4yyqizuhhpomv7aew4j7oodfsg3q";
 
-    const caption =
-      `🦆 ELF DUCK\n\n` +
-      `💸 Wejdź z mojego linku — masz 10% zniżki na pierwsze zamówienie (min. 65 zł)!\n` +
-      `🎁 A ja dostaję 25 zł na saldo, gdy zrobisz zakup.`;
+    const langRaw = String(b.language || b.lang || "").trim().toLowerCase();
+    const isPl = langRaw === "pl" || langRaw.startsWith("pl");
+
+    const caption = isPl
+      ? `🦆 ELF DUCK\n\n` +
+        `💸 Wejdź z mojego linku — masz 10% zniżki na pierwsze zamówienie (min. 65 zł)!\n` +
+        `🎁 A ja dostaję 25 zł na saldo, gdy zrobisz zakup.`
+      : `🦆 ELF DUCK\n\n` +
+        `💸 Залетай по моей ссылке — 10% скидки на первый заказ (от 65 zł)!\n` +
+        `🎁 А я получаю 25 zł на баланс, когда ты сделаешь покупку.`;
+
+    const buttonText = isPl ? "Odbierz bonus" : "Получить бонус";
 
     // Уникальный id для inline-result (обязателен)
     const resultId = crypto
       .createHash("sha256")
-      .update(`${userId}|${startParam}|${photo}`)
+      .update(`${userId}|${startParam}|${photo}|${isPl ? "pl" : "ru"}`)
       .digest("hex")
       .slice(0, 32);
 
@@ -156,7 +164,7 @@ app.post("/tg/prepared-referral-message", async (req, res) => {
         inline_keyboard: [
           [
             {
-              text: "Получить бонус",
+              text: buttonText,
               url: deepLink,
             },
           ],

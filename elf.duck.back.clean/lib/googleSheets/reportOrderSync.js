@@ -95,22 +95,28 @@ async function syncOrderReportItems(order, { direction, dryRun = false }) {
 
   const discountsDeltaZl = sign * Number(getOrderSheetsDiscountTotalZl(order) || 0);
   const scaledTierDeltas = {};
+  let soldUnitsDelta = 0;
   for (const [key, value] of Object.entries(tierDeltas)) {
-    scaledTierDeltas[key] = sign * Number(value || 0);
+    const n = sign * Number(value || 0);
+    scaledTierDeltas[key] = n;
+    soldUnitsDelta += Number(value || 0);
   }
+  soldUnitsDelta = sign * soldUnitsDelta;
 
   const hasTierMovement = Object.values(scaledTierDeltas).some((v) => v !== 0);
   const hasDiscounts = discountsDeltaZl !== 0;
+  const hasSoldUnits = soldUnitsDelta !== 0;
 
   let dayKassa = { ok: true, skipped: true };
   let monthItogo = { ok: true, skipped: true };
 
-  if (hasTierMovement || hasDiscounts) {
+  if (hasTierMovement || hasDiscounts || hasSoldUnits) {
     dayKassa = await applyDayBlockTotalsDelta({
       spreadsheetId,
       tabTitle,
       dayKey,
       discountsDeltaZl,
+      soldUnitsDelta,
       tierDeltas: scaledTierDeltas,
       dryRun,
     });
@@ -120,6 +126,7 @@ async function syncOrderReportItems(order, { direction, dryRun = false }) {
       tabTitle,
       dayKey,
       discountsDeltaZl,
+      soldUnitsDelta,
       tierDeltas: scaledTierDeltas,
       dryRun,
     });

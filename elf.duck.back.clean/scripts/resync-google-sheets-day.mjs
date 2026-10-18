@@ -1,12 +1,6 @@
 /**
- * Перезапис tiers + СКИДКИ за день (як вечірній sync), без зміни БЫЛО/СТАЛО/ПРОДАНО/КАССА zł.
- * Не інкрементує місячний ІТОГО (skipMonthRollup) — лише денний блок.
- *
- * Після деплою (прод Mongo):
- *   node scripts/resync-google-sheets-day.mjs --point r-dmie-cie --day 2026-10-05 --dry-run
- *   node scripts/resync-google-sheets-day.mjs --point r-dmie-cie --day 2026-10-05
- *
- * Чеклист: tier-колонки моделей + штуки в рядку КАССА + СКИДКИ; асортимент не чіпається.
+ * Перезапис tiers моделей + у рядку КАССА загальна ПРОДАНО + СКИДКИ.
+ * Без 1шт/2шт/… у рядку КАССА; без БЫЛО/СТАЛО/КАССА zł; без місячного ІТОГО.
  */
 import dotenv from "dotenv";
 import path from "path";

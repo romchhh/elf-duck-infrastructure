@@ -41,11 +41,6 @@ router.get(
         const firstSalesPromise =
         loadFirstSales();
 
-        const salesHistoryPromise =
-        loadSalesHistory(
-            range.to
-        );
-
         if (range.key === "all") {
         [
             currentOrders,
@@ -93,8 +88,29 @@ router.get(
         const firstSales =
         await firstSalesPromise;
 
-        const salesHistory =
-        await salesHistoryPromise;
+        // Історія лише по клієнтах періоду (повна історія = 502 / timeout).
+        // Для «всё время» currentOrders уже вся історія продажів.
+        let salesHistory;
+        if (range.key === "all") {
+          salesHistory = currentOrders;
+        } else {
+          const historyIds = new Set();
+          for (const order of [
+            ...(currentOrders || []),
+            ...(previousOrders || []),
+          ]) {
+            const tgId = String(
+              order?.userTelegramId || ""
+            ).trim();
+            if (tgId) historyIds.add(tgId);
+          }
+
+          salesHistory = historyIds.size
+            ? await loadSalesHistory(range.to, {
+                telegramIds: [...historyIds],
+              })
+            : [];
+        }
 
         const firstSaleByUser =
         new Map(

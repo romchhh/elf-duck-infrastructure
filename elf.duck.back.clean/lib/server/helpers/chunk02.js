@@ -250,7 +250,8 @@ export function verifyTelegramWebAppInitDataWithToken(initDataRaw, botToken) {
     const user = JSON.parse(params.get("user") || "{}");
     const telegramId = String(user?.id || "").trim();
     if (!telegramId) return null;
-    return { telegramId, user, botToken: safeToken };
+    const startParam = String(params.get("start_param") || "").trim() || null;
+    return { telegramId, user, botToken: safeToken, startParam };
   } catch {
     return null;
   }

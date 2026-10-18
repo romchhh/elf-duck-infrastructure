@@ -184,7 +184,7 @@ const ReferralPage = () => {
     const deepLink =
       status?.inviteDeepLink ||
       (status?.shopBotUsername && refCode
-        ? `https://t.me/${status.shopBotUsername}?startapp=${encodeURIComponent(`ref_${refCode}`)}`
+        ? `https://t.me/${status.shopBotUsername}?start=${encodeURIComponent(`ref_${refCode}`)}`
         : "");
 
     // 1) Пытаемся сделать prepared share (как Gorilla Case)
@@ -192,7 +192,10 @@ const ReferralPage = () => {
         try {
         const data = await apiFetch(`/tg/prepared-referral-message`, {
             method: "POST",
-            body: JSON.stringify({ refCode }),
+            body: JSON.stringify({
+                refCode,
+                language: getCurrentLanguage(),
+            }),
         });
 
         console.log("prepared response:", data);
@@ -233,8 +236,8 @@ const ReferralPage = () => {
     }
 
     const text = `🦆 ELF DUCK\n${t(
-        "Залетай по моей ссылке — 10% на первый заказ от 65 zł 👇",
-        "Wejdź z mojego linku — 10% na pierwsze zamówienie od 65 zł 👇"
+        "Залетай по моей ссылке — 10% скидки на первый заказ (от 65 zł)!\nА я получаю 25 zł на баланс, когда ты сделаешь покупку. 👇",
+        "Wejdź z mojego linku — masz 10% zniżki na pierwsze zamówienie (min. 65 zł)!\nA ja dostaję 25 zł na saldo, gdy zrobisz zakup. 👇"
     )}`;
     const shareLink = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(text)}`;
 

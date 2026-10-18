@@ -150,6 +150,15 @@ const getOrderCardDuck = (order = {}) => {
   return "";
 };
 
+const isWolaOrderPoint = (order = {}) => {
+  const point = getOrderPickupPoint(order);
+  const key = String(point?.key || order?.pickupPointKey || order?.pickupPoint?.key || "")
+    .trim()
+    .toLowerCase();
+  if (key.includes("wola")) return true;
+  return getOrderVisualBlob(order).includes("wola");
+};
+
 useEffect(() => {
   let alive = true;
 
@@ -2200,7 +2209,7 @@ useEffect(() => {
                         : t("ПОЛУЧИТЬ РЕКВИЗИТЫ", "POBIERZ DANE")}
                     </button>
 
-                    {paymentMethod === "blik" && (
+                    {paymentMethod === "blik" && !isWolaOrderPoint(activePaymentOrder) && (
                     <div className="paymentBlikNotice" role="note">
                         <div className="paymentBlikNoticeTitle">
                             {t(
@@ -2220,12 +2229,6 @@ useEffect(() => {
                                 <span className="paymentBlikNoticeKey">Imię</span>
                                 {": "}
                                 <span className="paymentBlikNoticeValue">Dmytro</span>
-                            </div>
-                            <div className="paymentBlikNoticeFoot">
-                                {t(
-                                    "В имя можете написать как вы хотите себя назвать",
-                                    "W Imię możesz wpisać dowolne imię, jak chcesz się nazwać"
-                                )}
                             </div>
                         </div>
                     </div>

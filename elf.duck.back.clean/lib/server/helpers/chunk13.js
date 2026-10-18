@@ -109,6 +109,9 @@ export async function attachReferralIfAny(user, normalizedRef) {
 
   user.referral.usedCode = safeRef;
   user.referral.invitedByTelegramId = String(inviter.telegramId || "");
+  if (typeof user.markModified === "function") {
+    user.markModified("referral");
+  }
 
   const addedToGroup = attachReferralToRewardGroup(inviter, user.telegramId);
   if (addedToGroup) {

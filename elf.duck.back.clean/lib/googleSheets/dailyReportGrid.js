@@ -7,8 +7,6 @@ import {
   computeBotSheetDelta,
   dayKassaSnapshotKey,
   dayModelTierSnapshotKey,
-  monthItogoSnapshotKey,
-  monthModelTierSnapshotKey,
   recordPerOrderBotSheetIncrement,
 } from "./dayReportBotSnapshot.js";
 import { normalizeSheetModelName, toReportModelLabel } from "./normalize.js";
@@ -265,191 +263,35 @@ const TIER_COL_OFFSET = {
   tier5: 7,
 };
 
+/** Денний блок: колонка «ПРОДАНО» (загальна кількість). */
+const DAY_SOLD_COL_OFFSET = 3;
+
 export async function loadMonthlyReport(spreadsheetId, tabTitle) {
   const range = `${escapeSheetTitle(tabTitle)}!A1:ZZ650`;
   return readSheetValues(spreadsheetId, range);
 }
 
 /** Місячний блок моделі: лише tier (1/2/3-4/5 шт). БЫЛО/СТАЛО/ПРОДАНО — формули в таблиці. */
-function buildMonthSummaryModelUpdates({
-  tabTitle,
-  rows,
-  section,
-  modelRow,
-  soldQty,
-  tierKey,
-}) {
-  const updates = [];
-  const { rightStartCol } = section;
-
-  const rightTierCol =
-    rightStartCol + (MONTH_RIGHT_COL[tierKey] ?? MONTH_RIGHT_COL.tier1);
-  const prevRightTier = parseNumberCell(rows[modelRow]?.[rightTierCol]);
-
-  updates.push({
-    range: `${escapeSheetTitle(tabTitle)}!${colToA1(rightTierCol)}${modelRow + 1}`,
-    values: [[Math.max(0, prevRightTier + soldQty)]],
-  });
-
-  return updates;
+/**
+ * Місячний підсумок (MODEL / КАССА / ЗАРПЛАТА / ПРОДАНО / tiers / СКИДКИ / ІТОГО)
+ * у таблиці заповнюється формулами — бот туди більше не пише.
+ */
+export async function applyMonthSummaryTiersFromProductRows() {
+  return { ok: true, updates: 0, skipped: true, reason: "MONTH_SUMMARY_FORMULAS" };
 }
 
-const MONTH_TIER_KEYS = ["tier1", "tier2", "tier34", "tier5"];
-
-/** Вечірній rollup: місячні tier-колонки по моделях (інкремент з aggregates дня). */
-export async function applyMonthSummaryTiersFromProductRows({
-  spreadsheetId,
-  tabTitle,
-  dayKey,
-  productRows,
-  dryRun = false,
-}) {
-  const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
-  if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
-
-  const section = findMonthSummarySection(rows, dayKey);
-  if (!section) return { ok: false, reason: "MONTH_SUMMARY_NOT_FOUND" };
-
-  const updates = [];
-
-  for (const product of productRows || []) {
-    const label = toReportModelLabel(product.model);
-    const modelRow = findMonthSummaryModelRow(rows, section, label);
-    if (modelRow < 0) continue;
-
-    for (const tierKey of MONTH_TIER_KEYS) {
-      const mongoTotal = Number(product[tierKey] || 0);
-      if (mongoTotal <= 0) continue;
-
-      const rightTierCol =
-        section.rightStartCol + (MONTH_RIGHT_COL[tierKey] ?? MONTH_RIGHT_COL.tier1);
-      const prevCell = parseNumberCell(rows[modelRow]?.[rightTierCol]);
-
-      const { delta } = await computeBotSheetDelta({
-        spreadsheetId,
-        dayKey,
-        snapshotKey: monthModelTierSnapshotKey(label, tierKey),
-        mongoTotalQty: mongoTotal,
-        prevCellQty: prevCell,
-        persist: !dryRun,
-      });
-
-      if (delta <= 0) continue;
-
-      updates.push(
-        ...buildMonthSummaryModelUpdates({
-          tabTitle,
-          rows,
-          section,
-          modelRow,
-          soldQty: delta,
-          tierKey,
-        })
-      );
-    }
-  }
-
-  if (!updates.length) {
-    return { ok: true, updates: 0, skipped: true };
-  }
-
-  if (dryRun) {
-    return { ok: true, dryRun: true, updates: updates.length };
-  }
-
-  await batchUpdateValues(spreadsheetId, updates);
-  return { ok: true, updates: updates.length };
+/**
+ * Рядок ІТОГО місячного блоку — формули в Google Sheets, бот не пише.
+ */
+export async function applyMonthItogoDelta() {
+  return { ok: true, updates: 0, skipped: true, reason: "MONTH_ITOGO_FORMULAS" };
 }
 
-/** ІТОГО: лише tiers + СКИДКИ. КАССА / ЗАРПЛАТА / ПРОДАНО — формули в таблиці. */
-export async function applyMonthItogoDelta({
-  spreadsheetId,
-  tabTitle,
-  dayKey,
-  kasaDeltaZl = 0,
-  discountsDeltaZl = 0,
-  soldUnitsDelta = 0,
-  tierDeltas = {},
-  dryRun = false,
-  /** Вечірній sync: tierDeltas/discounts — підсумки з Mongo, додаємо лише різницю. */
-  syncMongoTotals = false,
-}) {
-  // kasaDeltaZl / soldUnitsDelta залишені в сигнатурі для сумісності викликів — не пишемо в sheet
-  void kasaDeltaZl;
-  void soldUnitsDelta;
-
-  const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
-  if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
-
-  const section = findMonthSummarySection(rows, dayKey);
-  if (!section) return { ok: false, reason: "MONTH_SUMMARY_NOT_FOUND" };
-
-  const itogoRow = findMonthItogoRow(rows, section);
-  if (itogoRow < 0) return { ok: false, reason: "ITOGO_ROW_NOT_FOUND" };
-
-  const base = section.rightStartCol;
-  const updates = [];
-
-  for (const [tierKey, rawDelta] of Object.entries(tierDeltas)) {
-    if (!Object.prototype.hasOwnProperty.call(MONTH_RIGHT_COL, tierKey)) continue;
-    if (tierKey === "sold" || tierKey === "discounts" || tierKey === "model") continue;
-    const col = base + MONTH_RIGHT_COL[tierKey];
-    const prev = parseNumberCell(rows[itogoRow]?.[col]);
-
-    let addQty = Number(rawDelta || 0);
-    if (syncMongoTotals) {
-      const { delta } = await computeBotSheetDelta({
-        spreadsheetId,
-        dayKey,
-        snapshotKey: monthItogoSnapshotKey(tierKey),
-        mongoTotalQty: addQty,
-        prevCellQty: prev,
-        persist: !dryRun,
-      });
-      addQty = delta;
-    }
-
-    if (addQty === 0) continue;
-
-    updates.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(col)}${itogoRow + 1}`,
-      values: [[Math.max(0, prev + addQty)]],
-    });
-  }
-
-  const discCol = base + MONTH_RIGHT_COL.discounts;
-  const prevDisc = parseNumberCell(rows[itogoRow]?.[discCol]);
-  let addDisc = Number(discountsDeltaZl || 0);
-  if (syncMongoTotals) {
-    const { delta } = await computeBotSheetDelta({
-      spreadsheetId,
-      dayKey,
-      snapshotKey: monthItogoSnapshotKey("discounts"),
-      mongoTotalQty: addDisc,
-      prevCellQty: prevDisc,
-      persist: !dryRun,
-    });
-    addDisc = delta;
-  }
-
-  if (addDisc !== 0) {
-    updates.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(discCol)}${itogoRow + 1}`,
-      values: [[Math.max(0, Number((prevDisc + addDisc).toFixed(2)))]],
-    });
-  }
-
-  if (dryRun) {
-    return { ok: true, dryRun: true, updates: updates.length };
-  }
-
-  if (updates.length) {
-    await batchUpdateValues(spreadsheetId, updates);
-  }
-  return { ok: true, updates: updates.length };
-}
-
-/** Денний рядок КАССА: лише tiers + СКИДКИ (каса/продано — формули). */
+/**
+ * Денний рядок КАССА: лише загальна ПРОДАНО + СКИДКИ.
+ * 1шт / 2шт / 3–4шт / 5шт+ у цьому рядку не пишемо (формули або порожньо).
+ * КАССА zł — формула в таблиці.
+ */
 export async function applyDayBlockTotalsDelta({
   spreadsheetId,
   tabTitle,
@@ -461,7 +303,7 @@ export async function applyDayBlockTotalsDelta({
   dryRun = false,
 }) {
   void kasaDeltaZl;
-  void soldUnitsDelta;
+  void tierDeltas;
 
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
   const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
@@ -474,31 +316,37 @@ export async function applyDayBlockTotalsDelta({
   if (kassaRow < 0) return { ok: false, reason: "DAY_KASSA_ROW_NOT_FOUND" };
 
   const base = block.blockStart;
-  const prevDisc = parseNumberCell(rows[kassaRow]?.[base + 8]);
+  const updates = [];
 
-  const updates = [
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(base + 8)}${kassaRow + 1}`,
-      values: [[Math.max(0, Number((prevDisc + discountsDeltaZl).toFixed(2)))]],
-    },
-  ];
-
-  for (const [tierKey, delta] of Object.entries(tierDeltas)) {
-    if (!Object.prototype.hasOwnProperty.call(TIER_COL_OFFSET, tierKey)) continue;
-    const col = base + TIER_COL_OFFSET[tierKey];
-    const prev = parseNumberCell(rows[kassaRow]?.[col]);
+  const soldAdd = Number(soldUnitsDelta || 0);
+  if (soldAdd !== 0) {
+    const soldCol = base + DAY_SOLD_COL_OFFSET;
+    const prevSold = parseNumberCell(rows[kassaRow]?.[soldCol]);
     updates.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(col)}${kassaRow + 1}`,
-      values: [[Math.max(0, prev + Number(delta || 0))]],
+      range: `${escapeSheetTitle(tabTitle)}!${colToA1(soldCol)}${kassaRow + 1}`,
+      values: [[Math.max(0, prevSold + soldAdd)]],
     });
   }
 
+  const discAdd = Number(discountsDeltaZl || 0);
+  if (discAdd !== 0) {
+    const prevDisc = parseNumberCell(rows[kassaRow]?.[base + 8]);
+    updates.push({
+      range: `${escapeSheetTitle(tabTitle)}!${colToA1(base + 8)}${kassaRow + 1}`,
+      values: [[Math.max(0, Number((prevDisc + discAdd).toFixed(2)))]],
+    });
+  }
+
+  if (!updates.length) {
+    return { ok: true, skipped: true, kassaRow: kassaRow + 1 };
+  }
+
   if (dryRun) {
-    return { ok: true, dryRun: true, kassaRow: kassaRow + 1 };
+    return { ok: true, dryRun: true, kassaRow: kassaRow + 1, updates: updates.length };
   }
 
   await batchUpdateValues(spreadsheetId, updates);
-  return { ok: true };
+  return { ok: true, updates: updates.length };
 }
 
 /** Денна модель: лише колонка tier (1/2/3-4/5 шт). БЫЛО/СТАЛО/ПРОДАНО — формули. */
@@ -540,28 +388,6 @@ export async function applyReportModelDelta({
     },
   ];
 
-  const monthSection = findMonthSummarySection(rows, dayKey);
-  if (monthSection) {
-    const monthModelRow = findMonthSummaryModelRow(
-      rows,
-      monthSection,
-      reportModelLabel
-    );
-
-    if (monthModelRow >= 0) {
-      updates.push(
-        ...buildMonthSummaryModelUpdates({
-          tabTitle,
-          rows,
-          section: monthSection,
-          modelRow: monthModelRow,
-          soldQty,
-          tierKey,
-        })
-      );
-    }
-  }
-
   if (dryRun) {
     return {
       ok: true,
@@ -571,7 +397,7 @@ export async function applyReportModelDelta({
       prevTier,
       nextTier,
       tierKey,
-      monthUpdates: updates.length - 1,
+      monthUpdates: 0,
     };
   }
 
@@ -582,13 +408,6 @@ export async function applyReportModelDelta({
       spreadsheetId,
       dayKey,
       snapshotKey: dayModelTierSnapshotKey(reportModelLabel, tierKey),
-      soldQty,
-    });
-
-    await recordPerOrderBotSheetIncrement({
-      spreadsheetId,
-      dayKey,
-      snapshotKey: monthModelTierSnapshotKey(reportModelLabel, tierKey),
       soldQty,
     });
   }
@@ -603,9 +422,9 @@ export async function applyReportModelDelta({
 }
 
 /**
- * Вечірній sync дня: лише tiers + СКИДКИ.
- * Не чіпає БЫЛО / СТАЛО / ПРОДАНО / КАССА (формули в таблиці).
- * До наявних у клітинці значень додає лише нову частину з Mongo (ручні правки зберігаються).
+ * Вечірній sync дня: tiers по рядках моделей + у рядку КАССА лише
+ * загальна ПРОДАНО + СКИДКИ (без 1шт/2шт/… внизу).
+ * Не чіпає БЫЛО / СТАЛО / КАССА zł (формули в таблиці).
  */
 export async function writeDayBlockFromAggregates({
   spreadsheetId,
@@ -619,7 +438,7 @@ export async function writeDayBlockFromAggregates({
   dryRun = false,
 }) {
   void kasaTotalZl;
-  void soldUnitsTotal;
+  void tierTotals;
 
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
   const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
@@ -674,6 +493,28 @@ export async function writeDayBlockFromAggregates({
 
   const kassaRow = findKassaRowInDayBlock(rows, block);
   if (kassaRow >= 0) {
+    const mongoSold = Number(soldUnitsTotal || 0);
+    if (mongoSold > 0) {
+      const soldCol = blockStart + DAY_SOLD_COL_OFFSET;
+      const prevSold = parseNumberCell(rows[kassaRow]?.[soldCol]);
+
+      const { delta: soldDelta } = await computeBotSheetDelta({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: dayKassaSnapshotKey("sold"),
+        mongoTotalQty: mongoSold,
+        prevCellQty: prevSold,
+        persist: !dryRun,
+      });
+
+      if (soldDelta > 0) {
+        data.push({
+          range: `${escapeSheetTitle(tabTitle)}!${colToA1(soldCol)}${kassaRow + 1}`,
+          values: [[Math.max(0, prevSold + soldDelta)]],
+        });
+      }
+    }
+
     const mongoDisc = Number(discounts || 0);
     if (mongoDisc > 0) {
       const prevDisc = parseNumberCell(rows[kassaRow]?.[blockStart + 8]);
@@ -693,29 +534,6 @@ export async function writeDayBlockFromAggregates({
           values: [[Math.max(0, Number((prevDisc + discDelta).toFixed(2)))]],
         });
       }
-    }
-
-    for (const tierKey of ["tier1", "tier2", "tier34", "tier5"]) {
-      const mongoTotal = Number(tierTotals[tierKey] || 0);
-      if (mongoTotal <= 0) continue;
-
-      const col = blockStart + TIER_COL_OFFSET[tierKey];
-      const prev = parseNumberCell(rows[kassaRow]?.[col]);
-
-      const { delta } = await computeBotSheetDelta({
-        spreadsheetId,
-        dayKey,
-        snapshotKey: dayKassaSnapshotKey(tierKey),
-        mongoTotalQty: mongoTotal,
-        prevCellQty: prev,
-        persist: !dryRun,
-      });
-
-      if (delta <= 0) continue;
-      data.push({
-        range: `${escapeSheetTitle(tabTitle)}!${colToA1(col)}${kassaRow + 1}`,
-        values: [[Math.max(0, prev + delta)]],
-      });
     }
   }
 

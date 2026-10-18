@@ -29,7 +29,6 @@ router.get(
       const [
         currentOrders,
         previousOrders,
-        salesHistory,
         currentCanceledOrders,
         previousCanceledOrders,
       ] = await Promise.all([
@@ -45,10 +44,6 @@ router.get(
             )
           : Promise.resolve([]),
 
-        loadSalesHistory(
-          range.to
-        ),
-
         loadCanceledOrders(
           range.from,
           range.to
@@ -61,6 +56,21 @@ router.get(
             )
           : Promise.resolve([]),
       ]);
+
+      const historyIds = new Set();
+      for (const order of [
+        ...(currentOrders || []),
+        ...(previousOrders || []),
+      ]) {
+        const tgId = String(order?.userTelegramId || "").trim();
+        if (tgId) historyIds.add(tgId);
+      }
+
+      const salesHistory = historyIds.size
+        ? await loadSalesHistory(range.to, {
+            telegramIds: [...historyIds],
+          })
+        : [];
 
       const performance =
         await buildLocationPerformance({

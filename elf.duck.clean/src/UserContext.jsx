@@ -57,13 +57,35 @@ useEffect(() => {
   }
 
   // ===== REAL TELEGRAM USER =====
+  // start_param: prefer initDataUnsafe, fall back to signed initData query
+  let startParam = tg?.initDataUnsafe?.start_param || null;
+  if (!startParam && tg?.initData) {
+    try {
+      startParam = new URLSearchParams(tg.initData).get("start_param");
+    } catch {
+      startParam = null;
+    }
+  }
+  // Persist for retries / late register (e.g. after guest → login)
+  if (startParam) {
+    try {
+      sessionStorage.setItem("elf_referral_start_param", String(startParam));
+    } catch {}
+  } else {
+    try {
+      startParam = sessionStorage.getItem("elf_referral_start_param");
+    } catch {
+      startParam = null;
+    }
+  }
+
   const body = {
     telegramId: String(tgUser.id),
     username: tgUser.username,
     firstName: tgUser.first_name,
     lastName: tgUser.last_name,
     photoUrl: tgUser.photo_url,
-    ref: tg?.initDataUnsafe?.start_param || null,
+    ref: startParam || null,
   };
 
   const optimisticUser = {

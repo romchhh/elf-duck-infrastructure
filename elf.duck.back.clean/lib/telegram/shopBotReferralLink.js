@@ -35,13 +35,18 @@ export function getShopBotUsername(index = 0) {
   return fromEnv[0] || "elfduck_shop_bot";
 }
 
+/**
+ * Invite link that opens the bot chat with /start payload.
+ * Using ?start= (not ?startapp=) so the invitee must Start the bot —
+ * referral is attached in bot.start, and they get the welcome message.
+ */
 export function buildReferralMiniAppDeepLink(refCode, shopBotIndex = 0) {
   const code = String(refCode || "").replace(/^ref_/, "").trim();
   if (!code) return "";
 
   const username = getShopBotUsername(shopBotIndex);
   const startParam = `ref_${code}`;
-  return `https://t.me/${username}?startapp=${encodeURIComponent(startParam)}`;
+  return `https://t.me/${username}?start=${encodeURIComponent(startParam)}`;
 }
 
 export function attachReferralInviteToStatus(referralStatus, shopBotIndex) {

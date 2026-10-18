@@ -27,19 +27,14 @@ export async function loadFirstSales() {
       },
     },
     {
-      $sort: {
-        crmSaleDate: 1,
-      },
-    },
-    {
       $group: {
         _id: "$userTelegramId",
         firstSaleAt: {
-          $first: "$crmSaleDate",
+          $min: "$crmSaleDate",
         },
       },
     },
-  ]);
+  ]).option({ allowDiskUse: true });
 }
 
 export function percentagePoints(current, previous) {

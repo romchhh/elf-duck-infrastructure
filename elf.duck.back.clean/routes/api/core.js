@@ -28,7 +28,12 @@ app.post("/register-user", async (req, res) => {
     const photoUrl = String(tgUser?.photo_url || "").trim();
 
     const { ref } = req.body || {};
-    const normalizedRef = String(ref || "").replace(/^ref_/, "").trim();
+    // Prefer body ref, fall back to signed initData start_param (more reliable than initDataUnsafe)
+    const refFromBody = String(ref || "").trim();
+    const refFromInit = String(verified?.startParam || "").trim();
+    const normalizedRef = String(refFromBody || refFromInit || "")
+      .replace(/^ref_/, "")
+      .trim();
 
     // Single upsert instead of findOne → create/save → findById. One round-trip
     // for the common "returning user" path.

@@ -52,11 +52,7 @@ router.get(
           range.previousTo
         );
 
-      const [
-        currentOrders,
-        previousOrders,
-        salesHistory,
-      ] =
+      const [currentOrders, previousOrders] =
         await Promise.all([
           loadSales(
             range.from,
@@ -69,11 +65,22 @@ router.get(
                 range.previousTo
               )
             : Promise.resolve([]),
-
-          loadSalesHistory(
-            range.to
-          ),
         ]);
+
+      const historyIds = new Set();
+      for (const order of [
+        ...(currentOrders || []),
+        ...(previousOrders || []),
+      ]) {
+        const tgId = String(order?.userTelegramId || "").trim();
+        if (tgId) historyIds.add(tgId);
+      }
+
+      const salesHistory = historyIds.size
+        ? await loadSalesHistory(range.to, {
+            telegramIds: [...historyIds],
+          })
+        : [];
 
       const productPerformance =
         await buildProductPerformance({

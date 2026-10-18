@@ -106,7 +106,7 @@ export async function loadSales(
             pickupPointId: 1,
         },
     },
-  ]);
+  ]).option({ allowDiskUse: true });
 }
 
 /**
@@ -199,11 +199,45 @@ export async function buildSalesByCustomerMap(
   return map;
 }
 
-export async function loadSalesHistory(to) {
+/**
+ * Історія завершених продажів до `to`.
+ * options.telegramIds — обмежити клієнтами (дашборд: лише хто купив у періоді).
+ * Без цього фільтра тягне ВСЮ історію → 502 на CRM dashboard.
+ */
+export async function loadSalesHistory(to, options = {}) {
+  const telegramIds = Array.isArray(options?.telegramIds)
+    ? [...new Set(
+        options.telegramIds
+          .map((id) => String(id || "").trim())
+          .filter(Boolean)
+      )]
+    : null;
+
+  if (telegramIds && telegramIds.length === 0) {
+    return [];
+  }
+
+  const matchStage = {
+    ...getCompletedOrderMatch(),
+  };
+
+  if (telegramIds) {
+    matchStage.userTelegramId = { $in: telegramIds };
+  }
+
+  const dateMatch = {
+    crmSaleDate: {
+      $lt: to,
+    },
+  };
+
+  if (options?.from) {
+    dateMatch.crmSaleDate.$gte = options.from;
+  }
+
   return Order.aggregate([
     {
-      $match:
-        getCompletedOrderMatch(),
+      $match: matchStage,
     },
 
     {
@@ -214,11 +248,7 @@ export async function loadSalesHistory(to) {
     },
 
     {
-      $match: {
-        crmSaleDate: {
-          $lt: to,
-        },
-      },
+      $match: dateMatch,
     },
 
     {
@@ -240,7 +270,7 @@ export async function loadSalesHistory(to) {
         crmSaleDate: 1,
       },
     },
-  ]);
+  ]).option({ allowDiskUse: true });
 }
 
 export async function loadCanceledCount(from, to) {

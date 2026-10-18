@@ -910,7 +910,7 @@ if (photoFileId) {
   app.locals.resumeCrmBroadcastCampaigns =
     resumeCrmBroadcastCampaigns;
 
-  const registerUserBotHandlers = (activeBot) => {
+  const registerUserBotHandlers = (activeBot, shopBotIndex = 0) => {
   activeBot.use(handleManagerClientMessageText);
 
   console.log(
@@ -941,6 +941,8 @@ if (photoFileId) {
           lastName,
           cashbackBalance: 0,
           cashbackLedger: [],
+          shopBotIndex: Number(shopBotIndex) || 0,
+          shopBotKnown: true,
           referral: {
             code: "",
             usedCode: "",
@@ -979,8 +981,30 @@ if (photoFileId) {
           changed = true;
         }
 
+        const safeBotIndex = Number(shopBotIndex);
+        if (Number.isFinite(safeBotIndex) && safeBotIndex >= 0) {
+          if (me.shopBotIndex !== safeBotIndex || me.shopBotKnown !== true) {
+            me.shopBotIndex = safeBotIndex;
+            me.shopBotKnown = true;
+            changed = true;
+          }
+        }
+
         if (changed) {
           await me.save();
+        }
+      }
+
+      // Attach referral from /start payload (t.me/bot?start=ref_CODE)
+      let referralAttached = false;
+      if (payload && typeof attachReferralIfAny === "function") {
+        try {
+          referralAttached = Boolean(await attachReferralIfAny(me, payload));
+          if (referralAttached) {
+            me = await User.findOne({ telegramId: tgId });
+          }
+        } catch (refErr) {
+          console.error("[BOT_START] attachReferralIfAny failed:", refErr);
         }
       }
 
@@ -1007,17 +1031,20 @@ if (photoFileId) {
 
       try {
         const u = new URL(openLink);
-        if (payload) u.searchParams.set("startapp", payload);
         if (myRefCode) u.searchParams.set("ref", myRefCode);
         openLink = u.toString();
       } catch {
         const params = new URLSearchParams();
-        if (payload) params.set("startapp", payload);
         if (myRefCode) params.set("ref", myRefCode);
         openLink = `${String(WEBAPP_URL || "").trim()}${params.toString() ? "?" + params.toString() : ""}`;
       }
 
-      const caption = "Добро пожаловать в ELF DUCK SHOP!";
+      const hasReferralBonus =
+        referralAttached || Boolean(String(me?.referral?.usedCode || "").trim());
+
+      const caption = hasReferralBonus
+        ? "Добро пожаловать в ELF DUCK SHOP!\n\n🎁 У тебя 10% скидки на первый заказ (от 65 zł). Жми кнопку ниже 👇"
+        : "Добро пожаловать в ELF DUCK SHOP!";
       const keyboard = Markup.inlineKeyboard([
         [Markup.button.webApp("💨 Посетить магазин 🛍️", openLink)],
       ]);
@@ -3358,8 +3385,8 @@ return instructionMessage;
 
   };
 
-  for (const activeBot of userBots) {
-    registerUserBotHandlers(activeBot);
+  userBots.forEach((activeBot, botIndex) => {
+    registerUserBotHandlers(activeBot, botIndex);
 
     activeBot.catch((err, ctx) => {
       console.error("[bot] unhandled error:", {
@@ -3376,7 +3403,7 @@ return instructionMessage;
         );
       }
     });
-  }
+  });
 
   async function launchUserBotPolling() {
     const dbName =
