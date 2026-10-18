@@ -1644,6 +1644,180 @@ body {
   justify-self: center;
 }
 
+.refRewardBtnStatic {
+  margin-top: 8px;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.refClaimPanel {
+  width: 100%;
+  padding: 0 18px;
+  box-sizing: border-box;
+}
+
+.refClaimPanelCard {
+  margin-bottom: 4px;
+}
+
+.refClaimList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.refClaimRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(83, 255, 67, 0.08);
+  border: 1px solid rgba(83, 255, 67, 0.22);
+}
+
+.refClaimRowText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  text-align: left;
+}
+
+.refClaimRowName {
+  font-family: Unbounded-Medium;
+  font-size: 12px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.refClaimRowHint {
+  font-family: Unbounded-Light;
+  font-size: 9px;
+  color: rgba(120, 255, 80, 0.95);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.refListActionBtnReady {
+  width: auto;
+  min-width: 88px;
+  flex-shrink: 0;
+  background: rgba(83, 255, 67, 0.55);
+  color: #fff;
+  border: none;
+  filter: none;
+  box-shadow: 0 6px 16px rgba(83, 255, 67, 0.18);
+}
+
+.refListActionBtnReady:active {
+  transform: translateY(1px);
+}
+
+.refListCardRow {
+  margin-bottom: 0;
+}
+
+.refReferralNameRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.refStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-family: Unbounded-Medium;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.refStatusBadgeNew {
+  color: #111;
+  background: rgba(255, 214, 74, 0.95);
+}
+
+.refStatusBadgeDone {
+  color: #fff;
+  background: rgba(76, 151, 64, 0.85);
+}
+
+.refListInfoRowReady .refInfoIcon {
+  background: rgba(83, 255, 67, 0.35);
+  color: #fff;
+}
+
+.ReferralBonusBlock.is-pulse {
+  animation: refBalancePulse 0.9s ease;
+}
+
+@keyframes refBalancePulse {
+  0% { transform: scale(1); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18); }
+  35% { transform: scale(1.06); box-shadow: 0 0 0 2px rgba(83, 255, 67, 0.35), 0 10px 24px rgba(83, 255, 67, 0.22); }
+  100% { transform: scale(1); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18); }
+}
+
+.refClaimFxOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, rgba(83, 255, 67, 0.12), rgba(0, 0, 0, 0.55) 68%);
+  backdrop-filter: blur(2px);
+}
+
+.refClaimFxLottie {
+  width: min(92vw, 420px);
+  height: min(62vh, 420px);
+  opacity: 0.95;
+}
+
+.refClaimFxCaption {
+  margin-top: -12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: refClaimCaptionPop 0.55s ease;
+}
+
+.refClaimFxAmount {
+  font-family: Unbounded-SemiBold;
+  font-size: clamp(28px, 8vw, 40px);
+  line-height: 1;
+  color: #fff;
+  text-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.refClaimFxSub {
+  font-family: Unbounded-Regular;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(120, 255, 80, 0.95);
+}
+
+@keyframes refClaimCaptionPop {
+  0% { opacity: 0; transform: translateY(12px) scale(0.92); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* ================= FOOTER BAR (прозрачный) ================= */
 
 .footerBar {

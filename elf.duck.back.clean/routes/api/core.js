@@ -322,6 +322,7 @@ app.post("/referral/claim", async (req, res) => {
       status: "REWARD_GRANTED",
       amount: 25,
       groupId: safeGroupId,
+      cashbackBalance: Number(user.cashbackBalance || 0),
     });
   } catch (e) {
     console.error("POST /referral/claim error:", e);

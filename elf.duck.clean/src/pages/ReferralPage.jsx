@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useRef} from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import Lottie from "lottie-react";
 import "../styles/ReferralPage.css";
 import "../styles/sideMenuLanguage.css";
 import { useUser } from "../UserContext";
 import { useNavigate } from "react-router-dom";
 import { haptic } from "../utils/haptics";
+import moneyAnimation from "../assets/moneyAnimation.json";
+import discountSfx from "../assets/cashback2.mp3";
 import {
 
   getCurrentLanguage,
@@ -32,13 +35,33 @@ import zlotyIcon from "../assets/zlotyIcon.webp";
 import telegramIcon from "../assets/telegramIcon.webp";
 import supportIcon from "../assets/supportIcon.webp";
 
+function getReferralGroupLatestInviteAt(group) {
+    const members = Array.isArray(group?.members) ? group.members : [];
+    return members.reduce((max, member) => {
+        const ts = member?.invitedAt ? new Date(member.invitedAt).getTime() : 0;
+        return Math.max(max, Number.isFinite(ts) ? ts : 0);
+    }, 0);
+}
+
+function getReferralGroupStatus(group) {
+    const isClaimed = Boolean(group?.isClaimed || group?.rewardClaimed);
+    const canClaim = Boolean(group?.isClaimable) && !isClaimed;
+    const members = Array.isArray(group?.members) ? group.members : [];
+    const hasPendingPurchase =
+        !isClaimed &&
+        !canClaim &&
+        members.some((m) => m?.completed !== true);
+    const isNew = hasPendingPurchase;
+
+    return { isClaimed, canClaim, isNew, hasPendingPurchase };
+}
 
 const ReferralPage = () => {
 
     /* ================= GENERAL ================= */
 
     const navigate = useNavigate();
-    const { user, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
+    const { user, setUser, userLoading, isGuestBrowser, initials, displayName, displayUsername } = useUser();
     const [avatarLoaded, setAvatarLoaded] = useState(false);
     const [mounted, setMounted] = useState(false);
     const lang = getCurrentLanguage();
@@ -46,11 +69,114 @@ const ReferralPage = () => {
     const [referralStatus, setReferralStatus] = useState(null);
     const [referralLoading, setReferralLoading] = useState(false);
     const [claimingReward, setClaimingReward] = useState(false);
+    const [claimingGroupId, setClaimingGroupId] = useState("");
     const [inviteGenerating, setInviteGenerating] = useState(false);
+    const [balancePulse, setBalancePulse] = useState(false);
+    const [showClaimFx, setShowClaimFx] = useState(false);
+    const [claimFxRunId, setClaimFxRunId] = useState(0);
+    const [claimFxAmount, setClaimFxAmount] = useState(25);
+    const claimAudioRef = useRef(null);
+    const claimFxTimerRef = useRef(null);
+    const claimLottieRef = useRef(null);
+    const CLAIM_FX_MS = 3800;
 
     useEffect(() => {
         setMounted(true);
     }, []);
+
+    useEffect(() => {
+        return () => {
+            if (claimFxTimerRef.current) {
+                clearTimeout(claimFxTimerRef.current);
+            }
+        };
+    }, []);
+
+    const stopClaimFx = useCallback(() => {
+        if (claimFxTimerRef.current) {
+            clearTimeout(claimFxTimerRef.current);
+            claimFxTimerRef.current = null;
+        }
+        try {
+            const a = claimAudioRef.current;
+            if (a) {
+                a.pause();
+                a.currentTime = 0;
+            }
+        } catch {}
+        setShowClaimFx(false);
+    }, []);
+
+    const playClaimSuccessFx = useCallback((amountZl) => {
+        setClaimFxAmount(Number(amountZl || 25));
+        setShowClaimFx(true);
+        setClaimFxRunId((v) => v + 1);
+        haptic.success();
+        haptic.heavy();
+
+        requestAnimationFrame(() => {
+            try {
+                claimLottieRef.current?.stop?.();
+                claimLottieRef.current?.goToAndPlay?.(0, true);
+            } catch {}
+        });
+
+        try {
+            const a = claimAudioRef.current;
+            if (a) {
+                a.pause();
+                a.currentTime = 0;
+                a.volume = 0.85;
+                a.play().catch(() => {});
+            }
+        } catch {}
+
+        if (claimFxTimerRef.current) clearTimeout(claimFxTimerRef.current);
+        claimFxTimerRef.current = setTimeout(() => {
+            stopClaimFx();
+        }, CLAIM_FX_MS);
+    }, [stopClaimFx]);
+
+    const pulseBalance = useCallback(() => {
+        setBalancePulse(true);
+        window.setTimeout(() => setBalancePulse(false), 900);
+    }, []);
+
+    const referralGroups = useMemo(
+        () =>
+            Array.isArray(referralStatus?.groups)
+                ? referralStatus.groups
+                : [],
+        [referralStatus]
+    );
+
+    const sortedReferralGroups = useMemo(() => {
+        return [...referralGroups].sort((a, b) => {
+            const statusA = getReferralGroupStatus(a);
+            const statusB = getReferralGroupStatus(b);
+
+            const rank = (s) => {
+                if (s.isNew) return 0;
+                if (s.canClaim) return 1;
+                if (s.isClaimed) return 3;
+                return 2;
+            };
+
+            const rankDiff = rank(statusA) - rank(statusB);
+            if (rankDiff !== 0) return rankDiff;
+
+            return getReferralGroupLatestInviteAt(b) - getReferralGroupLatestInviteAt(a);
+        });
+    }, [referralGroups]);
+
+    const claimableGroups = useMemo(
+        () =>
+            sortedReferralGroups.filter((group) => {
+                const { canClaim } = getReferralGroupStatus(group);
+                return canClaim;
+            }),
+        [sortedReferralGroups]
+    );
 
     useEffect(() => {
         if (userLoading) return;
@@ -250,7 +376,11 @@ const ReferralPage = () => {
 
     };
         
-    const referralGroups = Array.isArray(referralStatus?.groups) ? referralStatus.groups : [];
+    const formatReferralMemberLabel = (ref) => {
+        const name = ref?.firstName || ref?.username || t("Реферал", "Polecony");
+        const handle = ref?.username ? `@${ref.username}` : `ID ${ref?.telegramId || ""}`;
+        return { name, handle };
+    };
 
     // Группа ждёт первую покупку реферала (ещё нельзя забрать 25 zł)
     const hasPendingPurchaseGroup = referralGroups.some(
@@ -406,6 +536,7 @@ const claimReferralReward = async (targetGroup = null) => {
         }
 
         setClaimingReward(true);
+        setClaimingGroupId(String(groupForCheck?.id || ""));
 
         const data = await apiFetch(`/referral/claim`, {
             method: "POST",
@@ -415,10 +546,20 @@ const claimReferralReward = async (targetGroup = null) => {
         });
 
         if (data?.ok && data?.status === "REWARD_GRANTED") {
-            showPopupMessage(
-                t("Реферальная программа", "Program poleceń"),
-                `${t("Награда", "Nagroda")} ${Number(data?.amount || 25)} zł ${t("начислена на кэшбек баланс!", "została naliczona na saldo cashback!")}`
-            );
+            const granted = Number(data?.amount || 25);
+            setUser((prev) => {
+                if (!prev) return prev;
+                const fromApi = Number(data?.cashbackBalance);
+                const nextBalance = Number.isFinite(fromApi)
+                    ? fromApi
+                    : Number(prev.cashbackBalance || 0) + granted;
+                return {
+                    ...prev,
+                    cashbackBalance: Number(nextBalance.toFixed(2)),
+                };
+            });
+            pulseBalance();
+            playClaimSuccessFx(granted);
         } else if (data?.status === "ONE_COMPLETED") {
             showPopupMessage(
                 t("Реферальная программа", "Program poleceń"),
@@ -469,6 +610,7 @@ const claimReferralReward = async (targetGroup = null) => {
         showPopupMessage(t("Реферальная программа", "Program poleceń"), e?.message || t("Не удалось забрать награду", "Nie udało się odebrać nagrody"));
     } finally {
         setClaimingReward(false);
+        setClaimingGroupId("");
     }
 };
 
@@ -503,8 +645,158 @@ const claimReferralReward = async (targetGroup = null) => {
     showTgAlert(text);
   };
 
+    const renderReferralGroupCard = (group) => {
+        const { isClaimed, canClaim, isNew } = getReferralGroupStatus(group);
+        const groupKey = `group-${group.pairIndex || group.id}`;
+
+        if (group.members.length === 1) {
+            const ref = group.members[0];
+            const { name, handle } = formatReferralMemberLabel(ref);
+
+            return (
+                <div className="refListCard refListCardRow" key={groupKey}>
+                    <div className="refReferralTopRow">
+                        <div className="refReferralLeft">
+                            <img
+                                className="refReferralAvatar"
+                                src={ref.photoUrl || "https://placehold.co/100x100/png"}
+                                alt=""
+                            />
+                            <div className="refReferralNameBlock">
+                                <div className="refReferralNameRow">
+                                    <div
+                                        className={`refReferralName ${canClaim || isClaimed ? "refReferralNameGreen" : ""}`}
+                                    >
+                                        {name}
+                                    </div>
+                                    {isNew ? (
+                                        <span className="refStatusBadge refStatusBadgeNew">
+                                            {t("новый", "nowy")}
+                                        </span>
+                                    ) : null}
+                                    {isClaimed ? (
+                                        <span className="refStatusBadge refStatusBadgeDone">
+                                            {t("получено", "odebrano")}
+                                        </span>
+                                    ) : null}
+                                </div>
+                                <div className="refReferralUsername">{handle}</div>
+                            </div>
+                        </div>
+
+                        <div className="refReferralDatePill">
+                            {t("приглашен", "zaproszony")}{" "}
+                            {ref.invitedAt
+                                ? new Date(ref.invitedAt).toLocaleDateString(
+                                    lang === "pl" ? "pl-PL" : "ru-RU",
+                                    { day: "2-digit", month: "2-digit" }
+                                  )
+                                : "—"}
+                        </div>
+                    </div>
+
+                    {isNew && (
+                        <div className="refListInfoRow refListInfoRowCompact">
+                            <div className="refInfoIcon">i</div>
+                            <div className="refListInfoText">
+                                {t("ЖДЁМ ПЕРВУЮ ПОКУПКУ", "CZEKAMY NA PIERWSZY ZAKUP")}
+                                <br />
+                                {t("ПОТОМ МОЖНО ЗАБРАТЬ", "POTEM MOŻESZ ODEBRAĆ")}{" "}
+                                <span className="refAccent">25 ZŁ</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {canClaim && (
+                        <div className="refListInfoRow refListInfoRowCompact refListInfoRowReady">
+                            <div className="refInfoIcon">✓</div>
+                            <div className="refListInfoText">
+                                {t("ПОКУПКА СОВЕРШЕНА — ЗАБЕРИТЕ НАГРАДУ ВЫШЕ", "ZAKUP ZROBIONY — ODBIERZ NAGRODĘ POWYŻEJ")}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        return (
+            <div className="refListCard refListCardRow" key={groupKey}>
+                <div className="refReferralPeople">
+                    {group.members.map((ref) => {
+                        const { name, handle } = formatReferralMemberLabel(ref);
+                        return (
+                            <div className="refReferralPerson" key={ref.telegramId}>
+                                <img
+                                    className="refReferralAvatar"
+                                    src={ref.photoUrl || "https://placehold.co/100x100/png"}
+                                    alt=""
+                                />
+                                <div className="refReferralNameBlock">
+                                    <div className="refReferralNameRow">
+                                        <div
+                                            className={`refReferralName ${isClaimed || canClaim ? "refReferralNameGreen" : ""}`}
+                                        >
+                                            {name}
+                                        </div>
+                                        {ref?.completed !== true && !isClaimed ? (
+                                            <span className="refStatusBadge refStatusBadgeNew">
+                                                {t("новый", "nowy")}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                    <div className="refReferralUsername">{handle}</div>
+                                </div>
+
+                                <div className="refReferralDatePill">
+                                    {t("приглашен", "zaproszony")}{" "}
+                                    {ref.invitedAt
+                                        ? new Date(ref.invitedAt).toLocaleDateString(
+                                            lang === "pl" ? "pl-PL" : "ru-RU",
+                                            { day: "2-digit", month: "2-digit" }
+                                          )
+                                        : "—"}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {isClaimed ? (
+                    <div className="refRewardBtn refRewardBtnStatic">
+                        {t("НАГРАДА ПОЛУЧЕНА!", "NAGRODA ODEBRANA!")}
+                    </div>
+                ) : null}
+            </div>
+        );
+    };
+
     return (
         <div className={`ReferralApp reveal delay-5 ${mounted ? "visible" : ""}`}>
+            <audio ref={claimAudioRef} src={discountSfx} preload="auto" />
+
+            {showClaimFx && (
+                <div className="refClaimFxOverlay" aria-hidden="true">
+                    <div key={claimFxRunId} className="refClaimFxLottie">
+                        <Lottie
+                            lottieRef={claimLottieRef}
+                            animationData={moneyAnimation}
+                            loop={false}
+                            autoplay
+                            style={{ width: "100%", height: "100%" }}
+                            rendererSettings={{
+                                preserveAspectRatio: "xMidYMid slice",
+                                progressiveLoad: true,
+                            }}
+                        />
+                    </div>
+                    <div className="refClaimFxCaption">
+                        <span className="refClaimFxAmount">+{claimFxAmount} zł</span>
+                        <span className="refClaimFxSub">
+                            {t("на баланс", "na saldo")}
+                        </span>
+                    </div>
+                </div>
+            )}
 
             {menuVisible && (
                 <>
@@ -861,7 +1153,8 @@ const claimReferralReward = async (targetGroup = null) => {
                         </div>
             
                         <div className="ReferralHeaderRight">
-                            <div className="ReferralBonusBlock" 
+                            <div
+                                className={`ReferralBonusBlock ${balancePulse ? "is-pulse" : ""}`}
                                 role="button"
                                 tabIndex={0}
                                 onClick={showCashbackInfoAlert}
@@ -985,27 +1278,73 @@ const claimReferralReward = async (targetGroup = null) => {
                             </div>
                         ) : (
                         <>
-                        <div className="refListCard">
-                            <div className="refListCardTitle">
-                                {t("МОИ", "MOI")} <span className="refAccent">{t("РЕФЕРАЛЫ", "POLECENI")}</span>
-                            </div>
-
-                            <div className="refListInfoRow">
-                                <div className="refInfoIcon">i</div>
-                                <div className="refListInfoText">
-                                    {t("ЧТОБЫ ПОЛУЧИТЬ НАГРАДУ,", "ABY OTRZYMAĆ NAGRODĘ,")}
-                                    <br />
-                                    {t("ДРУГ ДОЛЖЕН", "ZNAJOMY MUSI")} <span className="refAccent">{t("СОВЕРШИТЬ ПОКУПКУ", "DOKONAĆ ZAKUPU")}</span>
+                        <div className="refClaimPanel">
+                            <div className="refListCard refClaimPanelCard">
+                                <div className="refListCardTitle">
+                                    {t("ПОЛУЧЕНИЕ", "ODBIERANIE")}{" "}
+                                    <span className="refAccent">{t("НАГРАД", "NAGRÓD")}</span>
                                 </div>
-                            </div>
 
-                            <button
-                                type="button"
-                                className="refListActionBtn refListActionBtnDisabled"
-                                onClick={() => claimReferralReward()}
-                            >
-                                {t("ПОЛУЧИТЬ 25 ZŁ НА БАЛАНС", "OTRZYMAJ 25 ZŁ NA SALDO")}
-                            </button>
+                                {claimableGroups.length > 0 ? (
+                                    <div className="refClaimList">
+                                        {claimableGroups.map((group) => {
+                                            const ref = group.members?.[0];
+                                            const label =
+                                                ref?.firstName ||
+                                                ref?.username ||
+                                                t("Реферал", "Polecony");
+                                            const gid = String(group?.id || "");
+                                            const isThisClaiming =
+                                                claimingReward && claimingGroupId === gid;
+
+                                            return (
+                                                <div className="refClaimRow" key={`claim-${gid}`}>
+                                                    <div className="refClaimRowText">
+                                                        <span className="refClaimRowName">{label}</span>
+                                                        <span className="refClaimRowHint">
+                                                            {t("готов к выплате", "gotowy do wypłaty")}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        className="refListActionBtn refListActionBtnReady"
+                                                        disabled={claimingReward}
+                                                        onClick={() => {
+                                                            haptic.medium();
+                                                            claimReferralReward(group);
+                                                        }}
+                                                    >
+                                                        {isThisClaiming
+                                                            ? t("ЗАЧИСЛЕНИЕ...", "NALICZANIE...")
+                                                            : t("ЗАБРАТЬ 25 ZŁ", "ODBIERZ 25 ZŁ")}
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="refListInfoRow refListInfoRowCompact">
+                                            <div className="refInfoIcon">i</div>
+                                            <div className="refListInfoText">
+                                                {t("ЧТОБЫ ПОЛУЧИТЬ НАГРАДУ,", "ABY OTRZYMAĆ NAGRODĘ,")}
+                                                <br />
+                                                {t("ДРУГ ДОЛЖЕН", "ZNAJOMY MUSI")}{" "}
+                                                <span className="refAccent">
+                                                    {t("СОВЕРШИТЬ ПОКУПКУ", "DOKONAĆ ZAKUPU")}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            className="refListActionBtn refListActionBtnDisabled"
+                                            disabled
+                                        >
+                                            {t("ПОЛУЧИТЬ 25 ZŁ НА БАЛАНС", "OTRZYMAJ 25 ZŁ NA SALDO")}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
 
                         <div className={`sectionReferralSubTitle reveal delay-3 ${mounted ? "visible" : ""}`}>
@@ -1014,102 +1353,7 @@ const claimReferralReward = async (targetGroup = null) => {
                             <span className="sectionReferralLine" />
                         </div>
 
-                        {referralGroups.map((group) => {
-                        const canClaim = Boolean(group?.isClaimable) && !group?.isClaimed;
-                        const isClaimed = Boolean(group?.isClaimed || group?.rewardClaimed);
-
-                        if (group.members.length === 1) {
-                            const ref = group.members[0];
-                            const waitingPurchase = !isClaimed && !canClaim;
-
-                            return (
-                            <div className="refListCard" key={`group-${group.pairIndex || group.id}`}>
-                                <div className="refReferralTopRow">
-                                <div className="refReferralLeft">
-                                    <img
-                                    className="refReferralAvatar"
-                                    src={ref.photoUrl || "https://placehold.co/100x100/png"}
-                                    alt=""
-                                    />
-                                    <div className="refReferralNameBlock">
-                                    <div className={`refReferralName ${canClaim || isClaimed ? "refReferralNameGreen" : ""}`}>
-                                        {ref.firstName || ref.username || t("Реферал", "Polecony")}
-                                    </div>
-                                    <div className="refReferralUsername">
-                                        {ref.username ? `@${ref.username}` : `ID ${ref.telegramId}`}
-                                    </div>
-                                    </div>
-                                </div>
-
-                                <div className="refReferralDatePill">
-                                    {t("приглашен", "zaproszony")} {ref.invitedAt ? new Date(ref.invitedAt).toLocaleDateString(lang === "pl" ? "pl-PL" : "ru-RU", { day: "2-digit", month: "2-digit" }) : "—"}
-                                </div>
-                                </div>
-
-                                {waitingPurchase && (
-                                <div className="refListInfoRow refListInfoRowCompact">
-                                <div className="refInfoIcon">i</div>
-                                <div className="refListInfoText">
-                                    {t("ЖДЁМ ПЕРВУЮ ПОКУПКУ РЕФЕРАЛА", "CZEKAMY NA PIERWSZY ZAKUP POLECONEGO")}
-                                    <br />
-                                    {t("ПОТОМ МОЖНО ЗАБРАТЬ", "POTEM MOŻESZ ODEBRAĆ")} <span className="refAccent">25 ZŁ</span>
-                                </div>
-                                </div>
-                                )}
-
-                            <button
-                                type="button"
-                                className={isClaimed ? "refRewardBtn" : canClaim ? "refListActionBtn" : "refListActionBtn refListActionBtnDisabled"}
-                                disabled={claimingReward || isClaimed || !canClaim}
-                                onClick={isClaimed || !canClaim ? undefined : () => claimReferralReward(group)}
-                            >
-                                {isClaimed
-                                  ? t("НАГРАДА ПОЛУЧЕНА!", "NAGRODA ODEBRANA!")
-                                  : t("ПОЛУЧИТЬ 25 ZŁ НА БАЛАНС", "OTRZYMAJ 25 ZŁ NA SALDO")}
-                            </button>
-                            </div>
-                            );
-                        }
-
-                        return (
-                            <div className="refListCard" key={`group-${group.pairIndex || group.id}`}>
-                            <div className="refReferralPeople">
-                                {group.members.map((ref) => (
-                                <div className="refReferralPerson" key={ref.telegramId}>
-                                    <img
-                                    className="refReferralAvatar"
-                                    src={ref.photoUrl || "https://placehold.co/100x100/png"}
-                                    alt=""
-                                    />
-                                    <div className="refReferralNameBlock">
-                                    <div className={`refReferralName ${isClaimed || canClaim ? "refReferralNameGreen" : ""}`}>
-                                        {ref.firstName || ref.username || t("Реферал", "Polecony")}
-                                    </div>
-                                    <div className="refReferralUsername">
-                                        {ref.username ? `@${ref.username}` : `ID ${ref.telegramId}`}
-                                    </div>
-                                    </div>
-
-                                    <div className="refReferralDatePill">
-                                    {t("приглашен", "zaproszony")} {ref.invitedAt ? new Date(ref.invitedAt).toLocaleDateString(lang === "pl" ? "pl-PL" : "ru-RU", { day: "2-digit", month: "2-digit" }) : "—"}
-                                    </div>
-                                </div>
-                                ))}
-                            </div>
-
-                            <button
-                                type="button"
-                                className={isClaimed ? "refRewardBtn" : canClaim ? "refListActionBtn" : "refListActionBtn refListActionBtnDisabled"}
-                                disabled={claimingReward || isClaimed || !canClaim}
-                                onClick={isClaimed || !canClaim ? undefined : () => claimReferralReward(group)}
-                            >
-                                {isClaimed
-                                  ? t("НАГРАДА ПОЛУЧЕНА!", "NAGRODA ODEBRANA!")
-                                  : t("ПОЛУЧИТЬ 25 ZŁ НА БАЛАНС", "OTRZYMAJ 25 ZŁ NA SALDO")}
-                            </button>
-                            </div>
-                        );
-                        })}
+                        {sortedReferralGroups.map((group) => renderReferralGroupCard(group))}
                         </>
                     )}
 
