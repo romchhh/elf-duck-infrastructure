@@ -579,17 +579,18 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
-  width: fit-content;
+  gap: 7px;
+  width: 168px;
   max-width: 100%;
   height: 35px;
   min-height: 35px;
-  padding: 0 14px 0 12px;
+  padding: 0 12px 0 10px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 1);
   background: rgba(0, 0, 0, 0.85);
   box-sizing: border-box;
   cursor: text;
+  overflow: hidden;
 }
 
 .catalogSearchIcon {
@@ -597,56 +598,36 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   color: rgba(255, 255, 255, 0.92);
   line-height: 0;
 }
 
 .catalogSearchIcon svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: block;
 }
 
-.catalogSearchInputSlot {
-  position: relative;
-  display: inline-grid;
-  align-items: center;
-  max-width: min(85vw, 280px);
-  min-width: 0;
-}
-
-.catalogSearchSizer,
 .catalogSearchInput {
-  grid-area: 1 / 1;
-  font-size: 13px;
-  font-family: Unbounded-Medium;
-  line-height: 1.2;
-  white-space: pre;
-}
-
-.catalogSearchSizer {
-  visibility: hidden;
-  pointer-events: none;
-  padding: 0 1px;
-}
-
-.catalogSearchInput {
-  /* ширина слота = іконка + текст (sizer) */
-  width: 100%;
+  flex: 1 1 auto;
+  width: 0; /* не росте від довгого тексту — обрізає в фіксованому полі */
   min-width: 0;
   box-sizing: border-box;
   height: 100%;
-  min-height: 20px;
   padding: 0;
   border: none;
   border-radius: 0;
   background: transparent;
   color: #fff;
+  font-size: 12px;
+  font-family: Unbounded-Medium;
   outline: none;
   box-shadow: none;
-  overflow-x: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -662,7 +643,9 @@ body {
 .catalogSearchInput::placeholder {
   color: rgba(255, 255, 255, 0.55);
   font-family: Unbounded-Medium;
-  font-size: 13px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -4067,34 +4050,23 @@ body {
   }
 
   .catalogSearchField {
+    width: 148px;
     height: 35px;
     min-height: 35px;
-    gap: 7px;
-    padding: 0 12px 0 10px;
+    gap: 6px;
+    padding: 0 10px 0 9px;
     border-radius: 12px;
   }
 
   .catalogSearchIcon,
   .catalogSearchIcon svg {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
   }
 
-  .catalogSearchInputSlot {
-    max-width: min(88vw, 240px);
-  }
-
-  .catalogSearchSizer,
-  .catalogSearchInput {
-    font-size: 12px;
-  }
-
-  .catalogSearchInput {
-    min-height: 35px;
-  }
-
+  .catalogSearchInput,
   .catalogSearchInput::placeholder {
-    font-size: 12px;
+    font-size: 11px;
   }
 
   .newDropBadge {

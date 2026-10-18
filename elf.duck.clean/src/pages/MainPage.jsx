@@ -4102,30 +4102,24 @@ navigate("/cart");
                   />
                 </svg>
               </span>
-              <span className="catalogSearchInputSlot">
-                <span className="catalogSearchSizer" aria-hidden="true">
-                  {catalogSearchQuery ||
-                    t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
-                </span>
-                <input
-                  type="search"
-                  className="catalogSearchInput"
-                  value={catalogSearchQuery}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setCatalogSearchQuery(v);
-                    if (String(v || "").trim() && catalogView !== "all") {
-                      switchCatalog("all");
-                    }
-                  }}
-                  placeholder={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
-                  aria-label={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
-                  enterKeyHint="search"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                />
-              </span>
+              <input
+                type="search"
+                className="catalogSearchInput"
+                value={catalogSearchQuery}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCatalogSearchQuery(v);
+                  if (String(v || "").trim() && catalogView !== "all") {
+                    switchCatalog("all");
+                  }
+                }}
+                placeholder={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
+                aria-label={t("Поиск модели и вкуса", "Szukaj modelu i smaku")}
+                enterKeyHint="search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
             </label>
           </div>
 
