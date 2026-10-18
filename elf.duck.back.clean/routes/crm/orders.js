@@ -1,7 +1,6 @@
 import express from "express";
 import {
   getPeriodRange,
-  loadSales,
   loadCanceledCount,
   getCrmOrderStatus,
   getCrmPaymentLabel,
@@ -11,6 +10,7 @@ import {
   User,
   fetchCrmOrdersPage,
 } from "./deps.js";
+import { loadSalesKpis } from "../../lib/crm/sales.js";
 
 const router = express.Router();
 
@@ -53,21 +53,9 @@ router.get(
         .trim()
         .toLowerCase();
 
-     const completedSalesPromise =
-        loadSales(
-            range.from,
-            range.to
-        );
-
-        const canceledCountPromise =
-        loadCanceledCount(
-            range.from,
-            range.to
-        );
-
       const [
         pageResult,
-        completedSales,
+        salesKpis,
         canceledCount,
       ] = await Promise.all([
         fetchCrmOrdersPage({
@@ -76,8 +64,8 @@ router.get(
           limit,
           search,
         }),
-        completedSalesPromise,
-        canceledCountPromise,
+        loadSalesKpis(range.from, range.to),
+        loadCanceledCount(range.from, range.to),
       ]);
 
       const orders = pageResult.orders;
@@ -194,21 +182,11 @@ router.get(
         };
       });
 
-        const completedSalesCount =
-        completedSales.length;
-
-        const revenue = Number(
-        completedSales
-            .reduce(
-            (sum, order) =>
-                sum +
-                Number(
-                order?.totalZl || 0
-                ),
-            0
-            )
-            .toFixed(2)
+        const completedSalesCount = Number(
+          salesKpis?.count || 0
         );
+
+        const revenue = Number(salesKpis?.revenue || 0);
 
         const averageCheck =
         completedSalesCount > 0

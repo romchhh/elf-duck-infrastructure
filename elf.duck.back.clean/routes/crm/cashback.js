@@ -60,38 +60,143 @@ router.get(
         .trim()
         .toLowerCase();
 
-      const users =
-        await User.find({})
-          .select({
-            telegramId: 1,
-            username: 1,
-            firstName: 1,
-            lastName: 1,
-            cashbackBalance: 1,
-            cashbackLedger: 1,
-          })
-          .lean();
+      const nowForUsers = new Date();
 
-      /*
-       * Использованный кэшбэк
-       * считаем по завершённым заказам.
-       */
-      const usedRows =
-        await Order.aggregate([
+      const [users, usedRows] = await Promise.all([
+        User.aggregate([
           {
-            $match:
-              getCompletedOrderMatch(),
+            $project: {
+              telegramId: 1,
+              username: 1,
+              firstName: 1,
+              lastName: 1,
+              cashbackBalance: 1,
+              issuedTotal: {
+                $sum: {
+                  $map: {
+                    input: {
+                      $ifNull: ["$cashbackLedger", []],
+                    },
+                    as: "entry",
+                    in: {
+                      $ifNull: ["$$entry.amountZl", 0],
+                    },
+                  },
+                },
+              },
+              issuedInPeriod: {
+                $sum: {
+                  $map: {
+                    input: {
+                      $ifNull: ["$cashbackLedger", []],
+                    },
+                    as: "entry",
+                    in: {
+                      $cond: [
+                        {
+                          $and: [
+                            {
+                              $gte: [
+                                "$$entry.earnedAt",
+                                range.from,
+                              ],
+                            },
+                            {
+                              $lt: [
+                                "$$entry.earnedAt",
+                                range.to,
+                              ],
+                            },
+                          ],
+                        },
+                        {
+                          $ifNull: ["$$entry.amountZl", 0],
+                        },
+                        0,
+                      ],
+                    },
+                  },
+                },
+              },
+              nearestExpiry: {
+                $min: {
+                  $map: {
+                    input: {
+                      $filter: {
+                        input: {
+                          $ifNull: ["$cashbackLedger", []],
+                        },
+                        as: "entry",
+                        cond: {
+                          $and: [
+                            {
+                              $gt: [
+                                {
+                                  $ifNull: [
+                                    "$$entry.remainingZl",
+                                    0,
+                                  ],
+                                },
+                                0,
+                              ],
+                            },
+                            {
+                              $eq: [
+                                {
+                                  $ifNull: [
+                                    "$$entry.expiredAt",
+                                    null,
+                                  ],
+                                },
+                                null,
+                              ],
+                            },
+                            {
+                              $gt: [
+                                "$$entry.expiresAt",
+                                nowForUsers,
+                              ],
+                            },
+                          ],
+                        },
+                      },
+                    },
+                    as: "entry",
+                    in: "$$entry.expiresAt",
+                  },
+                },
+              },
+            },
           },
-
+        ]),
+        Order.aggregate([
+          {
+            $match: {
+              $and: [
+                getCompletedOrderMatch(),
+                {
+                  $or: [
+                    {
+                      "payment.cashbackAppliedZl": {
+                        $gt: 0,
+                      },
+                    },
+                    {
+                      "payment.cashbackRefundedAmountZl": {
+                        $gt: 0,
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          },
           {
             $addFields: {
-              crmSaleDate:
-                getSaleDateExpression(),
-
+              crmSaleDate: getSaleDateExpression(),
               crmCashbackUsed: {
                 $max: [
                   0,
-
                   {
                     $subtract: [
                       {
@@ -100,7 +205,6 @@ router.get(
                           0,
                         ],
                       },
-
                       {
                         $ifNull: [
                           "$payment.cashbackRefundedAmountZl",
@@ -113,29 +217,22 @@ router.get(
               },
             },
           },
-
           {
             $match: {
               crmSaleDate: {
                 $lt: range.to,
               },
-
               crmCashbackUsed: {
                 $gt: 0,
               },
             },
           },
-
           {
             $group: {
-              _id:
-                "$userTelegramId",
-
+              _id: "$userTelegramId",
               usedTotal: {
-                $sum:
-                  "$crmCashbackUsed",
+                $sum: "$crmCashbackUsed",
               },
-
               usedInPeriod: {
                 $sum: {
                   $cond: [
@@ -147,7 +244,6 @@ router.get(
                             range.from,
                           ],
                         },
-
                         {
                           $lt: [
                             "$crmSaleDate",
@@ -156,293 +252,79 @@ router.get(
                         },
                       ],
                     },
-
                     "$crmCashbackUsed",
-
                     0,
                   ],
                 },
               },
             },
           },
-        ]);
+        ]),
+      ]);
 
-      const usedByUser =
-        new Map();
-
+      const usedByUser = new Map();
       let usedInPeriod = 0;
 
-      for (
-        const row of usedRows
-      ) {
-        const telegramId =
-          String(
-            row?._id || ""
-          ).trim();
-
-        usedByUser.set(
-          telegramId,
-          Number(
-            row?.usedTotal || 0
-          )
-        );
-
-        usedInPeriod +=
-          Number(
-            row?.usedInPeriod || 0
-          );
+      for (const row of usedRows) {
+        const telegramId = String(row?._id || "").trim();
+        usedByUser.set(telegramId, Number(row?.usedTotal || 0));
+        usedInPeriod += Number(row?.usedInPeriod || 0);
       }
 
-      const now =
-        new Date();
-
-      const fiveDaysMs =
-        5 *
-        24 *
-        60 *
-        60 *
-        1000;
+      const now = nowForUsers;
+      const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
 
       let issuedInPeriod = 0;
       let activeBalance = 0;
 
-      let rows =
-        users.map(
-          (user) => {
-            const telegramId =
-              String(
-                user?.telegramId ||
-                  ""
-              ).trim();
+      let rows = users.map((user) => {
+        const telegramId = String(user?.telegramId || "").trim();
+        const issuedTotal = Number(user?.issuedTotal || 0);
+        const userIssuedInPeriod = Number(user?.issuedInPeriod || 0);
+        issuedInPeriod += userIssuedInPeriod;
 
-            const ledger =
-              Array.isArray(
-                user?.cashbackLedger
-              )
-                ? user.cashbackLedger
-                : [];
+        const balance = Number(user?.cashbackBalance || 0);
+        activeBalance += balance;
 
-            /*
-             * Выдано всего.
-             */
-            const issuedTotal =
-              ledger.reduce(
-                (
-                  sum,
-                  entry
-                ) =>
-                  sum +
-                  Number(
-                    entry?.amountZl ||
-                      0
-                  ),
+        const nearestExpiry = user?.nearestExpiry
+          ? new Date(user.nearestExpiry)
+          : null;
 
-                0
-              );
+        const msUntilExpiry = nearestExpiry
+          ? nearestExpiry.getTime() - now.getTime()
+          : null;
 
-            /*
-             * Начислено за выбранный период.
-             */
-            const userIssuedInPeriod =
-              ledger.reduce(
-                (
-                  sum,
-                  entry
-                ) => {
-                  if (
-                    !entry?.earnedAt
-                  ) {
-                    return sum;
-                  }
+        const status =
+          nearestExpiry &&
+          msUntilExpiry >= 0 &&
+          msUntilExpiry <= fiveDaysMs
+            ? "expiring"
+            : "active";
 
-                  const earnedAt =
-                    new Date(
-                      entry.earnedAt
-                    );
+        const username = String(user?.username || "").trim();
+        const fullName = [user?.firstName || "", user?.lastName || ""]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
 
-                  if (
-                    earnedAt <
-                      range.from ||
-                    earnedAt >=
-                      range.to
-                  ) {
-                    return sum;
-                  }
+        const name =
+          fullName || (username ? `@${username}` : telegramId);
 
-                  return (
-                    sum +
-                    Number(
-                      entry?.amountZl ||
-                        0
-                    )
-                  );
-                },
-
-                0
-              );
-
-            issuedInPeriod +=
-              userIssuedInPeriod;
-
-            const balance =
-              Number(
-                user?.cashbackBalance ||
-                  0
-              );
-
-            activeBalance +=
-              balance;
-
-            /*
-             * Ищем ближайшую дату,
-             * когда сгорит ещё
-             * не использованный cashback.
-             */
-            const activeLedger =
-              ledger
-                .filter(
-                  (entry) => {
-                    const remaining =
-                      Number(
-                        entry?.remainingZl ||
-                          0
-                      );
-
-                    if (
-                      remaining <= 0
-                    ) {
-                      return false;
-                    }
-
-                    if (
-                      entry?.expiredAt
-                    ) {
-                      return false;
-                    }
-
-                    if (
-                      !entry?.expiresAt
-                    ) {
-                      return false;
-                    }
-
-                    const expiresAt =
-                      new Date(
-                        entry.expiresAt
-                      );
-
-                    return (
-                      expiresAt >
-                      now
-                    );
-                  }
-                )
-                .sort(
-                  (a, b) =>
-                    new Date(
-                      a.expiresAt
-                    ).getTime() -
-                    new Date(
-                      b.expiresAt
-                    ).getTime()
-                );
-
-            const nearestExpiry =
-              activeLedger.length >
-              0
-                ? new Date(
-                    activeLedger[0]
-                      .expiresAt
-                  )
-                : null;
-
-            const msUntilExpiry =
-              nearestExpiry
-                ? nearestExpiry.getTime() -
-                  now.getTime()
-                : null;
-
-            const status =
-              nearestExpiry &&
-              msUntilExpiry >= 0 &&
-              msUntilExpiry <=
-                fiveDaysMs
-                ? "expiring"
-                : "active";
-
-            const username =
-              String(
-                user?.username ||
-                  ""
-              ).trim();
-
-            const fullName = [
-              user?.firstName ||
-                "",
-              user?.lastName ||
-                "",
-            ]
-              .filter(Boolean)
-              .join(" ")
-              .trim();
-
-            const name =
-              fullName ||
-              (
-                username
-                  ? `@${username}`
-                  : telegramId
-              );
-
-            return {
-              id: String(
-                user?._id ||
-                  telegramId
-              ),
-
-              telegramId,
-
-              username,
-
-              name,
-
-              handle:
-                username
-                  ? `@${username}`
-                  : telegramId,
-
-              balance:
-                Number(
-                  balance.toFixed(
-                    2
-                  )
-                ),
-
-              issued:
-                Number(
-                  issuedTotal.toFixed(
-                    2
-                  )
-                ),
-
-              used:
-                Number(
-                  Number(
-                    usedByUser.get(
-                      telegramId
-                    ) || 0
-                  ).toFixed(
-                    2
-                  )
-                ),
-
-              expiresAt:
-                nearestExpiry,
-
-              status,
-            };
-          }
-        );
+        return {
+          id: String(user?._id || telegramId),
+          telegramId,
+          username,
+          name,
+          handle: username ? `@${username}` : telegramId,
+          balance: Number(balance.toFixed(2)),
+          issued: Number(issuedTotal.toFixed(2)),
+          used: Number(
+            Number(usedByUser.get(telegramId) || 0).toFixed(2)
+          ),
+          expiresAt: nearestExpiry,
+          status,
+        };
+      });
 
     rows = rows.filter(
         (row) =>

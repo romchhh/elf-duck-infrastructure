@@ -31,9 +31,9 @@ export async function buildPushAudiencePreview({
         products,
         favoriteCustomerRows,
     ] = await Promise.all([
-    loadSalesHistory(
-      range.to
-    ),
+    loadSalesHistory(range.to, {
+      slimItems: true,
+    }),
 
     Product.find({
 

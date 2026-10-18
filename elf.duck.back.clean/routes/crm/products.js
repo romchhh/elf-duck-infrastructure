@@ -79,6 +79,7 @@ router.get(
       const salesHistory = historyIds.size
         ? await loadSalesHistory(range.to, {
             telegramIds: [...historyIds],
+            slimItems: true,
           })
         : [];
 

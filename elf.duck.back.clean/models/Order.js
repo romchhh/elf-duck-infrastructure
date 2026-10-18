@@ -250,5 +250,10 @@ orderSchema.index({ userTelegramId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ status: 1, "payment.status": 1, createdAt: 1 });
 orderSchema.index({ pickupPointId: 1, createdAt: -1 });
 orderSchema.index({ "items.productId": 1 });
+orderSchema.index({ status: 1, completedAt: -1 });
+orderSchema.index({ status: 1, shippedAt: -1 });
+orderSchema.index({ userTelegramId: 1, status: 1, completedAt: -1 });
+orderSchema.index({ canceledAt: -1 });
+orderSchema.index({ annulledAt: -1 });
 
 export default mongoose.models.Order || mongoose.model("Order", orderSchema);

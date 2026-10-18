@@ -35,6 +35,27 @@ export function getCompletedOrderMatch() {
   };
 }
 
+/**
+ * Грубый pre-filter по индексируемым датам до точного crmSaleDate.
+ * Может захватить чуть больше строк — точный $match после $addFields отсечёт лишнее.
+ */
+export function getCompletedSaleDateBoundsMatch(from, to) {
+  const bounds = {};
+  if (from) bounds.$gte = from;
+  if (to) bounds.$lt = to;
+
+  if (!Object.keys(bounds).length) {
+    return null;
+  }
+
+  return {
+    $or: [
+      { completedAt: bounds },
+      { shippedAt: bounds },
+    ],
+  };
+}
+
 export function getSaleDateExpression() {
   return {
     $cond: [
@@ -68,68 +89,146 @@ export function getSaleDateExpression() {
   };
 }
 
-export async function loadSales(
-  from,
-  to
-) {
-  return Order.aggregate([
-    {
-      $match:
-        getCompletedOrderMatch(),
+/** Slim items: product identity + qty/price only (без stock/labels). */
+function getSlimItemsProjection() {
+  return {
+    $map: {
+      input: { $ifNull: ["$items", []] },
+      as: "it",
+      in: {
+        productKey: "$$it.productKey",
+        productId: "$$it.productId",
+        productTitle1: "$$it.productTitle1",
+        productTitle2: "$$it.productTitle2",
+        orderImgUrl: "$$it.orderImgUrl",
+        flavors: {
+          $map: {
+            input: { $ifNull: ["$$it.flavors", []] },
+            as: "fl",
+            in: {
+              qty: "$$fl.qty",
+              unitPrice: "$$fl.unitPrice",
+            },
+          },
+        },
+      },
     },
+  };
+}
 
+function buildCompletedSalesPipeline(from, to, projectStage) {
+  const matchStage = {
+    ...getCompletedOrderMatch(),
+  };
+
+  const bounds = getCompletedSaleDateBoundsMatch(from, to);
+  if (bounds) {
+    Object.assign(matchStage, {
+      $and: [
+        { $or: matchStage.$or },
+        bounds,
+      ],
+    });
+    delete matchStage.$or;
+  }
+
+  const dateMatch = { crmSaleDate: {} };
+  if (from) dateMatch.crmSaleDate.$gte = from;
+  if (to) dateMatch.crmSaleDate.$lt = to;
+
+  return [
+    { $match: matchStage },
     {
       $addFields: {
-        crmSaleDate:
-          getSaleDateExpression(),
+        crmSaleDate: getSaleDateExpression(),
       },
     },
-
-    {
-      $match: {
-        crmSaleDate: {
-          $gte: from,
-          $lt: to,
-        },
-      },
-    },
-
-    {
-        $project: {
-            userTelegramId: 1,
-            totalZl: 1,
-            payment: 1,
-            crmSaleDate: 1,
-            items: 1,
-            deliveryType: 1,
-            deliveryMethod: 1,
-            pickupPointId: 1,
-        },
-    },
-  ]).option({ allowDiskUse: true });
+    { $match: dateMatch },
+    { $project: projectStage },
+  ];
 }
 
 /**
- * Завершені продажі по клієнтах (групування в Mongo, без завантаження всіх orders у Node).
- * @param {Date} to — верхня межа crmSaleDate (не включно)
- * @param {{ telegramIds?: string[] }} [options] — обмежити вибірку (напр. «Избранные»)
+ * @param {Date} from
+ * @param {Date} to
+ * @param {{ slimItems?: boolean }} [options] — default true
  */
-export async function buildSalesByCustomerMap(
-  to,
-  options = {}
-) {
-  const telegramIds = Array.isArray(
-    options?.telegramIds
-  )
+export async function loadSales(from, to, options = {}) {
+  const slimItems = options?.slimItems !== false;
+
+  const projectStage = {
+    userTelegramId: 1,
+    totalZl: 1,
+    payment: 1,
+    crmSaleDate: 1,
+    deliveryType: 1,
+    deliveryMethod: 1,
+    pickupPointId: 1,
+    items: slimItems ? getSlimItemsProjection() : 1,
+  };
+
+  return Order.aggregate(
+    buildCompletedSalesPipeline(from, to, projectStage)
+  ).option({ allowDiskUse: true });
+}
+
+/** KPI без items — для списка заказов. */
+export async function loadSalesKpis(from, to) {
+  const rows = await Order.aggregate([
+    ...buildCompletedSalesPipeline(from, to, {
+      totalZl: 1,
+    }),
+    {
+      $group: {
+        _id: null,
+        count: { $sum: 1 },
+        revenue: { $sum: { $ifNull: ["$totalZl", 0] } },
+      },
+    },
+  ]).option({ allowDiskUse: true });
+
+  const count = Number(rows?.[0]?.count || 0);
+  const revenue = Number(Number(rows?.[0]?.revenue || 0).toFixed(2));
+
+  return { count, revenue };
+}
+
+/**
+ * Агреговані метрики клієнтів до `to` (без масиву всіх ордерів у Node).
+ * @param {Date} to
+ * @param {{ telegramIds?: string[], from?: Date }} [options]
+ *   from — для purchasesInPeriod / revenueInPeriod
+ */
+export async function buildCustomerSalesStats(to, options = {}) {
+  const telegramIds = Array.isArray(options?.telegramIds)
     ? options.telegramIds
         .map((id) => String(id || "").trim())
         .filter(Boolean)
     : null;
 
+  const from = options?.from || null;
+
+  const matchStage = {
+    ...getCompletedOrderMatch(),
+  };
+
+  const bounds = getCompletedSaleDateBoundsMatch(null, to);
+  if (bounds) {
+    Object.assign(matchStage, {
+      $and: [
+        { $or: matchStage.$or },
+        bounds,
+      ],
+    });
+    delete matchStage.$or;
+  }
+
+  if (telegramIds?.length) {
+    matchStage.userTelegramId = { $in: telegramIds };
+  }
+
   const pipeline = [
-    {
-      $match: getCompletedOrderMatch(),
-    },
+    { $match: matchStage },
     {
       $addFields: {
         crmSaleDate: getSaleDateExpression(),
@@ -137,24 +236,9 @@ export async function buildSalesByCustomerMap(
     },
     {
       $match: {
-        crmSaleDate: {
-          $lt: to,
-        },
+        crmSaleDate: { $lt: to },
       },
     },
-  ];
-
-  if (telegramIds?.length) {
-    pipeline.push({
-      $match: {
-        userTelegramId: {
-          $in: telegramIds,
-        },
-      },
-    });
-  }
-
-  pipeline.push(
     {
       $project: {
         userTelegramId: 1,
@@ -170,33 +254,80 @@ export async function buildSalesByCustomerMap(
     {
       $group: {
         _id: "$userTelegramId",
-        orders: {
-          $push: {
-            userTelegramId: "$userTelegramId",
-            totalZl: "$totalZl",
-            crmSaleDate: "$crmSaleDate",
-          },
-        },
+        ltv: { $sum: { $ifNull: ["$totalZl", 0] } },
+        purchases: { $sum: 1 },
+        firstSaleAt: { $min: "$crmSaleDate" },
+        lastSaleAt: { $max: "$crmSaleDate" },
+        saleDates: { $push: "$crmSaleDate" },
+        revenueInPeriod: from
+          ? {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gte: ["$crmSaleDate", from] },
+                      { $lt: ["$crmSaleDate", to] },
+                    ],
+                  },
+                  { $ifNull: ["$totalZl", 0] },
+                  0,
+                ],
+              },
+            }
+          : { $sum: 0 },
+        purchasesInPeriod: from
+          ? {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $gte: ["$crmSaleDate", from] },
+                      { $lt: ["$crmSaleDate", to] },
+                    ],
+                  },
+                  1,
+                  0,
+                ],
+              },
+            }
+          : { $sum: 0 },
       },
-    }
-  );
+    },
+  ];
 
-  const grouped = await Order.aggregate(pipeline);
+  const grouped = await Order.aggregate(pipeline).option({
+    allowDiskUse: true,
+  });
+
   const map = new Map();
 
   for (const row of grouped) {
     const telegramId = String(row?._id || "").trim();
-    if (!telegramId) {
-      continue;
-    }
+    if (!telegramId) continue;
 
-    map.set(
-      telegramId,
-      Array.isArray(row?.orders) ? row.orders : []
-    );
+    map.set(telegramId, {
+      ltv: Number(Number(row?.ltv || 0).toFixed(2)),
+      purchases: Number(row?.purchases || 0),
+      firstSaleAt: row?.firstSaleAt || null,
+      lastSaleAt: row?.lastSaleAt || null,
+      saleDates: Array.isArray(row?.saleDates) ? row.saleDates : [],
+      revenueInPeriod: Number(
+        Number(row?.revenueInPeriod || 0).toFixed(2)
+      ),
+      purchasesInPeriod: Number(row?.purchasesInPeriod || 0),
+    });
   }
 
   return map;
+}
+
+/**
+ * @deprecated use buildCustomerSalesStats
+ * Compatibility: Map telegramId -> [{ totalZl, crmSaleDate }, ...]
+ * (totalZl only on first row as LTV placeholder is NOT preserved — prefer stats API)
+ */
+export async function buildSalesByCustomerMap(to, options = {}) {
+  return buildCustomerSalesStats(to, options);
 }
 
 /**
@@ -221,6 +352,20 @@ export async function loadSalesHistory(to, options = {}) {
   const matchStage = {
     ...getCompletedOrderMatch(),
   };
+
+  const bounds = getCompletedSaleDateBoundsMatch(
+    options?.from || null,
+    to
+  );
+  if (bounds) {
+    Object.assign(matchStage, {
+      $and: [
+        { $or: matchStage.$or },
+        bounds,
+      ],
+    });
+    delete matchStage.$or;
+  }
 
   if (telegramIds) {
     matchStage.userTelegramId = { $in: telegramIds };
@@ -252,6 +397,13 @@ export async function loadSalesHistory(to, options = {}) {
             in: {
               productKey: "$$it.productKey",
               productId: "$$it.productId",
+              flavors: {
+                $map: {
+                  input: { $ifNull: ["$$it.flavors", []] },
+                  as: "fl",
+                  in: { qty: "$$fl.qty" },
+                },
+              },
             },
           },
         },
@@ -308,6 +460,20 @@ export async function loadCanceledCount(from, to) {
         status: {
           $in: ["canceled", "annulled"],
         },
+        $or: [
+          {
+            canceledAt: {
+              ...(from ? { $gte: from } : {}),
+              ...(to ? { $lt: to } : {}),
+            },
+          },
+          {
+            annulledAt: {
+              ...(from ? { $gte: from } : {}),
+              ...(to ? { $lt: to } : {}),
+            },
+          },
+        ],
       },
     },
     {
@@ -352,6 +518,20 @@ export async function loadCanceledOrders(
             "annulled",
           ],
         },
+        $or: [
+          {
+            canceledAt: {
+              ...(from ? { $gte: from } : {}),
+              ...(to ? { $lt: to } : {}),
+            },
+          },
+          {
+            annulledAt: {
+              ...(from ? { $gte: from } : {}),
+              ...(to ? { $lt: to } : {}),
+            },
+          },
+        ],
       },
     },
 

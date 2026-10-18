@@ -26,6 +26,42 @@ export async function fetchCrmOrdersPage({
     },
   };
 
+  // Index-friendly prefilter before computing crmOrderDate on the whole collection.
+  const dateBoundsPrefilter = {
+    $or: [
+      {
+        createdAt: {
+          $gte: range.from,
+          $lt: range.to,
+        },
+      },
+      {
+        completedAt: {
+          $gte: range.from,
+          $lt: range.to,
+        },
+      },
+      {
+        shippedAt: {
+          $gte: range.from,
+          $lt: range.to,
+        },
+      },
+      {
+        canceledAt: {
+          $gte: range.from,
+          $lt: range.to,
+        },
+      },
+      {
+        annulledAt: {
+          $gte: range.from,
+          $lt: range.to,
+        },
+      },
+    ],
+  };
+
   const afterDateStages = [{ $match: dateMatch }];
 
   if (searchRaw) {
@@ -61,10 +97,15 @@ export async function fetchCrmOrdersPage({
     );
   }
 
+  const basePipeline = [
+    { $match: dateBoundsPrefilter },
+    { $addFields: { crmOrderDate: getCrmOrderDateExpression() } },
+    ...afterDateStages,
+  ];
+
   const [facetResult, periodCountResult] = await Promise.all([
     Order.aggregate([
-      { $addFields: { crmOrderDate: getCrmOrderDateExpression() } },
-      ...afterDateStages,
+      ...basePipeline,
       { $sort: { crmOrderDate: -1, createdAt: -1 } },
       {
         $facet: {
@@ -91,12 +132,13 @@ export async function fetchCrmOrdersPage({
           ],
         },
       },
-    ]),
+    ]).option({ allowDiskUse: true }),
     Order.aggregate([
+      { $match: dateBoundsPrefilter },
       { $addFields: { crmOrderDate: getCrmOrderDateExpression() } },
       { $match: dateMatch },
       { $count: "total" },
-    ]),
+    ]).option({ allowDiskUse: true }),
   ]);
 
   const facet = facetResult?.[0] || {};
