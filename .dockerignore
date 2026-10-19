@@ -14,3 +14,5 @@
 **/tegger/tegger-tg/data
 **/tegger/tegger-tg/sessions
 **/tegger/tegger-tg/runtime
+**/tegger/tegger_ui/.vite
+**/tegger/tegger_ui/node_modules

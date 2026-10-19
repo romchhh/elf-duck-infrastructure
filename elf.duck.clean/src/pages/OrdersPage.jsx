@@ -159,6 +159,21 @@ const isWolaOrderPoint = (order = {}) => {
   return getOrderVisualBlob(order).includes("wola");
 };
 
+const isMokotowOrderPoint = (order = {}) => {
+  const point = getOrderPickupPoint(order);
+  const key = String(point?.key || order?.pickupPointKey || order?.pickupPoint?.key || "")
+    .trim()
+    .toLowerCase();
+  if (key.includes("mokot")) return true;
+  return getOrderVisualBlob(order).includes("mokot");
+};
+
+/** Imię for BLIK transfer hint — Mokotów: Виталий; other points: Dmytro. */
+const getBlikRecipientFirstName = (order = {}) => {
+  if (isMokotowOrderPoint(order)) return "Виталий";
+  return "Dmytro";
+};
+
 useEffect(() => {
   let alive = true;
 
@@ -2228,7 +2243,9 @@ useEffect(() => {
                                 {t("В поле", "W polu")}{" "}
                                 <span className="paymentBlikNoticeKey">Imię</span>
                                 {": "}
-                                <span className="paymentBlikNoticeValue">Dmytro</span>
+                                <span className="paymentBlikNoticeValue">
+                                    {getBlikRecipientFirstName(activePaymentOrder)}
+                                </span>
                             </div>
                         </div>
                     </div>

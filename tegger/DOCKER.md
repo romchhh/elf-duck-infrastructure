@@ -13,10 +13,13 @@
 
 ```bash
 # з кореня elf-duck-shop, після заповнення TEGGER_* у .env
+git pull
 docker compose build tegger-api tegger
 docker compose up -d tegger-api tegger
 curl -s http://localhost:3005/api/health
 ```
+
+Якщо `npm install` падав з `edgesOut` — у репо вже є `tegger_ui/package-lock.json`, Dockerfile використовує `npm ci --legacy-peer-deps`.
 
 CRM отримує посилання через `VITE_TEGGER_URL` (кнопка в «Клиенты» + пункт меню «Tegger»).
 
