@@ -57,10 +57,20 @@ function normalizeTelegramUsername(value) {
     .replace(/^@+/, '');
 }
 
-function getCustomerDisplay(row) {
+function getCustomerName(row) {
+  return String(
+    row?.name ||
+      row?.customer ||
+      row?.telegramId ||
+      '—'
+  );
+}
+
+function getCustomerHandle(row) {
   const username =
     normalizeTelegramUsername(
-      row?.username
+      row?.username ||
+        row?.handle
     );
 
   if (username) {
@@ -68,7 +78,7 @@ function getCustomerDisplay(row) {
   }
 
   return String(
-    row?.customer ||
+    row?.handle ||
       row?.telegramId ||
       '—'
   );
@@ -80,26 +90,36 @@ function CustomerChatLink({
 }) {
   const username =
     normalizeTelegramUsername(
-      row?.username
+      row?.username ||
+        row?.handle
     );
 
   const telegramId = String(
     row?.telegramId || ''
   ).trim();
 
-  const label =
-    getCustomerDisplay(row);
+  const name = getCustomerName(row);
+  const handle = getCustomerHandle(row);
+  const showHandle =
+    Boolean(handle) &&
+    handle !== '—' &&
+    handle !== name;
 
   if (
     !username &&
     !telegramId
   ) {
     return (
-      <span
-        className={className}
-      >
-        {label}
-      </span>
+      <div className={className}>
+        <div className="font-medium text-foreground">
+          {name}
+        </div>
+        {showHandle ? (
+          <div className="text-[11px] text-muted-2">
+            {handle}
+          </div>
+        ) : null}
+      </div>
     );
   }
 
@@ -166,7 +186,7 @@ function CustomerChatLink({
           elapsed >= 1000
         ) {
           window.alert(
-            `Не удалось открыть чат с клиентом ${label}.\n\n`
+            `Не удалось открыть чат с клиентом ${name}.\n\n`
           );
         }
       },
@@ -178,14 +198,21 @@ function CustomerChatLink({
     <button
       type="button"
       onClick={handleClick}
-      className={`${className} text-left hover:underline underline-offset-2`}
+      className={`${className} text-left`}
       title={
         username
           ? `Открыть чат с @${username}`
           : `Открыть Telegram по ID ${telegramId}`
       }
     >
-      {label}
+      <div className="font-medium text-foreground hover:underline underline-offset-2">
+        {name}
+      </div>
+      {showHandle ? (
+        <div className="text-[11px] text-muted-2 hover:text-foreground hover:underline underline-offset-2">
+          {handle}
+        </div>
+      ) : null}
     </button>
   );
 }
@@ -218,6 +245,7 @@ export default function Orders() {
       '6 мес': '6m',
       '6 месяцев': '6m',
       Всё: 'all',
+      'Всё время': 'all',
       'Все время': 'all',
     };
 
@@ -400,10 +428,7 @@ export default function Orders() {
       key: 'customer',
       header: 'Клиент',
       render: (r) => (
-        <CustomerChatLink
-          row={r}
-          className="font-medium text-foreground"
-        />
+        <CustomerChatLink row={r} />
       ),
     },
 
@@ -611,14 +636,8 @@ function OrderMobileRow({
             {r.orderNo}
           </div>
 
-          <div className="truncate text-[13px] font-medium text-foreground">
-
-            <CustomerChatLink
-
-              row={r}
-
-            />
-
+          <div className="min-w-0 truncate">
+            <CustomerChatLink row={r} />
           </div>
 
           <div className="text-[11px] text-muted-2">

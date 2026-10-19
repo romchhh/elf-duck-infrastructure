@@ -29,31 +29,44 @@ export default function Sidebar() {
               {g.label}
             </div>
             <div className="space-y-0.5">
-              {g.items.map((it) => (
-                <NavLink
-                  key={it.to}
-                  to={it.to}
-                  end={it.end}
-                  className={({ isActive }) =>
-                    cn(
-                      'group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all',
-                      isActive
-                        ? 'bg-[hsl(255_100%_68%/0.1)] text-foreground shadow-[inset_0_0_0_1px_hsl(255_100%_68%/0.18)]'
-                        : 'text-muted-foreground hover:bg-[hsl(234_22%_11%/0.5)] hover:text-foreground'
-                    )
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <it.icon
-                        className={cn('h-4 w-4 shrink-0', isActive ? 'text-[hsl(255_100%_72%)]' : 'text-muted-2 group-hover:text-muted-foreground')}
-                      />
-                      <span className="font-medium">{it.label}</span>
-                      {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[hsl(255_100%_72%)]" />}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+              {g.items.map((it) =>
+                it.external && it.href ? (
+                  <a
+                    key={it.href}
+                    href={it.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] text-muted-foreground transition-all hover:bg-[hsl(234_22%_11%/0.5)] hover:text-foreground"
+                  >
+                    <it.icon className="h-4 w-4 shrink-0 text-muted-2 group-hover:text-muted-foreground" />
+                    <span className="font-medium">{it.label}</span>
+                  </a>
+                ) : (
+                  <NavLink
+                    key={it.to}
+                    to={it.to}
+                    end={it.end}
+                    className={({ isActive }) =>
+                      cn(
+                        'group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-all',
+                        isActive
+                          ? 'bg-[hsl(255_100%_68%/0.1)] text-foreground shadow-[inset_0_0_0_1px_hsl(255_100%_68%/0.18)]'
+                          : 'text-muted-foreground hover:bg-[hsl(234_22%_11%/0.5)] hover:text-foreground'
+                      )
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <it.icon
+                          className={cn('h-4 w-4 shrink-0', isActive ? 'text-[hsl(255_100%_72%)]' : 'text-muted-2 group-hover:text-muted-foreground')}
+                        />
+                        <span className="font-medium">{it.label}</span>
+                        {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[hsl(255_100%_72%)]" />}
+                      </>
+                    )}
+                  </NavLink>
+                )
+              )}
             </div>
           </div>
         ))}

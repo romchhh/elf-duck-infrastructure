@@ -13,7 +13,7 @@ GitHub: [romchhh/elf-duck-infrastructure](https://github.com/romchhh/elf-duck-in
 
 Покроковий гайд для власного сервера: [`docs/DEPLOY_SELF_HOSTED.md`](docs/DEPLOY_SELF_HOSTED.md).
 
-**Docker:** [`docs/DOCKER.md`](docs/DOCKER.md) — порти **3000–3004**.
+**Docker:** [`docs/DOCKER.md`](docs/DOCKER.md) — порти **3000–3005** (3005 = Tegger).
 
 **Prod на telebots.site:** [`docs/TELEBOTS_SITE.md`](docs/TELEBOTS_SITE.md) — DNS, nginx, BotFather, чеклист.
 

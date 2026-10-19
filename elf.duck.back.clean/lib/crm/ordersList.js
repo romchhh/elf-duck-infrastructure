@@ -17,7 +17,10 @@ export async function fetchCrmOrdersPage({
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50));
   const skip = (safePage - 1) * safeLimit;
-  const searchRaw = String(search || "").trim().toLowerCase();
+  const searchRaw = String(search || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, "");
 
   const dateMatch = {
     crmOrderDate: {

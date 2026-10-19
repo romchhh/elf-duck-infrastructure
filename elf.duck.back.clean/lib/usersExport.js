@@ -144,3 +144,47 @@ export function sendUsersExportCsvResponse(res, rows) {
   );
   res.send(csv);
 }
+
+/** CSV for tegger: one valid Telegram username per row. */
+export function usersExportRowsToTeggerCsv(rows = []) {
+  const seen = new Set();
+  const lines = ["username"];
+
+  for (const row of rows) {
+    const username = String(row?.username || "")
+      .trim()
+      .replace(/^@+/, "")
+      .toLowerCase();
+
+    if (!username) continue;
+    if (!/^[a-z0-9_]{5,32}$/.test(username)) continue;
+    if (seen.has(username)) continue;
+
+    seen.add(username);
+    lines.push(escapeCsvCell(username));
+  }
+
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
+export function teggerUsersExportFilename() {
+  const now = new Date();
+  const stamp = [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, "0"),
+    String(now.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+  return `elfduck-tegger-usernames-${stamp}.csv`;
+}
+
+export function sendTeggerUsersExportCsvResponse(res, rows) {
+  const csv = usersExportRowsToTeggerCsv(rows);
+  const filename = teggerUsersExportFilename();
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${filename}"`
+  );
+  res.send(csv);
+}

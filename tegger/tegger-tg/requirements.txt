@@ -1,0 +1,9 @@
+telethon
+python-dotenv
+PySocks
+python-socks[asyncio]
+fastapi
+uvicorn[standard]
+argon2-cffi
+Pillow>=11.0
+python-multipart>=0.0.20

@@ -29,15 +29,31 @@ export function getCustomerStatus({
     ? new Date(lastSaleAt)
     : null;
 
+  const rangeTo = range?.to
+    ? new Date(range.to)
+    : new Date();
+
+  const fourteenDaysMs =
+    14 * 24 * 60 * 60 * 1000;
+
   /*
    * Новый:
-   * первая покупка в жизни
-   * попала в выбранный период.
+   * первая покупка в выбранном периоде.
+   * Для period=all — первая покупка за последние 14 дней
+   * (иначе почти все клиенты стали бы «новыми»).
    */
+  const newFrom =
+    String(range?.key || "") === "all"
+      ? new Date(rangeTo.getTime() - fourteenDaysMs)
+      : range?.from
+        ? new Date(range.from)
+        : null;
+
   if (
     firstSale &&
-    firstSale >= range.from &&
-    firstSale < range.to
+    newFrom &&
+    firstSale >= newFrom &&
+    firstSale < rangeTo
   ) {
     return "new";
   }
@@ -51,11 +67,9 @@ export function getCustomerStatus({
    * покупал не более 14 дней назад
    * относительно конца выбранного периода.
    */
-  const activeThreshold =
-    new Date(
-      range.to.getTime() -
-        14 * 24 * 60 * 60 * 1000
-    );
+  const activeThreshold = new Date(
+    rangeTo.getTime() - fourteenDaysMs
+  );
 
   if (lastSale >= activeThreshold) {
     return "active";

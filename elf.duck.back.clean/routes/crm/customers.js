@@ -14,12 +14,50 @@ import { buildCustomerSalesStats } from "../../lib/crm/sales.js";
 
 const router = express.Router();
 
+const CUSTOMER_STATS_CACHE_TTL_MS = 45_000;
+const customerStatsCache = new Map();
+
+function getCustomerStatsCacheKey(range) {
+  const fromMs = range?.from ? new Date(range.from).getTime() : 0;
+  const toMs = range?.to ? new Date(range.to).getTime() : 0;
+  // Bucket "to" by minute so consecutive filter/sort clicks reuse one aggregate.
+  const toBucket = Math.floor(toMs / 60_000);
+  return `${range?.key || "custom"}:${fromMs}:${toBucket}`;
+}
+
+async function loadCustomerSalesStatsCached(range, options = {}) {
+  const scoped = Array.isArray(options?.telegramIds);
+  if (scoped) {
+    return buildCustomerSalesStats(range.to, options);
+  }
+
+  const key = getCustomerStatsCacheKey(range);
+  const hit = customerStatsCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) {
+    return hit.value;
+  }
+
+  const value = await buildCustomerSalesStats(range.to, options);
+  customerStatsCache.set(key, {
+    value,
+    expiresAt: Date.now() + CUSTOMER_STATS_CACHE_TTL_MS,
+  });
+
+  // Keep the map small.
+  if (customerStatsCache.size > 8) {
+    const oldestKey = customerStatsCache.keys().next().value;
+    customerStatsCache.delete(oldestKey);
+  }
+
+  return value;
+}
+
 router.get(
   "/customers",
   async (req, res) => {
     try {
       const range = getPeriodRange(
-        req.query?.period || "month",
+        req.query?.period || "all",
         req.query?.from || "",
         req.query?.to || ""
       );
@@ -36,7 +74,8 @@ router.get(
 
       const search = String(req.query?.search || "")
         .trim()
-        .toLowerCase();
+        .toLowerCase()
+        .replace(/^@+/, "");
 
       const sortKey = String(req.query?.sortKey || "").trim();
 
@@ -64,46 +103,107 @@ router.get(
 
       const onlyFavorites = statusFilter === "favorites";
 
-      const salesByCustomer = await buildCustomerSalesStats(
-        range.to,
-        {
-          from: range.from,
-          ...(onlyFavorites && favoriteCustomerIds.size > 0
-            ? {
-                telegramIds: Array.from(favoriteCustomerIds),
-              }
-            : {}),
-        }
-      );
+      let searchTelegramIds = null;
 
-      const telegramIds = onlyFavorites
-        ? Array.from(favoriteCustomerIds).filter((telegramId) =>
+      if (search) {
+        const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const searchUsers = await User.find({
+          $or: [
+            { username: { $regex: escaped, $options: "i" } },
+            { firstName: { $regex: escaped, $options: "i" } },
+            { lastName: { $regex: escaped, $options: "i" } },
+            { telegramId: { $regex: escaped, $options: "i" } },
+          ],
+        })
+          .select({ telegramId: 1 })
+          .limit(500)
+          .lean();
+
+        searchTelegramIds = searchUsers
+          .map((user) => String(user?.telegramId || "").trim())
+          .filter(Boolean);
+
+        if (searchTelegramIds.length === 0) {
+          return res.json({
+            ok: true,
+            period: {
+              key: range.key,
+              from: range.from,
+              to: range.to,
+            },
+            summary: {
+              customers: 0,
+              active: 0,
+              topLtv: 0,
+              averageCheck: 0,
+            },
+            rows: [],
+            pagination: {
+              page: 1,
+              limit,
+              total: 0,
+              pageCount: 1,
+            },
+          });
+        }
+      }
+
+      const scopedTelegramIds = (() => {
+        if (onlyFavorites && searchTelegramIds) {
+          const favoriteSet = favoriteCustomerIds;
+          return searchTelegramIds.filter((id) => favoriteSet.has(id));
+        }
+
+        if (onlyFavorites) {
+          return Array.from(favoriteCustomerIds);
+        }
+
+        if (searchTelegramIds) {
+          return searchTelegramIds;
+        }
+
+        return null;
+      })();
+
+      if (scopedTelegramIds && scopedTelegramIds.length === 0) {
+        return res.json({
+          ok: true,
+          period: {
+            key: range.key,
+            from: range.from,
+            to: range.to,
+          },
+          summary: {
+            customers: 0,
+            active: 0,
+            topLtv: 0,
+            averageCheck: 0,
+          },
+          rows: [],
+          pagination: {
+            page: 1,
+            limit,
+            total: 0,
+            pageCount: 1,
+          },
+        });
+      }
+
+      const salesByCustomer = await loadCustomerSalesStatsCached(range, {
+        from: range.from,
+        ...(scopedTelegramIds
+          ? { telegramIds: scopedTelegramIds }
+          : {}),
+      });
+
+      const telegramIds = scopedTelegramIds
+        ? scopedTelegramIds.filter((telegramId) =>
             salesByCustomer.has(telegramId)
           )
         : Array.from(salesByCustomer.keys());
 
-      const users =
-        telegramIds.length > 0
-          ? await User.find({
-              telegramId: { $in: telegramIds },
-            })
-              .select({
-                telegramId: 1,
-                username: 1,
-                firstName: 1,
-                lastName: 1,
-                cashbackBalance: 1,
-              })
-              .lean()
-          : [];
-
-      const userByTelegramId = new Map(
-        users.map((user) => [
-          String(user?.telegramId || "").trim(),
-          user,
-        ])
-      );
-
+      // Build stats-only rows first so sort/filter/page do not wait on User.find
+      // for the whole customer base (~2k docs).
       let rows = telegramIds.map((telegramId) => {
         const stats = salesByCustomer.get(telegramId) || {
           ltv: 0,
@@ -120,50 +220,31 @@ router.get(
         const purchases = Number(stats.purchases || 0);
         const ltv = Number(stats.ltv || 0);
 
-        const avgCheck =
-          purchases > 0
-            ? Number((ltv / purchases).toFixed(2))
-            : 0;
-
-        const interval = getAveragePurchaseIntervalDays(
-          stats.saleDates || []
-        );
-
-        const user = userByTelegramId.get(telegramId);
-
-        const name = [user?.firstName || "", user?.lastName || ""]
-          .filter(Boolean)
-          .join(" ")
-          .trim();
-
-        const username = String(user?.username || "")
-          .trim()
-          .replace(/^@+/, "");
-
-        const status = getCustomerStatus({
-          firstSaleAt,
-          lastSaleAt,
-          range,
-        });
-
         return {
           id: telegramId,
           telegramId,
           isFavorite: favoriteCustomerIds.has(telegramId),
-          name: name || (username ? `@${username}` : telegramId),
-          username,
-          handle: username ? `@${username}` : telegramId,
-          status,
+          name: telegramId,
+          username: "",
+          handle: telegramId,
+          status: getCustomerStatus({
+            firstSaleAt,
+            lastSaleAt,
+            range,
+          }),
           segment: getCustomerSegment(purchases),
           ltv,
           purchases,
           purchasesInPeriod: Number(stats.purchasesInPeriod || 0),
           revenueInPeriod: Number(stats.revenueInPeriod || 0),
-          interval,
-          avgCheck,
+          interval: getAveragePurchaseIntervalDays(stats.saleDates || []),
+          avgCheck:
+            purchases > 0
+              ? Number((ltv / purchases).toFixed(2))
+              : 0,
           firstSaleAt,
           lastOrder: lastSaleAt,
-          cashback: Number(user?.cashbackBalance || 0),
+          cashback: 0,
         };
       });
 
@@ -199,27 +280,31 @@ router.get(
         rows = rows.filter((row) => row.status === statusFilter);
       }
 
-      if (search) {
-        rows = rows.filter((row) => {
-          const haystack = [
-            row.name,
-            row.username,
-            row.handle,
-            row.telegramId,
-          ]
-            .join(" ")
-            .toLowerCase();
-
-          return haystack.includes(search);
-        });
-      }
-
       const sortableCustomerKeys = new Set([
         "ltv",
         "purchases",
         "avgCheck",
         "cashback",
       ]);
+
+      if (sortKey === "cashback" && rows.length > 0) {
+        const cashbackUsers = await User.find({
+          telegramId: { $in: rows.map((row) => row.telegramId) },
+        })
+          .select({ telegramId: 1, cashbackBalance: 1 })
+          .lean();
+
+        const cashbackById = new Map(
+          cashbackUsers.map((user) => [
+            String(user?.telegramId || "").trim(),
+            Number(user?.cashbackBalance || 0),
+          ])
+        );
+
+        for (const row of rows) {
+          row.cashback = cashbackById.get(row.telegramId) || 0;
+        }
+      }
 
       if (sortableCustomerKeys.has(sortKey)) {
         rows.sort((a, b) => {
@@ -248,7 +333,50 @@ router.get(
       const pageCount = Math.max(1, Math.ceil(total / limit));
       const safePage = Math.min(page, pageCount);
       const start = (safePage - 1) * limit;
-      const pageRows = rows.slice(start, start + limit);
+      const pageRowsRaw = rows.slice(start, start + limit);
+
+      const pageUsers =
+        pageRowsRaw.length > 0
+          ? await User.find({
+              telegramId: {
+                $in: pageRowsRaw.map((row) => row.telegramId),
+              },
+            })
+              .select({
+                telegramId: 1,
+                username: 1,
+                firstName: 1,
+                lastName: 1,
+                cashbackBalance: 1,
+              })
+              .lean()
+          : [];
+
+      const userByTelegramId = new Map(
+        pageUsers.map((user) => [
+          String(user?.telegramId || "").trim(),
+          user,
+        ])
+      );
+
+      const pageRows = pageRowsRaw.map((row) => {
+        const user = userByTelegramId.get(row.telegramId);
+        const name = [user?.firstName || "", user?.lastName || ""]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        const username = String(user?.username || "")
+          .trim()
+          .replace(/^@+/, "");
+
+        return {
+          ...row,
+          name: name || (username ? `@${username}` : row.telegramId),
+          username,
+          handle: username ? `@${username}` : row.telegramId,
+          cashback: Number(user?.cashbackBalance || row.cashback || 0),
+        };
+      });
 
       return res.json({
         ok: true,
@@ -294,9 +422,18 @@ router.get("/customers/export", async (req, res) => {
     const {
       buildUsersExportRows,
       sendUsersExportCsvResponse,
+      sendTeggerUsersExportCsvResponse,
     } = await import("../../lib/usersExport.js");
 
     const rows = await buildUsersExportRows();
+    const format = String(req.query?.format || "")
+      .trim()
+      .toLowerCase();
+
+    if (format === "tegger") {
+      return sendTeggerUsersExportCsvResponse(res, rows);
+    }
+
     return sendUsersExportCsvResponse(res, rows);
   } catch (error) {
     console.error("GET /crm/customers/export error:", error);

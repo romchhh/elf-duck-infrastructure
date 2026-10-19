@@ -7,6 +7,18 @@ import {
 
 const router = express.Router();
 
+function toDisplayCategoryLabel(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "Категория";
+  // if mostly uppercase (e.g. LIQUIDS), title-case words
+  if (s === s.toUpperCase() && /[A-ZА-Я]/.test(s)) {
+    return s
+      .toLowerCase()
+      .replace(/(^|\s|\-|_)(\S)/g, (_, a, b) => a + b.toUpperCase());
+  }
+  return s;
+}
+
 router.get(
   "/push/meta",
 
@@ -90,34 +102,18 @@ router.get(
         ],
 
         statuses: [
-        {
+          {
             key: "active",
-            label:
-            "Активные",
-        },
-        {
+            label: "Активные",
+          },
+          {
+            key: "sleeping",
+            label: "Спящие",
+          },
+          {
             key: "new",
             label: "Новые",
-        },
-        {
-            key: "sleeping",
-            label:
-            "Спящие",
-        },
-        {
-            key: "repeat",
-            label:
-            "Повторные",
-        },
-        {
-            key: "regular",
-            label:
-            "Постоянные",
-        },
-        {
-            key: "vip",
-            label: "VIP",
-        },
+          },
         ],
 
         categories:
@@ -128,9 +124,8 @@ router.get(
                   ""
               ),
 
-              label: String(
-                category
-                  ?.title ||
+              label: toDisplayCategoryLabel(
+                category?.title ||
                   category?.key ||
                   "Категория"
               ),
@@ -194,7 +189,7 @@ router.get(
               "delivery:courier",
 
             label:
-              "Курьер",
+              "Dostawa",
           },
 
           {

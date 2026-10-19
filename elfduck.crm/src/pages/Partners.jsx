@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 
 import DataTable from '@/components/shared/DataTable';
-import Delta from '@/components/shared/Delta';
 import Pagination from '@/components/shared/Pagination';
 import PartnerMobileRow from '@/components/shared/PartnerMobileRow';
 
@@ -491,34 +490,6 @@ export default function Partners() {
     //       </span>
     //     ),
     // },
-
-    {
-      key:
-        'trend',
-
-      header:
-        'Тренд',
-
-      align:
-        'right',
-
-      render:
-        (row) =>
-          row.trend === null ||
-          row.trend ===
-            undefined ? (
-            <span className="text-muted-2">
-              —
-            </span>
-          ) : (
-            <Delta
-              value={
-                row.trend
-              }
-              suffix="%"
-            />
-          ),
-    },
   ];
 
   return (
@@ -640,8 +611,6 @@ export default function Partners() {
                   }
 
                   showName
-
-                  showTrend
 
                 />
               )

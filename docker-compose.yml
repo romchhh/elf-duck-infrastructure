@@ -4,6 +4,7 @@
 #   3002 CRM
 #   3003 admin-бот (процес без HTTP; порт зарезервовано для health/debug за потреби)
 #   3004 MongoDB (мапінг 3004 → 27017)
+#   3005 Tegger UI (+ /api → tegger-api)
 
 name: elf-duck
 
@@ -67,11 +68,51 @@ services:
       dockerfile: docker/crm.Dockerfile
       args:
         VITE_CRM_API_URL: ${VITE_CRM_API_URL:-http://localhost:3000}
+        VITE_TEGGER_URL: ${VITE_TEGGER_URL:-https://tegger.telebots.site}
     restart: unless-stopped
     ports:
       - "3002:80"
     depends_on:
       - api
+
+  tegger-api:
+    build:
+      context: .
+      dockerfile: docker/tegger-api.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      RUNTIME_DIR: /data
+      FRONTEND_ORIGIN: ${TEGGER_FRONTEND_ORIGIN:-https://tegger.telebots.site}
+      TEGGER_BOOTSTRAP: ${TEGGER_BOOTSTRAP:-true}
+      TEGGER_COOKIE_SECURE: ${TEGGER_COOKIE_SECURE:-true}
+      API_ID: ${TEGGER_API_ID:-0}
+      API_HASH: ${TEGGER_API_HASH:-}
+      SENDERS: ${TEGGER_SENDERS:-sender_1}
+      DRY_RUN: ${TEGGER_DRY_RUN:-true}
+      TEMPLATE_STORY_URL_SENDER_1: ${TEGGER_TEMPLATE_STORY_URL_SENDER_1:-}
+      TEGGER_ADMIN_USERNAME: ${TEGGER_ADMIN_USERNAME:-admin}
+      TEGGER_ADMIN_PASSWORD_HASH: ${TEGGER_ADMIN_PASSWORD_HASH:-}
+      LOG_BOT_TOKEN: ${TEGGER_LOG_BOT_TOKEN:-}
+      LOG_CHAT_ID: ${TEGGER_LOG_CHAT_ID:-}
+    volumes:
+      - tegger_data:/data
+    # Internal only; public entry is tegger:3005 with /api proxy
+    expose:
+      - "8000"
+
+  tegger:
+    build:
+      context: .
+      dockerfile: docker/tegger.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3005:80"
+    depends_on:
+      tegger-api:
+        condition: service_started
 
   # Одноразовое обновление каталога в Mongo (Node на хосте не нужен):
   #   docker compose build api
@@ -117,3 +158,4 @@ services:
 
 volumes:
   mongo_data:
+  tegger_data:

@@ -145,11 +145,17 @@ router.get(
           .join(" ")
           .trim();
 
-        const username = String(user?.username || "").trim();
+        const username = String(user?.username || "")
+          .trim()
+          .replace(/^@+/, "");
 
-        const customer =
+        const name =
           fullName ||
           (username ? `@${username}` : telegramId);
+
+        const handle = username
+          ? `@${username}`
+          : telegramId;
 
         const items = getCrmItemsLabel(order?.items || []);
 
@@ -160,7 +166,7 @@ router.get(
             pickupById.get(String(order?.pickupPointId || "")) ||
             "Самовывоз";
         } else if (order?.deliveryMethod === "courier") {
-          location = order?.courierDistrict || "Доставка — Варшава";
+          location = "Доставка — Варшава";
         } else if (order?.deliveryMethod === "inpost") {
           location = "InPost / Польша";
         }
@@ -168,8 +174,10 @@ router.get(
         return {
           id: String(order?._id || ""),
           orderNo: String(order?.orderNo || ""),
-          customer,
+          customer: name,
+          name,
           username,
+          handle,
           telegramId,
           date: order?.crmOrderDate,
           items,

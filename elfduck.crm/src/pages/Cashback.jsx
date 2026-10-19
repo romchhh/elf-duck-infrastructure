@@ -5,6 +5,9 @@ import React, {
 } from 'react';
 
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Search,
 } from 'lucide-react';
 
@@ -37,8 +40,8 @@ const filters = [
     label: 'Все',
   },
   {
-    key: 'balance',
-    label: 'Есть баланс',
+    key: 'active',
+    label: 'Активный',
   },
   {
     key: 'expiring',
@@ -71,6 +74,10 @@ const validPeriodKeys =
     '6m',
     'all',
   ]);
+
+function formatNumber(value) {
+  return new Intl.NumberFormat('ru-RU').format(Number(value || 0));
+}
 
 function formatMoney(value) {
   return `${new Intl.NumberFormat(
@@ -480,6 +487,9 @@ export default function Cashback() {
     setPage,
   ] = useState(1);
 
+  const [sortKey, setSortKey] = useState('');
+  const [sortDirection, setSortDirection] = useState('desc');
+
   const baseQueryString =
     useMemo(
       () => {
@@ -564,6 +574,11 @@ export default function Cashback() {
           );
         }
 
+        if (sortKey) {
+          params.set('sortKey', sortKey);
+          params.set('sortDirection', sortDirection);
+        }
+
         return (
           params.toString()
         );
@@ -573,6 +588,8 @@ export default function Cashback() {
         page,
         filter,
         query,
+        sortKey,
+        sortDirection,
       ]
     );
 
@@ -582,6 +599,8 @@ export default function Cashback() {
     baseQueryString,
     filter,
     query,
+    sortKey,
+    sortDirection,
   ]);
 
   const {
@@ -665,66 +684,53 @@ export default function Cashback() {
         0
     );
 
-  const activeFilterLabel =
-    filters.find(
-      (f) => f.key === filter
-    )?.label || 'Все';
-
   const summary = [
-    ...(filter !== 'all'
-      ? [
-          {
-            label: 'Клиентов в выборке',
-            value: String(
-              summaryData.clients ??
-                total
-            ),
-          },
-        ]
-      : []),
     {
-      label:
-        filter === 'all'
-          ? 'Начислено'
-          : `Начислено (${activeFilterLabel})`,
-
-      value:
-        formatMoney(
-          summaryData.issued
-        ),
+      label: 'Начислено',
+      value: formatMoney(summaryData.issued),
     },
-
     {
-      label:
-        'Использовано',
-
-      value:
-        formatMoney(
-          summaryData.used
-        ),
+      label: 'Использовано',
+      value: formatMoney(summaryData.used),
     },
-
     {
-      label:
-        'Активный баланс',
-
-      value:
-        formatMoney(
-          summaryData.balance
-        ),
+      label: 'Активный баланс',
+      value: formatMoney(summaryData.balance),
     },
-
     {
-      label:
-        'Использовано в %',
-
-      value:
-        `${Number(
-          summaryData.utilisation ||
-            0
-        )}%`,
+      label: 'Использовано в %',
+      value: `${Number(summaryData.utilisation || 0)}%`,
     },
   ];
+
+  const toggleSort = (key) => {
+    if (sortKey === key) {
+      setSortDirection((current) =>
+        current === 'desc' ? 'asc' : 'desc'
+      );
+      return;
+    }
+
+    setSortKey(key);
+    setSortDirection('desc');
+  };
+
+  const renderSortableHeader = (key, label) => (
+    <button
+      type="button"
+      onClick={() => toggleSort(key)}
+      className="inline-flex items-center gap-1.5 whitespace-nowrap text-inherit transition-colors hover:text-foreground"
+    >
+      <span>{label}</span>
+      {sortKey !== key ? (
+        <ArrowUpDown className="h-3 w-3 text-muted-2" />
+      ) : sortDirection === 'desc' ? (
+        <ArrowDown className="h-3 w-3 text-[hsl(255_100%_72%)]" />
+      ) : (
+        <ArrowUp className="h-3 w-3 text-[hsl(255_100%_72%)]" />
+      )}
+    </button>
+  );
 
   const distribution =
     useMemo(
@@ -837,8 +843,7 @@ export default function Cashback() {
       key:
         'balance',
 
-      header:
-        'Баланс',
+      header: renderSortableHeader('balance', 'Баланс'),
 
       align:
         'right',
@@ -857,8 +862,7 @@ export default function Cashback() {
       key:
         'issued',
 
-      header:
-        'Выдано всего',
+      header: renderSortableHeader('issued', 'Выдано всего'),
 
       align:
         'right',
@@ -877,8 +881,7 @@ export default function Cashback() {
       key:
         'used',
 
-      header:
-        'Использовано',
+      header: renderSortableHeader('used', 'Использовано'),
 
       align:
         'right',
@@ -1096,7 +1099,7 @@ export default function Cashback() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5 no-scrollbar">
             {filters.map(
               (f) => (
@@ -1130,9 +1133,9 @@ export default function Cashback() {
             )}
           </div>
 
-          <div className="text-[12px] text-muted-2">
-            Найдено: {total}
-          </div>
+          <span className="text-[12px] text-muted-2">
+            Выбрано: {formatNumber(total)}
+          </span>
         </div>
 
         <div className="rounded-2xl surface-card p-2">

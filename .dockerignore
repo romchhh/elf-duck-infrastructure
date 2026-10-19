@@ -7,3 +7,10 @@
 !**/.env.docker.example
 **/.DS_Store
 **/npm-debug.log*
+**/__pycache__
+**/.venv
+**/venv
+**/*.session
+**/tegger/tegger-tg/data
+**/tegger/tegger-tg/sessions
+**/tegger/tegger-tg/runtime

@@ -219,11 +219,6 @@ export default function Push() {
   ] = useState('');
 
   const [
-    minCashback,
-    setMinCashback,
-  ] = useState('');
-
-  const [
     favProduct,
     setFavProduct,
   ] = useState('');
@@ -589,12 +584,6 @@ onSuccess: (data) => {
               0
           ),
 
-        minCashback:
-          Number(
-            minCashback ||
-              0
-          ),
-
         favProduct:
           String(
             favProduct ||
@@ -616,7 +605,6 @@ onSuccess: (data) => {
         categories,
         locations,
         minCheck,
-        minCashback,
         favProduct,
         telegram,
         cashbackExpiringSoon,
@@ -1196,12 +1184,6 @@ const deleteTemplate =
                     minCheck:
                       Number(
                         minCheck ||
-                          0
-                      ),
-
-                    minCashback:
-                      Number(
-                        minCashback ||
                           0
                       ),
 
@@ -1797,6 +1779,15 @@ const confirmCreateTpl = () => {
                     )
                   )}
               </div>
+
+              <input
+                value={telegram}
+                onChange={(e) =>
+                  setTelegram(e.target.value)
+                }
+                placeholder="@telegram / клиент"
+                className="input-base mt-2"
+              />
             </Section>
 
             {audienceIsLeads && (
@@ -1953,22 +1944,6 @@ const confirmCreateTpl = () => {
 
                 <input
                   value={
-                    minCashback
-                  }
-                  onChange={(
-                    e
-                  ) =>
-                    setMinCashback(
-                      e.target
-                        .value
-                    )
-                  }
-                  placeholder="Кэшбэк >"
-                  className="input-base"
-                />
-
-                <input
-                  value={
                     favProduct
                   }
                   onChange={(
@@ -1987,22 +1962,6 @@ const confirmCreateTpl = () => {
                       'pointer-events-none opacity-40'
                   )}
                   disabled={audienceIsLeads}
-                />
-
-                <input
-                  value={
-                    telegram
-                  }
-                  onChange={(
-                    e
-                  ) =>
-                    setTelegram(
-                      e.target
-                        .value
-                    )
-                  }
-                  placeholder="@telegram / клиент"
-                  className="input-base"
                 />
               </div>
 
@@ -2075,6 +2034,12 @@ const confirmCreateTpl = () => {
                 className="input-base"
               />
             </Field>
+
+            <PushPromoCreator
+              onCreated={(code) => {
+                if (code) setPromo(code);
+              }}
+            />
 
 <div className="space-y-2">
   <label
@@ -2589,6 +2554,135 @@ const confirmCreateTpl = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function PushPromoCreator({ onCreated }) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState('');
+  const [amountZl, setAmountZl] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const createPromo = async () => {
+    const normalizedCode = String(code || '')
+      .trim()
+      .toUpperCase();
+    const amount = Number(amountZl);
+
+    if (!normalizedCode || normalizedCode.length < 3) {
+      toast({
+        title: 'Укажите код промокода',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast({
+        title: 'Укажите сумму промокода (zł)',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    let expiresAtIso = null;
+    if (expiresAt) {
+      const parsed = new Date(expiresAt);
+      if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+        toast({
+          title: 'Срок действия должен быть в будущем',
+          variant: 'destructive',
+        });
+        return;
+      }
+      expiresAtIso = parsed.toISOString();
+    }
+
+    setLoading(true);
+
+    try {
+      const result = await crmFetchJson('/crm/promo-codes', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: normalizedCode,
+          amountZl: amount,
+          expiresAt: expiresAtIso,
+        }),
+      });
+
+      const createdCode = String(
+        result?.promoCode?.code || normalizedCode
+      );
+
+      toast({
+        title: `Промокод ${createdCode} создан`,
+      });
+
+      onCreated?.(createdCode);
+      setOpen(false);
+      setCode('');
+      setAmountZl('');
+      setExpiresAt('');
+    } catch (error) {
+      toast({
+        title: 'Не удалось создать промокод',
+        description: error?.message || 'PROMO_CODE_CREATE_FAILED',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-3">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="text-[12px] font-medium text-[hsl(255_100%_72%)] hover:underline underline-offset-2"
+      >
+        {open ? 'Скрыть создание промокода' : '+ Создать промокод'}
+      </button>
+
+      {open ? (
+        <div className="mt-3 space-y-2">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="Код (например SECOND15)"
+            className="input-base"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              value={amountZl}
+              onChange={(e) => setAmountZl(e.target.value)}
+              placeholder="Сумма, zł"
+              type="number"
+              min="1"
+              step="1"
+              className="input-base"
+            />
+            <input
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              type="datetime-local"
+              title="Срок действия"
+              style={{ colorScheme: 'dark' }}
+              className="input-base"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={createPromo}
+            disabled={loading}
+            className="inline-flex h-9 items-center justify-center rounded-lg border border-border px-3 text-[12px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] disabled:opacity-50"
+          >
+            {loading ? 'Создаём…' : 'Сохранить промокод'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

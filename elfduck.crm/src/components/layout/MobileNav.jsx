@@ -51,30 +51,44 @@ export default function MobileNav({ open, onClose }) {
             <div key={g.label} className="mb-5">
               <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-2">{g.label}</div>
               <div className="space-y-0.5">
-                {g.items.map((it) => (
-                  <NavLink
-                    key={it.to}
-                    to={it.to}
-                    end={it.end}
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      cn(
-                        'group flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-[14px] transition-all',
-                        isActive
-                          ? 'bg-[hsl(255_100%_68%/0.1)] text-foreground shadow-[inset_0_0_0_1px_hsl(255_100%_68%/0.18)]'
-                          : 'text-muted-foreground hover:bg-[hsl(234_22%_11%/0.5)] hover:text-foreground'
-                      )
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <it.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-[hsl(255_100%_72%)]' : 'text-muted-2 group-hover:text-muted-foreground')} />
-                        <span className="font-medium">{it.label}</span>
-                        {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[hsl(255_100%_72%)]" />}
-                      </>
-                    )}
-                  </NavLink>
-                ))}
+                {g.items.map((it) =>
+                  it.external && it.href ? (
+                    <a
+                      key={it.href}
+                      href={it.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={onClose}
+                      className="group flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-[14px] text-muted-foreground transition-all hover:bg-[hsl(234_22%_11%/0.5)] hover:text-foreground"
+                    >
+                      <it.icon className="h-4 w-4 shrink-0 text-muted-2 group-hover:text-muted-foreground" />
+                      <span className="font-medium">{it.label}</span>
+                    </a>
+                  ) : (
+                    <NavLink
+                      key={it.to}
+                      to={it.to}
+                      end={it.end}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        cn(
+                          'group flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2 text-[14px] transition-all',
+                          isActive
+                            ? 'bg-[hsl(255_100%_68%/0.1)] text-foreground shadow-[inset_0_0_0_1px_hsl(255_100%_68%/0.18)]'
+                            : 'text-muted-foreground hover:bg-[hsl(234_22%_11%/0.5)] hover:text-foreground'
+                        )
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          <it.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-[hsl(255_100%_72%)]' : 'text-muted-2 group-hover:text-muted-foreground')} />
+                          <span className="font-medium">{it.label}</span>
+                          {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[hsl(255_100%_72%)]" />}
+                        </>
+                      )}
+                    </NavLink>
+                  )
+                )}
               </div>
             </div>
           ))}

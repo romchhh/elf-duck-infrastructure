@@ -25,10 +25,10 @@ import Badge from '@/components/shared/Badge';
 import Pagination from '@/components/shared/Pagination';
 import KpiCard from '@/components/shared/KpiCard';
 import MetricGrid from '@/components/shared/MetricGrid';
-import { usePeriod } from '@/lib/PeriodContext';
 import { cn } from '@/lib/utils';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
 import { setCrmSessionToken } from '@/lib/crmSession';
+import { TEGGER_URL } from '@/lib/navConfig';
 
 const statusFilters = [
   { key: 'all', label: 'Все' },
@@ -39,27 +39,6 @@ const statusFilters = [
 ];
 const statusMap = { active: 'active', sleeping: 'sleeping', vip: 'vip', new: 'new' };
 const PAGE_SIZE = 50;
-
-const periodMap = {
-  'Сегодня': 'today',
-  'Неделя': 'week',
-  'Месяц': 'month',
-  '3 мес': '3m',
-  '3 месяца': '3m',
-  '6 мес': '6m',
-  '6 месяцев': '6m',
-  'Всё': 'all',
-  'Все время': 'all',
-};
-
-const validPeriodKeys = new Set([
-  'today',
-  'week',
-  'month',
-  '3m',
-  '6m',
-  'all',
-]);
 
 const formatMoney = (value) =>
   `${new Intl.NumberFormat('ru-RU', {
@@ -108,277 +87,158 @@ function Avatar({ name }) {
 }
 
 export default function Customers() {
-  const { period, range } = usePeriod();
-
-  const queryClient =
-    useQueryClient();
+  const queryClient = useQueryClient();
 
   const [status, setStatus] = useState('all');
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState('');
-  const [sortDirection, setSortDirection] =
-    useState('desc');
+  const [sortDirection, setSortDirection] = useState('desc');
   const [authOpen, setAuthOpen] = useState(false);
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [pendingFavoriteRow, setPendingFavoriteRow] = useState(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState('');
 
-const [authPassword, setAuthPassword] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+    }, 350);
 
-const [authError, setAuthError] = useState('');
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
-const [authLoading, setAuthLoading] = useState(false);
-
-const [pendingFavoriteRow, setPendingFavoriteRow] = useState(null);
-
-const [exportLoading, setExportLoading] = useState(false);
-
-const [exportError, setExportError] = useState('');
-
-const baseQueryString = useMemo(() => {
-  const periodKey =
-    periodMap[period] ||
-    (
-      validPeriodKeys.has(period)
-        ? period
-        : null
-    );
-
-  if (periodKey) {
-    return `period=${encodeURIComponent(
-      periodKey
-    )}`;
-  }
-
-  if (
-    range?.start &&
-    range?.end
-  ) {
-    return (
-      `from=${formatDateOnly(
-        range.start
-      )}` +
-      `&to=${formatDateOnly(
-        range.end
-      )}`
-    );
-  }
-
-  return '';
-}, [
-  period,
-  range?.start,
-  range?.end,
-]);
-
-const requestQuery =
-  useMemo(() => {
-    if (!baseQueryString) {
-      return '';
-    }
-
-    const params =
-      new URLSearchParams(
-        baseQueryString
-      );
-
-    params.set(
-      'page',
-      String(page)
-    );
-
-    params.set(
-      'limit',
-      String(PAGE_SIZE)
-    );
-
-    params.set(
-      'status',
-      status
-    );
+  const requestQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('period', 'all');
+    params.set('page', String(page));
+    params.set('limit', String(PAGE_SIZE));
+    params.set('status', status);
 
     if (sortKey) {
+      params.set('sortKey', sortKey);
+      params.set('sortDirection', sortDirection);
+    }
 
-  params.set(
-
-    'sortKey',
-
-    sortKey
-
-  );
-
-  params.set(
-
-    'sortDirection',
-
-    sortDirection
-
-  );
-
-}
-
-    const trimmedQuery =
-      query.trim();
-
-    if (trimmedQuery) {
-      params.set(
-        'search',
-        trimmedQuery
-      );
+    if (debouncedQuery) {
+      params.set('search', debouncedQuery);
     }
 
     return params.toString();
-  }, [
-    baseQueryString,
-    page,
-    status,
-    query,
-    sortKey,
+  }, [page, status, debouncedQuery, sortKey, sortDirection]);
 
-sortDirection,
-  ]);
+  useEffect(() => {
+    setPage(1);
+  }, [status, debouncedQuery, sortKey, sortDirection]);
 
-useEffect(() => {
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    isFetching,
+  } = useQuery({
+    queryKey: ['crm-customers', requestQuery],
+    enabled: Boolean(requestQuery),
+    placeholderData: (previous) => previous,
+    staleTime: 30_000,
+    queryFn: async () => {
+      if (!CRM_API_URL) {
+        throw new Error('VITE_CRM_API_URL is not configured');
+      }
 
-  setPage(1);
+      const response = await crmFetch(`/crm/customers?${requestQuery}`);
+      const result = await response.json().catch(() => ({}));
 
-}, [
+      if (!response.ok || result?.ok === false) {
+        throw new Error(result?.error || 'CUSTOMERS_LOAD_FAILED');
+      }
 
-  baseQueryString,
+      return result;
+    },
+  });
 
-  status,
+  const patchFavoriteInCache = (telegramId, isFavorite) => {
+    queryClient.setQueriesData(
+      { queryKey: ['crm-customers'] },
+      (current) => {
+        if (!current || !Array.isArray(current.rows)) {
+          return current;
+        }
 
-  query,
+        return {
+          ...current,
+          rows: current.rows.map((row) =>
+            String(row?.telegramId || '') === telegramId
+              ? { ...row, isFavorite }
+              : row
+          ),
+        };
+      }
+    );
+  };
 
-  sortKey,
-
-  sortDirection,
-
-]);
-
-const {
-  data,
-  isLoading,
-  isError,
-  error,
-} = useQuery({
-  queryKey: [
-    'crm-customers',
-    requestQuery,
-  ],
-
-  enabled:
-    Boolean(requestQuery),
-
-  queryFn: async () => {
-    if (!CRM_API_URL) {
-      throw new Error(
-        'VITE_CRM_API_URL is not configured'
+  const favoriteMutation = useMutation({
+    mutationFn: async ({ telegramId, isFavorite }) => {
+      const response = await crmFetch(
+        `/crm/customers/${encodeURIComponent(telegramId)}/favorite`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ isFavorite }),
+        }
       );
-    }
 
-    const response =
-      await crmFetch(
-        `/crm/customers?${requestQuery}`
-      );
+      const result = await response.json().catch(() => ({}));
 
-    const result =
-      await response
-        .json()
-        .catch(() => ({}));
-
-    if (
-      !response.ok ||
-      result?.ok === false
-    ) {
-      throw new Error(
-        result?.error ||
-          'CUSTOMERS_LOAD_FAILED'
-      );
-    }
-
-    return result;
-  },
-});
-
-const favoriteMutation =
-  useMutation({
-    mutationFn: async ({
-      telegramId,
-      isFavorite,
-    }) => {
-      const response =
-        await crmFetch(
-          `/crm/customers/${encodeURIComponent(
-            telegramId
-          )}/favorite`,
-          {
-            method: 'PATCH',
-            body: JSON.stringify({
-              isFavorite,
-            }),
-          }
-        );
-
-      const result =
-        await response
-          .json()
-          .catch(() => ({}));
-
-      if (
-        !response.ok ||
-        result?.ok === false
-      ) {
+      if (!response.ok || result?.ok === false) {
         throw new Error(
-          result?.error ||
-            'CUSTOMER_FAVORITE_UPDATE_FAILED'
+          result?.error || 'CUSTOMER_FAVORITE_UPDATE_FAILED'
         );
       }
 
       return result;
     },
 
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: [
-          'crm-customers',
-        ],
-      });
+    onMutate: async ({ telegramId, isFavorite }) => {
+      await queryClient.cancelQueries({ queryKey: ['crm-customers'] });
+      patchFavoriteInCache(telegramId, isFavorite);
     },
 
-    onError: (
-      error,
-      variables
-    ) => {
-      if (
-        error?.message ===
-        'UNAUTHORIZED'
-      ) {
-        setPendingFavoriteRow(
-          variables?.row || null
-        );
+    onSuccess: (result) => {
+      const telegramId = String(result?.telegramId || '').trim();
+      if (!telegramId) return;
+      patchFavoriteInCache(telegramId, result?.isFavorite === true);
+    },
 
+    onError: (error, variables) => {
+      if (variables?.telegramId != null) {
+        patchFavoriteInCache(
+          variables.telegramId,
+          !variables.isFavorite
+        );
+      }
+
+      if (error?.message === 'UNAUTHORIZED') {
+        setPendingFavoriteRow(variables?.row || null);
         setAuthError('');
         setAuthOpen(true);
       }
     },
   });
 
-const toggleFavorite = (row) => {
-  const telegramId =
-    String(
-      row?.telegramId || ''
-    ).trim();
+  const toggleFavorite = (row) => {
+    const telegramId = String(row?.telegramId || '').trim();
+    if (!telegramId) return;
 
-  if (!telegramId) {
-    return;
-  }
-
-  favoriteMutation.mutate({
-    telegramId,
-    isFavorite:
-      !row.isFavorite,
-    row,
-  });
-};
+    favoriteMutation.mutate({
+      telegramId,
+      isFavorite: !row.isFavorite,
+      row,
+    });
+  };
 
 const submitCrmAuth =
   async (event) => {
@@ -444,21 +304,17 @@ const submitCrmAuth =
         null
       );
 
-      // Повторяем нажатие ★
-      // после успешного входа.
+      // Повторяем действие ★ после успешного входа.
       if (row) {
-        favoriteMutation.mutate({
-          telegramId:
-            String(
-              row?.telegramId ||
-                ''
-            ).trim(),
-
-          isFavorite:
-            !row.isFavorite,
-
-          row,
-        });
+        const telegramId = String(row?.telegramId || '').trim();
+        if (telegramId) {
+          favoriteMutation.mutate({
+            telegramId,
+            // pending row is the pre-click snapshot
+            isFavorite: !row.isFavorite,
+            row,
+          });
+        }
       }
     } catch (error) {
       setAuthError(
@@ -476,30 +332,6 @@ const pageRows =
   Array.isArray(data?.rows)
     ? data.rows
     : [];
-
-//     const sortedPageRows = useMemo(() => {
-//   if (!sortKey) {
-//     return pageRows;
-//   }
-
-//   return [...pageRows].sort((a, b) => {
-//     const left = Number(
-//       a?.[sortKey] || 0
-//     );
-
-//     const right = Number(
-//       b?.[sortKey] || 0
-//     );
-
-//     return sortDirection === 'asc'
-//       ? left - right
-//       : right - left;
-//   });
-// }, [
-//   pageRows,
-//   sortKey,
-//   sortDirection,
-// ]);
 
 const summaryData =
   data?.summary || {};
@@ -556,12 +388,17 @@ const summary = [
   },
 ];
 
-const handleExportUsers = async () => {
+const handleExportUsers = async (format = 'tegger') => {
   setExportLoading(true);
   setExportError('');
 
   try {
-    const response = await crmFetch('/crm/customers/export');
+    const path =
+      format === 'tegger'
+        ? '/crm/customers/export?format=tegger'
+        : '/crm/customers/export';
+
+    const response = await crmFetch(path);
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -574,7 +411,10 @@ const handleExportUsers = async () => {
     );
     const match = disposition.match(/filename="([^"]+)"/i);
     const filename =
-      match?.[1] || `elfduck-users-${formatDateOnly(new Date())}.csv`;
+      match?.[1] ||
+      (format === 'tegger'
+        ? `elfduck-tegger-usernames-${formatDateOnly(new Date())}.csv`
+        : `elfduck-users-${formatDateOnly(new Date())}.csv`);
 
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -809,16 +649,32 @@ const renderSortableHeader =
               placeholder="Поиск клиента…"
               className="h-9 w-full rounded-lg border border-border bg-[hsl(232_26%_7%)] pl-9 pr-3 text-[13px] outline-none focus:border-[hsl(255_100%_68%/0.4)]"
             />
+            {isFetching && query !== debouncedQuery ? (
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-2">
+                …
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
-            onClick={handleExportUsers}
+            onClick={() => handleExportUsers('tegger')}
             disabled={exportLoading}
+            title="CSV только с username для tegger"
             className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] disabled:opacity-60"
           >
             <Download className="h-3.5 w-3.5" />
-            {exportLoading ? 'Выгрузка…' : 'CSV база'}
+            {exportLoading ? 'Выгрузка…' : 'CSV для tegger'}
           </button>
+          {TEGGER_URL ? (
+            <a
+              href={TEGGER_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)]"
+            >
+              Открыть tegger
+            </a>
+          ) : null}
         </div>
       </div>
 

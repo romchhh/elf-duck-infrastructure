@@ -60,6 +60,14 @@ router.get(
         .trim()
         .toLowerCase();
 
+      const sortKey = String(req.query?.sortKey || "").trim();
+
+      const sortDirection =
+        String(req.query?.sortDirection || "desc").toLowerCase() ===
+        "asc"
+          ? "asc"
+          : "desc";
+
       const nowForUsers = new Date();
 
       const [users, usedRows] = await Promise.all([
@@ -336,29 +344,16 @@ router.get(
       /*
        * Фильтры.
        */
-      if (
-        filter ===
-        "balance"
-      ) {
-        rows =
-          rows.filter(
-            (row) =>
-              Number(
-                row?.balance || 0
-              ) > 0
-          );
+      if (filter === "active") {
+        rows = rows.filter((row) => row?.status === "active");
       }
 
-      if (
-        filter ===
-        "expiring"
-      ) {
-        rows =
-          rows.filter(
-            (row) =>
-              row?.status ===
-              "expiring"
-          );
+      if (filter === "expiring") {
+        rows = rows.filter((row) => row?.status === "expiring");
+      }
+
+      if (filter === "balance") {
+        rows = rows.filter((row) => Number(row?.balance || 0) > 0);
       }
 
       /*
@@ -386,64 +381,78 @@ router.get(
           );
       }
 
-      /*
-       * Сначала те,
-       * у кого скоро сгорит.
-       */
-      rows.sort(
-        (a, b) => {
-          if (
-            a.status ===
-              "expiring" &&
-            b.status !==
-              "expiring"
-          ) {
-            return -1;
-          }
+      const sortableCashbackKeys = new Set([
+        "balance",
+        "issued",
+        "used",
+      ]);
 
-          if (
-            a.status !==
-              "expiring" &&
-            b.status ===
-              "expiring"
-          ) {
-            return 1;
-          }
+      if (sortableCashbackKeys.has(sortKey)) {
+        rows.sort((a, b) => {
+          const left = Number(a?.[sortKey] || 0);
+          const right = Number(b?.[sortKey] || 0);
+          return sortDirection === "asc" ? left - right : right - left;
+        });
+      } else {
+        /*
+         * Сначала те,
+         * у кого скоро сгорит.
+         */
+        rows.sort(
+          (a, b) => {
+            if (
+              a.status ===
+                "expiring" &&
+              b.status !==
+                "expiring"
+            ) {
+              return -1;
+            }
 
-          const aExpiry =
-            a.expiresAt
-              ? new Date(
-                  a.expiresAt
-                ).getTime()
-              : Infinity;
+            if (
+              a.status !==
+                "expiring" &&
+              b.status ===
+                "expiring"
+            ) {
+              return 1;
+            }
 
-          const bExpiry =
-            b.expiresAt
-              ? new Date(
-                  b.expiresAt
-                ).getTime()
-              : Infinity;
+            const aExpiry =
+              a.expiresAt
+                ? new Date(
+                    a.expiresAt
+                  ).getTime()
+                : Infinity;
 
-          if (
-            aExpiry !==
-            bExpiry
-          ) {
-            return (
-              aExpiry -
+            const bExpiry =
+              b.expiresAt
+                ? new Date(
+                    b.expiresAt
+                  ).getTime()
+                : Infinity;
+
+            if (
+              aExpiry !==
               bExpiry
+            ) {
+              return (
+                aExpiry -
+                bExpiry
+              );
+            }
+
+            return (
+              Number(
+                b.balance || 0
+              ) -
+              Number(
+                a.balance || 0
+              )
             );
           }
-
-          return (
-            Number(
-              b.balance || 0
-            ) -
-            Number(
-              a.balance || 0
-            )
-          );
-        }
-      );
+        );
+      }
 
       const total =
         rows.length;
@@ -509,67 +518,14 @@ router.get(
             )
           : 0;
 
-      const listIssued = Number(
-        rows
-          .reduce(
-            (sum, row) =>
-              sum +
-              Number(row?.issued || 0),
-            0
-          )
-          .toFixed(2)
-      );
-
-      const listUsed = Number(
-        rows
-          .reduce(
-            (sum, row) =>
-              sum +
-              Number(row?.used || 0),
-            0
-          )
-          .toFixed(2)
-      );
-
-      const listBalance = Number(
-        rows
-          .reduce(
-            (sum, row) =>
-              sum +
-              Number(row?.balance || 0),
-            0
-          )
-          .toFixed(2)
-      );
-
-      const listUtilisation =
-        listIssued > 0
-          ? Number(
-              (
-                (listUsed / listIssued) *
-                100
-              ).toFixed(1)
-            )
-          : 0;
-
-      const summary =
-        filter === "all"
-          ? {
-              issued,
-              used,
-              balance,
-              utilisation,
-              filter,
-              clients: total,
-            }
-          : {
-              issued: listIssued,
-              used: listUsed,
-              balance: listBalance,
-              utilisation: listUtilisation,
-              filter,
-              clients: total,
-            };
+      const summary = {
+        issued,
+        used,
+        balance,
+        utilisation,
+        filter,
+        clients: total,
+      };
 
       return res.json({
         ok: true,

@@ -25,7 +25,7 @@ import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
 const productSegments = [
   { key: 'all', label: 'Все' },
   { key: 'bestsellers', label: 'Бестселлеры' },
-  { key: 'slow', label: 'Медленные' },
+  { key: 'slow', label: 'Падающие' },
 ];
 
 const PAGE_SIZE = 10;
@@ -330,7 +330,7 @@ export default function Products() {
       value: formatNumber(summaryData.bestsellers),
     },
     {
-      label: 'медленные',
+      label: 'падающие',
       value: formatNumber(summaryData.slow),
     },
   ];
@@ -570,6 +570,7 @@ export default function Products() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1.5">
         <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5 no-scrollbar">
           {productSegments.map((item) => (
             <button
@@ -589,6 +590,10 @@ export default function Products() {
               {item.label}
             </button>
           ))}
+        </div>
+        <p className="text-[11px] leading-relaxed text-muted-2">
+          Падающие — товары с отрицательной динамикой выручки к прошлому периоду
+        </p>
         </div>
         <div className="text-[12px] text-muted-2">
           Найдено: {total}

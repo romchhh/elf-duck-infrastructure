@@ -1,7 +1,11 @@
 import {
   LayoutDashboard, ShoppingCart, Users, UserPlus, Handshake, Gift, Send,
-  Package, MapPin, Boxes, LayoutGrid
+  Package, MapPin, Boxes, LayoutGrid, Tags
 } from 'lucide-react';
+
+export const TEGGER_URL = String(
+  import.meta.env.VITE_TEGGER_URL || 'https://tegger.telebots.site'
+).trim();
 
 export const groups = [
   {
@@ -24,6 +28,9 @@ export const groups = [
       { to: '/marketing/partners', label: 'Партнёры', icon: Handshake },
       { to: '/marketing/cashback', label: 'Кэшбэк', icon: Gift },
       { to: '/marketing/push', label: 'Push-рассылки', icon: Send },
+      ...(TEGGER_URL
+        ? [{ href: TEGGER_URL, label: 'Tegger', icon: Tags, external: true }]
+        : []),
     ],
   },
   {

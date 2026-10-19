@@ -9,6 +9,7 @@
 | **3002** | CRM |
 | **3003** | Admin-бот (без HTTP; лише процес у мережі Docker) |
 | **3004** | MongoDB (`mongodb://localhost:3004/elfduck` з хоста) |
+| **3005** | Tegger UI (`/api` → внутрішній `tegger-api`) |
 
 Локальний dev **без Docker**: ті самі порти — `vite` у shop (3001) і CRM (3002), backend `PORT=3000`.
 
@@ -28,6 +29,9 @@ docker compose up -d
 - http://localhost:3000/ping  
 - http://localhost:3001 — магазин  
 - http://localhost:3002 — CRM  
+- http://localhost:3005 — Tegger (`/api/health`)  
+
+Tegger потребує змінних `TEGGER_*` у кореневому `.env` (див. `.env.example`). Сесії/БД tegger зберігаються у volume `tegger_data`.
 
 ## MongoDB Atlas замість контейнера
 

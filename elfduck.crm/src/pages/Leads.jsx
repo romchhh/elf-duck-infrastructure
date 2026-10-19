@@ -13,7 +13,6 @@ import {
 } from 'lucide-react';
 
 import Pagination from '@/components/shared/Pagination';
-import KpiCard from '@/components/shared/KpiCard';
 import MetricGrid from '@/components/shared/MetricGrid';
 
 import {
@@ -52,46 +51,6 @@ const validPeriodKeys =
     '6m',
     'all',
   ]);
-
-const statusPill = {
-  lead: {
-    label: 'Лид',
-
-    cls:
-      'border-[hsl(214_84%_60%/0.3)] ' +
-      'bg-[hsl(214_84%_60%/0.1)] ' +
-      'text-[hsl(214_84%_68%)]',
-
-    dot:
-      'bg-[hsl(214_84%_60%)]',
-  },
-
-  sleeping: {
-    label:
-      'Спящий лид',
-
-    cls:
-      'border-[hsl(36_92%_56%/0.3)] ' +
-      'bg-[hsl(36_92%_56%/0.1)] ' +
-      'text-[hsl(36_92%_62%)]',
-
-    dot:
-      'bg-[hsl(36_92%_56%)]',
-  },
-
-  client: {
-    label:
-      'Клиент',
-
-    cls:
-      'border-[hsl(142_64%_47%/0.3)] ' +
-      'bg-[hsl(142_64%_47%/0.1)] ' +
-      'text-[hsl(142_70%_60%)]',
-
-    dot:
-      'bg-[hsl(142_64%_47%)]',
-  },
-};
 
 function formatMoney(
   value
@@ -424,75 +383,28 @@ export default function Leads() {
         0
     );
 
-  const metrics = [
-    {
-      label:
-        'Лидов',
-
-      value:
-        formatNumber(
-          summary.leads
-        ),
-    },
-
-    {
-      label:
-        'Спящих лидов',
-
-      value:
-        formatNumber(
-          summary.sleeping
-        ),
-    },
-
-    {
-      label:
-        'Клиентов',
-
-      value:
-        formatNumber(
-          summary.clients
-        ),
-    },
-
-    {
-      label:
-        'Конверсия',
-
-      value:
-        `${
-          Number(
-            summary.conversion ||
-              0
-          )
-        }%`,
-    },
-  ];
+  const leadCount =
+    Number(
+      summary.leads ??
+        pagination.total ??
+        0
+    );
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {metrics.map(
-          (metric) => (
-            <KpiCard
-              key={
-                metric.label
-              }
-              label={
-                metric.label
-              }
-              value={
-                metric.value
-              }
-            />
-          )
-        )}
-      </div>
-
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h3 className="font-heading text-[15px] font-semibold text-foreground">
-          Лиды
-        </h3>
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="font-heading text-[15px] font-semibold text-foreground">
+            Лиды
+          </h3>
+
+          <span className="text-[12px] text-muted-2">
+            Лидов:{' '}
+            {formatNumber(
+              leadCount
+            )}
+          </span>
+        </div>
 
         <div className="relative w-full sm:w-auto">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2" />
@@ -552,26 +464,18 @@ export default function Leads() {
               0 && (
               <table className="w-full min-w-[640px] table-fixed border-collapse text-[13px]">
                 <colgroup>
-
-                  <col className="w-[30%]" />
-
-                  <col className="w-[17%]" />
-
-                  <col className="w-[17%]" />
-
-                  <col className="w-[18%]" />
-
-                  <col className="w-[18%]" />
-
+                  <col className="w-[25%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[25%]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-border">
                     {[
-                      'Клиент',
+                      'Лид',
                       'Создан',
                       'В лидах',
                       'Сумма',
-                      'Статус',
                     ].map(
                       (
                         header,
@@ -605,14 +509,7 @@ export default function Leads() {
 
                 <tbody>
                   {rows.map(
-                    (lead) => {
-                      const pill =
-                        statusPill[
-                          lead.status
-                        ] ||
-                        statusPill.lead;
-
-                      return (
+                    (lead) => (
                         <tr
                           key={
                             lead.id
@@ -647,35 +544,8 @@ export default function Leads() {
                               lead.completedTotal
                             )}
                           </td>
-
-                          <td className="px-4 py-3">
-                            <span
-                              className={
-                                cn(
-                                  'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium',
-
-                                  pill.cls
-                                )
-                              }
-                            >
-                              <span
-                                className={
-                                  cn(
-                                    'h-1.5 w-1.5 rounded-full',
-
-                                    pill.dot
-                                  )
-                                }
-                              />
-
-                              {
-                                pill.label
-                              }
-                            </span>
-                          </td>
                         </tr>
-                      );
-                    }
+                    )
                   )}
                 </tbody>
               </table>
@@ -751,46 +621,14 @@ export default function Leads() {
 function LeadMobileRow({
   lead,
 }) {
-  const pill =
-    statusPill[
-      lead.status
-    ] ||
-    statusPill.lead;
-
   return (
     <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-3.5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <LeadIdentity
-            lead={
-              lead
-            }
-          />
-        </div>
-
-        <span
-          className={
-            cn(
-              'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-medium',
-
-              pill.cls
-            )
+      <div className="min-w-0">
+        <LeadIdentity
+          lead={
+            lead
           }
-        >
-          <span
-            className={
-              cn(
-                'h-1.5 w-1.5 rounded-full',
-
-                pill.dot
-              )
-            }
-          />
-
-          {
-            pill.label
-          }
-        </span>
+        />
       </div>
 
       <div className="mt-3 border-t border-border-soft pt-3">

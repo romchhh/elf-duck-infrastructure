@@ -7,6 +7,7 @@
 | **https://elfduck-api.telebots.site** | API + основний Telegram-бот | 3000 |
 | **https://elfduck.telebots.site** | Mini App (магазин) | 3001 |
 | **https://elfduck-crm.telebots.site** | CRM | 3002 |
+| **https://tegger.telebots.site** | Tegger (UI + `/api`) | 3005 |
 | *(немає HTTP)* | Admin-бот | — |
 | *(опційно)* | MongoDB з хоста | 3004 |
 
@@ -18,8 +19,12 @@ WEBAPP_URL=https://elfduck.telebots.site
 WEB_APP_URL=https://elfduck.telebots.site
 VITE_API_URL=https://elfduck-api.telebots.site
 VITE_CRM_API_URL=https://elfduck-api.telebots.site
+VITE_TEGGER_URL=https://tegger.telebots.site
 CRM_ALLOWED_ORIGINS=https://elfduck-crm.telebots.site
 API_URL=https://elfduck-api.telebots.site
+TEGGER_FRONTEND_ORIGIN=https://tegger.telebots.site
+TEGGER_COOKIE_SECURE=true
+TEGGER_BOOTSTRAP=false
 NODE_ENV=production
 ```
 
@@ -34,8 +39,9 @@ A-записи на **IP VPS** (один IP для всіх):
 - `elfduck-api` → `YOUR_VPS_IP`
 - `elfduck` → `YOUR_VPS_IP`
 - `elfduck-crm` → `YOUR_VPS_IP`
+- `tegger` → `YOUR_VPS_IP`
 
-Перевірка: `dig +short elfduck-api.telebots.site`
+Перевірка: `dig +short elfduck-api.telebots.site` / `dig +short tegger.telebots.site`
 
 ### 2. Docker або PM2 + nginx
 
@@ -68,21 +74,42 @@ server {
   root /var/www/elfduck-crm;
   location / { try_files $uri $uri/ /index.html; }
 }
+
+# Tegger (Docker :3005 — UI + /api proxy на tegger-api)
+server {
+  server_name tegger.telebots.site;
+  location / {
+    proxy_pass http://127.0.0.1:3005;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    client_max_body_size 30m;
+  }
+}
 ```
 
-TLS: `certbot --nginx -d elfduck-api.telebots.site -d elfduck.telebots.site -d elfduck-crm.telebots.site`
+TLS: `certbot --nginx -d elfduck-api.telebots.site -d elfduck.telebots.site -d elfduck-crm.telebots.site -d tegger.telebots.site`
 
 ### 3. Збірка фронтів (обовʼязково після зміни `.env`)
 
 ```bash
 # з кореня, коли VITE_* вже prod URL
-docker compose build shop crm
+docker compose build shop crm tegger tegger-api
 # або локально:
 cd elf.duck.clean && npm run build
 cd elfduck.crm && npm run build
 ```
 
 Без цього в бандлі лишаться старі Railway/Vercel URL.
+
+Після деплою tegger:
+
+```bash
+docker compose up -d tegger-api tegger
+curl -s https://tegger.telebots.site/api/health
+```
+
+У `.env` обовʼязково: `TEGGER_API_ID`, `TEGGER_API_HASH`, `TEGGER_SENDERS`, `TEGGER_ADMIN_PASSWORD_HASH`.
 
 ### 4. Telegram (@BotFather)
 
@@ -191,6 +218,7 @@ docker compose run --rm --no-deps api node scripts/sync-xros-oxva-catalog.mjs
 curl -s https://elfduck-api.telebots.site/ping
 curl -s -o /dev/null -w "%{http_code}" https://elfduck.telebots.site/
 curl -s -o /dev/null -w "%{http_code}" https://elfduck-crm.telebots.site/
+curl -s https://tegger.telebots.site/api/health
 ```
 
 CRM: `/crm/orders` без авторизації → **401**.  
