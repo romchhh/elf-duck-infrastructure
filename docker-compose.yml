@@ -4,7 +4,8 @@
 #   3002 CRM
 #   3003 admin-бот (процес без HTTP; порт зарезервовано для health/debug за потреби)
 #   3004 MongoDB (мапінг 3004 → 27017)
-#   3005 Tegger UI (+ /api → tegger-api)
+#   3005 Tegger UI (+ /api → tegger-api) — profile `tegger` (off by default):
+#       docker compose --profile tegger up -d
 
 name: elf-duck
 
@@ -75,7 +76,9 @@ services:
     depends_on:
       - api
 
+  # Disabled by default — enable with: docker compose --profile tegger up -d
   tegger-api:
+    profiles: ["tegger"]
     build:
       context: .
       dockerfile: docker/tegger-api.Dockerfile
@@ -109,6 +112,7 @@ services:
       - "3006:8000"
 
   tegger:
+    profiles: ["tegger"]
     build:
       context: .
       dockerfile: docker/tegger.Dockerfile

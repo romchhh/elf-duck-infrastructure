@@ -94,7 +94,8 @@ TLS: `certbot --nginx -d elfduck-api.telebots.site -d elfduck.telebots.site -d e
 
 ```bash
 # з кореня, коли VITE_* вже prod URL
-docker compose build shop crm tegger tegger-api
+docker compose build shop crm
+# Tegger (опційно): docker compose --profile tegger build tegger tegger-api
 # або локально:
 cd elf.duck.clean && npm run build
 cd elfduck.crm && npm run build
@@ -102,14 +103,14 @@ cd elfduck.crm && npm run build
 
 Без цього в бандлі лишаться старі Railway/Vercel URL.
 
-Після деплою tegger:
+Tegger вимкнений за замовчуванням (`profiles: [tegger]`). Увімкнути:
 
 ```bash
-docker compose up -d tegger-api tegger
+docker compose --profile tegger up -d --build tegger-api tegger
 curl -s https://tegger.telebots.site/api/health
 ```
 
-У `.env` обовʼязково: `TEGGER_API_ID`, `TEGGER_API_HASH`, `TEGGER_SENDERS`, `TEGGER_ADMIN_PASSWORD_HASH`.
+У `.env`: `TEGGER_ADMIN_USERNAME` + `TEGGER_ADMIN_PASSWORD` (або хеш у `docker/tegger-admin.hash`).
 
 ### 4. Telegram (@BotFather)
 
