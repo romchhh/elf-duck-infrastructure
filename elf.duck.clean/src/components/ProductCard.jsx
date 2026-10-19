@@ -9,8 +9,6 @@ const ProductCard = React.memo(function ProductCard({
   onToggleFavorite,
   onOpenCheckout,
 }) {
-  console.count("[PERF][ProductCard] render");
-
   return (
     <div className="productCard">
       <div

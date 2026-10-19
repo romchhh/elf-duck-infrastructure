@@ -121,8 +121,6 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
   onOpenProduct,
   onToggleFavorite,
 }) {
-  console.count("[PERF][MainPageProductCard] render");
-
   const compactDuck = isCompactCatalogDuck(product);
   const cartridgeDuck = isCartridgesCategory(product);
 
@@ -211,8 +209,6 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 });
 
 const MainPage = () => {
-  console.count("[PERF][MainPage] render");
-
   const {
     user,
     setUser,
@@ -261,7 +257,6 @@ const MainPage = () => {
     if (lastFavoritesTelegramIdRef.current === telegramId && favoriteProductKeys.length > 0) return;
 
     loadFavoritesInFlightRef.current = true;
-    console.time("[PERF][MainPage] loadFavorites total");
 
     try {
       setFavoritesLoading(true);
@@ -283,65 +278,10 @@ const MainPage = () => {
     } catch (e) {
       console.error("favorites load failed", e);
     } finally {
-      console.timeEnd("[PERF][MainPage] loadFavorites total");
       loadFavoritesInFlightRef.current = false;
       setFavoritesLoading(false);
     }
   };
-
-  const toggleFavoriteProduct = async (product) => {
-    const productKey = String(product?.productKey || "").trim();
-    if (!productKey) return;
-
-    if (isGuestBrowser) {
-      try {
-        haptic.light();
-        setFavoriteProductKeys(toggleGuestFavorite(productKey));
-      } catch (e) {
-        console.error("toggleFavoriteProduct guest error", e);
-      }
-      return;
-    }
-
-    const telegramId = getEffectiveTelegramId();
-    if (!telegramId) return;
-
-    try {
-      haptic.light();
-
-      const r = await fetch(`${API_URL}/favorites/toggle`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-telegram-init-data": window?.Telegram?.WebApp?.initData || "",
-        },
-        body: JSON.stringify({
-          productKey,
-        }),
-      });
-
-      const data = await r.json().catch(() => ({}));
-
-      if (!r.ok || data?.ok === false) {
-        throw new Error(data?.error || "Не удалось обновить избранное");
-      }
-
-      const list = Array.isArray(data?.favoriteProductKeys)
-        ? data.favoriteProductKeys.map((x) => String(x))
-        : [];
-
-      setFavoriteProductKeys(list);
-    } catch (e) {
-      console.error("toggleFavoriteProduct error", e);
-    }
-  };
-
-  const handleToggleFavoriteProduct = useCallback(
-    (product) => {
-      toggleFavoriteProduct(product);
-    },
-    [toggleFavoriteProduct]
-  );
 
   const [showPostAddOverlay, setShowPostAddOverlay] = useState(false); // КЭШБЕК
 
@@ -379,14 +319,18 @@ const MainPage = () => {
     currentY: 0,
     dragging: false,
   });
+  const checkoutDragOffsetRef = useRef(0);
 
-  const checkoutDragRef = useRef({
-    pointerId: null,
-    startY: 0,
-    currentY: 0,
-    dragging: false,
-    moved: false,
-  });
+  const applyCheckoutSheetDragTransform = (dy) => {
+    const el = checkoutSheetRef.current;
+    if (!el) return;
+    el.style.transform = `translateY(${dy}px)`;
+  };
+
+  const clearCheckoutSheetDragTransform = () => {
+    const el = checkoutSheetRef.current;
+    if (el) el.style.transform = "";
+  };
 
   // список добавленных вкусов в текущем заказе
   // [{ flavor: {...}, qty: number }]
@@ -410,6 +354,56 @@ const MainPage = () => {
   const lastFavoritesTelegramIdRef = useRef("");
   const loadCartSummaryInFlightRef = useRef(false);
 
+  const toggleFavoriteProduct = useCallback(
+    async (product) => {
+      const productKey = String(product?.productKey || "").trim();
+      if (!productKey) return;
+
+      if (isGuestBrowser) {
+        try {
+          haptic.light();
+          setFavoriteProductKeys(toggleGuestFavorite(productKey));
+        } catch (e) {
+          console.error("toggleFavoriteProduct guest error", e);
+        }
+        return;
+      }
+
+      const effectiveTelegramId =
+        telegramId || getPersonalizedTelegramId(user);
+      if (!effectiveTelegramId) return;
+
+      try {
+        haptic.light();
+
+        const r = await fetch(`${API_URL}/favorites/toggle`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-telegram-init-data": window?.Telegram?.WebApp?.initData || "",
+          },
+          body: JSON.stringify({
+            productKey,
+          }),
+        });
+
+        const data = await r.json().catch(() => ({}));
+
+        if (!r.ok || data?.ok === false) {
+          throw new Error(data?.error || "Не удалось обновить избранное");
+        }
+
+        const list = Array.isArray(data?.favoriteProductKeys)
+          ? data.favoriteProductKeys.map((x) => String(x))
+          : [];
+
+        setFavoriteProductKeys(list);
+      } catch (e) {
+        console.error("toggleFavoriteProduct error", e);
+      }
+    },
+    [isGuestBrowser, telegramId, user]
+  );
 
   // ================= PRODUCTS FROM API =================
   const [products, setProducts] = useState([]);
@@ -456,14 +450,6 @@ const MainPage = () => {
     activeOrderArrivalSubmitting,
     setActiveOrderArrivalSubmitting,
   ] = useState(false);
-
-  useEffect(() => {
-    const timerId = setInterval(() => {
-      setActiveOrderArrivalNow(Date.now());
-    }, 1000);
-
-    return () => clearInterval(timerId);
-  }, []);
 
   useEffect(() => {
     try {
@@ -1026,19 +1012,20 @@ const MainPage = () => {
       return;
     }
 
-    const loadActiveOrder = async () => {
+    const loadActiveOrder = async ({ bustCache = false } = {}) => {
       try {
-        const response = await fetch(
-          `${API_URL}/orders?_ts=${Date.now()}`,
-          {
-            method: "GET",
-            cache: "no-store",
-            headers: {
-              "x-telegram-init-data":
-                window?.Telegram?.WebApp?.initData || "",
-            },
-          }
-        );
+        const url = bustCache
+          ? `${API_URL}/orders?_ts=${Date.now()}`
+          : `${API_URL}/orders`;
+
+        const response = await fetch(url, {
+          method: "GET",
+          cache: bustCache ? "no-store" : "default",
+          headers: {
+            "x-telegram-init-data":
+              window?.Telegram?.WebApp?.initData || "",
+          },
+        });
 
         const data = await response.json().catch(() => ({}));
 
@@ -1077,18 +1064,91 @@ const MainPage = () => {
     };
 
     setActiveOrderLoading(true);
-    loadActiveOrder();
+    loadActiveOrder({ bustCache: true });
+
+    const onVisibilityRefresh = () => {
+      if (document.visibilityState === "visible") {
+        loadActiveOrder();
+      }
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      onVisibilityRefresh
+    );
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener(
+        "visibilitychange",
+        onVisibilityRefresh
+      );
+    };
+  }, [userLoading, isGuestBrowser, telegramId]);
+
+  const ACTIVE_ORDER_POLL_MS = 20000;
+
+  useEffect(() => {
+    if (userLoading || isGuestBrowser || !telegramId) return;
+    if (!activeOrder?._id) return;
+
+    let cancelled = false;
+
+    const loadActiveOrder = async () => {
+      if (document.visibilityState !== "visible") return;
+
+      try {
+        const response = await fetch(`${API_URL}/orders`, {
+          method: "GET",
+          headers: {
+            "x-telegram-init-data":
+              window?.Telegram?.WebApp?.initData || "",
+          },
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || data?.ok === false) {
+          throw new Error(
+            data?.error || "Не удалось загрузить заказы"
+          );
+        }
+
+        if (cancelled) return;
+
+        const orders = Array.isArray(data?.orders)
+          ? data.orders
+          : Array.isArray(data)
+          ? data
+          : [];
+
+        const currentActiveOrder =
+          orders.find(isActiveOrder) || null;
+
+        setActiveOrder(currentActiveOrder);
+      } catch (error) {
+        console.error(
+          "MainPage active order poll error:",
+          error
+        );
+      }
+    };
 
     const intervalId = setInterval(
       loadActiveOrder,
-      3000
+      ACTIVE_ORDER_POLL_MS
     );
 
     return () => {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [userLoading, isGuestBrowser, telegramId]);
+  }, [
+    activeOrder?._id,
+    userLoading,
+    isGuestBrowser,
+    telegramId,
+  ]);
 
 
 
@@ -1163,6 +1223,28 @@ const MainPage = () => {
       ) - activeOrderArrivalNow
 
     );
+
+  useEffect(() => {
+    if (!showActiveOrderArrivalBlock) return;
+
+    const orderId = String(activeOrder?._id || "");
+    const cooldownUntil = Number(
+      activeOrderArrivalCooldowns?.[orderId] || 0
+    );
+    if (!orderId || cooldownUntil <= Date.now()) return;
+
+    const timerId = setInterval(() => {
+      const now = Date.now();
+      setActiveOrderArrivalNow(now);
+      if (cooldownUntil <= now) clearInterval(timerId);
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [
+    showActiveOrderArrivalBlock,
+    activeOrder?._id,
+    activeOrderArrivalCooldowns,
+  ]);
 
   const CATEGORY_TITLE_MAP = {
     liquids: { ru: "ЖИДКОСТИ", pl: "PŁYNY" },
@@ -1435,7 +1517,6 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
       if (loadCartSummaryInFlightRef.current) return;
 
       loadCartSummaryInFlightRef.current = true;
-      console.time("[PERF][MainPage] loadCartSummary total");
 
       try {
         const cart = await getCart();
@@ -1449,11 +1530,6 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
         const liquidQty = getLiquidQtyFromCartItems(items);
 
         if (!cancelled) {
-          console.log("[PERF][MainPage] loadCartSummary result", {
-            itemsCount: items.length,
-            totalZl,
-            liquidQty,
-          });
           setBaseCartTotalForCashback((prev) =>
             prev === Number(totalZl || 0) ? prev : Number(totalZl || 0)
           );
@@ -1469,7 +1545,6 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
           setBaseCartLiquidQtyForSmartPrice(0);
         }
       } finally {
-        console.timeEnd("[PERF][MainPage] loadCartSummary total");
         loadCartSummaryInFlightRef.current = false;
       }
     };
@@ -1772,6 +1847,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
       currentY: 0,
       dragging: false,
     };
+    checkoutDragOffsetRef.current = 0;
+    clearCheckoutSheetDragTransform();
 
     setIsCheckoutDragging(false);
     setCheckoutDragOffset(0);
@@ -1790,6 +1867,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
       dragging: true,
     };
 
+    checkoutDragOffsetRef.current = 0;
+    clearCheckoutSheetDragTransform();
     setIsCheckoutDragging(true);
     setCheckoutDragOffset(0);
 
@@ -1808,7 +1887,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     const dy = dyRaw > 140 ? 140 + (dyRaw - 140) * 0.32 : dyRaw;
 
     st.currentY = e.clientY;
-    setCheckoutDragOffset(dy);
+    checkoutDragOffsetRef.current = dy;
+    applyCheckoutSheetDragTransform(dy);
   };
 
   const handleCheckoutSheetPointerEnd = (e) => {
@@ -1830,6 +1910,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
         e.currentTarget.releasePointerCapture(e.pointerId);
       } catch {}
     }
+
+    clearCheckoutSheetDragTransform();
 
     if (shouldClose) {
       setIsCheckoutDragging(false);
@@ -1875,7 +1957,6 @@ const [headerPingFlags, setHeaderPingFlags] = useState({
 
 
 const refreshHeaderPingFlags = async () => {
-  console.time("[PERF][MainPage] refreshHeaderPingFlags total");
   const telegramId = getEffectiveTelegramId();
 
   let hasCartPing = false;
@@ -1889,16 +1970,9 @@ const refreshHeaderPingFlags = async () => {
     hasCartPing = false;
   }
 
-  console.log("[PERF][MainPage] refreshHeaderPingFlags result", {
-    telegramId,
-    hasCartPing,
-  });
-
   setHeaderPingFlags({
     cart: hasCartPing,
   });
-
-  console.timeEnd("[PERF][MainPage] refreshHeaderPingFlags total");
 };
 
 useEffect(() => {
@@ -2772,6 +2846,7 @@ navigate("/cart");
   const addressInputRef = useRef(null);
   const isSavingAddressRef = useRef(false);
   const checkoutScrollRef = useRef(null);
+  const addressViewportRafRef = useRef(0);
 
   const keepAddressInputInView = () => {
     const input = addressInputRef.current;
@@ -2839,13 +2914,23 @@ navigate("/cart");
     const vv = window.visualViewport;
     if (!vv) return () => clearTimeout(t);
 
-    const onVV = () => keepAddressInputInView();
+    const onVV = () => {
+      if (addressViewportRafRef.current) return;
+      addressViewportRafRef.current = requestAnimationFrame(() => {
+        addressViewportRafRef.current = 0;
+        keepAddressInputInView();
+      });
+    };
 
     vv.addEventListener("resize", onVV);
     vv.addEventListener("scroll", onVV);
 
     return () => {
       clearTimeout(t);
+      if (addressViewportRafRef.current) {
+        cancelAnimationFrame(addressViewportRafRef.current);
+        addressViewportRafRef.current = 0;
+      }
       vv.removeEventListener("resize", onVV);
       vv.removeEventListener("scroll", onVV);
     };
@@ -3101,13 +3186,13 @@ navigate("/cart");
     return () => { alive = false; };
   }, []);
 
-  const visibleProducts = activeCategoryFilter?.key
-  ? products.filter(
-      (p) =>
-        String(p?.categoryKey || "").trim() ===
-        String(activeCategoryFilter.key || "").trim()
-    )
-  : products;
+  const visibleProducts = useMemo(() => {
+    if (!activeCategoryFilter?.key) return products;
+    const filterKey = String(activeCategoryFilter.key || "").trim();
+    return products.filter(
+      (p) => String(p?.categoryKey || "").trim() === filterKey
+    );
+  }, [products, activeCategoryFilter?.key]);
 
   const catalogSearchNorm = String(catalogSearchQuery || "").trim().toLowerCase();
 
@@ -4283,7 +4368,7 @@ navigate("/cart");
                     preloadImage={preloadImage}
                     isFavorite={isFavoriteProduct(product)}
                     onOpenProduct={openProductCheckout}
-                    onToggleFavorite={handleToggleFavoriteProduct}
+                    onToggleFavorite={toggleFavoriteProduct}
                   />
                 ))}
               </div>

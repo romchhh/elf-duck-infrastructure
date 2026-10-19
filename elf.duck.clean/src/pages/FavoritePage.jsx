@@ -338,6 +338,7 @@ const FavoritePage = () => {
 
     useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
       intervalMs: 5000,
+      enabled: mounted,
     });
 
       const showTgAlert = (text) => {
