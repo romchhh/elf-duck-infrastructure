@@ -1,6 +1,10 @@
 .DS_Store
 **/.DS_Store
 
+# Tegger admin secrets (Compose mangles `$` in .env — use hash file instead)
+docker/tegger-admin.env
+docker/tegger-admin.hash
+
 # Secrets (single root .env for all services)
 telebots-e-commerce-*.json
 telebots-e-commerce-bc2114cbc876.json

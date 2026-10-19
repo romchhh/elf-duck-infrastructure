@@ -78,15 +78,46 @@ def verify_credentials(username, password):
     expected_hash = os.getenv(
         "TEGGER_ADMIN_PASSWORD_HASH",
         "",
+    ).strip()
+
+    # Plaintext fallback — Compose mangles `$` in argon2 hashes from .env
+    expected_password = os.getenv(
+        "TEGGER_ADMIN_PASSWORD",
+        "",
     )
 
-    if not expected_username or not expected_hash:
+    hash_file = os.getenv(
+        "TEGGER_ADMIN_PASSWORD_HASH_FILE",
+        "",
+    ).strip()
+
+    if hash_file and not expected_hash:
+        try:
+            expected_hash = Path(hash_file).read_text(
+                encoding="utf-8"
+            ).strip()
+        except OSError:
+            expected_hash = ""
+
+    if not expected_username:
+        return False
+
+    if not expected_hash and not expected_password:
         return False
 
     if not secrets.compare_digest(
         username,
         expected_username,
     ):
+        return False
+
+    if expected_password and secrets.compare_digest(
+        password,
+        expected_password,
+    ):
+        return True
+
+    if not expected_hash:
         return False
 
     try:

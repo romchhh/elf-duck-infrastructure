@@ -14,12 +14,14 @@ COPY tegger/tegger-tg/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY tegger/tegger-tg/ ./
-
-RUN mkdir -p /data/data /data/sessions
+COPY docker/tegger-api-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+  && mkdir -p /data/data /data/sessions /run/tegger \
+  && : > /run/tegger/admin.hash
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=20s --timeout=5s --retries=5 --start-period=30s \
+HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=40s \
   CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/entrypoint.sh"]

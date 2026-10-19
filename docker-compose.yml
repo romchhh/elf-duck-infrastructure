@@ -88,20 +88,25 @@ services:
       FRONTEND_ORIGIN: ${TEGGER_FRONTEND_ORIGIN:-https://tegger.telebots.site}
       TEGGER_BOOTSTRAP: ${TEGGER_BOOTSTRAP:-true}
       TEGGER_COOKIE_SECURE: ${TEGGER_COOKIE_SECURE:-true}
+      # Telegram creds — keep empty-safe for bootstrap boot
       API_ID: ${TEGGER_API_ID:-0}
-      API_HASH: ${TEGGER_API_HASH:-}
+      API_HASH: ${TEGGER_API_HASH:-bootstrap}
       SENDERS: ${TEGGER_SENDERS:-sender_1}
       DRY_RUN: ${TEGGER_DRY_RUN:-true}
       TEMPLATE_STORY_URL_SENDER_1: ${TEGGER_TEMPLATE_STORY_URL_SENDER_1:-}
       TEGGER_ADMIN_USERNAME: ${TEGGER_ADMIN_USERNAME:-admin}
-      TEGGER_ADMIN_PASSWORD_HASH: ${TEGGER_ADMIN_PASSWORD_HASH:-}
+      # Plaintext OK in .env (no `$`). Argon2 hash must NOT go through Compose ${...}.
+      TEGGER_ADMIN_PASSWORD: ${TEGGER_ADMIN_PASSWORD:-}
+      TEGGER_ADMIN_PASSWORD_HASH_FILE: /run/tegger/admin.hash
       LOG_BOT_TOKEN: ${TEGGER_LOG_BOT_TOKEN:-}
       LOG_CHAT_ID: ${TEGGER_LOG_CHAT_ID:-}
     volumes:
       - tegger_data:/data
-    # Internal only; public entry is tegger:3005 with /api proxy
-    expose:
-      - "8000"
+      # File mount avoids Compose `$` interpolation that corrupts argon2 hashes
+      - ./docker/tegger-admin.hash:/run/tegger/admin.hash:ro
+    # Host debug / health: curl http://127.0.0.1:3006/api/health
+    ports:
+      - "3006:8000"
 
   tegger:
     build:
@@ -112,7 +117,7 @@ services:
       - "3005:80"
     depends_on:
       tegger-api:
-        condition: service_started
+        condition: service_healthy
 
   # Одноразовое обновление каталога в Mongo (Node на хосте не нужен):
   #   docker compose build api
