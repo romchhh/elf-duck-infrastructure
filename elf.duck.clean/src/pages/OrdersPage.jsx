@@ -168,9 +168,9 @@ const isMokotowOrderPoint = (order = {}) => {
   return getOrderVisualBlob(order).includes("mokot");
 };
 
-/** Imię for BLIK transfer hint — Mokotów: Виталий; other points: Dmytro. */
+/** Imię for BLIK transfer hint — Mokotów: Vitalii; other points: Dmytro. */
 const getBlikRecipientFirstName = (order = {}) => {
-  if (isMokotowOrderPoint(order)) return "Виталий";
+  if (isMokotowOrderPoint(order)) return "Vitalii";
   return "Dmytro";
 };
 
