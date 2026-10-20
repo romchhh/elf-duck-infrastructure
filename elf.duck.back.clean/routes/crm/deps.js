@@ -65,6 +65,7 @@ import {
   getSaleDateExpression,
   loadSales,
   loadSalesHistory,
+  loadFirstSalesForUsers,
   loadCanceledCount,
   loadCanceledOrders,
 } from "../../lib/crm/sales.js";
@@ -138,6 +139,7 @@ export {
   getSaleDateExpression,
   loadSales,
   loadSalesHistory,
+  loadFirstSalesForUsers,
   loadCanceledCount,
   loadCanceledOrders,
   getCrmOrderStatus,

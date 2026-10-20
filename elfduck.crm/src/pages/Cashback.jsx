@@ -5,9 +5,6 @@ import React, {
 } from 'react';
 
 import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
   Search,
 } from 'lucide-react';
 
@@ -31,6 +28,7 @@ import {
 import { crmFetch, crmFetchJson, CRM_API_URL } from '@/lib/crmFetch';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
+import { useTableSort } from '@/lib/tableSort';
 
 const PAGE_SIZE = 50;
 
@@ -487,8 +485,8 @@ export default function Cashback() {
     setPage,
   ] = useState(1);
 
-  const [sortKey, setSortKey] = useState('');
-  const [sortDirection, setSortDirection] = useState('desc');
+  const { sortKey, sortDirection, toggleSort, appendSortParams } =
+    useTableSort();
 
   const baseQueryString =
     useMemo(
@@ -574,10 +572,7 @@ export default function Cashback() {
           );
         }
 
-        if (sortKey) {
-          params.set('sortKey', sortKey);
-          params.set('sortDirection', sortDirection);
-        }
+        appendSortParams(params);
 
         return (
           params.toString()
@@ -588,8 +583,7 @@ export default function Cashback() {
         page,
         filter,
         query,
-        sortKey,
-        sortDirection,
+        appendSortParams,
       ]
     );
 
@@ -703,35 +697,6 @@ export default function Cashback() {
     },
   ];
 
-  const toggleSort = (key) => {
-    if (sortKey === key) {
-      setSortDirection((current) =>
-        current === 'desc' ? 'asc' : 'desc'
-      );
-      return;
-    }
-
-    setSortKey(key);
-    setSortDirection('desc');
-  };
-
-  const renderSortableHeader = (key, label) => (
-    <button
-      type="button"
-      onClick={() => toggleSort(key)}
-      className="inline-flex items-center gap-1.5 whitespace-nowrap text-inherit transition-colors hover:text-foreground"
-    >
-      <span>{label}</span>
-      {sortKey !== key ? (
-        <ArrowUpDown className="h-3 w-3 text-muted-2" />
-      ) : sortDirection === 'desc' ? (
-        <ArrowDown className="h-3 w-3 text-[hsl(255_100%_72%)]" />
-      ) : (
-        <ArrowUp className="h-3 w-3 text-[hsl(255_100%_72%)]" />
-      )}
-    </button>
-  );
-
   const distribution =
     useMemo(
       () => {
@@ -843,7 +808,7 @@ export default function Cashback() {
       key:
         'balance',
 
-      header: renderSortableHeader('balance', 'Баланс'),
+      header: 'Баланс',
 
       align:
         'right',
@@ -862,7 +827,7 @@ export default function Cashback() {
       key:
         'issued',
 
-      header: renderSortableHeader('issued', 'Выдано всего'),
+      header: 'Выдано всего',
 
       align:
         'right',
@@ -881,7 +846,7 @@ export default function Cashback() {
       key:
         'used',
 
-      header: renderSortableHeader('used', 'Использовано'),
+      header: 'Использовано',
 
       align:
         'right',
@@ -899,6 +864,8 @@ export default function Cashback() {
     {
       key:
         'expire',
+
+      sortKey: 'expiresAt',
 
       header:
         'Сгорит',
@@ -1176,6 +1143,9 @@ export default function Cashback() {
                     rows
                   }
                   dense
+                  sortKey={sortKey}
+                  sortDirection={sortDirection}
+                  onSort={toggleSort}
                 />
               )}
           </div>

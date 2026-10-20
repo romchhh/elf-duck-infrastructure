@@ -444,30 +444,37 @@ router.get(
           );
       }
 
-      /*
-       * Новые регистрации сверху.
-       */
-      rows.sort(
-        (a, b) => {
-          const aDate =
-            a.createdAt
-              ? new Date(
-                  a.createdAt
-                ).getTime()
-              : 0;
+      {
+        const { parseSortQuery, sortRows } = await import(
+          "../../lib/crm/sortRows.js"
+        );
+        const { sortKey, sortDirection } = parseSortQuery(req.query, [
+          "name",
+          "createdAt",
+          "inLeads",
+          "completedTotal",
+          "orders",
+          "status",
+        ]);
 
-          const bDate =
-            b.createdAt
-              ? new Date(
-                  b.createdAt
-                ).getTime()
-              : 0;
-
-          return (
-            bDate - aDate
-          );
+        if (sortKey) {
+          rows = sortRows(rows, sortKey, sortDirection, {
+            name: (row) => row.name || row.handle || row.telegramId || "",
+            createdAt: (row) => row.createdAt || null,
+            inLeads: (row) => Number(row.inLeads || 0),
+            completedTotal: (row) => Number(row.completedTotal || 0),
+            orders: (row) => Number(row.orders || 0),
+            status: (row) => row.status || "",
+          });
+        } else {
+          // Новые регистрации сверху.
+          rows.sort((a, b) => {
+            const aDate = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const bDate = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return bDate - aDate;
+          });
         }
-      );
+      }
 
       const total =
         rows.length;

@@ -745,11 +745,32 @@ router.get(
           );
       }
 
-      rows.sort(
-        (a, b) =>
-          b.revenue -
-          a.revenue
-      );
+      {
+        const { parseSortQuery, sortRows } = await import(
+          "../../lib/crm/sortRows.js"
+        );
+        const { sortKey, sortDirection } = parseSortQuery(req.query, [
+          "name",
+          "invited",
+          "bought",
+          "conversion",
+          "revenue",
+          "avgCheck",
+        ]);
+
+        if (sortKey) {
+          rows = sortRows(rows, sortKey, sortDirection, {
+            name: (row) => row.name || row.handle || row.telegramId || "",
+            invited: (row) => Number(row.invited || 0),
+            bought: (row) => Number(row.bought || 0),
+            conversion: (row) => Number(row.conversion || 0),
+            revenue: (row) => Number(row.revenue || 0),
+            avgCheck: (row) => Number(row.avgCheck || 0),
+          });
+        } else {
+          rows.sort((a, b) => Number(b.revenue || 0) - Number(a.revenue || 0));
+        }
+      }
 
       const total =
         rows.length;

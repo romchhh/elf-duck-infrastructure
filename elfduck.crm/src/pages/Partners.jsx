@@ -20,6 +20,7 @@ import {
   usePeriod,
 } from '@/lib/PeriodContext';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
+import { useTableSort } from '@/lib/tableSort';
 
 const PAGE_SIZE = 25;
 
@@ -168,6 +169,9 @@ export default function Partners() {
     setPage,
   ] = useState(1);
 
+  const { sortKey, sortDirection, toggleSort, appendSortParams } =
+    useTableSort('revenue', 'desc');
+
   const baseQueryString =
     useMemo(
       () => {
@@ -248,6 +252,8 @@ export default function Partners() {
           );
         }
 
+        appendSortParams(params);
+
         return (
           params.toString()
         );
@@ -256,6 +262,7 @@ export default function Partners() {
         baseQueryString,
         page,
         query,
+        appendSortParams,
       ]
     );
 
@@ -266,6 +273,8 @@ export default function Partners() {
     [
       baseQueryString,
       query,
+      sortKey,
+      sortDirection,
     ]
   );
 
@@ -565,6 +574,9 @@ export default function Partners() {
                   rows
                 }
                 dense
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={toggleSort}
               />
             )}
         </div>

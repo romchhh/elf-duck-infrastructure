@@ -247,18 +247,13 @@ export async function buildCustomerSalesStats(to, options = {}) {
       },
     },
     {
-      $sort: {
-        crmSaleDate: 1,
-      },
-    },
-    {
+      // No $sort / $push saleDates — interval = (last−first)/(n−1).
       $group: {
         _id: "$userTelegramId",
         ltv: { $sum: { $ifNull: ["$totalZl", 0] } },
         purchases: { $sum: 1 },
         firstSaleAt: { $min: "$crmSaleDate" },
         lastSaleAt: { $max: "$crmSaleDate" },
-        saleDates: { $push: "$crmSaleDate" },
         revenueInPeriod: from
           ? {
               $sum: {
@@ -310,7 +305,6 @@ export async function buildCustomerSalesStats(to, options = {}) {
       purchases: Number(row?.purchases || 0),
       firstSaleAt: row?.firstSaleAt || null,
       lastSaleAt: row?.lastSaleAt || null,
-      saleDates: Array.isArray(row?.saleDates) ? row.saleDates : [],
       revenueInPeriod: Number(
         Number(row?.revenueInPeriod || 0).toFixed(2)
       ),
@@ -319,6 +313,43 @@ export async function buildCustomerSalesStats(to, options = {}) {
   }
 
   return map;
+}
+
+/**
+ * Перші продажі лише для заданих telegramId (дешево vs повний loadFirstSales).
+ */
+export async function loadFirstSalesForUsers(telegramIds = []) {
+  const ids = [
+    ...new Set(
+      (telegramIds || [])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  if (!ids.length) {
+    return [];
+  }
+
+  return Order.aggregate([
+    {
+      $match: {
+        ...getCompletedOrderMatch(),
+        userTelegramId: { $in: ids },
+      },
+    },
+    {
+      $addFields: {
+        crmSaleDate: getSaleDateExpression(),
+      },
+    },
+    {
+      $group: {
+        _id: "$userTelegramId",
+        firstSaleAt: { $min: "$crmSaleDate" },
+      },
+    },
+  ]).option({ allowDiskUse: true });
 }
 
 /**

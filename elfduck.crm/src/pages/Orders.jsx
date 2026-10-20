@@ -9,6 +9,7 @@ import KpiCard from '@/components/shared/KpiCard';
 import MetricGrid from '@/components/shared/MetricGrid';
 import { usePeriod } from '@/lib/PeriodContext';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
+import { useTableSort } from '@/lib/tableSort';
 
 const statusMap = {
   done: 'done',
@@ -222,6 +223,8 @@ export default function Orders() {
 
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const { sortKey, sortDirection, toggleSort, appendSortParams } =
+    useTableSort('date', 'desc');
 
   useEffect(() => {
     setPage(1);
@@ -230,6 +233,8 @@ export default function Orders() {
     range?.start,
     range?.end,
     query,
+    sortKey,
+    sortDirection,
   ]);
 
   const queryString = useMemo(() => {
@@ -294,9 +299,12 @@ export default function Orders() {
       );
     }
 
+    appendSortParams(params);
+
     return params.toString();
   }, [
     period,
+    appendSortParams,
     range?.start,
     range?.end,
     page,
@@ -427,6 +435,7 @@ export default function Orders() {
     {
       key: 'customer',
       header: 'Клиент',
+      sortable: false,
       render: (r) => (
         <CustomerChatLink row={r} />
       ),
@@ -447,6 +456,7 @@ export default function Orders() {
     {
       key: 'items',
       header: 'Товары',
+      sortable: false,
       render: (r) => (
         <span className="text-muted-foreground">
           {r.items}
@@ -488,6 +498,7 @@ export default function Orders() {
     {
       key: 'location',
       header: 'Точка',
+      sortable: false,
       render: (r) => (
         <span className="text-muted-foreground">
           {r.location}
@@ -577,6 +588,9 @@ export default function Orders() {
                 columns={columns}
                 rows={pageRows}
                 dense
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={toggleSort}
               />
             </div>
           )}

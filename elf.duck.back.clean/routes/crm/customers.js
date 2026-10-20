@@ -3,7 +3,6 @@ import {
   getCustomerStatus,
   isCustomerActive,
   getCustomerSegment,
-  getAveragePurchaseIntervalDays,
   CRM_FAVORITE_CUSTOMERS_COLLECTION,
   requireCrmPushAdmin,
   getPeriodRange,
@@ -14,8 +13,26 @@ import { buildCustomerSalesStats } from "../../lib/crm/sales.js";
 
 const router = express.Router();
 
-const CUSTOMER_STATS_CACHE_TTL_MS = 45_000;
+const CUSTOMER_STATS_CACHE_TTL_MS = 5 * 60_000;
 const customerStatsCache = new Map();
+
+function averageIntervalDays(firstSaleAt, lastSaleAt, purchases) {
+  const count = Number(purchases || 0);
+  if (count < 2 || !firstSaleAt || !lastSaleAt) {
+    return null;
+  }
+
+  const firstMs = new Date(firstSaleAt).getTime();
+  const lastMs = new Date(lastSaleAt).getTime();
+  if (Number.isNaN(firstMs) || Number.isNaN(lastMs) || lastMs < firstMs) {
+    return null;
+  }
+
+  // Σ consecutive gaps = last − first → mean = (last − first) / (n − 1)
+  return Math.round(
+    (lastMs - firstMs) / (count - 1) / (24 * 60 * 60 * 1000)
+  );
+}
 
 function getCustomerStatsCacheKey(range) {
   const fromMs = range?.from ? new Date(range.from).getTime() : 0;
@@ -77,13 +94,26 @@ router.get(
         .toLowerCase()
         .replace(/^@+/, "");
 
-      const sortKey = String(req.query?.sortKey || "").trim();
+      const { parseSortQuery, sortRows } = await import(
+        "../../lib/crm/sortRows.js"
+      );
 
-      const sortDirection =
-        String(req.query?.sortDirection || "desc").toLowerCase() ===
-        "asc"
-          ? "asc"
-          : "desc";
+      const sortableCustomerKeys = [
+        "name",
+        "status",
+        "segment",
+        "ltv",
+        "purchases",
+        "interval",
+        "avgCheck",
+        "lastOrder",
+        "cashback",
+      ];
+
+      const { sortKey, sortDirection } = parseSortQuery(
+        req.query,
+        sortableCustomerKeys
+      );
 
       const statusFilter = String(req.query?.status || "all")
         .trim()
@@ -210,7 +240,6 @@ router.get(
           purchases: 0,
           firstSaleAt: null,
           lastSaleAt: null,
-          saleDates: [],
           revenueInPeriod: 0,
           purchasesInPeriod: 0,
         };
@@ -237,7 +266,7 @@ router.get(
           purchases,
           purchasesInPeriod: Number(stats.purchasesInPeriod || 0),
           revenueInPeriod: Number(stats.revenueInPeriod || 0),
-          interval: getAveragePurchaseIntervalDays(stats.saleDates || []),
+          interval: averageIntervalDays(firstSaleAt, lastSaleAt, purchases),
           avgCheck:
             purchases > 0
               ? Number((ltv / purchases).toFixed(2))
@@ -280,37 +309,65 @@ router.get(
         rows = rows.filter((row) => row.status === statusFilter);
       }
 
-      const sortableCustomerKeys = new Set([
-        "ltv",
-        "purchases",
-        "avgCheck",
-        "cashback",
-      ]);
-
-      if (sortKey === "cashback" && rows.length > 0) {
-        const cashbackUsers = await User.find({
+      // Enrich identity/cashback before sort when those columns are active.
+      if (
+        (sortKey === "cashback" || sortKey === "name") &&
+        rows.length > 0
+      ) {
+        const sortUsers = await User.find({
           telegramId: { $in: rows.map((row) => row.telegramId) },
         })
-          .select({ telegramId: 1, cashbackBalance: 1 })
+          .select({
+            telegramId: 1,
+            username: 1,
+            firstName: 1,
+            lastName: 1,
+            cashbackBalance: 1,
+          })
           .lean();
 
-        const cashbackById = new Map(
-          cashbackUsers.map((user) => [
+        const userById = new Map(
+          sortUsers.map((user) => [
             String(user?.telegramId || "").trim(),
-            Number(user?.cashbackBalance || 0),
+            user,
           ])
         );
 
         for (const row of rows) {
-          row.cashback = cashbackById.get(row.telegramId) || 0;
+          const user = userById.get(row.telegramId);
+          if (!user) continue;
+
+          if (sortKey === "cashback") {
+            row.cashback = Number(user?.cashbackBalance || 0);
+          }
+
+          if (sortKey === "name") {
+            const name = [user?.firstName || "", user?.lastName || ""]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+            const username = String(user?.username || "")
+              .trim()
+              .replace(/^@+/, "");
+            row.name =
+              name || (username ? `@${username}` : row.telegramId);
+            row.username = username;
+            row.handle = username ? `@${username}` : row.telegramId;
+          }
         }
       }
 
-      if (sortableCustomerKeys.has(sortKey)) {
-        rows.sort((a, b) => {
-          const left = Number(a?.[sortKey] || 0);
-          const right = Number(b?.[sortKey] || 0);
-          return sortDirection === "asc" ? left - right : right - left;
+      if (sortKey) {
+        rows = sortRows(rows, sortKey, sortDirection, {
+          name: (row) => row.name || row.handle || row.telegramId || "",
+          status: (row) => row.status || "",
+          segment: (row) => row.segment || "",
+          lastOrder: (row) => row.lastOrder || null,
+          interval: (row) => Number(row.interval || 0),
+          ltv: (row) => Number(row.ltv || 0),
+          purchases: (row) => Number(row.purchases || 0),
+          avgCheck: (row) => Number(row.avgCheck || 0),
+          cashback: (row) => Number(row.cashback || 0),
         });
       } else {
         rows.sort((a, b) => {

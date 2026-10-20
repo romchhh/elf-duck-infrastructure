@@ -27,6 +27,7 @@ import DataTable from '@/components/shared/DataTable';
 import Badge from '@/components/shared/Badge';
 import Pagination from '@/components/shared/Pagination';
 import MetricGrid from '@/components/shared/MetricGrid';
+import { useTableSort } from '@/lib/tableSort';
 
 import {
   Dialog,
@@ -316,6 +317,12 @@ const [
     campPage,
     setCampPage,
   ] = useState(1);
+
+  const {
+    sortKey: campSortKey,
+    sortDirection: campSortDirection,
+    toggleSort: toggleCampSort,
+  } = useTableSort('revenue', 'desc');
 
   /*
    * PERIOD
@@ -1522,14 +1529,50 @@ const confirmCreateTpl = () => {
   }, [
     period,
     range,
+    campSortKey,
+    campSortDirection,
   ]);
+
+  const sortedCampaigns = useMemo(() => {
+    const rows = Array.isArray(campaigns) ? [...campaigns] : [];
+    if (!campSortKey) return rows;
+
+    const direction = campSortDirection === 'asc' ? 1 : -1;
+    const getValue = (row) => {
+      const value = row?.[campSortKey];
+      if (value == null || value === '') return null;
+      if (typeof value === 'number') return value;
+      const asNumber = Number(value);
+      if (Number.isFinite(asNumber) && String(value).trim() !== '') {
+        return asNumber;
+      }
+      return String(value).toLocaleLowerCase('ru');
+    };
+
+    return rows.sort((a, b) => {
+      const left = getValue(a);
+      const right = getValue(b);
+      if (left == null && right == null) return 0;
+      if (left == null) return 1;
+      if (right == null) return -1;
+      if (typeof left === 'number' && typeof right === 'number') {
+        return (left - right) * direction;
+      }
+      return (
+        String(left).localeCompare(String(right), 'ru', {
+          numeric: true,
+          sensitivity: 'base',
+        }) * direction
+      );
+    });
+  }, [campaigns, campSortKey, campSortDirection]);
 
   const campPageCount =
     Math.max(
       1,
 
       Math.ceil(
-        campaigns.length /
+        sortedCampaigns.length /
           CAMPAIGN_PAGE_SIZE
       )
     );
@@ -1541,7 +1584,7 @@ const confirmCreateTpl = () => {
     );
 
   const campRows =
-    campaigns.slice(
+    sortedCampaigns.slice(
       (
         safeCampPage -
         1
@@ -1602,6 +1645,8 @@ const confirmCreateTpl = () => {
 
       header:
         'Аудитория',
+
+      sortable: false,
 
       render: (r) => (
         <span className="text-muted-foreground">
@@ -2332,6 +2377,9 @@ const confirmCreateTpl = () => {
               campRows
             }
             dense
+            sortKey={campSortKey}
+            sortDirection={campSortDirection}
+            onSort={toggleCampSort}
           />
         </div>
 

@@ -5,21 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import {
-
-  Search,
-
-  Star,
-
-  ArrowUpDown,
-
-  ArrowUp,
-
-  ArrowDown,
-
-  Download,
-
-} from 'lucide-react';
+import { Search, Star, Download } from 'lucide-react';
 import DataTable from '@/components/shared/DataTable';
 import Badge from '@/components/shared/Badge';
 import Pagination from '@/components/shared/Pagination';
@@ -29,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
 import { setCrmSessionToken } from '@/lib/crmSession';
 import { TEGGER_URL } from '@/lib/navConfig';
+import { useTableSort } from '@/lib/tableSort';
 
 const statusFilters = [
   { key: 'all', label: 'Все' },
@@ -93,8 +80,8 @@ export default function Customers() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [sortKey, setSortKey] = useState('');
-  const [sortDirection, setSortDirection] = useState('desc');
+  const { sortKey, sortDirection, toggleSort, appendSortParams } =
+    useTableSort();
   const [authOpen, setAuthOpen] = useState(false);
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -118,17 +105,14 @@ export default function Customers() {
     params.set('limit', String(PAGE_SIZE));
     params.set('status', status);
 
-    if (sortKey) {
-      params.set('sortKey', sortKey);
-      params.set('sortDirection', sortDirection);
-    }
+    appendSortParams(params);
 
     if (debouncedQuery) {
       params.set('search', debouncedQuery);
     }
 
     return params.toString();
-  }, [page, status, debouncedQuery, sortKey, sortDirection]);
+  }, [page, status, debouncedQuery, appendSortParams]);
 
   useEffect(() => {
     setPage(1);
@@ -144,7 +128,7 @@ export default function Customers() {
     queryKey: ['crm-customers', requestQuery],
     enabled: Boolean(requestQuery),
     placeholderData: (previous) => previous,
-    staleTime: 30_000,
+    staleTime: 60_000,
     queryFn: async () => {
       if (!CRM_API_URL) {
         throw new Error('VITE_CRM_API_URL is not configured');
@@ -388,158 +372,116 @@ const summary = [
   },
 ];
 
-const handleExportUsers = async (format = 'tegger') => {
+const encodeTargetsForTegger = (text) => {
+  const bytes = new TextEncoder().encode(String(text || ''));
+  let binary = '';
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return encodeURIComponent(btoa(binary));
+};
+
+const handleOpenInTegger = async () => {
+  if (!TEGGER_URL) {
+    setExportError('VITE_TEGGER_URL не настроен');
+    return;
+  }
+
   setExportLoading(true);
   setExportError('');
 
   try {
-    const path =
-      format === 'tegger'
-        ? '/crm/customers/export?format=tegger'
-        : '/crm/customers/export';
-
-    const response = await crmFetch(path);
+    const response = await crmFetch('/crm/customers/export?format=tegger');
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload?.error || `HTTP_${response.status}`);
     }
 
-    const blob = await response.blob();
-    const disposition = String(
-      response.headers.get('content-disposition') || ''
-    );
-    const match = disposition.match(/filename="([^"]+)"/i);
-    const filename =
-      match?.[1] ||
-      (format === 'tegger'
-        ? `elfduck-tegger-usernames-${formatDateOnly(new Date())}.csv`
-        : `elfduck-users-${formatDateOnly(new Date())}.csv`);
+    const csvText = await response.text();
+    const usernames = csvText
+      .replace(/^\uFEFF/, '')
+      .split(/\r?\n/)
+      .map((line) => line.trim().replace(/^"|"$/g, ''))
+      .filter((line) => line && line.toLowerCase() !== 'username')
+      .map((line) => line.replace(/^@+/, '').toLowerCase())
+      .filter((line) => /^[a-z0-9_]{5,32}$/.test(line));
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    if (usernames.length === 0) {
+      throw new Error('NO_USERNAMES');
+    }
+
+    const payload = usernames.map((name) => `@${name}`).join('\n');
+    const base = TEGGER_URL.replace(/\/$/, '');
+    const teggerUrl = `${base}/campaigns?create=1&source=elfduck#elfduck=${encodeTargetsForTegger(payload)}`;
+
+    window.open(teggerUrl, '_blank', 'noopener,noreferrer');
   } catch (error) {
-    setExportError(
-      error?.message === 'UNAUTHORIZED'
-        ? 'Нужна авторизация CRM'
-        : 'Не удалось выгрузить базу клиентов'
-    );
+    if (error?.message === 'NO_USERNAMES') {
+      setExportError('В базе нет username для импорта в Tegger');
+    } else {
+      setExportError(
+        error?.message === 'UNAUTHORIZED'
+          ? 'Нужна авторизация CRM'
+          : 'Не удалось открыть базу в Tegger'
+      );
+    }
   } finally {
     setExportLoading(false);
   }
 };
 
-const toggleSort = (key) => {
-  if (sortKey === key) {
-    setSortDirection(
-      (current) =>
-        current === 'desc'
-          ? 'asc'
-          : 'desc'
-    );
-
-    return;
-  }
-
-  setSortKey(key);
-  setSortDirection('desc');
-};
-
-const renderSortableHeader =
-  (key, label) => (
-    <button
-      type="button"
-      onClick={() =>
-        toggleSort(key)
-      }
-      className="inline-flex items-center gap-1.5 whitespace-nowrap text-inherit transition-colors hover:text-foreground"
-    >
-      <span>{label}</span>
-
-      {sortKey !== key ? (
-        <ArrowUpDown className="h-3 w-3 text-muted-2" />
-      ) : sortDirection ===
-        'desc' ? (
-        <ArrowDown className="h-3 w-3 text-[hsl(255_100%_72%)]" />
-      ) : (
-        <ArrowUp className="h-3 w-3 text-[hsl(255_100%_72%)]" />
-      )}
-    </button>
-  );
-
   const columns = [
-{
-  key: 'name',
-  header: 'Клиент',
-
-  render: (r) => (
-    <div className="flex items-center gap-2">
-
-      <button
-        type="button"
-
-        onClick={() =>
-          toggleFavorite(r)
-        }
-
-        title={
-          r.isFavorite
-            ? 'Убрать из избранных'
-            : 'Добавить в избранные'
-        }
-
-        className={cn(
-          'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all',
-
-          r.isFavorite
-            ? 'text-amber-400 hover:bg-amber-400/10'
-            : 'text-muted-2 hover:bg-amber-400/10 hover:text-amber-400'
-        )}
-      >
-        <Star
-          className={cn(
-            'h-4 w-4',
-
-            r.isFavorite &&
-              'fill-current'
-          )}
-        />
-      </button>
-
-      <Avatar name={r.name} />
-
-      <div>
-        <div className="font-medium text-foreground">
-          {r.name}
+    {
+      key: 'name',
+      header: 'Клиент',
+      render: (r) => (
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleFavorite(r);
+            }}
+            title={
+              r.isFavorite
+                ? 'Убрать из избранных'
+                : 'Добавить в избранные'
+            }
+            className={cn(
+              'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all',
+              r.isFavorite
+                ? 'text-amber-400 hover:bg-amber-400/10'
+                : 'text-muted-2 hover:bg-amber-400/10 hover:text-amber-400'
+            )}
+          >
+            <Star
+              className={cn('h-4 w-4', r.isFavorite && 'fill-current')}
+            />
+          </button>
+          <Avatar name={r.name} />
+          <div>
+            <div className="font-medium text-foreground">{r.name}</div>
+            <div className="text-[11px] text-muted-2">{r.handle}</div>
+          </div>
         </div>
-
-        <div className="text-[11px] text-muted-2">
-          {r.handle}
-        </div>
-      </div>
-
-    </div>
-  ),
-},
-    { key: 'status', header: 'Статус', render: (r) => <Badge status={statusMap[r.status]} /> },
-    { key: 'segment', header: 'Сегмент', render: (r) => <span className="text-muted-foreground">{r.segment}</span> },
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Статус',
+      render: (r) => <Badge status={statusMap[r.status]} />,
+    },
+    {
+      key: 'segment',
+      header: 'Сегмент',
+      render: (r) => (
+        <span className="text-muted-foreground">{r.segment}</span>
+      ),
+    },
     {
       key: 'ltv',
-      header:
-
-  renderSortableHeader(
-
-    'ltv',
-
-    'LTV'
-
-  ),
+      header: 'LTV',
       align: 'right',
       render: (r) => (
         <span className="font-medium text-foreground">
@@ -548,36 +490,26 @@ const renderSortableHeader =
       ),
     },
     {
-  key: 'purchases',
-
-  header:
-    renderSortableHeader(
-      'purchases',
-      'Покупки'
-    ),
-
-  align: 'right',
-
-  render: (r) => (
-    <span className="text-muted-foreground">
-      {r.purchases}
-    </span>
-  ),
-},
-    { key: 'interval', header: 'Период.', align: 'right', render: (r) => <span className="text-muted-foreground">{r.interval ? `${r.interval} дн.` : '—'}</span> },
-{
-
-  key: 'avgCheck',
-
-  header:
-
-    renderSortableHeader(
-
-      'avgCheck',
-
-      'Ср. чек'
-
-    ),
+      key: 'purchases',
+      header: 'Покупки',
+      align: 'right',
+      render: (r) => (
+        <span className="text-muted-foreground">{r.purchases}</span>
+      ),
+    },
+    {
+      key: 'interval',
+      header: 'Период.',
+      align: 'right',
+      render: (r) => (
+        <span className="text-muted-foreground">
+          {r.interval ? `${r.interval} дн.` : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'avgCheck',
+      header: 'Ср. чек',
       align: 'right',
       render: (r) => (
         <span className="text-muted-foreground">
@@ -597,15 +529,7 @@ const renderSortableHeader =
     },
     {
       key: 'cashback',
-      header:
-
-  renderSortableHeader(
-
-    'cashback',
-
-    'Кэшбэк'
-
-  ),
+      header: 'Кэшбэк',
       align: 'right',
       render: (r) => (
         <span className="font-medium text-[hsl(255_100%_72%)]">
@@ -655,25 +579,17 @@ const renderSortableHeader =
               </span>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={() => handleExportUsers('tegger')}
-            disabled={exportLoading}
-            title="CSV только с username для tegger"
-            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] disabled:opacity-60"
-          >
-            <Download className="h-3.5 w-3.5" />
-            {exportLoading ? 'Выгрузка…' : 'CSV для tegger'}
-          </button>
           {TEGGER_URL ? (
-            <a
-              href={TEGGER_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)]"
+            <button
+              type="button"
+              onClick={handleOpenInTegger}
+              disabled={exportLoading}
+              title="Выгрузить username и сразу открыть создание кампании в Tegger"
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] disabled:opacity-60"
             >
-              Открыть tegger
-            </a>
+              <Download className="h-3.5 w-3.5" />
+              {exportLoading ? 'Выгрузка…' : 'Открыть в tegger'}
+            </button>
           ) : null}
         </div>
       </div>
@@ -685,14 +601,13 @@ const renderSortableHeader =
       <div className="rounded-2xl surface-card p-2">
         <div className="hidden md:block">
           <DataTable
-
-  columns={columns}
-
-rows={pageRows}
-
-  dense
-
-/>
+            columns={columns}
+            rows={pageRows}
+            dense
+            sortKey={sortKey}
+            sortDirection={sortDirection}
+            onSort={toggleSort}
+          />
         </div>
         <div className="space-y-2.5 p-1 md:hidden">
           {pageRows.map((r) => (

@@ -60,14 +60,6 @@ router.get(
         .trim()
         .toLowerCase();
 
-      const sortKey = String(req.query?.sortKey || "").trim();
-
-      const sortDirection =
-        String(req.query?.sortDirection || "desc").toLowerCase() ===
-        "asc"
-          ? "asc"
-          : "desc";
-
       const nowForUsers = new Date();
 
       const [users, usedRows] = await Promise.all([
@@ -381,17 +373,26 @@ router.get(
           );
       }
 
-      const sortableCashbackKeys = new Set([
+      const { parseSortQuery, sortRows } = await import(
+        "../../lib/crm/sortRows.js"
+      );
+      const { sortKey, sortDirection } = parseSortQuery(req.query, [
+        "name",
         "balance",
         "issued",
         "used",
+        "expiresAt",
+        "status",
       ]);
 
-      if (sortableCashbackKeys.has(sortKey)) {
-        rows.sort((a, b) => {
-          const left = Number(a?.[sortKey] || 0);
-          const right = Number(b?.[sortKey] || 0);
-          return sortDirection === "asc" ? left - right : right - left;
+      if (sortKey) {
+        rows = sortRows(rows, sortKey, sortDirection, {
+          name: (row) => row.name || row.handle || row.telegramId || "",
+          balance: (row) => Number(row.balance || 0),
+          issued: (row) => Number(row.issued || 0),
+          used: (row) => Number(row.used || 0),
+          expiresAt: (row) => row.expiresAt || null,
+          status: (row) => row.status || "",
         });
       } else {
         /*

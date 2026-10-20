@@ -73,7 +73,10 @@ export default function CrmAuthGate({ children }) {
     }
   };
 
-  if (isLoading) {
+  const hasSessionToken = Boolean(getCrmSessionToken());
+
+  // Optimistic: known token → render children while /session resolves (cuts auth→data waterfall).
+  if (isLoading && !hasSessionToken) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
         Проверка доступа…
@@ -81,7 +84,7 @@ export default function CrmAuthGate({ children }) {
     );
   }
 
-  if (isError || !data?.authenticated) {
+  if (!isLoading && (isError || !data?.authenticated)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <form

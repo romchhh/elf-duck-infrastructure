@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { teggerClient } from "@/api/teggerClient";
 import PageHeader from "@/components/PageHeader";
@@ -8,9 +8,28 @@ import BrandButton from "@/components/BrandButton";
 import EmptyState from "@/components/EmptyState";
 import CreateCampaignDialog from "@/components/CreateCampaignDialog";
 
+function decodeElfduckTargets(hash) {
+  const raw = String(hash || "").replace(/^#/, "");
+  if (!raw.startsWith("elfduck=")) return "";
+
+  try {
+    const encoded = raw.slice("elfduck=".length);
+    const binary = atob(decodeURIComponent(encoded));
+    const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return "";
+  }
+}
+
 export default function Campaigns() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const importHandledRef = useRef(false);
   const [campaigns, setCampaigns] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [importTargets, setImportTargets] = useState("");
+  const [importName, setImportName] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,6 +51,30 @@ export default function Campaigns() {
   useEffect(() => {
     refresh();
   }, []);
+
+  useEffect(() => {
+    if (importHandledRef.current) return;
+
+    const params = new URLSearchParams(location.search);
+    const shouldCreate = params.get("create") === "1";
+    const hashText = decodeElfduckTargets(
+      location.hash || window.location.hash
+    );
+
+    if (!shouldCreate && !hashText) return;
+
+    importHandledRef.current = true;
+
+    if (hashText.trim()) {
+      setImportTargets(hashText.trim());
+      setImportName(
+        `ElfDuck CRM ${new Date().toLocaleDateString("ru-RU")}`
+      );
+    }
+
+    setShowCreate(true);
+    navigate("/campaigns", { replace: true });
+  }, [location.search, location.hash, navigate]);
 
   return (
     <div>
@@ -146,8 +189,19 @@ export default function Campaigns() {
 
       <CreateCampaignDialog
         open={showCreate}
-        onClose={() => setShowCreate(false)}
-        onCreated={() => { setShowCreate(false); refresh(); }}
+        initialTargets={importTargets}
+        initialName={importName}
+        onClose={() => {
+          setShowCreate(false);
+          setImportTargets("");
+          setImportName("");
+        }}
+        onCreated={() => {
+          setShowCreate(false);
+          setImportTargets("");
+          setImportName("");
+          refresh();
+        }}
       />
     </div>
   );

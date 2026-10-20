@@ -23,6 +23,7 @@ import {
   cn,
 } from '@/lib/utils';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
+import { SortableHeader, useTableSort } from '@/lib/tableSort';
 
 const PAGE_SIZE = 50;
 
@@ -189,6 +190,9 @@ export default function Leads() {
     setPage,
   ] = useState(1);
 
+  const { sortKey, sortDirection, toggleSort, appendSortParams } =
+    useTableSort('createdAt', 'desc');
+
   /*
    * Стандартный период
    * всегда имеет приоритет
@@ -276,6 +280,8 @@ export default function Leads() {
           );
         }
 
+        appendSortParams(params);
+
         return (
           params.toString()
         );
@@ -284,6 +290,7 @@ export default function Leads() {
         baseQueryString,
         page,
         query,
+        appendSortParams,
       ]
     );
 
@@ -294,6 +301,8 @@ export default function Leads() {
     [
       baseQueryString,
       query,
+      sortKey,
+      sortDirection,
     ]
   );
 
@@ -472,38 +481,26 @@ export default function Leads() {
                 <thead>
                   <tr className="border-b border-border">
                     {[
-                      'Лид',
-                      'Создан',
-                      'В лидах',
-                      'Сумма',
-                    ].map(
-                      (
-                        header,
-                        index
-                      ) => (
-                        <th
-                          key={
-                            header
-                          }
-
-                          className={
-                            cn(
-                              'px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted-2',
-
-                              index >=
-                                2 &&
-                                index <=
-                                  3 &&
-                                'text-right'
-                            )
-                          }
-                        >
-                          {
-                            header
-                          }
-                        </th>
-                      )
-                    )}
+                      { key: 'name', label: 'Лид', align: 'left' },
+                      { key: 'createdAt', label: 'Создан', align: 'left' },
+                      { key: 'inLeads', label: 'В лидах', align: 'right' },
+                      { key: 'completedTotal', label: 'Сумма', align: 'right' },
+                    ].map((column) => (
+                      <th
+                        key={column.key}
+                        className={cn(
+                          'px-4 py-3 text-[11px] font-medium uppercase tracking-wider text-muted-2',
+                          column.align === 'right' && 'text-right'
+                        )}
+                      >
+                        <SortableHeader
+                          label={column.label}
+                          active={sortKey === column.key}
+                          direction={sortDirection}
+                          onClick={() => toggleSort(column.key)}
+                        />
+                      </th>
+                    ))}
                   </tr>
                 </thead>
 

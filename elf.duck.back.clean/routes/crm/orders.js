@@ -53,6 +53,12 @@ router.get(
         .trim()
         .toLowerCase();
 
+      const sortKey = String(req.query?.sortKey || "").trim();
+      const sortDirection =
+        String(req.query?.sortDirection || "desc").toLowerCase() === "asc"
+          ? "asc"
+          : "desc";
+
       const [
         pageResult,
         salesKpis,
@@ -63,6 +69,8 @@ router.get(
           page,
           limit,
           search,
+          sortKey,
+          sortDirection,
         }),
         loadSalesKpis(range.from, range.to),
         loadCanceledCount(range.from, range.to),

@@ -10,12 +10,23 @@ import {
   getPeriodRange,
   loadSales,
   loadSalesHistory,
+  loadFirstSalesForUsers,
   loadCanceledCount,
   loadCanceledOrders,
-  Order,
 } from "./deps.js";
 
 const router = express.Router();
+
+const DASHBOARD_CACHE_TTL_MS = 60_000;
+const HISTORY_LOOKBACK_MS = 400 * 24 * 60 * 60 * 1000;
+const dashboardCache = new Map();
+
+function getDashboardCacheKey(range) {
+  const fromMs = range?.from ? new Date(range.from).getTime() : 0;
+  const toMs = range?.to ? new Date(range.to).getTime() : 0;
+  const toBucket = Math.floor(toMs / 60_000);
+  return `${range?.key || "custom"}:${fromMs}:${toBucket}`;
+}
 
 router.get(
   "/dashboard",
@@ -30,6 +41,12 @@ router.get(
 
           req.query?.to || ""
         );
+
+      const cacheKey = getDashboardCacheKey(range);
+      const cacheHit = dashboardCache.get(cacheKey);
+      if (cacheHit && cacheHit.expiresAt > Date.now()) {
+        return res.json(cacheHit.value);
+      }
 
         let currentOrders;
         let previousOrders = [];
@@ -81,33 +98,62 @@ router.get(
         ]);
         }
 
-        // Історія лише по клієнтах періоду (повна історія = 502 / timeout).
-        // Для «всё время» currentOrders уже вся історія продажів.
-        let salesHistory;
-        if (range.key === "all") {
-          salesHistory = currentOrders;
-        } else {
-          const historyIds = new Set();
-          for (const order of [
-            ...(currentOrders || []),
-            ...(previousOrders || []),
-          ]) {
-            const tgId = String(
-              order?.userTelegramId || ""
-            ).trim();
-            if (tgId) historyIds.add(tgId);
-          }
+      const hasComparison = range.key !== "all";
 
-          salesHistory = historyIds.size
-            ? await loadSalesHistory(range.to, {
-                telegramIds: [...historyIds],
-                slimItems: true,
-              })
-            : [];
+      const historyIds = new Set();
+      if (range.key !== "all") {
+        for (const order of [
+          ...(currentOrders || []),
+          ...(previousOrders || []),
+        ]) {
+          const tgId = String(order?.userTelegramId || "").trim();
+          if (tgId) historyIds.add(tgId);
         }
+      }
 
-        // firstSale з історії клієнтів періоду — без повного scan loadFirstSales (~30s+)
-        const firstSaleByUser = new Map();
+      const historyFrom =
+        range.key === "all"
+          ? null
+          : new Date(
+              Math.min(
+                range.from.getTime(),
+                range.previousFrom?.getTime() ?? range.from.getTime()
+              ) - HISTORY_LOOKBACK_MS
+            );
+
+      const historyIdList = [...historyIds];
+
+      // Wave 2: history + firstSales + canceled rows + partners in parallel
+      const [
+        salesHistory,
+        firstSaleRows,
+        currentCanceledOrdersForLocations,
+        previousCanceledOrdersForLocations,
+        topPartners,
+      ] = await Promise.all([
+        range.key === "all"
+          ? Promise.resolve(currentOrders)
+          : historyIdList.length
+            ? loadSalesHistory(range.to, {
+                telegramIds: historyIdList,
+                slimItems: true,
+                from: historyFrom,
+              })
+            : Promise.resolve([]),
+        range.key === "all"
+          ? Promise.resolve(null)
+          : historyIdList.length
+            ? loadFirstSalesForUsers(historyIdList)
+            : Promise.resolve([]),
+        loadCanceledOrders(range.from, range.to),
+        hasComparison
+          ? loadCanceledOrders(range.previousFrom, range.previousTo)
+          : Promise.resolve([]),
+        buildTopPartners({ currentOrders }),
+      ]);
+
+      const firstSaleByUser = new Map();
+      if (range.key === "all") {
         for (const order of salesHistory || []) {
           const tgId = String(order?.userTelegramId || "").trim();
           if (!tgId || !order?.crmSaleDate) continue;
@@ -118,6 +164,15 @@ router.get(
             firstSaleByUser.set(tgId, saleAt);
           }
         }
+      } else {
+        for (const row of firstSaleRows || []) {
+          const tgId = String(row?._id || "").trim();
+          if (!tgId || !row?.firstSaleAt) continue;
+          const saleAt = new Date(row.firstSaleAt);
+          if (Number.isNaN(saleAt.getTime())) continue;
+          firstSaleByUser.set(tgId, saleAt);
+        }
+      }
 
         const current =
         buildMetrics(
@@ -139,61 +194,23 @@ router.get(
                 firstSaleByUser
             );
 
-      const hasComparison =
-        range.key !== "all";
-
-        const productPerformance =
-        await buildProductPerformance({
-            currentOrders,
-            previousOrders,
-            salesHistory,
-            range,
-            hasComparison,
-        });
-
-        const [
-            currentCanceledOrdersForLocations,
-            previousCanceledOrdersForLocations,
-        ] = await Promise.all([
-            loadCanceledOrders(
-                range.from,
-                range.to
-            ),
-
-            hasComparison
-                ? loadCanceledOrders(
-                    range.previousFrom,
-                    range.previousTo
-                )
-                : Promise.resolve([]),
-            ]);
-
-        const locationPerformance =
-
-        await buildLocationPerformance({
-
-            currentOrders,
-
-            previousOrders,
-
-            salesHistory,
-
-            currentCanceledOrders:
-
-            currentCanceledOrdersForLocations,
-
-            previousCanceledOrders:
-
-            previousCanceledOrdersForLocations,
-
-            hasComparison,
-
-        });
-
-        const topPartners =
-        await buildTopPartners({
-            currentOrders,
-        });
+      const [productPerformance, locationPerformance] = await Promise.all([
+        buildProductPerformance({
+          currentOrders,
+          previousOrders,
+          salesHistory,
+          range,
+          hasComparison,
+        }),
+        buildLocationPerformance({
+          currentOrders,
+          previousOrders,
+          salesHistory,
+          currentCanceledOrders: currentCanceledOrdersForLocations,
+          previousCanceledOrders: previousCanceledOrdersForLocations,
+          hasComparison,
+        }),
+      ]);
 
         const historyByCustomer =
         new Map();
@@ -440,57 +457,9 @@ router.get(
         }
         }
 
-        const currentCanceledOrders =
-            await Order.aggregate([
-                {
-                $match: {
-                    status: {
-                    $in: [
-                        "canceled",
-                        "annulled",
-                    ],
-                    },
-                },
-                },
-
-                {
-                $addFields: {
-                    crmCanceledAt: {
-                    $cond: [
-                        {
-                        $eq: [
-                            "$status",
-                            "annulled",
-                        ],
-                        },
-
-                        "$annulledAt",
-
-                        "$canceledAt",
-                    ],
-                    },
-                },
-                },
-
-                {
-                $match: {
-                    crmCanceledAt: {
-                    $gte: range.from,
-                    $lt: range.to,
-                    },
-                },
-                },
-
-                {
-                $project: {
-                    crmCanceledAt: 1,
-                },
-                },
-            ]);
-
             for (
             const order of
-            currentCanceledOrders
+            currentCanceledOrdersForLocations || []
             ) {
             const dateKey =
                 new Intl.DateTimeFormat(
@@ -591,7 +560,7 @@ router.get(
                 row.repeatCustomers.size,
             }));
 
-      return res.json({
+      const payload = {
         ok: true,
 
         period: {
@@ -792,7 +761,18 @@ router.get(
         products: productPerformance,
         locations: locationPerformance,
         topPartners,
+      };
+
+      dashboardCache.set(cacheKey, {
+        value: payload,
+        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
       });
+      if (dashboardCache.size > 12) {
+        const oldestKey = dashboardCache.keys().next().value;
+        dashboardCache.delete(oldestKey);
+      }
+
+      return res.json(payload);
     } catch (error) {
       console.error(
         "GET /crm/dashboard error:",

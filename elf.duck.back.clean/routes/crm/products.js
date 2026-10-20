@@ -190,6 +190,36 @@ router.get(
             .toFixed(2)
         );
 
+      {
+        const { parseSortQuery, sortRows } = await import(
+          "../../lib/crm/sortRows.js"
+        );
+        const { sortKey, sortDirection } = parseSortQuery(req.query, [
+          "name",
+          "revenue",
+          "sold",
+          "trend",
+          "repeat",
+          "stock",
+          "days",
+          "stockValue",
+        ]);
+
+        if (sortKey) {
+          rows = sortRows(rows, sortKey, sortDirection, {
+            name: (row) => row.name || row.title || "",
+            revenue: (row) => Number(row.revenue || 0),
+            sold: (row) => Number(row.sold || 0),
+            trend: (row) => Number(row.trend || 0),
+            repeat: (row) => Number(row.repeat || 0),
+            stock: (row) => Number(row.stock || 0),
+            days: (row) =>
+              row?.days == null ? null : Number(row.days),
+            stockValue: (row) => Number(row.stockValue || 0),
+          });
+        }
+      }
+
       const total =
         rows.length;
 

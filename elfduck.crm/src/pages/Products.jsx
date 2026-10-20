@@ -21,6 +21,7 @@ import {
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { crmFetch, CRM_API_URL } from '@/lib/crmFetch';
+import { useTableSort } from '@/lib/tableSort';
 
 const productSegments = [
   { key: 'all', label: 'Все' },
@@ -126,6 +127,9 @@ export default function Products() {
     setSegment,
   ] = useState('all');
 
+  const { sortKey, sortDirection, toggleSort, appendSortParams } =
+    useTableSort('revenue', 'desc');
+
   const baseQueryString =
     useMemo(
       () => {
@@ -200,6 +204,8 @@ export default function Products() {
           params.set('segment', segment);
         }
 
+        appendSortParams(params);
+
         return (
           params.toString()
         );
@@ -207,6 +213,7 @@ export default function Products() {
       [
         baseQueryString,
         page,
+        appendSortParams,
         segment,
       ]
     );
@@ -218,6 +225,8 @@ export default function Products() {
     [
       baseQueryString,
       segment,
+      sortKey,
+      sortDirection,
     ]
   );
 
@@ -357,6 +366,8 @@ export default function Products() {
 
       header:
         'Категория',
+
+      sortable: false,
 
       render:
         (row) => (
@@ -639,6 +650,9 @@ export default function Products() {
                   pageRows
                 }
                 dense
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSort={toggleSort}
               />
             )}
         </div>

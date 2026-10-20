@@ -15,9 +15,11 @@ import {
 
 import AuthLayout from "@/components/AuthLayout";
 import { useAuth } from "@/lib/AuthContext";
+import { safeReturnTo } from "@/lib/authReturnTo";
 
 export default function Login() {
   const navigate = useNavigate();
+  const returnTo = safeReturnTo();
 
   const {
     login,
@@ -40,7 +42,7 @@ export default function Login() {
     try {
       await login(username.trim(), password);
 
-      navigate("/", { replace: true });
+      navigate(returnTo || "/", { replace: true });
     } catch (err) {
       setError(
         err.message || "Не удалось выполнить вход"
@@ -55,7 +57,7 @@ export default function Login() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo || "/"} replace />;
   }
 
   return (

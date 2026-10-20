@@ -111,6 +111,9 @@ export default function Dashboard() {
     enabled:
       Boolean(queryString),
 
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
+
     queryFn: async () => {
       if (!CRM_API_URL) {
         throw new Error(

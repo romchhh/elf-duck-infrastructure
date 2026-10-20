@@ -8,11 +8,22 @@ function escapeRegex(raw) {
 /**
  * Paginated CRM orders for a period — filter + skip/limit in MongoDB, not in Node memory.
  */
+const ORDER_SORT_FIELDS = {
+  date: { crmOrderDate: -1, createdAt: -1 },
+  amount: { totalZl: -1, crmOrderDate: -1 },
+  status: { status: 1, crmOrderDate: -1 },
+  orderNo: { orderNo: 1, crmOrderDate: -1 },
+  payment: { "payment.method": 1, crmOrderDate: -1 },
+  delivery: { deliveryType: 1, crmOrderDate: -1 },
+};
+
 export async function fetchCrmOrdersPage({
   range,
   page = 1,
   limit = 50,
   search = "",
+  sortKey = "",
+  sortDirection = "desc",
 }) {
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50));
@@ -106,10 +117,24 @@ export async function fetchCrmOrdersPage({
     ...afterDateStages,
   ];
 
+  const direction = sortDirection === "asc" ? 1 : -1;
+  const defaultSort = { crmOrderDate: -1, createdAt: -1 };
+  let mongoSort = defaultSort;
+
+  if (sortKey && ORDER_SORT_FIELDS[sortKey]) {
+    const template = ORDER_SORT_FIELDS[sortKey];
+    mongoSort = Object.fromEntries(
+      Object.entries(template).map(([field, value], index) => [
+        field,
+        index === 0 ? direction * Math.sign(value || 1) || direction : value,
+      ])
+    );
+  }
+
   const [facetResult, periodCountResult] = await Promise.all([
     Order.aggregate([
       ...basePipeline,
-      { $sort: { crmOrderDate: -1, createdAt: -1 } },
+      { $sort: mongoSort },
       {
         $facet: {
           meta: [{ $count: "total" }],

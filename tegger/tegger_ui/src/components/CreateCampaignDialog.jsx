@@ -10,7 +10,13 @@ import TextInput from "@/components/TextInput";
 
 import { cn } from "@/lib/utils";
 
-export default function CreateCampaignDialog({ open, onClose, onCreated }) {
+export default function CreateCampaignDialog({
+  open,
+  onClose,
+  onCreated,
+  initialTargets = "",
+  initialName = "",
+}) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState([]);
   const [method, setMethod] = useState("paste");
@@ -22,7 +28,23 @@ export default function CreateCampaignDialog({ open, onClose, onCreated }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setName("");
+      setSelected([]);
+      setMethod("paste");
+      setPasteText("");
+      setFileName("");
+      setCreating(false);
+      setError("");
+      return;
+    }
+
+    setPasteText(initialTargets || "");
+    setName(initialName || "");
+    setMethod("paste");
+    setSelected([]);
+    setFileName("");
+    setError("");
 
     let active = true;
 
@@ -31,7 +53,6 @@ export default function CreateCampaignDialog({ open, onClose, onCreated }) {
       .then((data) => {
         if (active) {
           setAccounts(data);
-          setError("");
         }
       })
       .catch((err) => {
@@ -45,7 +66,7 @@ export default function CreateCampaignDialog({ open, onClose, onCreated }) {
     return () => {
       active = false;
     };
-  }, [open]);
+  }, [open, initialTargets, initialName]);
 
   if (!open) return null;
 
@@ -55,9 +76,13 @@ export default function CreateCampaignDialog({ open, onClose, onCreated }) {
   const parsedTargets = (() => {
     const text = pasteText;
     return text
-      .split(/[\s,\n]+/)
-      .map((t) => t.trim())
+      .split(/[\s,;]+/)
+      .map((t) => t.trim().replace(/^"|"$/g, ""))
       .filter(Boolean)
+      .filter((t) => {
+        const bare = t.replace(/^@+/, "").toLowerCase();
+        return bare && bare !== "username";
+      })
       .map((t) => (t.startsWith("@") ? t : `@${t}`))
       .map((username, i) => ({
         username,
@@ -145,7 +170,7 @@ export default function CreateCampaignDialog({ open, onClose, onCreated }) {
           <Field label="Импорт таргетов">
             <div className="flex gap-2 mb-2">
               <TabBtn active={method === "paste"} onClick={() => setMethod("paste")}>Вставить usernames</TabBtn>
-              <TabBtn active={method === "upload"} onClick={() => setMethod("upload")}>TXT загрузка</TabBtn>
+              <TabBtn active={method === "upload"} onClick={() => setMethod("upload")}>TXT / CSV</TabBtn>
             </div>
             {method === "paste" ? (
               <textarea
@@ -159,11 +184,11 @@ export default function CreateCampaignDialog({ open, onClose, onCreated }) {
               <label className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 py-8 cursor-pointer hover:bg-muted">
                 <Upload className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
                 <span className="text-sm text-muted-foreground">
-                  {fileName || "Выберите .txt файл"}
+                  {fileName || "Выберите .txt или .csv файл"}
                 </span>
                 <input
                   type="file"
-                  accept=".txt"
+                  accept=".txt,.csv,text/plain,text/csv"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files[0];
@@ -203,8 +228,7 @@ export default function CreateCampaignDialog({ open, onClose, onCreated }) {
         )}
 
         <div className="px-5 pb-3 text-xs text-muted-foreground">
-          Кампания будет создана как черновик.
-          Импорт таргетов пока не подключён к серверу.
+          Кампания будет создана как черновик с выбранными аккаунтами и таргетами.
         </div>
 
         <div className="sticky bottom-0 flex gap-3 justify-end p-5 bg-card border-t border-border">
