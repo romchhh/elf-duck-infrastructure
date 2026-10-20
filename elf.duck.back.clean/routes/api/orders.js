@@ -1597,25 +1597,44 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
     }
 
     const now = new Date();
-    const user = await User.findOne({ telegramId: String(telegramId || "") });
-    if (!user) {
+    const safeTelegramId = String(telegramId || "");
+
+    const existingUser = await User.collection.findOne(
+      { telegramId: safeTelegramId },
+      { projection: { _id: 1, promoCodeActivations: 1 } }
+    );
+    if (!existingUser) {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
 
-    const alreadyUsed = Array.isArray(user.promoCodeActivations)
-      ? user.promoCodeActivations.some(
+    const alreadyUsedByUser = Array.isArray(existingUser.promoCodeActivations)
+      ? existingUser.promoCodeActivations.some(
           (activation) => normalizePromoCode(activation?.code) === code
         )
       : false;
 
-    if (alreadyUsed) {
+    const alreadyUsedOnPromo = Array.isArray(promoCode?.activations)
+      ? promoCode.activations.some(
+          (activation) => String(activation?.telegramId || "") === safeTelegramId
+        )
+      : false;
+
+    const alreadyUsedOnOrder = await Order.exists({
+      userTelegramId: safeTelegramId,
+      "payment.promoCode": code,
+      "payment.promoDiscountZl": { $gt: 0 },
+    });
+
+    if (alreadyUsedByUser || alreadyUsedOnPromo || alreadyUsedOnOrder) {
       return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
     }
 
     const updateResult = await User.collection.findOneAndUpdate(
       {
-        telegramId: String(telegramId || ""),
-        "promoCodeActivations.code": { $ne: code },
+        telegramId: safeTelegramId,
+        promoCodeActivations: {
+          $not: { $elemMatch: { code } },
+        },
       },
       {
         $push: {
@@ -1638,13 +1657,16 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
       return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
     }
 
-    await mongoose.connection.collection(PROMO_CODES_COLLECTION).updateOne(
-      { _id: promoCode._id },
+    const promoUpdate = await mongoose.connection.collection(PROMO_CODES_COLLECTION).updateOne(
+      {
+        _id: promoCode._id,
+        "activations.telegramId": { $ne: safeTelegramId },
+      },
       {
         $inc: { activationsCount: 1 },
         $push: {
           activations: {
-            telegramId: String(telegramId || ""),
+            telegramId: safeTelegramId,
             amountZl: promoDiscountZl,
             activatedAt: now,
             asOrderDiscount: true,
@@ -1657,6 +1679,18 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
         },
       }
     );
+
+    if (!promoUpdate?.modifiedCount) {
+      await User.collection.updateOne(
+        { telegramId: safeTelegramId },
+        {
+          $pull: {
+            promoCodeActivations: { code, orderId: order._id },
+          },
+        }
+      );
+      return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
+    }
 
     const remainingToPayZl = Number(
       Math.max(0, orderTotalZl - promoDiscountZl - cashbackAppliedZl).toFixed(2)

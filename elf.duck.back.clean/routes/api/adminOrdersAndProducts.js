@@ -850,7 +850,7 @@ app.post("/promo-codes/activate", async (req, res) => {
         });
       }
 
-      const alreadyUsed = Array.isArray(
+      const alreadyUsedByUser = Array.isArray(
         existingUser?.promoCodeActivations
       )
         ? existingUser.promoCodeActivations.some(
@@ -861,7 +861,17 @@ app.post("/promo-codes/activate", async (req, res) => {
           )
         : false;
 
-      if (alreadyUsed) {
+      const alreadyUsedOnPromo = Array.isArray(
+        promoCode?.activations
+      )
+        ? promoCode.activations.some(
+            (activation) =>
+              String(activation?.telegramId || "") ===
+              String(telegramId || "")
+          )
+        : false;
+
+      if (alreadyUsedByUser || alreadyUsedOnPromo) {
         return res.status(409).json({
           ok: false,
           error: "PROMO_ALREADY_USED",
@@ -873,9 +883,8 @@ app.post("/promo-codes/activate", async (req, res) => {
         await User.collection.findOneAndUpdate(
           {
             telegramId,
-
-            "promoCodeActivations.code": {
-              $ne: code,
+            promoCodeActivations: {
+              $not: { $elemMatch: { code } },
             },
           },
 
@@ -920,11 +929,12 @@ app.post("/promo-codes/activate", async (req, res) => {
         });
       }
 
-      await mongoose.connection
+      const promoUpdate = await mongoose.connection
         .collection(PROMO_CODES_COLLECTION)
         .updateOne(
           {
             _id: promoCode._id,
+            "activations.telegramId": { $ne: String(telegramId || "") },
           },
 
           {
@@ -946,6 +956,21 @@ app.post("/promo-codes/activate", async (req, res) => {
             },
           }
         );
+
+      if (!promoUpdate?.modifiedCount) {
+        await User.collection.updateOne(
+          { telegramId },
+          {
+            $inc: { cashbackBalance: -safeAmountZl },
+            $pull: { promoCodeActivations: { code, activatedAt: now } },
+          }
+        );
+        return res.status(409).json({
+          ok: false,
+          error: "PROMO_ALREADY_USED",
+          usedCode: code,
+        });
+      }
 
       return res.json({
         ok: true,

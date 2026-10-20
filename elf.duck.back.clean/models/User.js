@@ -15,6 +15,23 @@ const userSchema = new mongoose.Schema(
 
     cashbackBalance: { type: Number, default: 0 },
 
+    promoCodeActivations: {
+      type: [
+        new mongoose.Schema(
+          {
+            code: { type: String, default: "" },
+            amountZl: { type: Number, default: 0 },
+            promoCodeId: { type: mongoose.Schema.Types.Mixed, default: null },
+            activatedAt: { type: Date, default: Date.now },
+            asOrderDiscount: { type: Boolean, default: false },
+            orderId: { type: mongoose.Schema.Types.ObjectId, ref: "Order", default: null },
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
+
     cashbackLedger: {
       type: [
         new mongoose.Schema(
