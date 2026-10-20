@@ -348,6 +348,9 @@ useEffect(() => {
     const [isCashbackEditing, setIsCashbackEditing] = useState(false);
     const [cashbackDraft, setCashbackDraft] = useState("");
     const [isSavingCashback, setIsSavingCashback] = useState(false);
+    const [paymentPromoCode, setPaymentPromoCode] = useState("");
+    const [paymentPromoSubmitting, setPaymentPromoSubmitting] = useState(false);
+    const [paymentPromoHint, setPaymentPromoHint] = useState(null);
 
     const [cashAmountDraft, setCashAmountDraft] = useState("");
     const cashAmountInputRef = useRef(null);
@@ -389,6 +392,9 @@ useEffect(() => {
         setIsCashAmountEditing(false);
         setCashAmountDraft("");
         setIsCashbackEditing(false);
+        setPaymentPromoCode("");
+        setPaymentPromoHint(null);
+        setPaymentPromoSubmitting(false);
         setCashbackDraft(
             Number(order?.payment?.cashbackAppliedZl || 0) > 0
                 ? String(Math.floor(Number(order.payment.cashbackAppliedZl)))
@@ -479,11 +485,121 @@ useEffect(() => {
         setCashChangeType("");
         setIsCashAmountEditing(false);
         setCashAmountDraft("");
+        setPaymentPromoCode("");
+        setPaymentPromoHint(null);
+        setPaymentPromoSubmitting(false);
         setIsPaymentOpen(false);
 
         setTimeout(() => {
             setActivePaymentOrder(null);
         }, 220);
+    };
+
+    const activatePaymentPromoCode = async () => {
+        const code = String(paymentPromoCode || "")
+            .trim()
+            .toUpperCase();
+
+        if (!code || paymentPromoSubmitting || isGuestBrowser) {
+            if (isGuestBrowser) {
+                showTgAlert(
+                    t(
+                        "Промокод доступен только в Telegram-приложении",
+                        "Kod promocyjny jest dostępny tylko w aplikacji Telegram"
+                    )
+                );
+            }
+            return;
+        }
+
+        setPaymentPromoSubmitting(true);
+        setPaymentPromoHint(null);
+
+        try {
+            const telegramInitData = String(
+                window?.Telegram?.WebApp?.initData || ""
+            ).trim();
+
+            const response = await fetch(`${API_URL}/promo-codes/activate`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-telegram-init-data": telegramInitData,
+                },
+                body: JSON.stringify({ code }),
+            });
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok || data?.ok === false) {
+                const errorCode = String(data?.error || "");
+                const message =
+                    errorCode === "PROMO_ALREADY_USED"
+                        ? t(
+                              "Вы уже использовали этот промокод.",
+                              "Ten kod promocyjny został już wykorzystany."
+                          )
+                        : errorCode === "PROMO_NOT_FOUND"
+                          ? t(
+                                "Промокод недействителен.",
+                                "Kod promocyjny jest nieprawidłowy."
+                            )
+                          : errorCode === "PROMO_EXPIRED"
+                            ? t(
+                                  "Срок действия промокода истёк.",
+                                  "Kod promocyjny wygasł."
+                              )
+                            : errorCode === "PROMO_LIMIT_REACHED"
+                              ? t(
+                                    "Лимит активаций промокода исчерпан.",
+                                    "Limit aktywacji kodu został wyczerpany."
+                                )
+                              : t(
+                                    "Не удалось активировать промокод.",
+                                    "Nie udało się aktywować kodu promocyjnego."
+                                );
+
+                setPaymentPromoHint({ type: "error", message });
+                haptic.heavy();
+                return;
+            }
+
+            const amountZl = Number(data?.amountZl || 0);
+            const balanceFromServer = Number(
+                data?.cashbackBalance ?? data?.balance ?? NaN
+            );
+            const nextBalance = Number.isFinite(balanceFromServer)
+                ? balanceFromServer
+                : Number((Number(user?.cashbackBalance || 0) + amountZl).toFixed(2));
+
+            setUser((prev) => ({
+                ...prev,
+                cashbackBalance: nextBalance,
+                balance: nextBalance,
+            }));
+
+            setPaymentPromoCode("");
+            setPaymentPromoHint({
+                type: "success",
+                message: t(
+                    `Промокод активирован! +${amountZl.toFixed(2)} PLN на баланс.`,
+                    `Kod aktywowany! +${amountZl.toFixed(2)} PLN do salda.`
+                ),
+            });
+            haptic.light();
+        } catch (error) {
+            console.error("payment promo activate error", error);
+            setPaymentPromoHint({
+                type: "error",
+                message: t(
+                    "Не удалось активировать промокод.",
+                    "Nie udało się aktywować kodu promocyjnego."
+                ),
+            });
+            haptic.heavy();
+        } finally {
+            setPaymentPromoSubmitting(false);
+        }
     };
 
     useEffect(() => {
@@ -2250,6 +2366,78 @@ useEffect(() => {
                         </div>
                     </div>
                     )}
+
+                    <div className="paymentPromoBlock">
+                        <div className="paymentPromoLabel">
+                            {t("Промокод", "Kod promocyjny")}
+                        </div>
+                        <div className="paymentCashbackInputRow paymentPromoInputRow">
+                            <input
+                                type="text"
+                                autoCapitalize="characters"
+                                autoCorrect="off"
+                                spellCheck={false}
+                                className="paymentInputField paymentPromoInput"
+                                placeholder={t("Введите промокод", "Wpisz kod promocyjny")}
+                                value={paymentPromoCode}
+                                disabled={
+                                    paymentPromoSubmitting ||
+                                    paymentSubmitting ||
+                                    cashbackFullyPaid
+                                }
+                                onChange={(e) => {
+                                    setPaymentPromoHint(null);
+                                    setPaymentPromoCode(
+                                        String(e.target.value || "")
+                                            .toUpperCase()
+                                            .replace(/\s+/g, "")
+                                    );
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                        e.preventDefault();
+                                        activatePaymentPromoCode();
+                                    }
+                                }}
+                            />
+                            <button
+                                type="button"
+                                className="paymentCashbackMaxBtn paymentPromoApplyBtn"
+                                disabled={
+                                    paymentPromoSubmitting ||
+                                    paymentSubmitting ||
+                                    cashbackFullyPaid ||
+                                    !String(paymentPromoCode || "").trim()
+                                }
+                                onClick={() => {
+                                    haptic.light();
+                                    activatePaymentPromoCode();
+                                }}
+                            >
+                                {paymentPromoSubmitting
+                                    ? "…"
+                                    : t("ОК", "OK")}
+                            </button>
+                        </div>
+                        {paymentPromoHint ? (
+                            <div
+                                className={`paymentPromoHint ${
+                                    paymentPromoHint.type === "success"
+                                        ? "is-success"
+                                        : "is-error"
+                                }`}
+                            >
+                                {paymentPromoHint.message}
+                            </div>
+                        ) : (
+                            <div className="paymentCashbackHint paymentPromoHintIdle">
+                                {t(
+                                    "Промокод зачисляется на баланс кэшбека",
+                                    "Kod promocyjny trafia na saldo cashbacku"
+                                )}
+                            </div>
+                        )}
+                    </div>
 
                     <div className="paymentCashbackField">
                     <span className="checkoutSelectLeft paymentCashbackFieldLeft">

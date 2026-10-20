@@ -176,15 +176,16 @@ app.use(
   })
 );
 
-const CRM_MEDIA_JSON_LIMIT = "14mb";
+const CRM_MEDIA_JSON_LIMIT = "20mb";
 
-// Push media: multipart — без express.json (інакше зʼїсть body).
+// Push media: multipart — без express.json на цьому path (інакше зʼїсть body).
 app.use(
   "/crm/catalog/upload-media",
   express.json({ limit: CRM_MEDIA_JSON_LIMIT })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: CRM_MEDIA_JSON_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: CRM_MEDIA_JSON_LIMIT }));
 app.use("/crm", crmRouter);
 
 registerShopApiRoutes(app);

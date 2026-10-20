@@ -35,7 +35,22 @@ export async function crmFetch(path, options = {}) {
 
 export async function crmFetchJson(path, options = {}) {
   const response = await crmFetch(path, options);
-  const data = await response.json().catch(() => ({}));
+  const contentType = String(response.headers.get('content-type') || '');
+  let data = {};
+
+  if (contentType.includes('application/json')) {
+    data = await response.json().catch(() => ({}));
+  } else {
+    const text = await response.text().catch(() => '');
+    data = {
+      ok: false,
+      error: `HTTP_${response.status}`,
+      message:
+        response.status === 413
+          ? 'Файл слишком большой для прокси (HTTP 413). Сжимаем на клиенте / увеличьте client_max_body_size на nginx.'
+          : text.slice(0, 200) || `HTTP_${response.status}`,
+    };
+  }
 
   if (!response.ok || data?.ok === false) {
     if (response.status === 401) {

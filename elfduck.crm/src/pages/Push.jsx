@@ -40,6 +40,7 @@ import {
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
 import { CRM_API_URL, crmFetchJson } from '@/lib/crmFetch';
+import { compressImageForUpload } from '@/lib/compressImage';
 import {
   clearCrmSessionToken,
   setCrmSessionToken,
@@ -717,37 +718,36 @@ const selectMedia =
       return;
     }
 
-    if (
-      file.size >
-      10 * 1024 * 1024
-    ) {
+    // До стиснення дозволяємо до 25 МБ з телефону; після compress ≤ ~2.5 МБ.
+    if (file.size > 25 * 1024 * 1024) {
       toast({
-        title:
-          'Файл слишком большой',
-
-        description:
-          'Максимальный размер — 10 МБ',
-
-        variant:
-          'destructive',
+        title: 'Файл слишком большой',
+        description: 'Максимум 25 МБ до сжатия',
+        variant: 'destructive',
       });
-
       return;
     }
 
     if (!isAuthenticated) {
-      setAuthModalOpen(
-        true
-      );
-
+      setAuthModalOpen(true);
       return;
     }
 
     setMediaUploading(true);
 
     try {
+      const uploadFile = await compressImageForUpload(file, {
+        maxEdge: 1920,
+        maxBytes: 2.5 * 1024 * 1024,
+        quality: 0.85,
+      });
+
       const formData = new FormData();
-      formData.append('file', file, file.name || 'push.jpg');
+      formData.append(
+        'file',
+        uploadFile,
+        uploadFile.name || file.name || 'push.jpg'
+      );
 
       const data = await crmFetch('/crm/push/upload-media', {
         method: 'POST',
@@ -762,54 +762,44 @@ const selectMedia =
         URL.revokeObjectURL(mediaPreviewUrl);
       }
 
-      setMediaFile(file);
-      setMediaPreviewUrl(uploadedUrl || URL.createObjectURL(file));
+      setMediaFile(uploadFile);
+      setMediaPreviewUrl(uploadedUrl || URL.createObjectURL(uploadFile));
       setPhotoUrl(uploadedUrl);
       setPhotoFileId(String(data?.fileId || ''));
       setTemplatePhotoPreviewUrl(uploadedUrl);
 
       toast({
         title: 'Медиа добавлено',
+        description:
+          uploadFile.size < file.size
+            ? `Сжато: ${(file.size / 1024 / 1024).toFixed(1)} → ${(uploadFile.size / 1024 / 1024).toFixed(1)} МБ`
+            : undefined,
       });
     } catch (error) {
-      if (
-        error?.status ===
-        401
-      ) {
-        queryClient
-          .setQueryData(
-            [
-              'crm-auth-session',
-            ],
-            {
-              ok: true,
-              authenticated:
-                false,
-            }
-          );
-
-        setAuthModalOpen(
-          true
-        );
-
+      if (error?.status === 401) {
+        queryClient.setQueryData(['crm-auth-session'], {
+          ok: true,
+          authenticated: false,
+        });
+        setAuthModalOpen(true);
         return;
       }
 
+      const is413 =
+        error?.status === 413 ||
+        /413|too large|entity too large/i.test(
+          String(error?.message || '')
+        );
+
       toast({
-        title:
-          'Не удалось загрузить изображение',
-
-        description:
-          error?.message ||
-          'Ошибка загрузки',
-
-        variant:
-          'destructive',
+        title: 'Не удалось загрузить изображение',
+        description: is413
+          ? 'Файл слишком большой для сервера (лимит nginx). Выберите фото меньше или обновите API/nginx (client_max_body_size 20m).'
+          : error?.message || 'Ошибка загрузки',
+        variant: 'destructive',
       });
     } finally {
-      setMediaUploading(
-        false
-      );
+      setMediaUploading(false);
     }
   };
 

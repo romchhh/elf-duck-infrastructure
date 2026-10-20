@@ -1988,6 +1988,59 @@ body {
   box-shadow: none;
 }
 
+.paymentPromoBlock {
+  width: 100%;
+  margin-top: 12px;
+  box-sizing: border-box;
+}
+
+.paymentPromoLabel {
+  margin: 0 0 6px 2px;
+  font-family: Unbounded-Medium;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.paymentPromoInputRow {
+  margin-top: 0;
+}
+
+.paymentPromoInput {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.paymentPromoApplyBtn {
+  min-width: 56px;
+}
+
+.paymentPromoHint,
+.paymentPromoHintIdle {
+  width: 100%;
+  margin-top: 8px;
+  margin-bottom: 2px;
+  padding: 0 2px;
+  box-sizing: border-box;
+  font-family: Unbounded-Regular;
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.paymentPromoHint.is-success {
+  color: #8dffb0;
+}
+
+.paymentPromoHint.is-error {
+  color: #ff9b9b;
+}
+
 .paymentCashbackInputRow {
   width: 100%;
   display: flex;
