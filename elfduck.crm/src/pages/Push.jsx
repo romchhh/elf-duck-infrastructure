@@ -225,27 +225,32 @@ export default function Push() {
   ] = useState('');
 
   /*
-   * MESSAGE
+   * MESSAGE — лише текст (markdown) + інлайн-кнопки мініапу
    */
 
-  const [
-    title,
-    setTitle,
-  ] = useState(
-    'Вернуть спящих'
+  const [body, setBody] = useState(
+    '**Соскучились по вкусам?**\n\nВернись и получи −15% на ELF KING.'
   );
 
-  const [
-    body,
-    setBody,
-  ] = useState(
-    'Соскучились по вкусам? Вернись и получи −15% на ELF KING.'
-  );
+  const [inlineButtons, setInlineButtons] = useState([
+    { text: 'Открыть магазин', kind: 'web_app', path: '/' },
+  ]);
 
-  const [
-    promo,
-    setPromo,
-  ] = useState('');
+  const insertMarkdown = (before, after = before) => {
+    setBody((current) => {
+      const value = String(current || '');
+      const marker = `${before}текст${after}`;
+      return value ? `${value}${value.endsWith('\n') ? '' : '\n'}${marker}` : marker;
+    });
+  };
+
+  const campaignNameFromBody = () => {
+    const firstLine = String(body || '')
+      .split('\n')
+      .map((line) => line.replace(/\*+/g, '').trim())
+      .find(Boolean);
+    return firstLine?.slice(0, 80) || 'Рассылка';
+  };
 
   const [
   mediaFile,
@@ -396,9 +401,7 @@ onSuccess: (data) => {
   if (
     action === 'create-template'
   ) {
-    setTplName(
-      title || ''
-    );
+    setTplName(campaignNameFromBody());
 
     setTplModalOpen(true);
   }
@@ -907,27 +910,20 @@ const removeMedia =
               body:
                 JSON.stringify(
                   {
-                    title:
-                      tplName.trim(),
-
-                    text:
-                      body.trim(),
-
-                    photoUrl:
-                      '',
-
-                      photoFileId:
-                        photoFileId,
-
-photoPreviewUrl:
-
-  templatePhotoPreviewUrl,
-
-                    buttonText:
-                      '',
-
-                    buttonUrl:
-                      '',
+                    title: tplName.trim(),
+                    text: body.trim(),
+                    photoUrl: '',
+                    photoFileId,
+                    photoPreviewUrl: templatePhotoPreviewUrl,
+                    buttons: inlineButtons
+                      .filter((btn) => String(btn?.text || '').trim())
+                      .map((btn) => ({
+                        text: String(btn.text || '').trim(),
+                        kind: 'web_app',
+                        path: String(btn.path || '/').trim() || '/',
+                      })),
+                    buttonText: '',
+                    buttonUrl: '',
                   }
                 ),
             }
@@ -1122,32 +1118,30 @@ const deleteTemplate =
                   {
                     ...periodPayload,
 
-                    name:
-                      title.trim() ||
-                      'Рассылка',
+                    name: campaignNameFromBody(),
 
                     ...audiencePayload,
 
-                    title:
-                      title.trim(),
+                    title: '',
 
-                    text:
-                      body.trim(),
+                    text: body.trim(),
 
-                    promo:
-                      promo.trim(),
+                    promo: '',
 
-                    photoUrl:
-                      '',
-                      photoFileId:
+                    photoUrl: '',
+                    photoFileId,
 
-  photoFileId,
+                    buttons: inlineButtons
+                      .filter((btn) => String(btn?.text || '').trim())
+                      .map((btn) => ({
+                        text: String(btn.text || '').trim(),
+                        kind: btn.kind === 'url' ? 'url' : 'web_app',
+                        path: String(btn.path || '/').trim() || '/',
+                        url: String(btn.url || '').trim(),
+                      })),
 
-                    buttonText:
-                      '',
-
-                    buttonUrl:
-                      '',
+                    buttonText: '',
+                    buttonUrl: '',
 
                     templateId:
                       activeTpl ||
@@ -1310,22 +1304,31 @@ const deleteTemplate =
         template.id
       );
 
-      setTitle(
-        template.title ||
-          template.name ||
-          ''
-      );
-
       setBody(
         template.text ||
           template.preview ||
           ''
       );
 
-      setPromo(
-        template.promo ||
-          ''
-      );
+      if (Array.isArray(template.buttons) && template.buttons.length) {
+        setInlineButtons(
+          template.buttons.map((btn) => ({
+            text: String(btn?.text || ''),
+            kind: btn?.kind === 'url' ? 'url' : 'web_app',
+            path: String(btn?.path || '/'),
+            url: String(btn?.url || ''),
+          }))
+        );
+      } else if (template.buttonText) {
+        setInlineButtons([
+          {
+            text: String(template.buttonText || ''),
+            kind: 'web_app',
+            path: String(template.buttonUrl || '/'),
+            url: '',
+          },
+        ]);
+      }
 
 setPhotoFileId(
   template.photoFileId ||
@@ -1375,9 +1378,7 @@ const openCreateTpl = () => {
     return;
   }
 
-  setTplName(
-    title || ''
-  );
+  setTplName(campaignNameFromBody());
 
   setTplModalOpen(true);
 };
@@ -1964,112 +1965,149 @@ const confirmCreateTpl = () => {
           </h3>
 
           <div className="mt-4 space-y-3">
-            <Field label="Заголовок">
-              <input
-                value={
-                  title
-                }
-                onChange={(
-                  e
-                ) =>
-                  setTitle(
-                    e.target
-                      .value
-                  )
-                }
-                className="input-base"
-              />
-            </Field>
-
             <Field label="Текст">
+              <div className="mb-1.5 flex flex-wrap gap-1">
+                {[
+                  { label: 'B', tip: 'Жирный ** **', before: '**', after: '**' },
+                  { label: 'I', tip: 'Курсив _ _', before: '_', after: '_' },
+                  { label: '`', tip: 'Код', before: '`', after: '`' },
+                  { label: '🔗', tip: 'Посилання', before: '[текст](', after: 'https://)' },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    title={item.tip}
+                    onClick={() => insertMarkdown(item.before, item.after)}
+                    className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
               <textarea
-                value={
-                  body
-                }
-                onChange={(
-                  e
-                ) =>
-                  setBody(
-                    e.target
-                      .value
-                  )
-                }
-                rows={6}
-                className="input-base resize-none"
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                rows={8}
+                placeholder={'**Заголовок**\n\nТекст з markdown…'}
+                className="input-base resize-none font-mono text-[12px]"
               />
-            </Field>
-
-            <Field label="Промокод">
-              <input
-                value={
-                  promo
-                }
-                onChange={(
-                  e
-                ) =>
-                  setPromo(
-                    e.target
-                      .value
-                  )
-                }
-                placeholder="ELFKING15"
-                className="input-base"
-              />
+              <p className="mt-1 text-[11px] text-muted-2">
+                Markdown: **жирний**, _курсив_, `код`, [текст](https://…)
+              </p>
             </Field>
 
             <PushPromoCreator
               onCreated={(code) => {
-                if (code) setPromo(code);
+                if (!code) return;
+                setBody((current) => {
+                  const chunk = `\`${code}\``;
+                  const value = String(current || '');
+                  return value
+                    ? `${value}${value.endsWith('\n') ? '' : '\n\n'}Промокод: ${chunk}`
+                    : `Промокод: ${chunk}`;
+                });
               }}
             />
 
-<div className="space-y-2">
-  <label
-    className={cn(
-      'inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground',
+            <Field label="Инлайн-кнопки (миниапп)">
+              <div className="space-y-2">
+                {inlineButtons.map((btn, index) => (
+                  <div
+                    key={`btn-${index}`}
+                    className="grid grid-cols-1 gap-2 rounded-lg border border-border-soft bg-[hsl(232_26%_6%)] p-2 sm:grid-cols-[1fr_1fr_auto]"
+                  >
+                    <input
+                      value={btn.text}
+                      onChange={(e) => {
+                        const next = [...inlineButtons];
+                        next[index] = { ...next[index], text: e.target.value };
+                        setInlineButtons(next);
+                      }}
+                      placeholder="Текст кнопки"
+                      className="input-base"
+                    />
+                    <input
+                      value={btn.path}
+                      onChange={(e) => {
+                        const next = [...inlineButtons];
+                        next[index] = {
+                          ...next[index],
+                          kind: 'web_app',
+                          path: e.target.value,
+                        };
+                        setInlineButtons(next);
+                      }}
+                      placeholder="Шлях / або /catalog"
+                      className="input-base"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInlineButtons((rows) =>
+                          rows.filter((_, i) => i !== index)
+                        )
+                      }
+                      className="inline-flex h-9 items-center justify-center rounded-lg border border-border px-2 text-[11px] text-muted-2 hover:text-foreground"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setInlineButtons((rows) => [
+                      ...rows,
+                      { text: '', kind: 'web_app', path: '/' },
+                    ])
+                  }
+                  className="text-[12px] font-medium text-[hsl(255_100%_72%)] hover:underline underline-offset-2"
+                >
+                  + Добавить кнопку
+                </button>
+                <p className="text-[11px] text-muted-2">
+                  Кнопка відкриває мініапп (WEBAPP_URL + шлях). Приклади: `/`,
+                  `/catalog`, `/promo`
+                </p>
+              </div>
+            </Field>
 
-      mediaUploading &&
-        'pointer-events-none opacity-50'
-    )}
-  >
-    <Paperclip className="h-3.5 w-3.5" />
+            <div className="space-y-2">
+              <label
+                className={cn(
+                  'inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground',
+                  mediaUploading && 'pointer-events-none opacity-50'
+                )}
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                {mediaUploading
+                  ? 'Загрузка…'
+                  : mediaFile
+                    ? 'Заменить медиа'
+                    : 'Медиа'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={selectMedia}
+                  className="hidden"
+                />
+              </label>
 
-    {mediaUploading
-      ? 'Загрузка…'
-      : mediaFile
-        ? 'Заменить медиа'
-        : 'Медиа'}
-
-    <input
-      type="file"
-      accept="image/jpeg,image/png,image/webp"
-      onChange={
-        selectMedia
-      }
-      className="hidden"
-    />
-  </label>
-
-  {mediaFile && (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border-soft bg-[hsl(232_26%_6%)] px-3 py-2">
-      <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-        {
-          mediaFile.name
-        }
-      </span>
-
-      <button
-        type="button"
-        onClick={
-          removeMedia
-        }
-        className="shrink-0 text-[11px] text-muted-2 hover:text-foreground"
-      >
-        Удалить
-      </button>
-    </div>
-  )}
-</div>
+              {mediaFile && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-border-soft bg-[hsl(232_26%_6%)] px-3 py-2">
+                  <span className="min-w-0 truncate text-[11px] text-muted-foreground">
+                    {mediaFile.name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={removeMedia}
+                    className="shrink-0 text-[11px] text-muted-2 hover:text-foreground"
+                  >
+                    Удалить
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -2091,31 +2129,48 @@ const confirmCreateTpl = () => {
 
               <div className="mt-2 rounded-xl bg-[hsl(234_22%_11%)] p-3">
                 {mediaPreviewUrl && (
-  <img
-    src={
-      mediaPreviewUrl
-    }
-    alt="Медиа рассылки"
-    className="mb-2 max-h-40 w-full rounded-lg object-cover"
-  />
-)}
-                <div className="text-[12px] font-semibold text-foreground">
-                  {title ||
-                    'Заголовок'}
-                </div>
-
-                <div className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                  {body ||
-                    'Текст сообщения'}
-                </div>
-
-                {promo && (
-                  <div className="mt-2 inline-block rounded bg-[hsl(255_100%_68%/0.15)] px-1.5 py-0.5 text-[10px] font-medium text-[hsl(255_100%_75%)]">
-                    {
-                      promo
-                    }
-                  </div>
+                  <img
+                    src={mediaPreviewUrl}
+                    alt="Медиа рассылки"
+                    className="mb-2 max-h-40 w-full rounded-lg object-cover"
+                  />
                 )}
+                <div
+                  className="whitespace-pre-wrap text-[11px] leading-snug text-muted-foreground [&_b]:font-semibold [&_b]:text-foreground [&_code]:rounded [&_code]:bg-[hsl(255_100%_68%/0.15)] [&_code]:px-1 [&_code]:text-[hsl(255_100%_75%)] [&_i]:italic"
+                  dangerouslySetInnerHTML={{
+                    __html: (() => {
+                      const raw = String(body || 'Текст сообщения');
+                      return raw
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+                        .replace(/__([^_\n]+)__/g, '<b>$1</b>')
+                        .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '<i>$1</i>')
+                        .replace(/(?<![\w_])_([^_\n]+)_(?![\w_])/g, '<i>$1</i>')
+                        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+                        .replace(
+                          /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi,
+                          '<a href="$2" class="underline">$1</a>'
+                        )
+                        .replace(/\n/g, '<br/>');
+                    })(),
+                  }}
+                />
+                {inlineButtons.filter((b) => b.text?.trim()).length > 0 ? (
+                  <div className="mt-2 space-y-1">
+                    {inlineButtons
+                      .filter((b) => b.text?.trim())
+                      .map((b, i) => (
+                        <div
+                          key={`prev-btn-${i}`}
+                          className="rounded-md border border-[hsl(255_100%_68%/0.35)] px-2 py-1 text-center text-[10px] font-medium text-[hsl(255_100%_75%)]"
+                        >
+                          {b.text}
+                        </div>
+                      ))}
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>
@@ -2491,24 +2546,24 @@ const confirmCreateTpl = () => {
                 Содержимое
               </div>
 
-              <div className="mt-1 text-[13px] font-medium text-foreground">
-                {title ||
-                  'Заголовок'}
+              <div className="mt-1 whitespace-pre-wrap text-[12px] text-muted-foreground">
+                {body || 'Текст сообщения'}
               </div>
 
-              <div className="mt-0.5 text-[12px] text-muted-foreground">
-                {body ||
-                  'Текст сообщения'}
-              </div>
-
-              {promo && (
-                <div className="mt-1 text-[11px] text-[hsl(255_100%_72%)]">
-                  Промокод:{' '}
-                  {
-                    promo
-                  }
+              {inlineButtons.filter((b) => b.text?.trim()).length > 0 ? (
+                <div className="mt-2 space-y-1">
+                  {inlineButtons
+                    .filter((b) => b.text?.trim())
+                    .map((b, i) => (
+                      <div
+                        key={`tpl-btn-${i}`}
+                        className="rounded border border-border px-2 py-1 text-[11px] text-[hsl(255_100%_72%)]"
+                      >
+                        {b.text} → {b.path || '/'}
+                      </div>
+                    ))}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 

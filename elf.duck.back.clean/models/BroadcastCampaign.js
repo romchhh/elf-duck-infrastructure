@@ -85,6 +85,18 @@ const broadcastCampaignSchema =
           type: String,
           default: "",
         },
+
+        buttons: {
+          type: [
+            {
+              text: { type: String, default: "" },
+              kind: { type: String, default: "web_app" },
+              path: { type: String, default: "/" },
+              url: { type: String, default: "" },
+            },
+          ],
+          default: [],
+        },
       },
 
       templateId: {

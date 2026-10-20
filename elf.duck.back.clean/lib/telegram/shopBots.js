@@ -301,85 +301,20 @@ app.locals.runCrmBroadcastCampaign =
           )
       );
 
-    const title =
-      String(
-        message?.title || ""
-      ).trim();
+    const { buildPushMessageHtml, buildPushReplyMarkup } = await import(
+      "../crm/pushMessageFormat.js"
+    );
 
-    const text =
-      String(
-        message?.text || ""
-      ).trim();
+    const photoUrl = String(message?.photoUrl || "").trim();
+    const photoFileId = String(message?.photoFileId || "").trim();
 
-    const promo =
-      String(
-        message?.promo || ""
-      ).trim();
-
-    const photoUrl =
-      String(
-        message?.photoUrl || ""
-      ).trim();
-
-      const photoFileId =
-  String(
-    message?.photoFileId || ""
-  ).trim();
-
-    const buttonText =
-      String(
-        message?.buttonText || ""
-      ).trim();
-
-    const buttonUrl =
-      String(
-        message?.buttonUrl || ""
-      ).trim();
-
-    const messageText =
-      [
-        title
-          ? `<b>${escapeHtml(
-              title
-            )}</b>`
-          : "",
-
-        text
-          ? escapeHtml(text)
-          : "",
-
-        promo
-          ? `🎁 Промокод: <code>${escapeHtml(
-              promo
-            )}</code>`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n\n");
+    const messageText = buildPushMessageHtml(message);
 
     if (!messageText) {
-      throw new Error(
-        "MESSAGE_REQUIRED"
-      );
+      throw new Error("MESSAGE_REQUIRED");
     }
 
-    const replyMarkup =
-      buttonText &&
-      buttonUrl
-        ? {
-            inline_keyboard: [
-              [
-                {
-                  text:
-                    buttonText,
-
-                  url:
-                    buttonUrl,
-                },
-              ],
-            ],
-          }
-        : undefined;
+    const replyMarkup = buildPushReplyMarkup(message);
 
     /*
      * Продолжаем старые counters,

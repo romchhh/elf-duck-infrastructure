@@ -8,6 +8,10 @@ import {
   BroadcastCampaign,
   buildPushAudiencePreview,
 } from "./deps.js";
+import {
+  normalizePushButtons,
+  getWebAppBaseUrl,
+} from "../../lib/crm/pushMessageFormat.js";
 
 const router = express.Router();
 
@@ -185,6 +189,8 @@ router.post(
           body?.buttonUrl
         );
 
+      const buttons = normalizePushButtons(body?.buttons);
+
       if (!title && !text && !promo) {
         return res.status(400).json({
           ok: false,
@@ -201,6 +207,35 @@ router.post(
           error:
             "BUTTON_TEXT_AND_URL_REQUIRED_TOGETHER",
         });
+      }
+
+      const hasWebAppButton =
+        buttons.some((btn) => btn.kind === "web_app") ||
+        String(body?.buttonKind || "").toLowerCase() === "web_app";
+
+      if (hasWebAppButton && !getWebAppBaseUrl()) {
+        return res.status(503).json({
+          ok: false,
+          error: "WEBAPP_URL_NOT_CONFIGURED",
+        });
+      }
+
+      for (const button of buttons) {
+        if (button.kind !== "url") continue;
+        try {
+          const parsed = new URL(button.url);
+          if (!["http:", "https:", "tg:"].includes(parsed.protocol)) {
+            return res.status(400).json({
+              ok: false,
+              error: "INVALID_BUTTON_URL_PROTOCOL",
+            });
+          }
+        } catch {
+          return res.status(400).json({
+            ok: false,
+            error: "INVALID_BUTTON_URL",
+          });
+        }
       }
 
       if (buttonUrl) {
@@ -399,6 +434,7 @@ router.post(
               photoFileId,
               buttonText,
               buttonUrl,
+              buttons,
             },
 
             templateId:
@@ -444,6 +480,7 @@ router.post(
             photoFileId,
             buttonText,
             buttonUrl,
+            buttons,
           },
         });
 

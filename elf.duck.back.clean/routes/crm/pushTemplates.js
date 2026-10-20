@@ -188,6 +188,10 @@ for (
                     ""
                 ),
 
+              buttons: Array.isArray(template?.buttons)
+                ? template.buttons
+                : [],
+
               isDefault:
                 template
                   ?.isDefault ===
@@ -320,6 +324,21 @@ router.post(
             ""
         ).trim();
 
+      const buttons = Array.isArray(req.body?.buttons)
+        ? req.body.buttons
+            .map((button) => ({
+              text: String(button?.text || "").trim().slice(0, 64),
+              kind:
+                String(button?.kind || "web_app").toLowerCase() === "url"
+                  ? "url"
+                  : "web_app",
+              path: String(button?.path || "/").trim() || "/",
+              url: String(button?.url || "").trim(),
+            }))
+            .filter((button) => button.text)
+            .slice(0, 8)
+        : [];
+
       if (!title) {
         return res
           .status(400)
@@ -356,6 +375,7 @@ router.post(
             photoPreviewUrl,
             buttonText,
             buttonUrl,
+            buttons,
 
             isDefault:
               false,
