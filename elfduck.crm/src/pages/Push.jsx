@@ -627,25 +627,53 @@ onSuccess: (data) => {
     data: audiencePreview,
     isFetching: audiencePreviewLoading,
     isError: audiencePreviewError,
+    error: audiencePreviewErrorObj,
   } = useQuery({
     queryKey: [
       'crm-push-audience-preview',
       periodQuery,
       debouncedAudiencePayload,
     ],
+    enabled: isAuthenticated,
+    staleTime: 15_000,
+    retry: 1,
     placeholderData: (previous) => previous,
-    queryFn: () =>
-      crmFetch('/crm/push/audience-preview', {
+    queryFn: ({ signal }) => {
+      const timeoutMs = 45_000;
+      const timeoutController = new AbortController();
+      const onAbort = () => timeoutController.abort();
+      const timer = setTimeout(onAbort, timeoutMs);
+      if (signal) {
+        if (signal.aborted) onAbort();
+        else signal.addEventListener('abort', onAbort, { once: true });
+      }
+
+      return crmFetch('/crm/push/audience-preview', {
         method: 'POST',
+        signal: timeoutController.signal,
         body: JSON.stringify({
           ...periodPayload,
           ...debouncedAudiencePayload,
         }),
-      }),
+      }).finally(() => {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+      });
+    },
   });
 
   const recipients = Number(audiencePreview?.total || 0);
   const audienceReady = Boolean(audiencePreview) && !audiencePreviewError;
+  const audiencePreviewErrorLabel = (() => {
+    if (!audiencePreviewError) return null;
+    const msg = String(
+      audiencePreviewErrorObj?.message || audiencePreviewErrorObj?.name || ''
+    ).toLowerCase();
+    if (msg.includes('abort') || msg.includes('timeout')) {
+      return 'таймаут';
+    }
+    return 'помилка';
+  })();
   const requestedUsernames = Number(
     audiencePreview?.requestedUsernames || 0
   );
@@ -1614,7 +1642,7 @@ const confirmCreateTpl = () => {
               <Send className="h-3.5 w-3.5" />
 
               {audiencePreviewError
-                ? 'ошибка'
+                ? audiencePreviewErrorLabel || 'ошибка'
                 : audiencePreviewLoading && !audiencePreview
                   ? '…'
                   : num(recipients)}{' '}
@@ -1837,7 +1865,7 @@ const confirmCreateTpl = () => {
                 </span>
                 <span className="text-[14px] font-semibold text-[hsl(255_100%_75%)]">
                   {audiencePreviewError
-                    ? 'помилка'
+                    ? audiencePreviewErrorLabel || 'помилка'
                     : audiencePreviewLoading && !audiencePreview
                       ? '…'
                       : num(recipients)}

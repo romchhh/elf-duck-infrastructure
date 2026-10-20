@@ -175,19 +175,68 @@ export async function buildPushAudiencePreview({
   const safeMinCheck = Math.max(0, Number(minCheck || 0));
   const safeMinCashback = Math.max(0, Number(minCashback || 0));
 
+  // Sales history потрібна лише там, де фільтр дивиться на покупки.
+  // Кешбек / favorites — ні (інакше period=all тягне всю історію й «вішає» preview).
   const needsSalesStats =
     normalizedAudience === "customers" ||
-    normalizedAudience === "favorites" ||
     normalizedAudience === "leads" ||
     normalizedStatuses.size > 0 ||
     normalizedCategoryKeys.size > 0 ||
     normalizedLocationKeys.size > 0 ||
     safeMinCheck > 0 ||
-    safeMinCashback > 0 ||
-    Boolean(normalizedFavProduct) ||
-    cashbackExpiringSoon;
+    Boolean(normalizedFavProduct);
 
   const needsFavorites = normalizedAudience === "favorites";
+  const hasTokenFilter = audienceTokenSet.size > 0;
+  const needsUserScan =
+    hasTokenFilter ||
+    needsSalesStats ||
+    needsFavorites ||
+    safeMinCashback > 0 ||
+    cashbackExpiringSoon ||
+    normalizedAudience === "customers" ||
+    normalizedAudience === "leads" ||
+    normalizedAudience === "favorites";
+
+  const baseUserMatch = {
+    telegramId: { $exists: true, $ne: "" },
+  };
+
+  // «Всі» без фільтрів — швидкий count, без курсора по всій базі.
+  if (!needsUserScan) {
+    const total = await User.countDocuments(baseUserMatch);
+
+    if (!includeTelegramIds) {
+      return {
+        total,
+        requestedUsernames: 0,
+        matchedUsernames: 0,
+        missingUsernames: [],
+        sample: [],
+        telegramIds: [],
+        audienceIdsTruncated: false,
+      };
+    }
+
+    const idRows = await User.find(baseUserMatch)
+      .select({ telegramId: 1 })
+      .limit(CRM_PUSH_AUDIENCE_ID_CAP)
+      .lean();
+
+    const telegramIds = idRows
+      .map((row) => String(row?.telegramId || "").trim())
+      .filter(Boolean);
+
+    return {
+      total,
+      requestedUsernames: 0,
+      matchedUsernames: 0,
+      missingUsernames: [],
+      sample: [],
+      telegramIds,
+      audienceIdsTruncated: total > telegramIds.length,
+    };
+  }
 
   const [favoriteCustomerRows, cachedBundle] = await Promise.all([
     needsFavorites
@@ -226,10 +275,10 @@ export async function buildPushAudiencePreview({
 
   // Список @username / id — шукаємо напряму, без повного скану бази.
   let candidateUsers;
-  if (audienceTokenSet.size > 0) {
+  if (hasTokenFilter) {
     const tokenList = [...audienceTokenSet];
     candidateUsers = await User.find({
-      telegramId: { $exists: true, $ne: "" },
+      ...baseUserMatch,
       $or: [
         { telegramId: { $in: tokenList } },
         {
@@ -250,9 +299,7 @@ export async function buildPushAudiencePreview({
 
   const pushUserQuery = candidateUsers
     ? null
-    : User.find({
-        telegramId: { $exists: true, $ne: "" },
-      }).select(userSelect);
+    : User.find(baseUserMatch).select(userSelect);
 
   let matchedTotal = 0;
   const matchedSample = [];
@@ -597,7 +644,7 @@ if (
       consumeUser(user);
     }
   } else {
-    for await (const user of pushUserQuery.lean().cursor()) {
+    for await (const user of pushUserQuery.lean().cursor({ batchSize: 500 })) {
       consumeUser(user);
     }
   }
