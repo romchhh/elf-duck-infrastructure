@@ -281,9 +281,12 @@ useEffect(() => {
 
     const cashbackBalance = roundMoney(user?.cashbackBalance || 0);
     const activeOrderTotal = roundMoney(activePaymentOrder?.totalZl || 0);
+    const promoDiscountZl = roundMoney(activePaymentOrder?.payment?.promoDiscountZl || 0);
+    const promoCodeApplied = String(activePaymentOrder?.payment?.promoCode || "").trim();
     const cashbackAppliedZl = roundMoney(activePaymentOrder?.payment?.cashbackAppliedZl || 0);
+    const payableAfterPromoZl = roundMoney(Math.max(0, activeOrderTotal - promoDiscountZl));
     const cashbackRemainingToPayZl = roundMoney(
-        activePaymentOrder?.payment?.cashbackRemainingToPayZl || activeOrderTotal || 0
+        Math.max(0, payableAfterPromoZl - cashbackAppliedZl)
     );
     // Wallet left + already applied on this order = total cashback that can still be assigned.
     // Requires cashbackBalance to stay in sync after apply (see setUser below).
@@ -291,15 +294,19 @@ useEffect(() => {
     const CASHBACK_ORDER_SHARE_LIMIT = 0.4;
     const maxCashbackByOrderLimitZl = roundMoney(activeOrderTotal * CASHBACK_ORDER_SHARE_LIMIT);
     const maxCashbackApplicableZl = roundMoney(
-        Math.min(maxAvailableCashbackZl, maxCashbackByOrderLimitZl, activeOrderTotal)
+        Math.min(maxAvailableCashbackZl, maxCashbackByOrderLimitZl, payableAfterPromoZl)
     );
-    const cashbackFullyPaid = Boolean(activePaymentOrder?.payment?.cashbackFullyPaid);
+    const cashbackFullyPaid =
+        Boolean(activePaymentOrder?.payment?.cashbackFullyPaid) ||
+        (activeOrderTotal > 0 && cashbackRemainingToPayZl <= 0 && (cashbackAppliedZl > 0 || promoDiscountZl > 0));
 
 
     const canUseCashback =
-        maxAvailableCashbackZl > 0 && activeOrderTotal > 0 && !cashbackFullyPaid;
+        maxAvailableCashbackZl > 0 && payableAfterPromoZl > 0 && !cashbackFullyPaid;
     const canFullyPayWithCashback =
-        maxCashbackApplicableZl >= activeOrderTotal && activeOrderTotal > 0 && !cashbackFullyPaid;
+        maxCashbackApplicableZl >= payableAfterPromoZl &&
+        payableAfterPromoZl > 0 &&
+        !cashbackFullyPaid;
     const shouldAllowDirectCashbackConfirm = cashbackFullyPaid;
 
     const [paymentConfigLoading, setPaymentConfigLoading] = useState(false);
@@ -500,7 +507,7 @@ useEffect(() => {
             .trim()
             .toUpperCase();
 
-        if (!code || paymentPromoSubmitting || isGuestBrowser) {
+        if (!code || paymentPromoSubmitting || isGuestBrowser || !activePaymentOrder?._id) {
             if (isGuestBrowser) {
                 showTgAlert(
                     t(
@@ -512,6 +519,17 @@ useEffect(() => {
             return;
         }
 
+        if (promoCodeApplied && promoDiscountZl > 0) {
+            setPaymentPromoHint({
+                type: "error",
+                message: t(
+                    "К этому заказу уже применён промокод.",
+                    "Do tego zamówienia już zastosowano kod promocyjny."
+                ),
+            });
+            return;
+        }
+
         setPaymentPromoSubmitting(true);
         setPaymentPromoHint(null);
 
@@ -520,14 +538,17 @@ useEffect(() => {
                 window?.Telegram?.WebApp?.initData || ""
             ).trim();
 
-            const response = await fetch(`${API_URL}/promo-codes/activate`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "x-telegram-init-data": telegramInitData,
-                },
-                body: JSON.stringify({ code }),
-            });
+            const response = await fetch(
+                `${API_URL}/orders/${activePaymentOrder._id}/apply-promo-code`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "x-telegram-init-data": telegramInitData,
+                    },
+                    body: JSON.stringify({ code }),
+                }
+            );
 
             const data = await response.json().catch(() => ({}));
 
@@ -539,61 +560,71 @@ useEffect(() => {
                               "Вы уже использовали этот промокод.",
                               "Ten kod promocyjny został już wykorzystany."
                           )
-                        : errorCode === "PROMO_NOT_FOUND"
+                        : errorCode === "PROMO_ALREADY_ON_ORDER"
                           ? t(
-                                "Промокод недействителен.",
-                                "Kod promocyjny jest nieprawidłowy."
+                                "К этому заказу уже применён промокод.",
+                                "Do tego zamówienia już zastosowano kod promocyjny."
                             )
-                          : errorCode === "PROMO_EXPIRED"
+                          : errorCode === "PROMO_NOT_FOUND"
                             ? t(
-                                  "Срок действия промокода истёк.",
-                                  "Kod promocyjny wygasł."
+                                  "Промокод недействителен.",
+                                  "Kod promocyjny jest nieprawidłowy."
                               )
-                            : errorCode === "PROMO_LIMIT_REACHED"
+                            : errorCode === "PROMO_EXPIRED"
                               ? t(
-                                    "Лимит активаций промокода исчерпан.",
-                                    "Limit aktywacji kodu został wyczerpany."
+                                    "Срок действия промокода истёк.",
+                                    "Kod promocyjny wygasł."
                                 )
-                              : t(
-                                    "Не удалось активировать промокод.",
-                                    "Nie udało się aktywować kodu promocyjnego."
-                                );
+                              : errorCode === "PROMO_LIMIT_REACHED"
+                                ? t(
+                                      "Лимит активаций промокода исчерпан.",
+                                      "Limit aktywacji kodu został wyczerpany."
+                                  )
+                                : errorCode === "ORDER_ALREADY_FULLY_COVERED"
+                                  ? t(
+                                        "Заказ уже полностью покрыт.",
+                                        "Zamówienie jest już w pełni pokryte."
+                                    )
+                                  : t(
+                                        "Не удалось применить промокод.",
+                                        "Nie udało się zastosować kodu promocyjnego."
+                                    );
 
                 setPaymentPromoHint({ type: "error", message });
                 haptic.heavy();
                 return;
             }
 
-            const amountZl = Number(data?.amountZl || 0);
-            const balanceFromServer = Number(
-                data?.cashbackBalance ?? data?.balance ?? NaN
+            const updatedOrder = data?.order || null;
+            const discountZl = roundMoney(
+                data?.promoDiscountZl ?? updatedOrder?.payment?.promoDiscountZl ?? 0
             );
-            const nextBalance = Number.isFinite(balanceFromServer)
-                ? balanceFromServer
-                : Number((Number(user?.cashbackBalance || 0) + amountZl).toFixed(2));
 
-            setUser((prev) => ({
-                ...prev,
-                cashbackBalance: nextBalance,
-                balance: nextBalance,
-            }));
+            if (updatedOrder?._id) {
+                setOrders((prev) =>
+                    prev.map((x) =>
+                        String(x._id) === String(updatedOrder._id) ? updatedOrder : x
+                    )
+                );
+                setActivePaymentOrder(updatedOrder);
+            }
 
             setPaymentPromoCode("");
             setPaymentPromoHint({
                 type: "success",
                 message: t(
-                    `Промокод активирован! +${amountZl.toFixed(2)} PLN на баланс.`,
-                    `Kod aktywowany! +${amountZl.toFixed(2)} PLN do salda.`
+                    `Промокод применён: −${formatMoney(discountZl)} ZŁ к сумме заказа.`,
+                    `Kod zastosowany: −${formatMoney(discountZl)} ZŁ od kwoty zamówienia.`
                 ),
             });
             haptic.light();
         } catch (error) {
-            console.error("payment promo activate error", error);
+            console.error("payment promo apply error", error);
             setPaymentPromoHint({
                 type: "error",
                 message: t(
-                    "Не удалось активировать промокод.",
-                    "Nie udało się aktywować kodu promocyjnego."
+                    "Не удалось применить промокод.",
+                    "Nie udało się zastosować kodu promocyjnego."
                 ),
             });
             haptic.heavy();
@@ -2371,71 +2402,82 @@ useEffect(() => {
                         <div className="paymentPromoLabel">
                             {t("Промокод", "Kod promocyjny")}
                         </div>
-                        <div className="paymentCashbackInputRow paymentPromoInputRow">
-                            <input
-                                type="text"
-                                autoCapitalize="characters"
-                                autoCorrect="off"
-                                spellCheck={false}
-                                className="paymentInputField paymentPromoInput"
-                                placeholder={t("Введите промокод", "Wpisz kod promocyjny")}
-                                value={paymentPromoCode}
-                                disabled={
-                                    paymentPromoSubmitting ||
-                                    paymentSubmitting ||
-                                    cashbackFullyPaid
-                                }
-                                onChange={(e) => {
-                                    setPaymentPromoHint(null);
-                                    setPaymentPromoCode(
-                                        String(e.target.value || "")
-                                            .toUpperCase()
-                                            .replace(/\s+/g, "")
-                                    );
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        activatePaymentPromoCode();
-                                    }
-                                }}
-                            />
-                            <button
-                                type="button"
-                                className="paymentCashbackMaxBtn paymentPromoApplyBtn"
-                                disabled={
-                                    paymentPromoSubmitting ||
-                                    paymentSubmitting ||
-                                    cashbackFullyPaid ||
-                                    !String(paymentPromoCode || "").trim()
-                                }
-                                onClick={() => {
-                                    haptic.light();
-                                    activatePaymentPromoCode();
-                                }}
-                            >
-                                {paymentPromoSubmitting
-                                    ? "…"
-                                    : t("ОК", "OK")}
-                            </button>
-                        </div>
-                        {paymentPromoHint ? (
-                            <div
-                                className={`paymentPromoHint ${
-                                    paymentPromoHint.type === "success"
-                                        ? "is-success"
-                                        : "is-error"
-                                }`}
-                            >
-                                {paymentPromoHint.message}
-                            </div>
-                        ) : (
-                            <div className="paymentCashbackHint paymentPromoHintIdle">
+                        {promoCodeApplied && promoDiscountZl > 0 ? (
+                            <div className="paymentPromoHint is-success">
                                 {t(
-                                    "Промокод зачисляется на баланс кэшбека",
-                                    "Kod promocyjny trafia na saldo cashbacku"
+                                    `Применён ${promoCodeApplied}: −${formatMoney(promoDiscountZl)} ZŁ`,
+                                    `Zastosowano ${promoCodeApplied}: −${formatMoney(promoDiscountZl)} ZŁ`
                                 )}
                             </div>
+                        ) : (
+                            <>
+                                <div className="paymentCashbackInputRow paymentPromoInputRow">
+                                    <input
+                                        type="text"
+                                        autoCapitalize="characters"
+                                        autoCorrect="off"
+                                        spellCheck={false}
+                                        className="paymentInputField paymentPromoInput"
+                                        placeholder={t("Введите промокод", "Wpisz kod promocyjny")}
+                                        value={paymentPromoCode}
+                                        disabled={
+                                            paymentPromoSubmitting ||
+                                            paymentSubmitting ||
+                                            cashbackFullyPaid
+                                        }
+                                        onChange={(e) => {
+                                            setPaymentPromoHint(null);
+                                            setPaymentPromoCode(
+                                                String(e.target.value || "")
+                                                    .toUpperCase()
+                                                    .replace(/\s+/g, "")
+                                            );
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                activatePaymentPromoCode();
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        className="paymentCashbackMaxBtn paymentPromoApplyBtn"
+                                        disabled={
+                                            paymentPromoSubmitting ||
+                                            paymentSubmitting ||
+                                            cashbackFullyPaid ||
+                                            !String(paymentPromoCode || "").trim()
+                                        }
+                                        onClick={() => {
+                                            haptic.light();
+                                            activatePaymentPromoCode();
+                                        }}
+                                    >
+                                        {paymentPromoSubmitting
+                                            ? "…"
+                                            : t("ОК", "OK")}
+                                    </button>
+                                </div>
+                                {paymentPromoHint ? (
+                                    <div
+                                        className={`paymentPromoHint ${
+                                            paymentPromoHint.type === "success"
+                                                ? "is-success"
+                                                : "is-error"
+                                        }`}
+                                    >
+                                        {paymentPromoHint.message}
+                                    </div>
+                                ) : (
+                                    <div className="paymentCashbackHint paymentPromoHintIdle">
+                                        {t(
+                                            "Скидка применяется к сумме заказа",
+                                            "Zniżka jest stosowana do kwoty zamówienia"
+                                        )}
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
 
@@ -3231,8 +3273,12 @@ useEffect(() => {
                 const statusMeta = getOrderStatusMeta(o);
 
                 const cardCashbackAppliedZl = Number(o?.payment?.cashbackAppliedZl || 0);
+                const cardPromoDiscountZl = Number(o?.payment?.promoDiscountZl || 0);
                 const cardRemainingPln = Number(
-                o?.payment?.cashbackRemainingToPayZl || o?.totalZl || 0
+                  Math.max(
+                    0,
+                    Number(o?.totalZl || 0) - cardPromoDiscountZl - cardCashbackAppliedZl
+                  )
                 );
                 const cardManagerDisplayAmount = Number(o?.payment?.managerDisplayAmount || 0);
                 const cardManagerDisplayCurrency = String(o?.payment?.managerDisplayCurrency || "").trim();
@@ -3240,7 +3286,7 @@ useEffect(() => {
                 const cardPillAmount =
                 cardCashbackAppliedZl > 0 && cardManagerDisplayAmount > 0
                     ? cardManagerDisplayAmount
-                    : cardCashbackAppliedZl > 0
+                    : cardCashbackAppliedZl > 0 || cardPromoDiscountZl > 0
                     ? cardRemainingPln
                     : Number(o?.totalZl || 0);
 

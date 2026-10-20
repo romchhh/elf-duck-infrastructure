@@ -1389,12 +1389,14 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
 
     const CASHBACK_ORDER_SHARE_LIMIT = 0.4;
     const orderTotalZl = Number(order.totalZl || 0);
+    const promoDiscountZl = Math.max(0, Number(order.payment?.promoDiscountZl || 0));
+    const payableAfterPromoZl = Number(Math.max(0, orderTotalZl - promoDiscountZl).toFixed(2));
     const cashbackBalance = Number(user.cashbackBalance || 0);
     const alreadyAppliedZl = Number(order?.payment?.cashbackAppliedZl || 0);
     const maxAvailableCashbackZl = Number((cashbackBalance + alreadyAppliedZl).toFixed(2));
     const maxByOrderShareZl = Number((orderTotalZl * CASHBACK_ORDER_SHARE_LIMIT).toFixed(2));
     const maxApplicableCashbackZl = Number(
-      Math.min(maxAvailableCashbackZl, maxByOrderShareZl, orderTotalZl).toFixed(2)
+      Math.min(maxAvailableCashbackZl, maxByOrderShareZl, payableAfterPromoZl).toFixed(2)
     );
 
     if (maxAvailableCashbackZl <= 0) {
@@ -1422,10 +1424,8 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INSUFFICIENT_CASHBACK_BALANCE" });
     }
 
-    if (safeMode === "custom" && requestedCashbackAmountZl > orderTotalZl) {
-
+    if (safeMode === "custom" && requestedCashbackAmountZl > payableAfterPromoZl) {
       return res.status(400).json({ ok: false, error: "CASHBACK_AMOUNT_EXCEEDS_ORDER_TOTAL" });
-
     }
 
     if (safeMode === "custom" && requestedCashbackAmountZl > maxByOrderShareZl) {
@@ -1434,7 +1434,9 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
 
     const cashbackDeltaZl = Number((targetAppliedCashbackZl - alreadyAppliedZl).toFixed(2));
     const cashbackAppliedZl = targetAppliedCashbackZl;
-    const remainingToPayZl = Number(Math.max(0, orderTotalZl - cashbackAppliedZl).toFixed(2));
+    const remainingToPayZl = Number(
+      Math.max(0, payableAfterPromoZl - cashbackAppliedZl).toFixed(2)
+    );
     const cashbackFullyPaid = remainingToPayZl <= 0;
 
     let cashbackLeftToDeduct = Math.max(0, Number(cashbackDeltaZl || 0));
@@ -1499,6 +1501,198 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
     });
   } catch (e) {
     console.error("apply cashback error:", e);
+    return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
+  }
+});
+
+app.post("/orders/:id/apply-promo-code", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+
+    const { id } = req.params;
+    const code = normalizePromoCode(req.body?.code);
+
+    if (!code) {
+      return res.status(400).json({ ok: false, error: "PROMO_NOT_FOUND" });
+    }
+
+    const order = await Order.findById(id);
+    if (!order) {
+      return res.status(404).json({ ok: false, error: "ORDER_NOT_FOUND" });
+    }
+
+    if (String(order.userTelegramId || "") !== String(telegramId || "")) {
+      return res.status(403).json({ ok: false, error: "FORBIDDEN" });
+    }
+
+    if (String(order.status || "") === "canceled") {
+      return res.status(400).json({ ok: false, error: "ORDER_CANCELED" });
+    }
+
+    if (
+      String(order.payment?.status || "") === "checking" ||
+      String(order.payment?.status || "") === "paid"
+    ) {
+      return res.status(400).json({ ok: false, error: "PAYMENT_ALREADY_SUBMITTED" });
+    }
+
+    const existingPromoCode = normalizePromoCode(order.payment?.promoCode || "");
+    const existingPromoDiscountZl = Math.max(0, Number(order.payment?.promoDiscountZl || 0));
+
+    if (existingPromoCode && existingPromoDiscountZl > 0) {
+      if (existingPromoCode === code) {
+        const freshOrder = await Order.findById(order._id).lean();
+        return res.json({
+          ok: true,
+          alreadyApplied: true,
+          order: freshOrder,
+          code: existingPromoCode,
+          promoDiscountZl: existingPromoDiscountZl,
+          cashbackRemainingToPayZl: Number(order.payment?.cashbackRemainingToPayZl || 0),
+        });
+      }
+
+      return res.status(409).json({ ok: false, error: "PROMO_ALREADY_ON_ORDER" });
+    }
+
+    const promoCode = await getPromoCodeByCode(code);
+
+    if (!promoCode || promoCode?.isActive !== true) {
+      return res.status(404).json({ ok: false, error: "PROMO_NOT_FOUND" });
+    }
+
+    if (
+      promoCode?.expiresAt &&
+      new Date(promoCode.expiresAt).getTime() <= Date.now()
+    ) {
+      return res.status(400).json({ ok: false, error: "PROMO_EXPIRED" });
+    }
+
+    const maxActivations = Math.max(0, Number(promoCode?.maxActivations || 0));
+    const activationsCount = Number(promoCode?.activationsCount || 0);
+    if (maxActivations > 0 && activationsCount >= maxActivations) {
+      return res.status(409).json({ ok: false, error: "PROMO_LIMIT_REACHED" });
+    }
+
+    const amountZl = Number(promoCode?.amountZl || 0);
+    if (!Number.isFinite(amountZl) || amountZl <= 0) {
+      return res.status(400).json({ ok: false, error: "PROMO_NOT_FOUND" });
+    }
+
+    const orderTotalZl = Number(order.totalZl || 0);
+    const cashbackAppliedZl = Math.max(0, Number(order.payment?.cashbackAppliedZl || 0));
+    const payableBeforePromoZl = Number(Math.max(0, orderTotalZl - cashbackAppliedZl).toFixed(2));
+
+    if (payableBeforePromoZl <= 0) {
+      return res.status(400).json({ ok: false, error: "ORDER_ALREADY_FULLY_COVERED" });
+    }
+
+    const promoDiscountZl = Number(
+      Math.min(Number(amountZl.toFixed(2)), payableBeforePromoZl).toFixed(2)
+    );
+
+    if (promoDiscountZl <= 0) {
+      return res.status(400).json({ ok: false, error: "PROMO_NOT_FOUND" });
+    }
+
+    const now = new Date();
+    const user = await User.findOne({ telegramId: String(telegramId || "") });
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+    }
+
+    const alreadyUsed = Array.isArray(user.promoCodeActivations)
+      ? user.promoCodeActivations.some(
+          (activation) => normalizePromoCode(activation?.code) === code
+        )
+      : false;
+
+    if (alreadyUsed) {
+      return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
+    }
+
+    const updateResult = await User.collection.findOneAndUpdate(
+      {
+        telegramId: String(telegramId || ""),
+        "promoCodeActivations.code": { $ne: code },
+      },
+      {
+        $push: {
+          promoCodeActivations: {
+            code,
+            amountZl: promoDiscountZl,
+            promoCodeId: promoCode._id,
+            activatedAt: now,
+            asOrderDiscount: true,
+            orderId: order._id,
+          },
+        },
+        $set: { updatedAt: now },
+      },
+      { returnDocument: "after" }
+    );
+
+    const updatedUser = updateResult?.value || updateResult;
+    if (!updatedUser?._id) {
+      return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
+    }
+
+    await mongoose.connection.collection(PROMO_CODES_COLLECTION).updateOne(
+      { _id: promoCode._id },
+      {
+        $inc: { activationsCount: 1 },
+        $push: {
+          activations: {
+            telegramId: String(telegramId || ""),
+            amountZl: promoDiscountZl,
+            activatedAt: now,
+            asOrderDiscount: true,
+            orderId: String(order._id),
+          },
+        },
+        $set: {
+          lastActivatedAt: now,
+          updatedAt: now,
+        },
+      }
+    );
+
+    const remainingToPayZl = Number(
+      Math.max(0, orderTotalZl - promoDiscountZl - cashbackAppliedZl).toFixed(2)
+    );
+    const cashbackFullyPaid = remainingToPayZl <= 0;
+    const prevPayment = order.payment?.toObject ? order.payment.toObject() : (order.payment || {});
+
+    order.payment = {
+      ...prevPayment,
+      method: cashbackFullyPaid
+        ? String(prevPayment?.method || "promo")
+        : String(prevPayment?.method || ""),
+      promoCode: code,
+      promoCodeId: String(promoCode._id || ""),
+      promoDiscountZl,
+      promoAppliedAt: now,
+      cashbackAppliedZl,
+      cashbackRemainingToPayZl: remainingToPayZl,
+      cashbackFullyPaid,
+      status: "unpaid",
+    };
+
+    await order.save();
+
+    const freshOrder = await Order.findById(order._id).lean();
+
+    return res.json({
+      ok: true,
+      order: freshOrder,
+      code,
+      promoDiscountZl,
+      cashbackRemainingToPayZl: remainingToPayZl,
+      cashbackFullyPaid,
+    });
+  } catch (e) {
+    console.error("apply promo code error:", e);
     return res.status(500).json({ ok: false, error: "SERVER_ERROR" });
   }
 });
@@ -1633,10 +1827,11 @@ app.post("/orders/:id/payment-check", async (req, res) => {
     // );
 
     const cashbackUsedZl = Number(prevPayment?.cashbackAppliedZl || 0);
+    const promoDiscountUsedZl = Math.max(0, Number(prevPayment?.promoDiscountZl || 0));
 
     const fallbackCashbackRemainingToPayZl = Math.max(
       0,
-      Number(order?.totalZl || 0) - Number(cashbackUsedZl || 0)
+      Number(order?.totalZl || 0) - Number(cashbackUsedZl || 0) - promoDiscountUsedZl
     );
 
     // const cashbackRemainingToPayZl = Number(

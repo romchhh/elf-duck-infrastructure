@@ -174,6 +174,11 @@ const orderSchema = new mongoose.Schema(
         default: 0,
       },
 
+      promoCode: { type: String, default: "" },
+      promoCodeId: { type: String, default: "" },
+      promoDiscountZl: { type: Number, default: 0 },
+      promoAppliedAt: { type: Date, default: null },
+
       managerMessageChatId: { type: String, default: "" },
       managerMessageId: { type: String, default: "" },
 
