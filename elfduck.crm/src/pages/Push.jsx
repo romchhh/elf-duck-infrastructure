@@ -267,6 +267,8 @@ const [
   setPhotoFileId,
 ] = useState('');
 
+const [photoUrl, setPhotoUrl] = useState('');
+
 const [
 
   templatePhotoPreviewUrl,
@@ -677,40 +679,6 @@ if (
   };
 }, [mediaPreviewUrl]);
 
-const fileToDataUrl =
-  (file) =>
-    new Promise(
-      (
-        resolve,
-        reject
-      ) => {
-        const reader =
-          new FileReader();
-
-        reader.onload =
-          () =>
-            resolve(
-              String(
-                reader.result ||
-                  ''
-              )
-            );
-
-        reader.onerror =
-          () =>
-            reject(
-              new Error(
-                'FILE_READ_FAILED'
-              )
-            );
-
-        reader
-          .readAsDataURL(
-            file
-          );
-      }
-    );
-
 const selectMedia =
   async (event) => {
     const file =
@@ -775,65 +743,33 @@ const selectMedia =
       return;
     }
 
-    setMediaUploading(
-      true
-    );
+    setMediaUploading(true);
 
     try {
-      const dataUrl =
-        await fileToDataUrl(
-          file
-        );
+      const formData = new FormData();
+      formData.append('file', file, file.name || 'push.jpg');
 
-      const data =
-        await crmFetch(
-          '/crm/push/upload-media',
-          {
-            method:
-              'POST',
+      const data = await crmFetch('/crm/push/upload-media', {
+        method: 'POST',
+        body: formData,
+      });
 
-            body:
-              JSON.stringify({
-                dataUrl,
-              }),
-          }
-        );
+      const uploadedUrl = String(
+        data?.url || data?.photoPreviewUrl || ''
+      ).trim();
 
-      if (
-        mediaPreviewUrl
-      ) {
-        URL.revokeObjectURL(
-          mediaPreviewUrl
-        );
+      if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaPreviewUrl);
       }
 
-      setMediaFile(
-        file
-      );
-
-      setMediaPreviewUrl(
-        URL.createObjectURL(
-          file
-        )
-      );
-
-      setPhotoFileId(
-        String(
-          data?.fileId ||
-            ''
-        )
-      );
-
-      setTemplatePhotoPreviewUrl(
-  String(
-    data?.photoPreviewUrl ||
-      ''
-  )
-);
+      setMediaFile(file);
+      setMediaPreviewUrl(uploadedUrl || URL.createObjectURL(file));
+      setPhotoUrl(uploadedUrl);
+      setPhotoFileId(String(data?.fileId || ''));
+      setTemplatePhotoPreviewUrl(uploadedUrl);
 
       toast({
-        title:
-          'Медиа добавлено',
+        title: 'Медиа добавлено',
       });
     } catch (error) {
       if (
@@ -877,21 +813,17 @@ const selectMedia =
     }
   };
 
-const removeMedia =
-  () => {
-    if (
-      mediaPreviewUrl
-    ) {
-      URL.revokeObjectURL(
-        mediaPreviewUrl
-      );
-    }
+const removeMedia = () => {
+  if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
+    URL.revokeObjectURL(mediaPreviewUrl);
+  }
 
-    setMediaFile(null);
-    setMediaPreviewUrl('');
-    setPhotoFileId('');
-    setTemplatePhotoPreviewUrl('');
-  };
+  setMediaFile(null);
+  setMediaPreviewUrl('');
+  setPhotoFileId('');
+  setPhotoUrl('');
+  setTemplatePhotoPreviewUrl('');
+};
 
   /*
    * CREATE TEMPLATE
@@ -912,9 +844,9 @@ const removeMedia =
                   {
                     title: tplName.trim(),
                     text: body.trim(),
-                    photoUrl: '',
-                    photoFileId,
-                    photoPreviewUrl: templatePhotoPreviewUrl,
+                    photoUrl: photoUrl || templatePhotoPreviewUrl || '',
+                    photoFileId: photoFileId || '',
+                    photoPreviewUrl: photoUrl || templatePhotoPreviewUrl || '',
                     buttons: inlineButtons
                       .filter((btn) => String(btn?.text || '').trim())
                       .map((btn) => ({
@@ -1128,8 +1060,8 @@ const deleteTemplate =
 
                     promo: '',
 
-                    photoUrl: '',
-                    photoFileId,
+                    photoUrl: photoUrl || '',
+                    photoFileId: photoFileId || '',
 
                     buttons: inlineButtons
                       .filter((btn) => String(btn?.text || '').trim())
@@ -1330,33 +1262,20 @@ const deleteTemplate =
         ]);
       }
 
-setPhotoFileId(
-  template.photoFileId ||
-    ''
-);
+      const tplUrl = String(
+        template.photoUrl || template.photoPreviewUrl || ''
+      ).trim();
 
-setTemplatePhotoPreviewUrl(
-  template.photoPreviewUrl ||
-    ''
-);
+      setPhotoFileId(template.photoFileId || '');
+      setPhotoUrl(tplUrl);
+      setTemplatePhotoPreviewUrl(tplUrl);
+      setMediaFile(null);
 
-setMediaFile(null);
+      if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaPreviewUrl);
+      }
 
-if (
-  mediaPreviewUrl &&
-  mediaPreviewUrl.startsWith(
-    'blob:'
-  )
-) {
-  URL.revokeObjectURL(
-    mediaPreviewUrl
-  );
-}
-
-setMediaPreviewUrl(
-  template.photoPreviewUrl ||
-    ''
-);
+      setMediaPreviewUrl(tplUrl);
     };
 
   /*

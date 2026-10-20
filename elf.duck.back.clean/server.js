@@ -14,6 +14,7 @@ import express from "express";
 import cors from "cors";
 import compression from "compression";
 import { getCatalogUploadDir } from "./lib/crm/catalogMediaStorage.js";
+import { getPushUploadDir } from "./lib/crm/pushMediaStorage.js";
 
 import Product from "./models/Product.js";
 import Order from "./models/Order.js";
@@ -165,12 +166,19 @@ app.use(
   })
 );
 
+const pushUploadDir = getPushUploadDir();
+fs.mkdirSync(pushUploadDir, { recursive: true });
+app.use(
+  "/push-media",
+  express.static(pushUploadDir, {
+    maxAge: "7d",
+    fallthrough: true,
+  })
+);
+
 const CRM_MEDIA_JSON_LIMIT = "14mb";
 
-app.use(
-  "/crm/push/upload-media",
-  express.json({ limit: CRM_MEDIA_JSON_LIMIT })
-);
+// Push media: multipart — без express.json (інакше зʼїсть body).
 app.use(
   "/crm/catalog/upload-media",
   express.json({ limit: CRM_MEDIA_JSON_LIMIT })

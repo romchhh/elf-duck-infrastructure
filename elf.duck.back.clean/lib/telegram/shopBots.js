@@ -118,12 +118,22 @@ if (TG_BOT_TOKENS.length) {
       );
     }
 
-const adminChatId = String(
-  process.env.CRM_MEDIA_UPLOAD_CHAT_ID ||
-    process.env.ADMIN_CHAT_ID ||
-    process.env.ADMIN_TELEGRAM_ID ||
-    ""
-).trim();
+    // Чат для тимчасового upload → file_id.
+    // Fallback: перший SUPER_ADMIN / ADMIN, щоб не вимагати окремий CRM_MEDIA_UPLOAD_CHAT_ID.
+    const adminChatId = String(
+      process.env.CRM_MEDIA_UPLOAD_CHAT_ID ||
+        process.env.ADMIN_CHAT_ID ||
+        process.env.ADMIN_TELEGRAM_ID ||
+        String(process.env.SUPER_ADMIN_IDS || "")
+          .split(",")
+          .map((id) => id.trim())
+          .find(Boolean) ||
+        String(process.env.ADMIN_IDS || "")
+          .split(",")
+          .map((id) => id.trim())
+          .find(Boolean) ||
+        ""
+    ).trim();
 
     if (!adminChatId) {
       throw new Error(
@@ -428,49 +438,29 @@ app.locals.runCrmBroadcastCampaign =
             pendingTelegramIds
           ) {
             try {
-if (photoFileId) {
+if (photoUrl) {
   await bot.telegram
     .sendPhoto(
       telegramId,
-
-      photoFileId,
-
+      { url: photoUrl },
       {
-        caption:
-          messageText,
-
-        parse_mode:
-          "HTML",
-
+        caption: messageText,
+        parse_mode: "HTML",
         ...(replyMarkup
-          ? {
-              reply_markup:
-                replyMarkup,
-            }
+          ? { reply_markup: replyMarkup }
           : {}),
       }
     );
-} else if (photoUrl) {
+} else if (photoFileId) {
   await bot.telegram
     .sendPhoto(
       telegramId,
-
+      photoFileId,
       {
-        url: photoUrl,
-      },
-
-      {
-        caption:
-          messageText,
-
-        parse_mode:
-          "HTML",
-
+        caption: messageText,
+        parse_mode: "HTML",
         ...(replyMarkup
-          ? {
-              reply_markup:
-                replyMarkup,
-            }
+          ? { reply_markup: replyMarkup }
           : {}),
       }
     );
