@@ -7,6 +7,11 @@ import PeriodControl from './PeriodControl';
 const HIDE_PERIOD_PATHS = new Set([
   '/sales/customers',
   '/catalog',
+  '/marketing/push',
+]);
+
+const HIDE_HEADER_ACTIONS_PATHS = new Set([
+  '/marketing/push',
 ]);
 
 export default function TopHeader({ title, subtitle, onMenu }) {
@@ -14,6 +19,7 @@ export default function TopHeader({ title, subtitle, onMenu }) {
   const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const showPeriod = !HIDE_PERIOD_PATHS.has(location.pathname);
+  const showHeaderActions = !HIDE_HEADER_ACTIONS_PATHS.has(location.pathname);
 
   const refreshSystem = async () => {
     if (refreshing) return;
@@ -45,20 +51,22 @@ export default function TopHeader({ title, subtitle, onMenu }) {
         </div>
       </div>
 
-      <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end lg:w-auto">
-        <button
-          type="button"
-          onClick={refreshSystem}
-          disabled={refreshing}
-          className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[12px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:text-foreground disabled:opacity-60"
-          title="Обновить данные CRM"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-          {refreshing ? 'Обновляем…' : 'Обновить систему'}
-        </button>
+      {showHeaderActions ? (
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-end lg:w-auto">
+          <button
+            type="button"
+            onClick={refreshSystem}
+            disabled={refreshing}
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[12px] font-medium text-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:text-foreground disabled:opacity-60"
+            title="Обновить данные CRM"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+            {refreshing ? 'Обновляем…' : 'Обновить систему'}
+          </button>
 
-        {showPeriod ? <PeriodControl /> : null}
-      </div>
+          {showPeriod ? <PeriodControl /> : null}
+        </div>
+      ) : null}
     </header>
   );
 }

@@ -14,6 +14,20 @@ function normalizePromoCode(value) {
     .slice(0, 32);
 }
 
+function mapPromoCode(row) {
+  return {
+    id: String(row?._id || ""),
+    code: String(row?.code || ""),
+    amountZl: Number(row?.amountZl || 0),
+    isActive: row?.isActive !== false,
+    expiresAt: row?.expiresAt || null,
+    maxActivations: Math.max(0, Number(row?.maxActivations || 0)),
+    note: String(row?.note || ""),
+    activationsCount: Number(row?.activationsCount || 0),
+    createdAt: row?.createdAt || null,
+  };
+}
+
 router.get(
   "/promo-codes",
   requireCrmPushAdmin,
@@ -28,15 +42,7 @@ router.get(
 
       return res.json({
         ok: true,
-        promoCodes: promoCodes.map((row) => ({
-          id: String(row?._id || ""),
-          code: String(row?.code || ""),
-          amountZl: Number(row?.amountZl || 0),
-          isActive: row?.isActive !== false,
-          expiresAt: row?.expiresAt || null,
-          activationsCount: Number(row?.activationsCount || 0),
-          createdAt: row?.createdAt || null,
-        })),
+        promoCodes: promoCodes.map(mapPromoCode),
       });
     } catch (error) {
       console.error("GET /crm/promo-codes error:", error);
@@ -57,6 +63,11 @@ router.post(
       const code = normalizePromoCode(req.body?.code);
       const amountZl = Number(req.body?.amountZl || 0);
       const expiresAtRaw = req.body?.expiresAt;
+      const note = String(req.body?.note || "").trim().slice(0, 200);
+      const maxActivations = Math.max(
+        0,
+        Math.min(1_000_000, Number(req.body?.maxActivations || 0))
+      );
 
       let expiresAt = null;
 
@@ -112,6 +123,8 @@ router.post(
               amountZl: Number(amountZl.toFixed(2)),
               isActive: true,
               expiresAt,
+              maxActivations,
+              note,
               updatedAt: now,
             },
             $setOnInsert: {
@@ -131,13 +144,7 @@ router.post(
 
       return res.json({
         ok: true,
-        promoCode: {
-          id: String(promoCode?._id || ""),
-          code: String(promoCode?.code || code),
-          amountZl: Number(promoCode?.amountZl || amountZl),
-          isActive: promoCode?.isActive !== false,
-          expiresAt: promoCode?.expiresAt || expiresAt,
-        },
+        promoCode: mapPromoCode(promoCode || { code, amountZl, expiresAt, maxActivations, note }),
       });
     } catch (error) {
       console.error("POST /crm/promo-codes error:", error);

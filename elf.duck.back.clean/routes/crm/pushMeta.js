@@ -10,12 +10,20 @@ const router = express.Router();
 function toDisplayCategoryLabel(raw) {
   const s = String(raw || "").trim();
   if (!s) return "Категория";
-  // if mostly uppercase (e.g. LIQUIDS), title-case words
-  if (s === s.toUpperCase() && /[A-ZА-Я]/.test(s)) {
+
+  // Не капслоком: LIQUIDS / ЖИДКОСТИ → Liquids / Жидкости
+  const letters = s.replace(/[^A-Za-zА-Яа-яЁё]/g, "");
+  const upperRatio =
+    letters.length > 0
+      ? letters.replace(/[^A-ZА-ЯЁ]/g, "").length / letters.length
+      : 0;
+
+  if (upperRatio >= 0.7) {
     return s
       .toLowerCase()
-      .replace(/(^|\s|\-|_)(\S)/g, (_, a, b) => a + b.toUpperCase());
+      .replace(/(^|[\s\-_/])(\S)/g, (_, a, b) => a + b.toUpperCase());
   }
+
   return s;
 }
 

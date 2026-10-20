@@ -18,6 +18,7 @@ import dashboardRouter from "./dashboard.js";
 import inventoryRouter from "./inventory.js";
 import catalogRouter from "./catalog.js";
 import promoCodesRouter from "./promoCodes.js";
+import pushAutomationsRouter from "./pushAutomations.js";
 
 const router = express.Router();
 
@@ -28,6 +29,7 @@ router.use(pushMetaRouter);
 router.use(pushTemplatesRouter);
 router.use(pushSendRouter);
 router.use(pushCampaignsRouter);
+router.use(pushAutomationsRouter);
 router.use(ordersRouter);
 router.use(debugRouter);
 router.use(cashbackRouter);

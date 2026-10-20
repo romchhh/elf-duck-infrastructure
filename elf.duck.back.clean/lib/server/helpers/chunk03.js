@@ -367,6 +367,17 @@ export async function completeInpostShipment(
    */
   if (!wasAlreadyShipped) {
     await applyOrderCashback(order);
+
+    try {
+      const { maybeTriggerFirstPurchaseAutomation } = await import(
+        "../../crm/pushAutomations.js"
+      );
+      maybeTriggerFirstPurchaseAutomation(order).catch((err) => {
+        console.error("first purchase automation (inpost) hook error:", err);
+      });
+    } catch (e) {
+      console.error("first purchase automation (inpost) import error:", e);
+    }
   }
 
   let clientNotified = Boolean(

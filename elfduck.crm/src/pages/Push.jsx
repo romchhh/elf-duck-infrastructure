@@ -38,17 +38,12 @@ import {
 } from '@/components/ui/dialog';
 
 import { toast } from '@/components/ui/use-toast';
-import { usePeriod } from '@/lib/PeriodContext';
 import { cn } from '@/lib/utils';
 import { CRM_API_URL, crmFetchJson } from '@/lib/crmFetch';
 import {
   clearCrmSessionToken,
   setCrmSessionToken,
 } from '@/lib/crmSession';
-import {
-  buildPeriodQuery,
-  getPeriodPayload,
-} from '@/pages/push/pushPeriod';
 import {
   Section,
   Chip,
@@ -159,11 +154,6 @@ function CampaignMobileRow({
 export default function Push() {
   const queryClient =
     useQueryClient();
-
-  const {
-    period,
-    range,
-  } = usePeriod();
 
   /*
    * AUTH
@@ -325,36 +315,11 @@ const [
   } = useTableSort('revenue', 'desc');
 
   /*
-   * PERIOD
+   * PERIOD — розсилки не залежать від глобального PeriodControl.
+   * Аудиторія й аналітика кампаній завжди по повній базі (period=all).
    */
-
-  const periodPayload =
-    useMemo(
-      () =>
-        getPeriodPayload(
-          period,
-          range
-        ),
-
-      [
-        period,
-        range,
-      ]
-    );
-
-  const periodQuery =
-    useMemo(
-      () =>
-        buildPeriodQuery(
-          period,
-          range
-        ),
-
-      [
-        period,
-        range,
-      ]
-    );
+  const periodPayload = useMemo(() => ({ period: 'all' }), []);
+  const periodQuery = useMemo(() => 'period=all', []);
 
   /*
    * AUTH SESSION
@@ -489,32 +454,16 @@ onSuccess: (data) => {
       1000,
   });
 
-  const pushMeta = {
-    audiences:
-      metaData
-        ?.audiences ||
-      [],
-
-    statuses:
-      metaData
-        ?.statuses ||
-      [],
-
-    categories:
-      metaData
-        ?.categories ||
-      [],
-
-    locations:
-      metaData
-        ?.locations ||
-      [],
-
-    products:
-      metaData
-        ?.products ||
-      [],
-  };
+  const pushMeta = useMemo(
+    () => ({
+      audiences: metaData?.audiences || [],
+      statuses: metaData?.statuses || [],
+      categories: metaData?.categories || [],
+      locations: metaData?.locations || [],
+      products: metaData?.products || [],
+    }),
+    [metaData]
+  );
 
   /*
    * TEMPLATES
@@ -565,25 +514,34 @@ onSuccess: (data) => {
    * AUDIENCE PAYLOAD
    */
 
+  // «Усі чіпи вибрані» = без фільтра (інакше клієнти без покупок відсікаються).
+  const selectedOrNone = (selected, allItems) => {
+    const total = Array.isArray(allItems) ? allItems.length : 0;
+    if (!selected?.size || (total > 0 && selected.size >= total)) {
+      return [];
+    }
+    return Array.from(selected);
+  };
+
   const audiencePayload =
     useMemo(
       () => ({
         audience,
 
-        statuses:
-          Array.from(
-            statuses
-          ),
+        statuses: selectedOrNone(
+          statuses,
+          pushMeta.statuses
+        ),
 
-        categoryKeys:
-          Array.from(
-            categories
-          ),
+        categoryKeys: selectedOrNone(
+          categories,
+          pushMeta.categories
+        ),
 
-        locationKeys:
-          Array.from(
-            locations
-          ),
+        locationKeys: selectedOrNone(
+          locations,
+          pushMeta.locations
+        ),
 
         minCheck:
           Number(
@@ -615,6 +573,9 @@ onSuccess: (data) => {
         favProduct,
         telegram,
         cashbackExpiringSoon,
+        pushMeta.statuses,
+        pushMeta.categories,
+        pushMeta.locations,
       ]
     );
 
@@ -657,43 +618,28 @@ onSuccess: (data) => {
    */
 
   const {
-    data:
-      audiencePreview,
-
-    isFetching:
-      audiencePreviewLoading,
+    data: audiencePreview,
+    isFetching: audiencePreviewLoading,
+    isError: audiencePreviewError,
   } = useQuery({
     queryKey: [
       'crm-push-audience-preview',
       periodQuery,
       debouncedAudiencePayload,
     ],
-
+    placeholderData: (previous) => previous,
     queryFn: () =>
-      crmFetch(
-        '/crm/push/audience-preview',
-        {
-          method:
-            'POST',
-
-          body:
-            JSON.stringify(
-              {
-                ...periodPayload,
-
-                ...debouncedAudiencePayload,
-              }
-            ),
-        }
-      ),
+      crmFetch('/crm/push/audience-preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...periodPayload,
+          ...debouncedAudiencePayload,
+        }),
+      }),
   });
 
-  const recipients =
-    Number(
-      audiencePreview
-        ?.total ||
-        0
-    );
+  const recipients = Number(audiencePreview?.total || 0);
+  const audienceReady = Boolean(audiencePreview) && !audiencePreviewError;
 
     useEffect(() => {
   return () => {
@@ -1171,36 +1117,7 @@ const deleteTemplate =
                       title.trim() ||
                       'Рассылка',
 
-                    audience,
-
-                    statuses:
-                      Array.from(
-                        statuses
-                      ),
-
-                    categoryKeys:
-                      Array.from(
-                        categories
-                      ),
-
-                    locationKeys:
-                      Array.from(
-                        locations
-                      ),
-
-                    minCheck:
-                      Number(
-                        minCheck ||
-                          0
-                      ),
-
-                    favProduct:
-                      favProduct.trim(),
-
-                    telegram:
-                      telegram.trim(),
-
-                    cashbackExpiringSoon,
+                    ...audiencePayload,
 
                     title:
                       title.trim(),
@@ -1494,9 +1411,8 @@ const confirmCreateTpl = () => {
 
       if (
         recipients <= 0 ||
-        audiencePreviewLoading ||
-        sendCampaignMutation
-          .isPending
+        !audienceReady ||
+        sendCampaignMutation.isPending
       ) {
         return;
       }
@@ -1523,15 +1439,8 @@ const confirmCreateTpl = () => {
    */
 
   useEffect(() => {
-    setCampPage(
-      1
-    );
-  }, [
-    period,
-    range,
-    campSortKey,
-    campSortDirection,
-  ]);
+    setCampPage(1);
+  }, [campSortKey, campSortDirection]);
 
   const sortedCampaigns = useMemo(() => {
     const rows = Array.isArray(campaigns) ? [...campaigns] : [];
@@ -1785,11 +1694,11 @@ const confirmCreateTpl = () => {
             <div className="flex items-center gap-1.5 rounded-lg bg-[hsl(255_100%_68%/0.1)] px-2.5 py-1 text-[12px] font-medium text-[hsl(255_100%_75%)]">
               <Send className="h-3.5 w-3.5" />
 
-              {audiencePreviewLoading
-                ? '…'
-                : num(
-                    recipients
-                  )}{' '}
+              {audiencePreviewError
+                ? 'ошибка'
+                : audiencePreviewLoading && !audiencePreview
+                  ? '…'
+                  : num(recipients)}{' '}
               получателей
             </div>
           </div>
@@ -1956,55 +1865,33 @@ const confirmCreateTpl = () => {
                 <Chip
                   active={cashbackExpiringSoon}
                   onClick={() =>
-                    setCashbackExpiringSoon(
-                      (value) => !value
-                    )
+                    setCashbackExpiringSoon((value) => !value)
                   }
                 >
                   Кешбэк скоро сгорит
                 </Chip>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <input
-                  value={
-                    minCheck
-                  }
-                  onChange={(
-                    e
-                  ) =>
-                    setMinCheck(
-                      e.target
-                        .value
-                    )
-                  }
+                  value={minCheck}
+                  onChange={(e) => setMinCheck(e.target.value)}
                   placeholder="Ср. чек >"
                   className={cn(
                     'input-base',
-                    audienceIsLeads &&
-                      'pointer-events-none opacity-40'
+                    audienceIsLeads && 'pointer-events-none opacity-40'
                   )}
                   disabled={audienceIsLeads}
                 />
 
                 <input
-                  value={
-                    favProduct
-                  }
-                  onChange={(
-                    e
-                  ) =>
-                    setFavProduct(
-                      e.target
-                        .value
-                    )
-                  }
+                  value={favProduct}
+                  onChange={(e) => setFavProduct(e.target.value)}
                   placeholder="Любимый товар"
                   title="Товар, который клиент купил больше всего штук за всю историю заказов"
                   className={cn(
-                    'input-base col-span-2 sm:col-span-1',
-                    audienceIsLeads &&
-                      'pointer-events-none opacity-40'
+                    'input-base',
+                    audienceIsLeads && 'pointer-events-none opacity-40'
                   )}
                   disabled={audienceIsLeads}
                 />
@@ -2207,30 +2094,37 @@ const confirmCreateTpl = () => {
                 sendCampaign
               }
               disabled={
-                recipients <=
-                  0 ||
-                audiencePreviewLoading ||
-                sendCampaignMutation
-                  .isPending
+                recipients <= 0 ||
+                !audienceReady ||
+                !body.trim() ||
+                sendCampaignMutation.isPending
+              }
+              title={
+                !body.trim()
+                  ? 'Введите текст сообщения'
+                  : !audienceReady
+                    ? 'Считаем аудиторию…'
+                    : recipients <= 0
+                      ? 'Нет получателей по выбранным фильтрам (проверьте поле @telegram и чипы)'
+                      : undefined
               }
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[hsl(255_100%_68%)] to-[hsl(280_90%_60%)] px-4 py-2 text-[13px] font-medium text-white shadow-[0_4px_20px_-6px_hsl(255_100%_68%)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
 
-              {sendCampaignMutation
-                .isPending
+              {sendCampaignMutation.isPending
                 ? 'Запускаем…'
                 : `Отправить (${
-                    audiencePreviewLoading
+                    audiencePreviewLoading && !audiencePreview
                       ? '…'
-                      : num(
-                          recipients
-                        )
+                      : num(recipients)
                   })`}
             </button>
           </div>
         </div>
       </div>
+
+      <PushAutomationsPanel />
 
       {/* TEMPLATES */}
 
@@ -2611,13 +2505,27 @@ function PushPromoCreator({ onCreated }) {
   const [code, setCode] = useState('');
   const [amountZl, setAmountZl] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
+  const [maxActivations, setMaxActivations] = useState('');
+  const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const { data: promoListData, refetch: refetchPromos } = useQuery({
+    queryKey: ['crm-promo-codes'],
+    queryFn: () => crmFetch('/crm/promo-codes'),
+    enabled: open,
+    staleTime: 30_000,
+  });
+
+  const recentPromos = Array.isArray(promoListData?.promoCodes)
+    ? promoListData.promoCodes.slice(0, 8)
+    : [];
 
   const createPromo = async () => {
     const normalizedCode = String(code || '')
       .trim()
       .toUpperCase();
     const amount = Number(amountZl);
+    const limit = Number(maxActivations || 0);
 
     if (!normalizedCode || normalizedCode.length < 3) {
       toast({
@@ -2657,6 +2565,8 @@ function PushPromoCreator({ onCreated }) {
           code: normalizedCode,
           amountZl: amount,
           expiresAt: expiresAtIso,
+          maxActivations: Number.isFinite(limit) && limit > 0 ? limit : 0,
+          note: String(note || '').trim(),
         }),
       });
 
@@ -2673,6 +2583,9 @@ function PushPromoCreator({ onCreated }) {
       setCode('');
       setAmountZl('');
       setExpiresAt('');
+      setMaxActivations('');
+      setNote('');
+      refetchPromos();
     } catch (error) {
       toast({
         title: 'Не удалось создать промокод',
@@ -2721,6 +2634,23 @@ function PushPromoCreator({ onCreated }) {
               className="input-base"
             />
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              value={maxActivations}
+              onChange={(e) => setMaxActivations(e.target.value)}
+              placeholder="Лимит активаций (0 = ∞)"
+              type="number"
+              min="0"
+              step="1"
+              className="input-base"
+            />
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Заметка"
+              className="input-base"
+            />
+          </div>
           <button
             type="button"
             onClick={createPromo}
@@ -2729,8 +2659,191 @@ function PushPromoCreator({ onCreated }) {
           >
             {loading ? 'Создаём…' : 'Сохранить промокод'}
           </button>
+
+          {recentPromos.length > 0 ? (
+            <div className="pt-1">
+              <p className="mb-1.5 text-[11px] text-muted-2">Недавние:</p>
+              <div className="flex flex-wrap gap-1.5">
+                {recentPromos.map((row) => (
+                  <button
+                    key={row.id || row.code}
+                    type="button"
+                    onClick={() => onCreated?.(row.code)}
+                    className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:text-foreground"
+                    title={
+                      row.note ||
+                      `${row.amountZl} zł` +
+                        (row.expiresAt
+                          ? ` · до ${new Date(row.expiresAt).toLocaleString('ru')}`
+                          : '')
+                    }
+                  >
+                    {row.code}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function PushAutomationsPanel() {
+  const [enabled, setEnabled] = useState(false);
+  const [delayMinutes, setDelayMinutes] = useState('0');
+  const [title, setTitle] = useState('');
+  const [text, setText] = useState('');
+  const [promo, setPromo] = useState('');
+  const [dirty, setDirty] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ['crm-push-automations'],
+    queryFn: () => crmFetch('/crm/push/automations'),
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    const row = data?.automations?.first_purchase;
+    if (!row || dirty) return;
+    setEnabled(row.enabled === true);
+    setDelayMinutes(String(row.delayMinutes || 0));
+    setTitle(String(row.message?.title || ''));
+    setText(String(row.message?.text || ''));
+    setPromo(String(row.message?.promo || ''));
+  }, [data, dirty]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      crmFetch('/crm/push/automations/first_purchase', {
+        method: 'PUT',
+        body: JSON.stringify({
+          enabled,
+          delayMinutes: Number(delayMinutes || 0),
+          message: {
+            title: title.trim(),
+            text: text.trim(),
+            promo: promo.trim(),
+          },
+        }),
+      }),
+    onSuccess: () => {
+      setDirty(false);
+      refetch();
+      toast({ title: 'Авторассылка сохранена' });
+    },
+    onError: (error) => {
+      toast({
+        title: 'Не удалось сохранить',
+        description: error?.message || 'SAVE_FAILED',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  return (
+    <div className="rounded-2xl surface-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="font-heading text-[14px] font-semibold text-foreground">
+            Автоматические рассылки
+          </h3>
+          <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
+            Событие: после первой успешной покупки бот отправит офер с
+            промокодом (кампания попадёт в аналитику конверсии).
+          </p>
+        </div>
+        <Chip
+          active={enabled}
+          onClick={() => {
+            setEnabled((v) => !v);
+            setDirty(true);
+          }}
+        >
+          {enabled ? 'Включено' : 'Выключено'}
+        </Chip>
+      </div>
+
+      {isLoading ? (
+        <p className="mt-4 text-[12px] text-muted-2">Загрузка…</p>
+      ) : (
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <Field label="Заголовок">
+            <input
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setDirty(true);
+              }}
+              className="input-base"
+              placeholder="Спасибо за первый заказ!"
+            />
+          </Field>
+          <Field label="Промокод">
+            <input
+              value={promo}
+              onChange={(e) => {
+                setPromo(e.target.value);
+                setDirty(true);
+              }}
+              className="input-base"
+              placeholder="SECOND15"
+            />
+          </Field>
+          <Field label="Текст">
+            <textarea
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setDirty(true);
+              }}
+              rows={4}
+              className="input-base resize-none lg:col-span-1"
+              placeholder="Вернись за вторым заказом со скидкой…"
+            />
+          </Field>
+          <Field label="Задержка (мин)">
+            <input
+              value={delayMinutes}
+              onChange={(e) => {
+                setDelayMinutes(e.target.value);
+                setDirty(true);
+              }}
+              type="number"
+              min="0"
+              max="1440"
+              className="input-base"
+            />
+            <p className="mt-1 text-[11px] text-muted-2">
+              0 — сразу после выполнения заказа
+            </p>
+          </Field>
+        </div>
+      )}
+
+      <div className="mt-4">
+        <PushPromoCreator
+          onCreated={(code) => {
+            if (code) {
+              setPromo(code);
+              setDirty(true);
+            }
+          }}
+        />
+      </div>
+
+      <button
+        type="button"
+        onClick={() => saveMutation.mutate()}
+        disabled={
+          saveMutation.isPending ||
+          (!title.trim() && !text.trim() && !promo.trim())
+        }
+        className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-gradient-to-r from-[hsl(255_100%_68%)] to-[hsl(280_90%_60%)] px-4 text-[12px] font-medium text-white disabled:opacity-50"
+      >
+        {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить авторассылку'}
+      </button>
     </div>
   );
 }

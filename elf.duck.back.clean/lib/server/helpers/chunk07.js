@@ -1373,6 +1373,17 @@ export async function changePickupOrderStatusByManager(
     );
   }
 
+  try {
+    const { maybeTriggerFirstPurchaseAutomation } = await import(
+      "../../crm/pushAutomations.js"
+    );
+    maybeTriggerFirstPurchaseAutomation(completedOrder).catch((err) => {
+      console.error("first purchase automation hook error:", err);
+    });
+  } catch (e) {
+    console.error("first purchase automation import error:", e);
+  }
+
   return completedOrder;
 }
 

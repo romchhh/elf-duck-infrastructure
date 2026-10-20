@@ -910,6 +910,15 @@ if (photoFileId) {
   app.locals.resumeCrmBroadcastCampaigns =
     resumeCrmBroadcastCampaigns;
 
+  try {
+    const { registerCrmBroadcastRunner } = await import(
+      "../crm/pushAutomations.js"
+    );
+    registerCrmBroadcastRunner(app.locals.runCrmBroadcastCampaign);
+  } catch (error) {
+    console.error("registerCrmBroadcastRunner failed:", error);
+  }
+
   const registerUserBotHandlers = (activeBot, shopBotIndex = 0) => {
   activeBot.use(handleManagerClientMessageText);
 

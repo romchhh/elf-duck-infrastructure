@@ -9,8 +9,18 @@ import { loadSalesHistory } from "./sales.js";
 import {
   getPushUserDisplayName,
   normalizePushUsername,
+  getPushLocationKey,
 } from "./pushText.js";
 import { isCashbackExpiringSoon } from "./cashbackExpiring.js";
+import { getCustomerStatus } from "./analytics/customers.js";
+
+const SALES_STATS_CACHE_TTL_MS = 60_000;
+let salesStatsCache = {
+  expiresAt: 0,
+  toMs: 0,
+  statsByUser: null,
+  productByKey: null,
+};
 
 export async function buildPushAudiencePreview({
   range,
@@ -26,228 +36,130 @@ export async function buildPushAudiencePreview({
   includeTelegramIds = false,
 }) {
 
-    const [
-        salesHistory,
-        products,
-        favoriteCustomerRows,
-    ] = await Promise.all([
-    loadSalesHistory(range.to, {
-      slimItems: true,
-    }),
+  const toMs = range?.to ? new Date(range.to).getTime() : 0;
+  const cacheHit =
+    salesStatsCache.statsByUser &&
+    salesStatsCache.productByKey &&
+    salesStatsCache.toMs === toMs &&
+    salesStatsCache.expiresAt > Date.now();
 
-    Product.find({
-
-        isActive: {
-
-            $ne: false,
-
-        },
-
+  const [favoriteCustomerRows, cachedBundle] = await Promise.all([
+    mongoose.connection
+      .collection(CRM_FAVORITE_CUSTOMERS_COLLECTION)
+      .find({ isFavorite: true })
+      .project({ telegramId: 1 })
+      .toArray(),
+    cacheHit
+      ? Promise.resolve({
+          statsByUser: salesStatsCache.statsByUser,
+          productByKey: salesStatsCache.productByKey,
         })
-      .select({
-        productKey: 1,
-        categoryKey: 1,
-        title1: 1,
-        title2: 1,
-      })
-      .lean(),
+      : (async () => {
+          const [salesHistory, products] = await Promise.all([
+            loadSalesHistory(range.to, { slimItems: true }),
+            Product.find({ isActive: { $ne: false } })
+              .select({
+                productKey: 1,
+                categoryKey: 1,
+                title1: 1,
+                title2: 1,
+              })
+              .lean(),
+          ]);
 
-      mongoose.connection
-        .collection(
-            CRM_FAVORITE_CUSTOMERS_COLLECTION
-        )
-        .find({
-            isFavorite: true,
-        })
-        .project({
-            telegramId: 1,
-        })
-        .toArray(),
-    ]);
+          const productByKey = new Map(
+            products.map((product) => [
+              String(product?.productKey || ""),
+              product,
+            ])
+          );
 
-    const favoriteCustomerIds =
+          const statsByUser = new Map();
 
-        new Set(
+          for (const order of salesHistory) {
+            const telegramId = String(
+              order?.userTelegramId || ""
+            ).trim();
 
-            favoriteCustomerRows
+            if (!telegramId) continue;
 
-            .map((row) =>
+            if (!statsByUser.has(telegramId)) {
+              statsByUser.set(telegramId, {
+                purchases: 0,
+                revenue: 0,
+                firstSaleAt: null,
+                lastSaleAt: null,
+                categoryKeys: new Set(),
+                locationKeys: new Set(),
+                productKeys: new Set(),
+                productQtyByKey: new Map(),
+              });
+            }
 
-                String(
+            const stats = statsByUser.get(telegramId);
+            const saleDate = new Date(order?.crmSaleDate);
 
-                row?.telegramId || ""
+            stats.purchases += 1;
+            stats.revenue += Number(order?.totalZl || 0);
 
-                ).trim()
+            if (!stats.firstSaleAt || saleDate < stats.firstSaleAt) {
+              stats.firstSaleAt = saleDate;
+            }
 
-            )
+            if (!stats.lastSaleAt || saleDate > stats.lastSaleAt) {
+              stats.lastSaleAt = saleDate;
+            }
 
-            .filter(Boolean)
+            const locationKey = getPushLocationKey(order);
+            if (locationKey) {
+              stats.locationKeys.add(locationKey);
+            }
 
-        );
+            for (const item of order?.items || []) {
+              const productKey = String(item?.productKey || "").trim();
+              if (!productKey) continue;
 
-  const productByKey =
-    new Map(
-      products.map(
-        (product) => [
-          String(
-            product?.productKey ||
-              ""
-          ),
-          product,
-        ]
-      )
-    );
+              stats.productKeys.add(productKey);
 
-  const statsByUser =
-    new Map();
+              const itemQty = (item?.flavors || []).reduce(
+                (sum, flavor) => sum + Number(flavor?.qty || 0),
+                0
+              );
 
-  for (
-    const order of
-    salesHistory
-  ) {
-    const telegramId =
-      String(
-        order
-          ?.userTelegramId ||
-          ""
-      ).trim();
+              stats.productQtyByKey.set(
+                productKey,
+                Number(stats.productQtyByKey.get(productKey) || 0) +
+                  itemQty
+              );
 
-    if (!telegramId) {
-      continue;
-    }
+              const categoryKey = String(
+                productByKey.get(productKey)?.categoryKey || ""
+              ).trim();
 
-    if (
-      !statsByUser.has(
-        telegramId
-      )
-    ) {
-      statsByUser.set(
-        telegramId,
-        {
-          purchases: 0,
-          revenue: 0,
+              if (categoryKey) {
+                stats.categoryKeys.add(categoryKey);
+              }
+            }
+          }
 
-          firstSaleAt:
-            null,
+          salesStatsCache = {
+            expiresAt: Date.now() + SALES_STATS_CACHE_TTL_MS,
+            toMs,
+            statsByUser,
+            productByKey,
+          };
 
-          lastSaleAt:
-            null,
+          return { statsByUser, productByKey };
+        })(),
+  ]);
 
-          categoryKeys:
-            new Set(),
+  const { statsByUser, productByKey } = cachedBundle;
 
-          locationKeys:
-            new Set(),
-
-          productKeys:
-            new Set(),
-          productQtyByKey:
-            new Map(),
-        }
-      );
-    }
-
-    const stats =
-      statsByUser.get(
-        telegramId
-      );
-
-    const saleDate =
-      new Date(
-        order
-          ?.crmSaleDate
-      );
-
-    stats.purchases += 1;
-
-    stats.revenue +=
-      Number(
-        order?.totalZl ||
-          0
-      );
-
-    if (
-      !stats.firstSaleAt ||
-      saleDate <
-        stats.firstSaleAt
-    ) {
-      stats.firstSaleAt =
-        saleDate;
-    }
-
-    if (
-      !stats.lastSaleAt ||
-      saleDate >
-        stats.lastSaleAt
-    ) {
-      stats.lastSaleAt =
-        saleDate;
-    }
-
-    const locationKey =
-      getPushLocationKey(
-        order
-      );
-
-    if (locationKey) {
-      stats.locationKeys.add(
-        locationKey
-      );
-    }
-
-    for (
-      const item of
-      order?.items || []
-    ) {
-      const productKey =
-        String(
-          item?.productKey ||
-            ""
-        ).trim();
-
-      if (!productKey) {
-        continue;
-      }
-
-      stats.productKeys.add(
-        productKey
-      );
-
-    const itemQty =
-      (item?.flavors || [])
-        .reduce(
-          (sum, flavor) =>
-            sum +
-            Number(
-              flavor?.qty || 0
-            ),
-          0
-        );
-
-      stats.productQtyByKey.set(
-        productKey,
-        Number(
-          stats.productQtyByKey.get(
-            productKey
-          ) || 0
-        ) + itemQty
-      );
-
-      const categoryKey =
-        String(
-          productByKey.get(
-            productKey
-          )?.categoryKey ||
-            ""
-        ).trim();
-
-      if (categoryKey) {
-        stats.categoryKeys.add(
-          categoryKey
-        );
-      }
-    }
-  }
+  const favoriteCustomerIds = new Set(
+    favoriteCustomerRows
+      .map((row) => String(row?.telegramId || "").trim())
+      .filter(Boolean)
+  );
 
   const normalizedAudience =
     String(
@@ -338,16 +250,6 @@ export async function buildPushAudiencePreview({
       Number(
         minCashback || 0
       )
-    );
-
-  const activeThreshold =
-    new Date(
-      range.to.getTime() -
-        14 *
-          24 *
-          60 *
-          60 *
-          1000
     );
 
   const pushUserQuery = User.find({
@@ -467,74 +369,18 @@ export async function buildPushAudiencePreview({
         }
 
         /*
-         * Статус клиента.
+         * Статус клиента (як на сторінці Клиенты).
          */
-        if (
-        normalizedStatuses.size
-        ) {
-        let status =
-            "sleeping";
+        if (normalizedStatuses.size) {
+          const status = getCustomerStatus({
+            firstSaleAt: stats?.firstSaleAt || null,
+            lastSaleAt: stats?.lastSaleAt || null,
+            range,
+          });
 
-        if (
-            stats?.firstSaleAt &&
-            stats.firstSaleAt >=
-            range.from &&
-            stats.firstSaleAt <
-            range.to
-        ) {
-            status = "new";
-        } else if (
-            stats?.lastSaleAt &&
-            stats.lastSaleAt >=
-            activeThreshold
-        ) {
-            status =
-            "active";
-        }
-
-        const purchases =
-            Number(
-            stats?.purchases || 0
-            );
-
-        let segment = "";
-
-        if (purchases === 1) {
-            segment = "new";
-        } else if (
-            purchases >= 2 &&
-            purchases <= 4
-        ) {
-            segment = "repeat";
-        } else if (
-            purchases >= 5 &&
-            purchases <= 9
-        ) {
-            segment = "regular";
-        } else if (
-            purchases >= 10
-        ) {
-            segment = "vip";
-        }
-
-        const matchesStatus =
-            normalizedStatuses.has(
-            status
-            );
-
-        const matchesSegment =
-            segment
-            ? normalizedStatuses.has(
-                segment
-                )
-            : false;
-
-        if (
-            !matchesStatus &&
-            !matchesSegment
-        ) {
+          if (!normalizedStatuses.has(status)) {
             return false;
-        }
+          }
         }
 
         /*

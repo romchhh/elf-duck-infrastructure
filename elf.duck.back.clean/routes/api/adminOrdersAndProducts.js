@@ -785,6 +785,33 @@ app.post("/promo-codes/activate", async (req, res) => {
         });
       }
 
+      if (
+        promoCode?.expiresAt &&
+        new Date(promoCode.expiresAt).getTime() <= Date.now()
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error: "PROMO_EXPIRED",
+        });
+      }
+
+      const maxActivations = Math.max(
+        0,
+        Number(promoCode?.maxActivations || 0)
+      );
+      const activationsCount = Number(
+        promoCode?.activationsCount || 0
+      );
+      if (
+        maxActivations > 0 &&
+        activationsCount >= maxActivations
+      ) {
+        return res.status(409).json({
+          ok: false,
+          error: "PROMO_LIMIT_REACHED",
+        });
+      }
+
       const amountZl = Number(
         promoCode?.amountZl || 0
       );
