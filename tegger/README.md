@@ -18,13 +18,9 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Заполнить `.env`: `API_ID`, `API_HASH` (свои Telegram API credentials), `SENDERS`, адреса шаблонных Stories, а также `TEGGER_ADMIN_PASSWORD_HASH`. Для хеша пароля:
+В `.env` достаточно админ-логина (`TEGGER_ADMIN_USERNAME` + `TEGGER_ADMIN_PASSWORD` или hash) и при необходимости `FRONTEND_ORIGIN`. **По умолчанию DRY_RUN=true.**
 
-```bash
-python -c 'from argon2 import PasswordHasher; import getpass; print(PasswordHasher().hash(getpass.getpass("Admin password: ")))'
-```
-
-Вставить полученный хеш в `TEGGER_ADMIN_PASSWORD_HASH` в `.env`. При необходимости указать `FRONTEND_ORIGIN`. **По умолчанию DRY_RUN=true.** Для работы с Telegram каждый отправитель должен самостоятельно авторизовать свою сессию; пустые сессии не поставляются.
+Telegram **API ID / API Hash** и аккаунты задаются в UI после входа: Настройки → API ID/Hash ([my.telegram.org](https://my.telegram.org)), затем Аккаунты → логин по телефону или импорт `.session`.
 
 Запуск API:
 

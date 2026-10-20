@@ -111,12 +111,15 @@ def normalize_username(value):
 
 
 # Read-only Railway Migration snapshot for UI statistics only.
-def migration_snapshot_data():
+# Missing snapshot is normal for fresh Docker installs (accounts come from UI).
+def migration_snapshot_data(*, required: bool = False):
     snapshot = Path(DATA_DIR) / "railway_snapshot"
     assignments_path = snapshot / "migration_assignments.json"
     processed_path = snapshot / "processed.json"
     if not assignments_path.is_file() or not processed_path.is_file():
-        raise HTTPException(status_code=503, detail="Railway Migration snapshot unavailable")
+        if required:
+            raise HTTPException(status_code=503, detail="Railway Migration snapshot unavailable")
+        return {}, set()
     try:
         assignments_data = json.loads(assignments_path.read_text(encoding="utf-8"))
         processed_data = json.loads(processed_path.read_text(encoding="utf-8"))
@@ -723,7 +726,7 @@ from uuid import uuid4 as _uuid4
 from telethon import TelegramClient as _TelegramClient
 from telethon.errors import SessionPasswordNeededError as _SessionPasswordNeededError
 from src.telegram_client import _parse_socks5_proxy as _parse_proxy
-from config import API_ID as _API_ID, API_HASH as _API_HASH
+from runtime_telegram import get_api_credentials as _get_api_credentials
 from fastapi import Form as _Form
 import sqlite3 as _sqlite3
 import time as _time
@@ -780,7 +783,16 @@ def _validate_new_proxy(raw):
 
 
 def _new_client(path, proxy):
-    return _TelegramClient(str(path), _API_ID, _API_HASH, proxy=_validate_new_proxy(proxy))
+    try:
+        api_id, api_hash = _get_api_credentials(require_configured=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _TelegramClient(
+        str(path),
+        api_id,
+        api_hash,
+        proxy=_validate_new_proxy(proxy),
+    )
 
 
 def _account_added_view(record):
@@ -2550,11 +2562,12 @@ async def update_settings(payload: ExecutionSettings):
     return await settings()
 
 
-# Settings entered in the UI are staged, not applied to an already running worker.
-# The process's effective Telegram credentials and DRY_RUN remain in config.py/.env.
+# Telegram API ID/Hash live in ui_telegram_config.json (Settings UI), not .env.
 from typing import Literal
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
+from runtime_telegram import credentials_configured as _credentials_configured
+
 
 class TelegramConfigUpdate(BaseModel):
     requested_mode: Literal["DRY_RUN", "PRODUCTION"]
@@ -2591,17 +2604,18 @@ def _store_private_config(data):
 
 @app.get("/api/settings/telegram", dependencies=[Depends(get_current_user)])
 async def get_telegram_config():
-    from config import API_ID as configured_id, API_HASH as configured_hash
     data = _private_config()
+    stored_id = str(data.get("api_id") or "").strip()
     return {
         "requested_mode": data.get("requested_mode", "DRY_RUN" if DRY_RUN else "PRODUCTION"),
         "effective_mode": "DRY_RUN" if DRY_RUN else "PRODUCTION",
-        "api_id": "<REDACTED>",
-        "api_hash_set": bool(data.get("api_hash") or configured_hash),
+        "api_id": stored_id,
+        "api_hash_set": bool(str(data.get("api_hash") or "").strip()),
+        "api_configured": _credentials_configured(),
         "bot_token_set": bool(data.get("bot_token") or os.getenv("LOG_BOT_TOKEN")),
         "chat_id": data.get("chat_id", os.getenv("LOG_CHAT_ID", "")),
-        "pending_restart": bool(data.get("api_id") or data.get("api_hash") or data.get("requested_mode", "DRY_RUN") != ("DRY_RUN" if DRY_RUN else "PRODUCTION")),
-        "note": "Режим и API-ключи сохранены как запрос. Они не переключают действующий worker; применение требует отдельного контролируемого перезапуска.",
+        "pending_restart": False,
+        "note": "API ID и API Hash применяются сразу для логина сессий и Telegram-клиентов. Аккаунты добавляются в разделе «Аккаунты».",
     }
 
 
@@ -2610,11 +2624,21 @@ async def save_telegram_config(payload: TelegramConfigUpdate):
     data = _private_config()
     data["requested_mode"] = payload.requested_mode
     if payload.api_id is not None:
-        data["api_id"] = payload.api_id
-    for key in ("api_hash", "bot_token"):
-        value = getattr(payload, key)
-        if value is not None and value.strip():
-            data[key] = value.strip()
+        api_id = str(payload.api_id).strip()
+        if api_id in {"", "<REDACTED>"}:
+            pass
+        elif not api_id.isdigit() or int(api_id) < 1:
+            raise HTTPException(422, "API ID должен быть положительным числом")
+        else:
+            data["api_id"] = api_id
+    if payload.api_hash is not None:
+        value = payload.api_hash.strip()
+        if value and value != "<REDACTED>":
+            data["api_hash"] = value
+    if payload.bot_token is not None:
+        value = payload.bot_token.strip()
+        if value and value != "<REDACTED>":
+            data["bot_token"] = value
     if payload.chat_id is not None:
         data["chat_id"] = payload.chat_id.strip()
     _store_private_config(data)

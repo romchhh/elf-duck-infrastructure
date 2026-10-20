@@ -1,4 +1,0 @@
-# Copy this file to docker/tegger-admin.hash and replace this comment with a
-# single-line argon2 hash (or leave the hash file empty and set TEGGER_ADMIN_PASSWORD in .env).
-#
-# python3 -c 'from argon2 import PasswordHasher; import getpass; print(PasswordHasher().hash(getpass.getpass()))'

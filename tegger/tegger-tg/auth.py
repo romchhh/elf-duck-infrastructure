@@ -69,35 +69,57 @@ def hash_token(token):
     ).hexdigest()
 
 
+def _load_admin_password_hash():
+    """Resolve argon2 hash without relying on Compose-interpolated `$` values."""
+    expected_hash = os.getenv("TEGGER_ADMIN_PASSWORD_HASH", "").strip()
+
+    if expected_hash.startswith("$argon2"):
+        return expected_hash
+
+    b64 = os.getenv("TEGGER_ADMIN_PASSWORD_HASH_B64", "").strip()
+    if b64:
+        try:
+            import base64
+
+            decoded = base64.b64decode(b64).decode("utf-8").strip()
+            if decoded.startswith("$argon2"):
+                return decoded
+        except (ValueError, UnicodeDecodeError):
+            pass
+
+    # Volume path (optional): /data/admin.hash — no host bind-mount required
+    for candidate in (
+        os.getenv("TEGGER_ADMIN_PASSWORD_HASH_FILE", "").strip(),
+        str(Path(DATA_DIR) / "admin.hash"),
+        str(Path(DATA_DIR).parent / "admin.hash"),
+    ):
+        if not candidate:
+            continue
+        try:
+            text = Path(candidate).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("$argon2"):
+                return line
+
+    return ""
+
+
 def verify_credentials(username, password):
     expected_username = os.getenv(
         "TEGGER_ADMIN_USERNAME",
         "",
     )
 
-    expected_hash = os.getenv(
-        "TEGGER_ADMIN_PASSWORD_HASH",
-        "",
-    ).strip()
+    expected_hash = _load_admin_password_hash()
 
-    # Plaintext fallback — Compose mangles `$` in argon2 hashes from .env
+    # Prefer plaintext in .env — Compose-safe (no `$`)
     expected_password = os.getenv(
         "TEGGER_ADMIN_PASSWORD",
         "",
     )
-
-    hash_file = os.getenv(
-        "TEGGER_ADMIN_PASSWORD_HASH_FILE",
-        "",
-    ).strip()
-
-    if hash_file and not expected_hash:
-        try:
-            expected_hash = Path(hash_file).read_text(
-                encoding="utf-8"
-            ).strip()
-        except OSError:
-            expected_hash = ""
 
     if not expected_username:
         return False

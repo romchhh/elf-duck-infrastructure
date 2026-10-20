@@ -187,61 +187,25 @@ SENDER_PROXIES = {
 # VALIDATION
 # ============================================================
 
-# Allow container boot before Telegram credentials are filled in .env
+# API_ID / API_HASH / SENDERS are optional in env.
+# Real Telegram API credentials + accounts are set in Tegger UI
+# (Settings → API ID/Hash, Accounts → phone/session login).
 _BOOTSTRAP = os.getenv(
     "TEGGER_BOOTSTRAP",
-    "",
+    "true",
 ).strip().lower() in {"1", "true", "yes"}
 
 if not API_ID:
-    if _BOOTSTRAP:
-        API_ID = 1
-    else:
-        raise RuntimeError(
-            "API_ID не указан в .env"
-        )
+    API_ID = 1
 
 if not API_HASH:
-    if _BOOTSTRAP:
-        API_HASH = "bootstrap"
-    else:
-        raise RuntimeError(
-            "API_HASH не указан в .env"
-        )
+    API_HASH = "bootstrap"
 
-# for sender_name, story_url in TEMPLATE_STORY_URLS.items():
-
-#     if not story_url:
-
-#         raise RuntimeError(
-
-#             f"TEMPLATE_STORY_URL для "
-
-#             f"{sender_name} не указан в .env"
-
-#         )
-
+# Env SENDERS is legacy; UI-added accounts live in data/ui_added_accounts.json
 if not SENDERS:
-    if _BOOTSTRAP:
-        SENDERS = ["sender_1"]
-        TEMPLATE_STORY_URLS = {
-            sender_name: os.getenv(
-                _story_env_key(sender_name),
-                "",
-            ).strip()
-            for sender_name in SENDERS
-        }
-        SENDER_PROXIES = {
-            sender_name: os.getenv(
-                _proxy_env_key(sender_name),
-                "",
-            ).strip()
-            for sender_name in SENDERS
-        }
-    else:
-        raise RuntimeError(
-            "SENDERS не указаны в .env"
-        )
+    SENDERS = []
+    TEMPLATE_STORY_URLS = {}
+    SENDER_PROXIES = {}
 
 if TARGETS_PER_SENDER_PER_DAY < 1:
     raise RuntimeError(
@@ -286,7 +250,7 @@ if MAX_CONCURRENT_SENDERS < 1:
         "MAX_CONCURRENT_SENDERS должен быть >= 1"
     )
 
-if MAX_CONCURRENT_SENDERS > len(SENDERS):
+if SENDERS and MAX_CONCURRENT_SENDERS > len(SENDERS):
     raise RuntimeError(
         "MAX_CONCURRENT_SENDERS не может быть больше "
         "количества SENDERS"

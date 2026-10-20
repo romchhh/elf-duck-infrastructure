@@ -39,18 +39,23 @@ export default function Settings() {
 
   const saveTelegram = async () => {
     if (!telegram || saving) return;
-    if (telegram.requested_mode === "PRODUCTION" && !window.confirm("Сохранить запрос на PRODUCTION? Это НЕ запустит worker и НЕ изменит действующий режим без отдельной проверки и перезапуска.")) return;
+    if (telegram.requested_mode === "PRODUCTION" && !window.confirm("Сохранить PRODUCTION? LIVE-рассылки всё равно запускаются отдельно из кампаний.")) return;
     setSaving(true); setError(""); setMessage("");
     try {
-      const result = await teggerClient.settings.saveTelegram({
+      const payload = {
         requested_mode: telegram.requested_mode,
-        api_id: "<REDACTED>",
-        api_hash: "<REDACTED>",
-        bot_token: "<REDACTED>",
         chat_id: telegram.chat_id || "",
-      });
+      };
+      if (telegram.api_id) payload.api_id = String(telegram.api_id).trim();
+      if (secrets.api_hash.trim()) payload.api_hash = secrets.api_hash.trim();
+      if (secrets.bot_token.trim()) payload.bot_token = secrets.bot_token.trim();
+      const result = await teggerClient.settings.saveTelegram(payload);
       setTelegram(result); setSecrets({ api_hash: "", bot_token: "" });
-      setMessage("Конфигурация сохранена. Изменение режима и API-ключей не применяется к запущенному worker автоматически.");
+      setMessage(
+        result.api_configured
+          ? "API-ключи сохранены. Можно добавлять аккаунты через логин Telegram в разделе «Аккаунты»."
+          : "Сохранено. Укажите API ID и API Hash (my.telegram.org), затем добавьте аккаунт."
+      );
     } catch (err) { setError(err.message); }
     finally { setSaving(false); }
   };
@@ -109,9 +114,14 @@ export default function Settings() {
               className="w-full"
             />
           </Field>
-          <div className="text-xs text-muted-foreground">Сейчас на сервере: <strong>{telegram.effective_mode}</strong>. Сохранение PRODUCTION не запускает worker и не изменяет действующий режим.</div>
+          <div className="text-xs text-muted-foreground">
+            Сейчас на сервере: <strong>{telegram.effective_mode}</strong>.
+            {" "}API: <strong>{telegram.api_configured ? "заданы" : "не заданы"}</strong>
+            {" "}(взять на <a className="text-primary underline" href="https://my.telegram.org" target="_blank" rel="noreferrer">my.telegram.org</a>).
+            Аккаунты и сессии — в разделе «Аккаунты» (логин по телефону или импорт .session).
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Telegram API ID"><TextInput type="number" value={telegram.api_id || ""} onChange={(e) => setTelegram((s) => ({ ...s, api_id: e.target.value }))} /></Field>
+            <Field label="Telegram API ID"><TextInput type="number" value={telegram.api_id || ""} onChange={(e) => setTelegram((s) => ({ ...s, api_id: e.target.value }))} placeholder="12345678" /></Field>
             <Field label={`Telegram API Hash ${telegram.api_hash_set ? "(установлен)" : "(не задан)"}`}><TextInput type="password" autoComplete="new-password" placeholder="Оставьте пустым, чтобы не менять" value={secrets.api_hash} onChange={(e) => setSecrets((s) => ({ ...s, api_hash: e.target.value }))} /></Field>
             <Field label={`Bot Token для логов ${telegram.bot_token_set ? "(установлен)" : "(не задан)"}`}><TextInput type="password" autoComplete="new-password" placeholder="Оставьте пустым, чтобы не менять" value={secrets.bot_token} onChange={(e) => setSecrets((s) => ({ ...s, bot_token: e.target.value }))} /></Field>
             <Field label="Chat ID для логов"><TextInput value={telegram.chat_id || ""} onChange={(e) => setTelegram((s) => ({ ...s, chat_id: e.target.value }))} /></Field>
@@ -120,7 +130,7 @@ export default function Settings() {
             <BrandButton variant="primary" disabled={saving} onClick={saveTelegram}><Save className="h-4 w-4" /> Сохранить подключение</BrandButton>
             <BrandButton variant="secondary" disabled={testing || saving} onClick={testLogBot}>{testing ? "Проверяем…" : "Проверить отправку логов"}</BrandButton>
           </div>
-          <p className="text-xs text-muted-foreground">Проверка отправляет только одно тестовое сообщение. Для проверки новых Bot Token и Chat ID сначала сохраните их. Автоматическая пересылка событий в Telegram пока не включена.</p>
+          <p className="text-xs text-muted-foreground">API ID/Hash нужны для авторизации сессий. Проверка бота логов отправляет одно тестовое сообщение (сначала сохраните Bot Token и Chat ID).</p>
         </div>}
         {SECTIONS.map((sec) => (
           <div key={sec.key} className="rounded-xl border border-border bg-card p-5">

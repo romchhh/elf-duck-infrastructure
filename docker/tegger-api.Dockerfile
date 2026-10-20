@@ -16,11 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY tegger/tegger-tg/ ./
 COPY docker/tegger-api-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh \
-  && mkdir -p /data/data /data/sessions /run/tegger \
-  && : > /run/tegger/admin.hash
+  && mkdir -p /data/data /data/sessions
 
 EXPOSE 8000
 
+# Healthcheck also defined in docker-compose.yml
 HEALTHCHECK --interval=10s --timeout=5s --retries=12 --start-period=40s \
   CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
 

@@ -10,11 +10,11 @@ import socks
 from telethon import TelegramClient
 
 from config import (
-    API_ID,
-    API_HASH,
+    DATA_DIR,
     SESSIONS_DIR,
     SENDER_PROXIES,
 )
+from runtime_telegram import get_api_credentials
 
 
 def _parse_socks5_proxy(
@@ -142,14 +142,41 @@ def create_client(
             sender_name,
             "",
         )
+        if not proxy_url:
+            # UI-added accounts store proxy in ui_added_accounts.json
+            try:
+                import json
+                from pathlib import Path
+
+                added_path = Path(DATA_DIR) / "ui_added_accounts.json"
+                if added_path.is_file():
+                    items = json.loads(added_path.read_text(encoding="utf-8"))
+                    if isinstance(items, list):
+                        match = next(
+                            (
+                                item
+                                for item in items
+                                if isinstance(item, dict)
+                                and item.get("id") == sender_name
+                            ),
+                            None,
+                        )
+                        if match:
+                            proxy_url = str(match.get("proxy") or "")
+            except (OSError, ValueError, TypeError):
+                pass
 
     proxy = _parse_socks5_proxy(
         proxy_url
     )
 
+    api_id, api_hash = get_api_credentials(
+        require_configured=True,
+    )
+
     return TelegramClient(
         str(session_path),
-        API_ID,
-        API_HASH,
+        api_id,
+        api_hash,
         proxy=proxy,
     )

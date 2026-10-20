@@ -9,11 +9,12 @@
 | **3002** | CRM |
 | **3003** | Admin-бот (без HTTP; лише процес у мережі Docker) |
 | **3004** | MongoDB (`mongodb://localhost:3004/elfduck` з хоста) |
-| **3005** | Tegger UI (`/api` → внутрішній `tegger-api`) — profile `tegger` |
-| **3006** | Tegger API (debug/health: `/api/health`) — profile `tegger` |
+| **3005** | Tegger UI (`/api` → внутрішній `tegger-api`) |
+| **3006** | Tegger API (debug/health: `/api/health`) |
 
-Tegger **вимкнений за замовчуванням**. Увімкнути: `docker compose --profile tegger up -d`.  
-Адмін: `TEGGER_ADMIN_USERNAME` + `TEGGER_ADMIN_PASSWORD` у `.env`, або хеш у `docker/tegger-admin.hash` (не в `.env` — Compose ламає `$`).
+Tegger стартує з `docker compose up -d`. Адмін: `TEGGER_ADMIN_USERNAME` + `TEGGER_ADMIN_PASSWORD` у `.env`.  
+Telegram API ID/Hash і акаунти — лише в UI Tegger (Настройки / Аккаунты).  
+Якщо раніше був помилковий mount: `rm -rf docker/tegger-admin.hash`
 
 Локальний dev **без Docker**: ті самі порти — `vite` у shop (3001) і CRM (3002), backend `PORT=3000`.
 

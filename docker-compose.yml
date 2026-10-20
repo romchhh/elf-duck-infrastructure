@@ -4,8 +4,8 @@
 #   3002 CRM
 #   3003 admin-бот (процес без HTTP; порт зарезервовано для health/debug за потреби)
 #   3004 MongoDB (мапінг 3004 → 27017)
-#   3005 Tegger UI (+ /api → tegger-api) — profile `tegger` (off by default):
-#       docker compose --profile tegger up -d
+#   3005 Tegger UI (+ /api → tegger-api)
+#   3006 Tegger API (host debug)
 
 name: elf-duck
 
@@ -76,9 +76,7 @@ services:
     depends_on:
       - api
 
-  # Disabled by default — enable with: docker compose --profile tegger up -d
   tegger-api:
-    profiles: ["tegger"]
     build:
       context: .
       dockerfile: docker/tegger-api.Dockerfile
@@ -91,28 +89,27 @@ services:
       FRONTEND_ORIGIN: ${TEGGER_FRONTEND_ORIGIN:-https://tegger.telebots.site}
       TEGGER_BOOTSTRAP: ${TEGGER_BOOTSTRAP:-true}
       TEGGER_COOKIE_SECURE: ${TEGGER_COOKIE_SECURE:-true}
-      # Telegram creds — keep empty-safe for bootstrap boot
-      API_ID: ${TEGGER_API_ID:-0}
-      API_HASH: ${TEGGER_API_HASH:-bootstrap}
-      SENDERS: ${TEGGER_SENDERS:-sender_1}
+      # Telegram API ID/Hash/accounts — only via Tegger UI (not .env)
       DRY_RUN: ${TEGGER_DRY_RUN:-true}
-      TEMPLATE_STORY_URL_SENDER_1: ${TEGGER_TEMPLATE_STORY_URL_SENDER_1:-}
       TEGGER_ADMIN_USERNAME: ${TEGGER_ADMIN_USERNAME:-admin}
-      # Plaintext OK in .env (no `$`). Argon2 hash must NOT go through Compose ${...}.
+      # Prefer plaintext password — Compose mangles `$` in argon2 hashes from .env.
+      # Optional: TEGGER_ADMIN_PASSWORD_HASH_B64 (base64 of argon2 string, no `$`).
       TEGGER_ADMIN_PASSWORD: ${TEGGER_ADMIN_PASSWORD:-}
-      TEGGER_ADMIN_PASSWORD_HASH_FILE: /run/tegger/admin.hash
+      TEGGER_ADMIN_PASSWORD_HASH_B64: ${TEGGER_ADMIN_PASSWORD_HASH_B64:-}
       LOG_BOT_TOKEN: ${TEGGER_LOG_BOT_TOKEN:-}
       LOG_CHAT_ID: ${TEGGER_LOG_CHAT_ID:-}
     volumes:
       - tegger_data:/data
-      # File mount avoids Compose `$` interpolation that corrupts argon2 hashes
-      - ./docker/tegger-admin.hash:/run/tegger/admin.hash:ro
-    # Host debug / health: curl http://127.0.0.1:3006/api/health
     ports:
       - "3006:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
 
   tegger:
-    profiles: ["tegger"]
     build:
       context: .
       dockerfile: docker/tegger.Dockerfile

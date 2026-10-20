@@ -1,65 +1,36 @@
 # Tegger у Docker (ELF DUCK)
 
-Сервіси в кореневому `docker-compose.yml`:
-
 | Сервіс | Роль | Порт |
 |--------|------|------|
-| `tegger-api` | FastAPI / Telethon | внутрішній `:8000` |
-| `tegger` | UI (nginx) + proxy `/api` → `tegger-api` | **3005** → host |
+| `tegger-api` | FastAPI / Telethon | **3006** + внутрішній `:8000` |
+| `tegger` | UI (nginx) + `/api` → `tegger-api` | **3005** |
 
-Публічний URL: **https://tegger.telebots.site** (nginx на VPS → `127.0.0.1:3005`).
+Публічний URL: **https://tegger.telebots.site**.
 
 ## Запуск
 
 ```bash
-# з кореня elf-duck-shop, після заповнення TEGGER_* у .env
-git pull
-docker compose build tegger-api tegger
-docker compose up -d tegger-api tegger
-curl -s http://localhost:3005/api/health
+rm -rf docker/tegger-admin.hash   # якщо лишилась директорія від старого mount
+docker compose up -d --build tegger-api tegger
+curl -sS http://127.0.0.1:3006/api/health
 ```
 
-Якщо `npm install` падав з `edgesOut` — у репо вже є `tegger_ui/package-lock.json`, Dockerfile використовує `npm ci --legacy-peer-deps`.
-
-CRM отримує посилання через `VITE_TEGGER_URL` (кнопка в «Клиенты» + пункт меню «Tegger»).
-
-## Обовʼязкові змінні в кореневому `.env`
+## .env (лише адмін-панель)
 
 ```env
-TEGGER_API_ID=
-TEGGER_API_HASH=
-TEGGER_SENDERS=sender_1
 TEGGER_ADMIN_USERNAME=admin
-TEGGER_ADMIN_PASSWORD_HASH=
+TEGGER_ADMIN_PASSWORD=your-strong-password
+TEGGER_BOOTSTRAP=true
 TEGGER_FRONTEND_ORIGIN=https://tegger.telebots.site
 TEGGER_COOKIE_SECURE=true
 TEGGER_DRY_RUN=true
-# перший старт без Telegram credentials:
-# TEGGER_BOOTSTRAP=true
 ```
 
-Хеш пароля:
+**Не потрібні в .env:** `API_ID`, `API_HASH`, `SENDERS` — їх задають у UI.
 
-```bash
-python3 -c 'from argon2 import PasswordHasher; import getpass; print(PasswordHasher().hash(getpass.getpass()))'
-```
+## Після входу в Tegger Admin
 
-Адмін-логін (Compose-safe):
+1. **Настройки** → Telegram API ID + API Hash ([my.telegram.org](https://my.telegram.org)) → Сохранить  
+2. **Аккаунты** → добавить через «Авторизация Telegram» (код/2FA) или импорт `.session`
 
-1. **`TEGGER_ADMIN_USERNAME` + `TEGGER_ADMIN_PASSWORD`** у кореневому `.env` (plaintext, без `$`), або
-2. однорядковий argon2-хеш у **`docker/tegger-admin.hash`** (монтується в контейнер; не клади хеш у `.env` — Compose з’їдає `$`).
-
-Якщо логін дає **502** — `tegger-api` не живий (UI на 3005 є, `/api` ні). На VPS:
-
-```bash
-# хеш-файл має існувати (можна порожній, якщо є TEGGER_ADMIN_PASSWORD)
-test -f docker/tegger-admin.hash || cp docker/tegger-admin.hash.example docker/tegger-admin.hash
-
-docker compose up -d --build --force-recreate tegger-api tegger
-docker compose ps tegger tegger-api
-docker compose logs --tail=80 tegger-api
-curl -sS http://127.0.0.1:3006/api/health
-curl -sS http://127.0.0.1:3005/api/health
-```
-
-Дані (сесії, sqlite) — volume `tegger_data` (`RUNTIME_DIR=/data`).
+Данные (сессии, sqlite, `ui_telegram_config.json`) — volume `tegger_data`.

@@ -22,10 +22,7 @@ from telethon.tl.functions.messages import (
     CheckChatInviteRequest,
 )
 
-from config import (
-    API_ID,
-    API_HASH,
-)
+from runtime_telegram import get_api_credentials
 
 
 # ============================================================
@@ -175,11 +172,17 @@ SESSION_PATH = (
     / PARSER_SESSION
 )
 
-client = TelegramClient(
-    str(SESSION_PATH),
-    API_ID,
-    API_HASH,
-)
+def _build_client():
+    api_id, api_hash = get_api_credentials(require_configured=True)
+    return TelegramClient(
+        str(SESSION_PATH),
+        api_id,
+        api_hash,
+    )
+
+
+# Lazily replaced in main() once credentials exist in Tegger Settings
+client = None
 
 
 # ============================================================
@@ -471,6 +474,9 @@ def passes_three_way_filter(
 # ============================================================
 
 async def main():
+    global client
+    client = _build_client()
+
     print()
     print("=" * 70)
     print("TEGGER-TG — CHAT PARSER")
@@ -1122,7 +1128,7 @@ async def run():
         await main()
 
     finally:
-        if client.is_connected():
+        if client is not None and client.is_connected():
             await client.disconnect()
 
 
