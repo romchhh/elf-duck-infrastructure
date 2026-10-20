@@ -7,6 +7,18 @@ export function normalizePushUsername(value) {
     .replace(/^@/, "");
 }
 
+/** Список @username / telegramId з textarea (кома, пробіл, новий рядок). */
+export function parsePushAudienceTokens(raw) {
+  return [
+    ...new Set(
+      String(raw || "")
+        .split(/[\s,;]+/)
+        .map((part) => normalizePushUsername(part).toLowerCase())
+        .filter(Boolean)
+    ),
+  ];
+}
+
 export function getPushUserDisplayName(user) {
   const fullName = [
     user?.firstName || "",

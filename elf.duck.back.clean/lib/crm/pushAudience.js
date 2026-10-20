@@ -8,7 +8,7 @@ import {
 import { loadSalesHistory } from "./sales.js";
 import {
   getPushUserDisplayName,
-  normalizePushUsername,
+  parsePushAudienceTokens,
   getPushLocationKey,
 } from "./pushText.js";
 import { isCashbackExpiringSoon } from "./cashbackExpiring.js";
@@ -21,6 +21,114 @@ let salesStatsCache = {
   statsByUser: null,
   productByKey: null,
 };
+
+async function loadSalesStatsBundle(range) {
+  const toMs = range?.to ? new Date(range.to).getTime() : 0;
+  const cacheHit =
+    salesStatsCache.statsByUser &&
+    salesStatsCache.productByKey &&
+    salesStatsCache.toMs === toMs &&
+    salesStatsCache.expiresAt > Date.now();
+
+  if (cacheHit) {
+    return {
+      statsByUser: salesStatsCache.statsByUser,
+      productByKey: salesStatsCache.productByKey,
+    };
+  }
+
+  const [salesHistory, products] = await Promise.all([
+    loadSalesHistory(range.to, { slimItems: true }),
+    Product.find({ isActive: { $ne: false } })
+      .select({
+        productKey: 1,
+        categoryKey: 1,
+        title1: 1,
+        title2: 1,
+      })
+      .lean(),
+  ]);
+
+  const productByKey = new Map(
+    products.map((product) => [
+      String(product?.productKey || ""),
+      product,
+    ])
+  );
+
+  const statsByUser = new Map();
+
+  for (const order of salesHistory) {
+    const telegramId = String(order?.userTelegramId || "").trim();
+    if (!telegramId) continue;
+
+    if (!statsByUser.has(telegramId)) {
+      statsByUser.set(telegramId, {
+        purchases: 0,
+        revenue: 0,
+        firstSaleAt: null,
+        lastSaleAt: null,
+        categoryKeys: new Set(),
+        locationKeys: new Set(),
+        productKeys: new Set(),
+        productQtyByKey: new Map(),
+      });
+    }
+
+    const stats = statsByUser.get(telegramId);
+    const saleDate = new Date(order?.crmSaleDate);
+
+    stats.purchases += 1;
+    stats.revenue += Number(order?.totalZl || 0);
+
+    if (!stats.firstSaleAt || saleDate < stats.firstSaleAt) {
+      stats.firstSaleAt = saleDate;
+    }
+
+    if (!stats.lastSaleAt || saleDate > stats.lastSaleAt) {
+      stats.lastSaleAt = saleDate;
+    }
+
+    const locationKey = getPushLocationKey(order);
+    if (locationKey) {
+      stats.locationKeys.add(locationKey);
+    }
+
+    for (const item of order?.items || []) {
+      const productKey = String(item?.productKey || "").trim();
+      if (!productKey) continue;
+
+      stats.productKeys.add(productKey);
+
+      const itemQty = (item?.flavors || []).reduce(
+        (sum, flavor) => sum + Number(flavor?.qty || 0),
+        0
+      );
+
+      stats.productQtyByKey.set(
+        productKey,
+        Number(stats.productQtyByKey.get(productKey) || 0) + itemQty
+      );
+
+      const categoryKey = String(
+        productByKey.get(productKey)?.categoryKey || ""
+      ).trim();
+
+      if (categoryKey) {
+        stats.categoryKeys.add(categoryKey);
+      }
+    }
+  }
+
+  salesStatsCache = {
+    expiresAt: Date.now() + SALES_STATS_CACHE_TTL_MS,
+    toMs,
+    statsByUser,
+    productByKey,
+  };
+
+  return { statsByUser, productByKey };
+}
 
 export async function buildPushAudiencePreview({
   range,
@@ -35,122 +143,66 @@ export async function buildPushAudiencePreview({
   cashbackExpiringSoon = false,
   includeTelegramIds = false,
 }) {
+  const audienceTokens = parsePushAudienceTokens(telegram);
+  const audienceTokenSet = new Set(audienceTokens);
 
-  const toMs = range?.to ? new Date(range.to).getTime() : 0;
-  const cacheHit =
-    salesStatsCache.statsByUser &&
-    salesStatsCache.productByKey &&
-    salesStatsCache.toMs === toMs &&
-    salesStatsCache.expiresAt > Date.now();
+  const normalizedAudience = String(audience || "all")
+    .trim()
+    .toLowerCase();
+
+  const normalizedStatuses = new Set(
+    (Array.isArray(statuses) ? statuses : [])
+      .map((value) => String(value || "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  const normalizedCategoryKeys = new Set(
+    (Array.isArray(categoryKeys) ? categoryKeys : [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  );
+
+  const normalizedLocationKeys = new Set(
+    (Array.isArray(locationKeys) ? locationKeys : [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+  );
+
+  const normalizedFavProduct = String(favProduct || "")
+    .trim()
+    .toLowerCase();
+
+  const safeMinCheck = Math.max(0, Number(minCheck || 0));
+  const safeMinCashback = Math.max(0, Number(minCashback || 0));
+
+  const needsSalesStats =
+    normalizedAudience === "customers" ||
+    normalizedAudience === "favorites" ||
+    normalizedAudience === "leads" ||
+    normalizedStatuses.size > 0 ||
+    normalizedCategoryKeys.size > 0 ||
+    normalizedLocationKeys.size > 0 ||
+    safeMinCheck > 0 ||
+    safeMinCashback > 0 ||
+    Boolean(normalizedFavProduct) ||
+    cashbackExpiringSoon;
+
+  const needsFavorites = normalizedAudience === "favorites";
 
   const [favoriteCustomerRows, cachedBundle] = await Promise.all([
-    mongoose.connection
-      .collection(CRM_FAVORITE_CUSTOMERS_COLLECTION)
-      .find({ isFavorite: true })
-      .project({ telegramId: 1 })
-      .toArray(),
-    cacheHit
-      ? Promise.resolve({
-          statsByUser: salesStatsCache.statsByUser,
-          productByKey: salesStatsCache.productByKey,
-        })
-      : (async () => {
-          const [salesHistory, products] = await Promise.all([
-            loadSalesHistory(range.to, { slimItems: true }),
-            Product.find({ isActive: { $ne: false } })
-              .select({
-                productKey: 1,
-                categoryKey: 1,
-                title1: 1,
-                title2: 1,
-              })
-              .lean(),
-          ]);
-
-          const productByKey = new Map(
-            products.map((product) => [
-              String(product?.productKey || ""),
-              product,
-            ])
-          );
-
-          const statsByUser = new Map();
-
-          for (const order of salesHistory) {
-            const telegramId = String(
-              order?.userTelegramId || ""
-            ).trim();
-
-            if (!telegramId) continue;
-
-            if (!statsByUser.has(telegramId)) {
-              statsByUser.set(telegramId, {
-                purchases: 0,
-                revenue: 0,
-                firstSaleAt: null,
-                lastSaleAt: null,
-                categoryKeys: new Set(),
-                locationKeys: new Set(),
-                productKeys: new Set(),
-                productQtyByKey: new Map(),
-              });
-            }
-
-            const stats = statsByUser.get(telegramId);
-            const saleDate = new Date(order?.crmSaleDate);
-
-            stats.purchases += 1;
-            stats.revenue += Number(order?.totalZl || 0);
-
-            if (!stats.firstSaleAt || saleDate < stats.firstSaleAt) {
-              stats.firstSaleAt = saleDate;
-            }
-
-            if (!stats.lastSaleAt || saleDate > stats.lastSaleAt) {
-              stats.lastSaleAt = saleDate;
-            }
-
-            const locationKey = getPushLocationKey(order);
-            if (locationKey) {
-              stats.locationKeys.add(locationKey);
-            }
-
-            for (const item of order?.items || []) {
-              const productKey = String(item?.productKey || "").trim();
-              if (!productKey) continue;
-
-              stats.productKeys.add(productKey);
-
-              const itemQty = (item?.flavors || []).reduce(
-                (sum, flavor) => sum + Number(flavor?.qty || 0),
-                0
-              );
-
-              stats.productQtyByKey.set(
-                productKey,
-                Number(stats.productQtyByKey.get(productKey) || 0) +
-                  itemQty
-              );
-
-              const categoryKey = String(
-                productByKey.get(productKey)?.categoryKey || ""
-              ).trim();
-
-              if (categoryKey) {
-                stats.categoryKeys.add(categoryKey);
-              }
-            }
-          }
-
-          salesStatsCache = {
-            expiresAt: Date.now() + SALES_STATS_CACHE_TTL_MS,
-            toMs,
-            statsByUser,
-            productByKey,
-          };
-
-          return { statsByUser, productByKey };
-        })(),
+    needsFavorites
+      ? mongoose.connection
+          .collection(CRM_FAVORITE_CUSTOMERS_COLLECTION)
+          .find({ isFavorite: true })
+          .project({ telegramId: 1 })
+          .toArray()
+      : Promise.resolve([]),
+    needsSalesStats
+      ? loadSalesStatsBundle(range)
+      : Promise.resolve({
+          statsByUser: new Map(),
+          productByKey: new Map(),
+        }),
   ]);
 
   const { statsByUser, productByKey } = cachedBundle;
@@ -161,103 +213,7 @@ export async function buildPushAudiencePreview({
       .filter(Boolean)
   );
 
-  const normalizedAudience =
-    String(
-      audience || "all"
-    )
-      .trim()
-      .toLowerCase();
-
-  const normalizedStatuses =
-    new Set(
-      (
-        Array.isArray(
-          statuses
-        )
-          ? statuses
-          : []
-      )
-        .map(
-          (value) =>
-            String(
-              value || ""
-            )
-              .trim()
-              .toLowerCase()
-        )
-        .filter(Boolean)
-    );
-
-  const normalizedCategoryKeys =
-    new Set(
-      (
-        Array.isArray(
-          categoryKeys
-        )
-          ? categoryKeys
-          : []
-      )
-        .map(
-          (value) =>
-            String(
-              value || ""
-            ).trim()
-        )
-        .filter(Boolean)
-    );
-
-  const normalizedLocationKeys =
-    new Set(
-      (
-        Array.isArray(
-          locationKeys
-        )
-          ? locationKeys
-          : []
-      )
-        .map(
-          (value) =>
-            String(
-              value || ""
-            ).trim()
-        )
-        .filter(Boolean)
-    );
-
-  const normalizedTelegram =
-    normalizePushUsername(
-      telegram
-    ).toLowerCase();
-
-  const normalizedFavProduct =
-    String(
-      favProduct || ""
-    )
-      .trim()
-      .toLowerCase();
-
-  const safeMinCheck =
-    Math.max(
-      0,
-      Number(
-        minCheck || 0
-      )
-    );
-
-  const safeMinCashback =
-    Math.max(
-      0,
-      Number(
-        minCashback || 0
-      )
-    );
-
-  const pushUserQuery = User.find({
-    telegramId: {
-      $exists: true,
-      $ne: "",
-    },
-  }).select({
+  const userSelect = {
     telegramId: 1,
     username: 1,
     firstName: 1,
@@ -266,11 +222,42 @@ export async function buildPushAudiencePreview({
     cashbackBalance: 1,
     cashbackLedger: 1,
     referral: 1,
-  });
+  };
+
+  // Список @username / id — шукаємо напряму, без повного скану бази.
+  let candidateUsers;
+  if (audienceTokenSet.size > 0) {
+    const tokenList = [...audienceTokenSet];
+    candidateUsers = await User.find({
+      telegramId: { $exists: true, $ne: "" },
+      $or: [
+        { telegramId: { $in: tokenList } },
+        {
+          username: {
+            $regex: `^(${tokenList
+              .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+              .join("|")})$`,
+            $options: "i",
+          },
+        },
+      ],
+    })
+      .select(userSelect)
+      .lean();
+  } else {
+    candidateUsers = null;
+  }
+
+  const pushUserQuery = candidateUsers
+    ? null
+    : User.find({
+        telegramId: { $exists: true, $ne: "" },
+      }).select(userSelect);
 
   let matchedTotal = 0;
   const matchedSample = [];
   const matchedTelegramIds = [];
+  const matchedTokenHits = new Set();
 
   const userMatchesPushAudience = (user) => {
         const telegramId =
@@ -291,23 +278,17 @@ export async function buildPushAudiencePreview({
           ) || null;
 
         /*
-         * Конкретный Telegram.
+         * Список @username / telegramId (один або багато).
          */
-        if (
-          normalizedTelegram
-        ) {
-          const byUsername =
-            username.toLowerCase() ===
-            normalizedTelegram;
+        if (audienceTokenSet.size > 0) {
+          const uname = username.toLowerCase();
+          const tid = telegramId.toLowerCase();
+          const hitUsername = uname && audienceTokenSet.has(uname);
+          const hitId =
+            audienceTokenSet.has(telegramId) ||
+            audienceTokenSet.has(tid);
 
-          const byTelegramId =
-            telegramId ===
-            normalizedTelegram;
-
-          if (
-            !byUsername &&
-            !byTelegramId
-          ) {
+          if (!hitUsername && !hitId) {
             return false;
           }
         }
@@ -574,12 +555,24 @@ if (
         return true;
   };
 
-  for await (const user of pushUserQuery.lean().cursor()) {
+  const consumeUser = (user) => {
     if (!userMatchesPushAudience(user)) {
-      continue;
+      return;
     }
 
     matchedTotal += 1;
+
+    const telegramId = String(user?.telegramId || "").trim();
+    const username = String(user?.username || "").trim().toLowerCase();
+    if (username && audienceTokenSet.has(username)) {
+      matchedTokenHits.add(username);
+    }
+    if (telegramId) {
+      const tid = telegramId.toLowerCase();
+      if (audienceTokenSet.has(telegramId) || audienceTokenSet.has(tid)) {
+        matchedTokenHits.add(tid);
+      }
+    }
 
     if (matchedSample.length < 20) {
       matchedSample.push({
@@ -593,20 +586,39 @@ if (
       includeTelegramIds &&
       matchedTelegramIds.length < CRM_PUSH_AUDIENCE_ID_CAP
     ) {
-      const id = String(user?.telegramId || "").trim();
-      if (id) {
-        matchedTelegramIds.push(id);
+      if (telegramId) {
+        matchedTelegramIds.push(telegramId);
       }
+    }
+  };
+
+  if (candidateUsers) {
+    for (const user of candidateUsers) {
+      consumeUser(user);
+    }
+  } else {
+    for await (const user of pushUserQuery.lean().cursor()) {
+      consumeUser(user);
     }
   }
 
-return {
-  total: matchedTotal,
+  const missingUsernames = audienceTokens.filter((token) => {
+    if (matchedTokenHits.has(token)) return false;
+    // telegramId hit may store original casing
+    for (const hit of matchedTokenHits) {
+      if (String(hit).toLowerCase() === token) return false;
+    }
+    return true;
+  });
 
-  telegramIds: includeTelegramIds ? matchedTelegramIds : [],
-
-  audienceIdsTruncated:
-    includeTelegramIds &&
-    matchedTotal > matchedTelegramIds.length,
-};
+  return {
+    total: matchedTotal,
+    requestedUsernames: audienceTokens.length,
+    matchedUsernames: audienceTokens.length - missingUsernames.length,
+    missingUsernames,
+    sample: matchedSample,
+    telegramIds: includeTelegramIds ? matchedTelegramIds : [],
+    audienceIdsTruncated:
+      includeTelegramIds && matchedTotal > matchedTelegramIds.length,
+  };
 }

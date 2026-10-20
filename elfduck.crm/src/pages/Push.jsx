@@ -640,6 +640,15 @@ onSuccess: (data) => {
 
   const recipients = Number(audiencePreview?.total || 0);
   const audienceReady = Boolean(audiencePreview) && !audiencePreviewError;
+  const requestedUsernames = Number(
+    audiencePreview?.requestedUsernames || 0
+  );
+  const matchedUsernames = Number(
+    audiencePreview?.matchedUsernames || 0
+  );
+  const missingUsernames = Array.isArray(audiencePreview?.missingUsernames)
+    ? audiencePreview.missingUsernames
+    : [];
 
     useEffect(() => {
   return () => {
@@ -1734,14 +1743,21 @@ const confirmCreateTpl = () => {
                   )}
               </div>
 
-              <input
+              <textarea
                 value={telegram}
                 onChange={(e) =>
                   setTelegram(e.target.value)
                 }
-                placeholder="@telegram / клиент"
-                className="input-base mt-2"
+                rows={3}
+                placeholder={
+                  '@user1, @user2\nабо по одному в рядок — можна лише юзернейми'
+                }
+                className="input-base mt-2 resize-none"
               />
+              <p className="mt-1 text-[11px] text-muted-2">
+                Розсилка тільки по списку: встав @username (кома / новий рядок).
+                Інші фільтри тоді можна не чіпати.
+              </p>
             </Section>
 
             {audienceIsLeads && (
@@ -1903,6 +1919,40 @@ const confirmCreateTpl = () => {
                 все такие товары).
               </p>
             </Section>
+
+            <div className="rounded-xl border border-[hsl(255_100%_68%/0.25)] bg-[hsl(255_100%_68%/0.08)] px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] text-muted-foreground">
+                  Попадає в фільтри
+                </span>
+                <span className="text-[14px] font-semibold text-[hsl(255_100%_75%)]">
+                  {audiencePreviewError
+                    ? 'помилка'
+                    : audiencePreviewLoading && !audiencePreview
+                      ? '…'
+                      : num(recipients)}
+                </span>
+              </div>
+              {requestedUsernames > 0 ? (
+                <p className="mt-1 text-[11px] text-muted-2">
+                  Зі списку: {matchedUsernames} / {requestedUsernames}
+                  {missingUsernames.length > 0
+                    ? ` · не знайдено: ${missingUsernames
+                        .slice(0, 5)
+                        .map((u) => `@${u}`)
+                        .join(', ')}${
+                        missingUsernames.length > 5
+                          ? ` +${missingUsernames.length - 5}`
+                          : ''
+                      }`
+                    : ''}
+                </p>
+              ) : (
+                <p className="mt-1 text-[11px] text-muted-2">
+                  Оновлюється при зміні фільтрів
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
