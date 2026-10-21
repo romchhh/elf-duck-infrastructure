@@ -70,7 +70,7 @@ const GOOGLE_STATS_WEBHOOK_URL_INPOST = String(
 const CART_AUTO_CLEAR_AFTER_MINUTES = Number(process.env.CART_AUTO_CLEAR_AFTER_MINUTES || 10);
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000);
 
-import { bot, userBots } from "../botRegistry.js";
+import { bot, userBots, getActiveUserBots } from "../botRegistry.js";
 
 import * as __chunk00 from "./chunk00.js";
 import * as __chunk01 from "./chunk01.js";
@@ -81,6 +81,23 @@ import * as __chunk05 from "./chunk05.js";
 import * as __chunk06 from "./chunk06.js";
 import * as __chunk07 from "./chunk07.js";
 Object.assign(globalThis, { ...__chunk00, ...__chunk01, ...__chunk02, ...__chunk03, ...__chunk04, ...__chunk05, ...__chunk06, ...__chunk07 });
+
+const {
+  isExemptFromPaymentTimeoutAnnul,
+  annulOrderBecauseNoPaymentConfirm,
+  getCartStockContextId,
+} = __chunk07;
+
+function releaseOrderReservedStockSafe(order, options) {
+  const fn =
+    typeof globalThis.releaseOrderReservedStock === "function"
+      ? globalThis.releaseOrderReservedStock
+      : null;
+  if (!fn) {
+    throw new Error("releaseOrderReservedStock unavailable");
+  }
+  return fn(order, options);
+}
 
 const LIQUIDS_SMART_DISCOUNT_PER_ITEM = new Set([5, 10, 15]);
 /** Картриджі: ціна з сходинки (30→25/23/20), не бейдж SALE */
@@ -327,10 +344,16 @@ export async function processStaleCarts() {
 }
 
 export async function processOrdersWithoutPaymentConfirm() {
+  let annulled = 0;
+  let orphansReleased = 0;
+
   try {
-    const timeoutMinutes = Number(
+    const rawTimeout = Number(
       process.env.ORDER_PAYMENT_CONFIRM_TIMEOUT_MINUTES || 10
     );
+    const timeoutMinutes = Number.isFinite(rawTimeout) && rawTimeout > 0
+      ? rawTimeout
+      : 10;
 
     const now = Date.now();
 
@@ -410,13 +433,20 @@ export async function processOrdersWithoutPaymentConfirm() {
          * старое поведение сохраняется.
          */
         if (orderAgeMs >= timeoutMs) {
-          await annulOrderBecauseNoPaymentConfirm(
+          const annulResult = await annulOrderBecauseNoPaymentConfirm(
             order,
             {
               reason:
                 "NO_PAYMENT_CONFIRM_TIMEOUT",
             }
           );
+          if (annulResult?.ok) {
+            annulled += 1;
+            console.log("[PAYMENT TIMEOUT ANNUL]", {
+              orderNo: String(order?.orderNo || ""),
+              ageMin: Math.round(orderAgeMs / 60000),
+            });
+          }
 
           continue;
         }
@@ -666,11 +696,54 @@ export async function processOrdersWithoutPaymentConfirm() {
      * Після вибору способу оплати замовлення лишається у менеджера.
      * Повернення в асортимент: таймаут без способу оплати, відхилення або «заказ отменен».
      */
+
+    // Аннульовані, але резерв так і не зняли (збій release / рестарт mid-job)
+    const orphanAnnulled = await Order.find({
+      status: "annulled",
+      stockReservedAt: { $ne: null },
+      $and: [
+        {
+          $or: [
+            { stockReleasedAt: null },
+            { stockReleasedAt: { $exists: false } },
+          ],
+        },
+        {
+          $or: [
+            { stockCommittedAt: null },
+            { stockCommittedAt: { $exists: false } },
+          ],
+        },
+      ],
+    })
+      .sort({ createdAt: 1 })
+      .limit(40);
+
+    for (const orphan of orphanAnnulled) {
+      try {
+        const ok = await releaseOrderReservedStockSafe(orphan, { force: true });
+        if (!ok) continue;
+        orphan.stockReleasedAt = new Date();
+        await orphan.save();
+        orphansReleased += 1;
+        console.log("[PAYMENT TIMEOUT] released orphan annulled reserve", {
+          orderNo: String(orphan?.orderNo || ""),
+        });
+      } catch (orphanErr) {
+        console.error(
+          "processOrdersWithoutPaymentConfirm orphan release error:",
+          orphanErr
+        );
+      }
+    }
+
+    return { ok: true, annulled, orphansReleased };
   } catch (e) {
     console.error(
       "processOrdersWithoutPaymentConfirm error:",
       e
     );
+    return { ok: false, annulled, orphansReleased, error: String(e?.message || e) };
   }
 }
 

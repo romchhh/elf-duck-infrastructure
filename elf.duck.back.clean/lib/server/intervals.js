@@ -6,34 +6,64 @@ import {
 } from "../googleSheets/stockPullScheduler.js";
 import { processPickupShiftCloseReminders } from "./pickupShiftClose.js";
 import { processDueFirstPurchaseAutomations } from "../crm/pushAutomations.js";
+import helpers from "./helpers/index.js";
 
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(
   process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000
 );
 
+function resolveIntervalFn(name) {
+  const ctx = getServerContext() || {};
+  const fromCtx = ctx[name];
+  if (typeof fromCtx === "function") return fromCtx;
+  const fromHelpers = helpers?.[name];
+  if (typeof fromHelpers === "function") return fromHelpers;
+  return null;
+}
+
+function runIntervalJob(name) {
+  try {
+    const fn = resolveIntervalFn(name);
+    if (typeof fn !== "function") {
+      console.error(`[intervals] ${name} is not a function — skip`);
+      return;
+    }
+    Promise.resolve(fn())
+      .then((result) => {
+        if (
+          name === "processOrdersWithoutPaymentConfirm" &&
+          (result?.annulled > 0 || result?.orphansReleased > 0)
+        ) {
+          console.log(
+            `[intervals] payment-timeout: annulled=${result?.annulled || 0} orphansReleased=${result?.orphansReleased || 0}`
+          );
+        }
+      })
+      .catch((e) => {
+        console.error(`[intervals] ${name} error:`, e);
+      });
+  } catch (e) {
+    console.error(`[intervals] ${name} sync error:`, e);
+  }
+}
+
 export function startServerIntervals() {
   const ctx = getServerContext();
   Object.assign(globalThis, ctx);
 
-  const {
-    processCashbackLedgerExpirations,
-    processOrdersWithoutPaymentConfirm,
-    processStaleCarts,
-    processDailyPointStats,
-  } = ctx;
+  console.log("[intervals] starting server intervals (payment-timeout + stock jobs)");
 
   setInterval(() => {
-    processCashbackLedgerExpirations().catch((e) => {
-      console.error("cashback expiration interval error:", e);
-    });
+    runIntervalJob("processCashbackLedgerExpirations");
   }, 6 * 60 * 60 * 1000);
 
+  // Кожні 60с: неоплачені без способу оплати → зняти резерв (~10 хв)
   setInterval(() => {
-    processOrdersWithoutPaymentConfirm();
+    runIntervalJob("processOrdersWithoutPaymentConfirm");
   }, 60 * 1000);
 
   setInterval(() => {
-    processStaleCarts();
+    runIntervalJob("processStaleCarts");
   }, CART_AUTO_CLEAR_INTERVAL_MS);
 
   setInterval(() => {
@@ -43,24 +73,18 @@ export function startServerIntervals() {
   }, 60 * 1000);
 
   setTimeout(() => {
-    processStaleCarts();
+    runIntervalJob("processStaleCarts");
   }, 10 * 1000);
 
-  processOrdersWithoutPaymentConfirm();
+  runIntervalJob("processOrdersWithoutPaymentConfirm");
 
-  processCashbackLedgerExpirations().catch((e) => {
-    console.error("initial cashback expiration run error:", e);
-  });
+  runIntervalJob("processCashbackLedgerExpirations");
 
   setInterval(() => {
-    processDailyPointStats().catch((e) => {
-      console.error("daily point stats interval error:", e);
-    });
+    runIntervalJob("processDailyPointStats");
   }, 60 * 1000);
 
-  processDailyPointStats().catch((e) => {
-    console.error("daily point stats initial run error:", e);
-  });
+  runIntervalJob("processDailyPointStats");
 
   // Щоденно о 08:00 (Europe/Warsaw): всі склади Google Таблиця → Mongo
   setInterval(() => {

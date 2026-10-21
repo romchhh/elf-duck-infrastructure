@@ -1940,6 +1940,12 @@ body {
   border: 1px solid rgba(206,206,206,1);
 }
 
+/* Dropdown часу absolute — не роздуваємо картку (інакше ::before/банер тягнеться по висоті) */
+.pickupCheckoutCard:has(.pickupCheckoutArrivalWindow.open) {
+  overflow: visible;
+  z-index: 6;
+}
+
 .pickupCheckoutReadonly{
   position: relative;
   overflow: hidden;
@@ -2024,13 +2030,18 @@ body {
   background-image: url("../assets/pragaManagerBG.webp");
 }
 
-/* фон */
+/* фон — фіксуємо до «закритої» висоти картки, щоб не розтягувався з dropdown */
 .pickupCheckoutCard::before {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 240px;
   background-size: cover;
-  background-position: center;
+  background-position: center top;
+  background-repeat: no-repeat;
   opacity: 0.6;
   z-index: 0;
   pointer-events: none;
@@ -2071,11 +2082,12 @@ body {
   position: absolute;
   right: 0;
   bottom: 0;
-  height: 88%;
+  height: 160px;
   width: auto;
   z-index: 2;
   pointer-events: none;
-
+  object-fit: contain;
+  object-position: bottom right;
   max-height: 160px;
 }
 
@@ -2236,7 +2248,9 @@ body {
 }
 
 .pickupCheckoutArrivalWindow.open {
-  margin-bottom: 96px;
+  /* раніше margin-bottom: 96px розтягував картку і manager-банер */
+  position: relative;
+  z-index: 8;
 }
 
 .pickupCheckoutArrivalMain {
@@ -3056,10 +3070,15 @@ body {
   padding: 10px 18px 12px;
   border-radius: 14px;
 
-  background: rgba(255,255,255,0.18);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  background: rgba(40, 40, 48, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    0 10px 28px rgba(0, 0, 0, 0.35);
 
   z-index: 12;
+  max-height: min(240px, 42dvh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pickupTimeDropdownWindow {
