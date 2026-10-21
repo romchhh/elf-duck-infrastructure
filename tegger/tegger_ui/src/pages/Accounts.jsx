@@ -77,10 +77,10 @@ export default function Accounts() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" strokeWidth={1.5} />
         <input value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder="Поиск по имени или username"
-          className="h-10 w-full rounded-lg border border-input bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
+          className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary" />
       </div>
       {syncMessage && <div role="status" className="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{syncMessage}</div>}
-      {error && <div role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {error && <div role="alert" className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
       {loading && <div className="mb-4 text-sm text-muted-foreground">Загрузка аккаунтов...</div>}
       {!loading && !error && <div className="rounded-xl border border-border bg-card overflow-hidden">
         <table className="hidden md:table w-full text-sm">
@@ -88,7 +88,7 @@ export default function Accounts() {
             <Th>Аккаунт</Th><Th>Telegram</Th><Th>Статус</Th><Th>Сегодня</Th><Th>Session</Th><Th>Proxy</Th><Th>Story</Th><Th>Действия</Th>
           </tr></thead>
           <tbody className="divide-y divide-border">
-            {filtered.map((a) => <tr key={a.id} className="hover:bg-blue-50/40">
+            {filtered.map((a) => <tr key={a.id} className="hover:bg-primary/5">
               <Td><span className="font-medium">{a.name}</span></Td>
               <Td className="text-muted-foreground">{a.telegram || "—"}</Td>
               <Td><StatusBadge status={a.status} /></Td>

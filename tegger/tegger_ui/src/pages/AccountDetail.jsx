@@ -395,7 +395,7 @@ export default function AccountDetail() {
     return (
       <div
         role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
       >
         {error}
       </div>
@@ -431,7 +431,7 @@ export default function AccountDetail() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-6">
         <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-full bg-blue-50 ring-1 ring-primary/20 flex items-center justify-center text-primary font-bold">
+          <div className="h-11 w-11 rounded-full bg-primary/10 ring-1 ring-primary/20 flex items-center justify-center text-primary font-bold">
             {account.name?.[0]?.toUpperCase() || "S"}
           </div>
 
@@ -810,7 +810,7 @@ export default function AccountDetail() {
             {channelError && (
               <div
                 role="alert"
-                className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                className="mt-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
               >
                 {channelError}
               </div>
@@ -819,7 +819,7 @@ export default function AccountDetail() {
 
           {editing && (
             <div className="flex flex-col gap-3">
-              <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+              <div className="rounded-lg border border-primary/30 bg-primary/10 p-3 text-xs text-primary">
                 Имя, username, Bio и изображения применяются к Telegram после подтверждения. Канал создаётся и публикуется отдельно. Migration защищена от изменений.
               </div>
 
@@ -838,7 +838,7 @@ export default function AccountDetail() {
           {saveError && (
             <div
               role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
             >
               {saveError}
             </div>

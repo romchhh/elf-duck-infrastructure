@@ -99,7 +99,7 @@ export default function Settings() {
           <Save className="h-4 w-4" /> {saving ? "Сохранение…" : "Сохранить"}
         </BrandButton>
       </PageHeader>
-      {error && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {error && <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
       {message && <div role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{message}</div>}
       {data && <div className="space-y-5">
         <div className="rounded-xl border border-border bg-card p-5 text-sm">Режим сервера: <strong>{data.general.DRY_RUN ? "DRY RUN" : "LIVE"}</strong>. Режим и Telegram-конфигурация редактируются ниже; изменения режима требуют отдельного применения.</div>

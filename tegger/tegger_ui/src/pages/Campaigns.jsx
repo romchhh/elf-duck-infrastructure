@@ -88,7 +88,7 @@ export default function Campaigns() {
       {error && (
         <div
           role="alert"
-          className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
         >
           {error}
         </div>
@@ -133,7 +133,7 @@ export default function Campaigns() {
                   <tr
                     key={c.id}
                     onClick={() => (window.location.href = `/campaigns/${c.id}`)}
-                    className="hover:bg-blue-50/40 cursor-pointer transition"
+                    className="hover:bg-primary/5 cursor-pointer transition"
                   >
                     <Td><span className="font-medium text-foreground">{c.name}</span></Td>
                     <Td><StatusBadge status={c.status} /></Td>

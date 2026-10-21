@@ -83,33 +83,27 @@ function CampaignMobileRow({
           cols={3}
           items={[
             {
-              label:
-                'Получателей',
-
-              value:
-                num(
-                  r.recipients
-                ),
+              label: 'Дата',
+              value: (() => {
+                const raw = r.startedAt || r.createdAt || null;
+                if (!raw) return '—';
+                const date = new Date(raw);
+                if (!Number.isFinite(date.getTime())) return '—';
+                return date.toLocaleString('ru-RU', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+              })(),
             },
-
             {
-              label:
-                'Отправлено',
-
-              value:
-                num(
-                  r.sent
-                ),
+              label: 'Получателей',
+              value: num(r.recipients),
             },
-
             {
-              label:
-                'Покупки',
-
-              value:
-                num(
-                  r.purchases
-                ),
+              label: 'Доставлено',
+              value: num(r.sent),
             },
           ]}
         />
@@ -626,6 +620,7 @@ onSuccess: (data) => {
   const {
     data: audiencePreview,
     isFetching: audiencePreviewLoading,
+    isPlaceholderData: audiencePreviewPlaceholder,
     isError: audiencePreviewError,
     error: audiencePreviewErrorObj,
   } = useQuery({
@@ -635,7 +630,7 @@ onSuccess: (data) => {
       debouncedAudiencePayload,
     ],
     enabled: isAuthenticated,
-    staleTime: 15_000,
+    staleTime: 0,
     retry: 1,
     placeholderData: (previous) => previous,
     queryFn: ({ signal }) => {
@@ -663,7 +658,12 @@ onSuccess: (data) => {
   });
 
   const recipients = Number(audiencePreview?.total || 0);
-  const audienceReady = Boolean(audiencePreview) && !audiencePreviewError;
+  const audienceCountPending =
+    audiencePreviewLoading || audiencePreviewPlaceholder;
+  const audienceReady =
+    Boolean(audiencePreview) &&
+    !audiencePreviewError &&
+    !audienceCountPending;
   const audiencePreviewErrorLabel = (() => {
     if (!audiencePreviewError) return null;
     const msg = String(
@@ -1012,6 +1012,38 @@ if (error?.status === 401) {
     },
   });
 
+  const clearCampaignsMutation = useMutation({
+    mutationFn: () =>
+      crmFetch(`/crm/push/campaigns?${periodQuery}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({
+        queryKey: ['crm-push-campaigns'],
+      });
+      toast({
+        title: 'История очищена',
+        description: `Удалено записей: ${Number(data?.deletedCount || 0)}`,
+      });
+    },
+    onError: (error) => {
+      if (error?.status === 401) {
+        clearCrmSessionToken();
+        queryClient.setQueryData(['crm-auth-session'], {
+          ok: true,
+          authenticated: false,
+        });
+        setAuthModalOpen(true);
+        return;
+      }
+      toast({
+        title: 'Не удалось очистить историю',
+        description: error?.message || 'CLEAR_FAILED',
+        variant: 'destructive',
+      });
+    },
+  });
+
 const deleteTemplate =
   (template) => {
     const templateId =
@@ -1105,41 +1137,35 @@ const deleteTemplate =
         async (
           data
         ) => {
-          setCampPage(
-            1
-          );
+          setCampPage(1);
+          setBody('');
+          setInlineButtons([
+            { text: 'Открыть магазин', kind: 'web_app', path: '/' },
+          ]);
+          setActiveTpl(null);
+          setPhotoFileId('');
+          setPhotoUrl('');
+          setTemplatePhotoPreviewUrl('');
+          if (mediaPreviewUrl?.startsWith('blob:')) {
+            URL.revokeObjectURL(mediaPreviewUrl);
+          }
+          setMediaPreviewUrl('');
+          setMediaFile(null);
 
           await Promise.all([
-            queryClient
-              .invalidateQueries(
-                {
-                  queryKey: [
-                    'crm-push-campaigns',
-                  ],
-                }
-              ),
-
-            queryClient
-              .invalidateQueries(
-                {
-                  queryKey: [
-                    'crm-push-templates',
-                  ],
-                }
-              ),
+            queryClient.invalidateQueries({
+              queryKey: ['crm-push-campaigns'],
+            }),
+            queryClient.invalidateQueries({
+              queryKey: ['crm-push-templates'],
+            }),
           ]);
 
           toast({
-            title:
-              'Рассылка запущена',
-
-            description:
-              `Получателей: ${
-                data
-                  ?.campaign
-                  ?.recipients ??
-                recipients
-              }`,
+            title: 'Рассылка запущена',
+            description: `Получателей: ${
+              data?.campaign?.recipients ?? recipients
+            }. Форма очищена для следующей рассылки.`,
           });
         },
 
@@ -1294,6 +1320,14 @@ const deleteTemplate =
       }
 
       setMediaPreviewUrl(tplUrl);
+
+      toast({
+        title: 'Шаблон применён',
+        description:
+          template.name ||
+          template.title ||
+          'Текст и кнопки подставлены в форму рассылки',
+      });
     };
 
   /*
@@ -1513,6 +1547,43 @@ const confirmCreateTpl = () => {
 
     {
       key:
+        'sentAt',
+
+      header:
+        'Дата',
+
+      render: (r) => {
+        const raw =
+          r.startedAt ||
+          r.createdAt ||
+          null;
+        if (!raw) {
+          return (
+            <span className="text-muted-2">—</span>
+          );
+        }
+        const date = new Date(raw);
+        if (!Number.isFinite(date.getTime())) {
+          return (
+            <span className="text-muted-2">—</span>
+          );
+        }
+        return (
+          <span className="text-muted-foreground">
+            {date.toLocaleString('ru-RU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        );
+      },
+    },
+
+    {
+      key:
         'recipients',
 
       header:
@@ -1522,7 +1593,7 @@ const confirmCreateTpl = () => {
         'right',
 
       render: (r) => (
-        <span className="text-muted-foreground">
+        <span className="text-muted-foreground" title="Размер аудитории при запуске">
           {num(
             r.recipients
           )}
@@ -1535,13 +1606,13 @@ const confirmCreateTpl = () => {
         'sent',
 
       header:
-        'Отправлено',
+        'Доставлено',
 
       align:
         'right',
 
       render: (r) => (
-        <span className="text-muted-foreground">
+        <span className="text-muted-foreground" title="Успешно доставлено в Telegram">
           {num(
             r.sent
           )}
@@ -1643,7 +1714,7 @@ const confirmCreateTpl = () => {
 
               {audiencePreviewError
                 ? audiencePreviewErrorLabel || 'ошибка'
-                : audiencePreviewLoading && !audiencePreview
+                : audienceCountPending
                   ? '…'
                   : num(recipients)}{' '}
               получателей
@@ -1821,8 +1892,9 @@ const confirmCreateTpl = () => {
                   onClick={() =>
                     setCashbackExpiringSoon((value) => !value)
                   }
+                  title="Бонусы сгорят в течение 5 дней"
                 >
-                  Кешбэк скоро сгорит
+                  Кешбэк скоро сгорит (≤5 дн.)
                 </Chip>
               </div>
 
@@ -1866,7 +1938,7 @@ const confirmCreateTpl = () => {
                 <span className="text-[14px] font-semibold text-[hsl(255_100%_75%)]">
                   {audiencePreviewError
                     ? audiencePreviewErrorLabel || 'помилка'
-                    : audiencePreviewLoading && !audiencePreview
+                    : audienceCountPending
                       ? '…'
                       : num(recipients)}
                 </span>
@@ -2157,9 +2229,7 @@ const confirmCreateTpl = () => {
               {sendCampaignMutation.isPending
                 ? 'Запускаем…'
                 : `Отправить (${
-                    audiencePreviewLoading && !audiencePreview
-                      ? '…'
-                      : num(recipients)
+                    audienceCountPending ? '…' : num(recipients)
                   })`}
             </button>
           </div>
@@ -2171,18 +2241,16 @@ const confirmCreateTpl = () => {
       {/* TEMPLATES */}
 
       <div className="rounded-2xl surface-card p-2">
-        <div className="flex items-center gap-2 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-3">
           <Layers className="h-4 w-4 text-muted-foreground" />
-
           <span className="text-[13px] font-medium text-foreground">
             Шаблоны
           </span>
-
           <span className="text-[12px] text-muted-2">
-            ·{' '}
-            {
-              templates.length
-            }
+            · {templates.length}
+          </span>
+          <span className="text-[11px] text-muted-2">
+            — нажмите строку, чтобы применить
           </span>
         </div>
 
@@ -2200,7 +2268,7 @@ const confirmCreateTpl = () => {
             : 'border-border-soft bg-[hsl(232_26%_6%)] hover:border-[hsl(255_100%_68%/0.25)]'
         )}
       >
-        {/* Выбор шаблона */}
+        {/* Клік по рядку = застосувати шаблон до форми розсилки */}
         <button
           type="button"
           onClick={() =>
@@ -2208,6 +2276,7 @@ const confirmCreateTpl = () => {
               template
             )
           }
+          title="Нажмите, чтобы применить шаблон к форме рассылки"
           className="w-full p-3 pr-14 text-left"
         >
           <div className="flex items-center justify-between gap-3">
@@ -2217,12 +2286,10 @@ const confirmCreateTpl = () => {
                 'Шаблон'}
             </span>
 
-            <span className="shrink-0 text-[11px] text-[hsl(255_100%_72%)]">
-              {Number(
-                template.conversion ||
-                  0
-              )}
-              % конв.
+            <span className="shrink-0 text-[11px] font-medium text-[hsl(255_100%_72%)]">
+              {activeTpl === template.id
+                ? 'Выбран'
+                : 'Применить'}
             </span>
           </div>
 
@@ -2300,8 +2367,32 @@ const confirmCreateTpl = () => {
       {/* CAMPAIGNS */}
 
       <div className="rounded-2xl surface-card p-2">
-        <div className="px-4 py-3 text-[13px] font-medium text-foreground">
-          Эффективность рассылок
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+          <div className="text-[13px] font-medium text-foreground">
+            Эффективность рассылок
+          </div>
+          <button
+            type="button"
+            disabled={
+              !campaigns.length ||
+              clearCampaignsMutation.isPending
+            }
+            onClick={() => {
+              if (
+                !window.confirm(
+                  'Очистить историю эффективности рассылок? Это удалит записи кампаний из аналитики.'
+                )
+              ) {
+                return;
+              }
+              clearCampaignsMutation.mutate();
+            }}
+            className="rounded-lg border border-border px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:border-[hsl(0_72%_58%/0.35)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {clearCampaignsMutation.isPending
+              ? 'Очищаем…'
+              : 'Очистить историю'}
+          </button>
         </div>
 
         <div className="hidden md:block">
@@ -2554,12 +2645,12 @@ function PushPromoCreator({ onCreated }) {
   const { data: promoListData, refetch: refetchPromos } = useQuery({
     queryKey: ['crm-promo-codes'],
     queryFn: () => crmFetch('/crm/promo-codes'),
-    enabled: open,
+    enabled: true,
     staleTime: 30_000,
   });
 
   const recentPromos = Array.isArray(promoListData?.promoCodes)
-    ? promoListData.promoCodes.slice(0, 8)
+    ? promoListData.promoCodes.slice(0, 12)
     : [];
 
   const createPromo = async () => {
@@ -2701,31 +2792,47 @@ function PushPromoCreator({ onCreated }) {
           >
             {loading ? 'Создаём…' : 'Сохранить промокод'}
           </button>
+        </div>
+      ) : null}
 
-          {recentPromos.length > 0 ? (
-            <div className="pt-1">
-              <p className="mb-1.5 text-[11px] text-muted-2">Недавние:</p>
-              <div className="flex flex-wrap gap-1.5">
-                {recentPromos.map((row) => (
-                  <button
-                    key={row.id || row.code}
-                    type="button"
-                    onClick={() => onCreated?.(row.code)}
-                    className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:text-foreground"
-                    title={
-                      row.note ||
-                      `${row.amountZl} zł` +
-                        (row.expiresAt
-                          ? ` · до ${new Date(row.expiresAt).toLocaleString('ru')}`
-                          : '')
-                    }
-                  >
+      {recentPromos.length > 0 ? (
+        <div className={open ? 'mt-3 pt-3 border-t border-border-soft' : 'mt-3'}>
+          <p className="mb-1.5 text-[11px] text-muted-2">
+            Созданные промокоды (использовано / лимит):
+          </p>
+          <div className="space-y-1.5">
+            {recentPromos.map((row) => {
+              const max = Number(row.maxActivations || 0);
+              const used = Number(row.activationsCount || 0);
+              const limitLabel = max > 0 ? `${used}/${max}` : `${used}/∞`;
+              return (
+                <button
+                  key={row.id || row.code}
+                  type="button"
+                  onClick={() => onCreated?.(row.code)}
+                  className="flex w-full items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:text-foreground"
+                  title={
+                    [
+                      `${row.amountZl} zł`,
+                      row.expiresAt
+                        ? `до ${new Date(row.expiresAt).toLocaleString('ru')}`
+                        : 'без срока',
+                      row.note || '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')
+                  }
+                >
+                  <span className="truncate font-medium text-foreground">
                     {row.code}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
+                  </span>
+                  <span className="shrink-0 text-muted-2">
+                    {row.amountZl} zł · {limitLabel}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : null}
     </div>

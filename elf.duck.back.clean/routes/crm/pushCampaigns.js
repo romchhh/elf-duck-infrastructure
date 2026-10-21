@@ -3,6 +3,7 @@ import {
   buildPushCampaignAnalytics,
   getPeriodRange,
   BroadcastCampaign,
+  requireCrmPushAdmin,
 } from "./deps.js";
 
 const router = express.Router();
@@ -301,6 +302,43 @@ router.get(
             error?.message ||
             "CRM_PUSH_CAMPAIGNS_FAILED",
         });
+    }
+  }
+);
+
+router.delete(
+  "/push/campaigns",
+  requireCrmPushAdmin,
+  async (req, res) => {
+    try {
+      const range = getPeriodRange(
+        req.query?.period || "all",
+        req.query?.from || "",
+        req.query?.to || ""
+      );
+
+      const filter =
+        range.key === "all"
+          ? {}
+          : {
+              createdAt: {
+                $gte: range.from,
+                $lt: range.to,
+              },
+            };
+
+      const result = await BroadcastCampaign.deleteMany(filter);
+
+      return res.json({
+        ok: true,
+        deletedCount: Number(result?.deletedCount || 0),
+      });
+    } catch (error) {
+      console.error("DELETE /crm/push/campaigns error:", error);
+      return res.status(500).json({
+        ok: false,
+        error: "CRM_PUSH_CAMPAIGNS_CLEAR_FAILED",
+      });
     }
   }
 );

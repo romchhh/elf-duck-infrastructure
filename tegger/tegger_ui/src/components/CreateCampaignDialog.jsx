@@ -147,7 +147,7 @@ export default function CreateCampaignDialog({
                   key={a.id}
                   className={cn(
                     "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm cursor-pointer hover:bg-muted",
-                    selected.includes(a.id) && "bg-blue-50"
+                    selected.includes(a.id) && "bg-primary/10"
                   )}
                 >
                   <button
@@ -178,7 +178,7 @@ export default function CreateCampaignDialog({
                 onChange={(e) => setPasteText(e.target.value)}
                 placeholder="@user1&#10;@user2&#10;@user3"
                 rows={5}
-                className="w-full rounded-lg border border-input bg-white px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
               />
             ) : (
               <label className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 py-8 cursor-pointer hover:bg-muted">
@@ -221,7 +221,7 @@ export default function CreateCampaignDialog({
         {error && (
           <div
             role="alert"
-            className="mx-5 mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            className="mx-5 mb-3 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
           >
             {error}
           </div>

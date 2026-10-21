@@ -8,8 +8,8 @@ export default function ModeBadge({ mode, className, compact = false }) {
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap",
         isLive
-          ? "bg-red-50 text-red-700 ring-1 ring-red-200"
-          : "bg-blue-50 text-primary ring-1 ring-primary/30",
+          ? "bg-destructive/10 text-destructive ring-1 ring-red-200"
+          : "bg-primary/10 text-primary ring-1 ring-primary/30",
         className
       )}
     >

@@ -171,7 +171,7 @@ export default function CampaignDetail() {
     return (
       <div
         role="alert"
-        className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
       >
         {error}
       </div>
@@ -368,7 +368,7 @@ export default function CampaignDetail() {
       {statusError && (
         <div
           role="alert"
-          className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
         >
           {statusError}
         </div>
@@ -467,7 +467,7 @@ function AccountsTab({ accounts }) {
           {accounts.map((account) => (
             <tr
               key={account.id}
-              className="hover:bg-blue-50/40 transition"
+              className="hover:bg-primary/5 transition"
             >
               <Td>
                 <Link
@@ -649,7 +649,7 @@ function TargetsTab({ campaignId, senderIds }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск по username"
-            className="h-11 w-full rounded-[14px] border border-input bg-white pl-10 pr-4 text-sm transition-colors hover:border-primary/40 focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
+            className="h-11 w-full rounded-[14px] border border-input bg-card pl-10 pr-4 text-sm transition-colors hover:border-primary/40 focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
           />
         </div>
       </div>
@@ -663,7 +663,7 @@ function TargetsTab({ campaignId, senderIds }) {
       {error && (
         <div
           role="alert"
-          className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          className="mb-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
         >
           {error}
         </div>

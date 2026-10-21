@@ -3,12 +3,12 @@ import { cn } from "@/lib/utils";
 
 const VARIANTS = {
   primary: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
-  secondary: "bg-white text-foreground border border-border hover:bg-muted",
+  secondary: "bg-card text-foreground border border-border hover:bg-muted",
   ghost: "bg-muted text-foreground hover:bg-surface",
-  danger: "bg-red-500 text-white hover:bg-red-600 shadow-sm",
-  dangerOutline: "bg-white text-red-600 border border-red-200 hover:bg-red-50",
+  danger: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-sm",
+  dangerOutline: "bg-card text-destructive border border-destructive/30 hover:bg-destructive/10",
   link: "text-primary hover:text-primary/80 px-0 py-0 h-auto",
-  outline: "bg-white text-primary border border-primary/30 hover:bg-blue-50",
+  outline: "bg-card text-primary border border-primary/30 hover:bg-primary/10",
 };
 
 const SIZES = {

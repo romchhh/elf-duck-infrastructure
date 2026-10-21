@@ -147,7 +147,7 @@ const [error, setError] = useState("");
       {error && (
         <div
           role="alert"
-          className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700"
+          className="mb-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
         >
           {error}
         </div>

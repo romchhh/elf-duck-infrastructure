@@ -9,7 +9,6 @@ import {
 } from '@tanstack/react-query';
 
 import DataTable from '@/components/shared/DataTable';
-import Sparkline from '@/components/shared/Sparkline';
 import Delta from '@/components/shared/Delta';
 import Pagination from '@/components/shared/Pagination';
 import KpiCard from '@/components/shared/KpiCard';
@@ -424,39 +423,25 @@ export default function Products() {
       header:
         'Динамика',
 
-      render:
-        (row) => (
-          <div className="flex items-center gap-2">
-            <div className="w-16">
-              <Sparkline
-                data={
-                  Array.isArray(
-                    row.spark
-                  )
-                    ? row.spark
-                    : []
-                }
-                color="hsl(255 100% 68%)"
-                height={22}
-              />
-            </div>
+      align:
+        'right',
 
-            {row.trend === null ||
-            row.trend ===
-              undefined ? (
-              <span className="text-muted-2">
-                —
-              </span>
-            ) : (
-              <Delta
-                value={
-                  row.trend
-                }
-                suffix="%"
-              />
-            )}
-          </div>
-        ),
+      render:
+        (row) =>
+          row.trend === null ||
+          row.trend ===
+            undefined ? (
+            <span className="text-muted-2">
+              —
+            </span>
+          ) : (
+            <Delta
+              value={
+                row.trend
+              }
+              suffix="%"
+            />
+          ),
     },
 
     {

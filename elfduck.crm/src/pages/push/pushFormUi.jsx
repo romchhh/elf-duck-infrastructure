@@ -12,10 +12,11 @@ export function Section({ label, children }) {
   );
 }
 
-export function Chip({ active, onClick, children }) {
+export function Chip({ active, onClick, children, title }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       className={cn(
         'rounded-full border px-3 py-1 text-[12px] transition-all',

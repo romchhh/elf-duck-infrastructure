@@ -195,6 +195,11 @@ export default function Customers() {
       const telegramId = String(result?.telegramId || '').trim();
       if (!telegramId) return;
       patchFavoriteInCache(telegramId, result?.isFavorite === true);
+      queryClient.invalidateQueries({ queryKey: ['crm-customers'] });
+    },
+
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['crm-customers'] });
     },
 
     onError: (error, variables) => {
@@ -548,21 +553,26 @@ const handleOpenInTegger = async () => {
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5 no-scrollbar">
-          {statusFilters.map((s) => (
-            <button
-              key={s.key}
-              onClick={() => setStatus(s.key)}
-              className={cn(
-                'shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-medium transition-all',
-                status === s.key
-                  ? 'bg-[hsl(255_100%_68%/0.14)] text-foreground shadow-[inset_0_0_0_1px_hsl(255_100%_68%/0.22)]'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              {s.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5 no-scrollbar">
+            {statusFilters.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => setStatus(s.key)}
+                className={cn(
+                  'shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] font-medium transition-all',
+                  status === s.key
+                    ? 'bg-[hsl(255_100%_68%/0.14)] text-foreground shadow-[inset_0_0_0_1px_hsl(255_100%_68%/0.22)]'
+                    : 'text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[12px] text-muted-2">
+            Выбрано: {formatNumber(total)}
+          </span>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <div className="relative w-full sm:w-64">

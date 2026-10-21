@@ -473,10 +473,10 @@ export default function Leads() {
               0 && (
               <table className="w-full min-w-[640px] table-fixed border-collapse text-[13px]">
                 <colgroup>
-                  <col className="w-[25%]" />
-                  <col className="w-[25%]" />
-                  <col className="w-[25%]" />
-                  <col className="w-[25%]" />
+                  <col className="w-[34%]" />
+                  <col className="w-[22%]" />
+                  <col className="w-[20%]" />
+                  <col className="w-[24%]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-border">
@@ -498,6 +498,11 @@ export default function Leads() {
                           active={sortKey === column.key}
                           direction={sortDirection}
                           onClick={() => toggleSort(column.key)}
+                          className={
+                            column.align === 'right'
+                              ? 'w-full justify-end'
+                              : ''
+                          }
                         />
                       </th>
                     ))}

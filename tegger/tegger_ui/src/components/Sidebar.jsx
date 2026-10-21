@@ -23,7 +23,7 @@ export default function Sidebar({ onNavigate }) {
   }, []);
 
   return (
-    <aside className="hidden lg:flex w-[220px] shrink-0 flex-col border-r border-border bg-white h-screen sticky top-0">
+    <aside className="hidden lg:flex w-[220px] shrink-0 flex-col border-r border-border bg-card h-screen sticky top-0">
       {/* Logo */}
       <div className="flex items-center gap-2 h-16 px-5 border-b border-border">
         <Asterisk className="h-5 w-5 text-primary" strokeWidth={2.5} />
@@ -42,7 +42,7 @@ export default function Sidebar({ onNavigate }) {
               cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
-                  ? "bg-blue-50 text-primary"
+                  ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )
             }
@@ -58,7 +58,7 @@ export default function Sidebar({ onNavigate }) {
             cn(
               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               isActive
-                ? "bg-blue-50 text-primary"
+                ? "bg-primary/10 text-primary"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )
           }
@@ -97,7 +97,7 @@ export function MobileTopBar() {
   }, []);
 
   return (
-    <div className="lg:hidden sticky top-0 z-30 flex items-center justify-between h-14 px-4 bg-white/95 backdrop-blur-sm border-b border-border">
+    <div className="lg:hidden sticky top-0 z-30 flex items-center justify-between h-14 px-4 bg-background/95 backdrop-blur-sm border-b border-border">
       <div className="flex items-center gap-2 min-w-0">
         <Asterisk className="h-5 w-5 text-primary shrink-0" strokeWidth={2.5} />
         <span className="text-base font-bold tracking-tight">Tegger</span>
@@ -112,7 +112,7 @@ export function MobileTopBar() {
           className={cn(
             "inline-flex h-11 w-11 items-center justify-center rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 active:bg-muted",
             onSettings
-              ? "bg-blue-50 text-primary"
+              ? "bg-primary/10 text-primary"
               : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
         >
@@ -125,7 +125,7 @@ export function MobileTopBar() {
 
 export function MobileNav() {
   return (
-    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-border pb-[env(safe-area-inset-bottom)]">
+    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-card border-t border-border pb-[env(safe-area-inset-bottom)]">
       <div className="grid grid-cols-4">
         {NAV.map((item) => (
           <NavLink

@@ -7,9 +7,9 @@ import { cn } from "@/lib/utils";
 
 const LEVEL_STYLES = {
   SUCCESS: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
-  ERROR: "bg-red-50 text-red-700 ring-1 ring-red-200",
+  ERROR: "bg-destructive/10 text-destructive ring-1 ring-red-200",
   WARNING: "bg-orange-50 text-orange-700 ring-1 ring-orange-200",
-  INFO: "bg-blue-50 text-primary ring-1 ring-primary/20",
+  INFO: "bg-primary/10 text-primary ring-1 ring-primary/20",
 };
 
 export default function Logs() {
@@ -49,7 +49,7 @@ export default function Logs() {
               onClick={() => setLevel(l)}
               className={cn(
                 "h-8 px-3 rounded-full text-xs font-medium transition-colors duration-150 whitespace-nowrap",
-                level === l ? "bg-white text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
+                level === l ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"
               )}
             >
               {l}
@@ -70,12 +70,12 @@ export default function Logs() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск"
-            className="h-11 w-full rounded-[14px] border border-input bg-white pl-10 pr-4 text-sm transition-colors hover:border-primary/40 focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
+            className="h-11 w-full rounded-[14px] border border-input bg-card pl-10 pr-4 text-sm transition-colors hover:border-primary/40 focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/20"
           />
         </div>
       </div>
 
-      {error && <div role="alert" className="mb-4 text-sm text-red-700">{error}</div>}
+      {error && <div role="alert" className="mb-4 text-sm text-destructive">{error}</div>}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <table className="hidden md:table w-full text-sm">
           <thead>

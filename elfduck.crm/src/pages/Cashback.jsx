@@ -47,6 +47,9 @@ const filters = [
   },
 ];
 
+/** Статус «Скоро сгорит» — бонусы сгорят в течение 5 дней. */
+const CASHBACK_EXPIRING_SOON_DAYS = 5;
+
 const periodMap = {
   Сегодня: 'today',
   Неделя: 'week',
@@ -1102,6 +1105,9 @@ export default function Cashback() {
 
           <span className="text-[12px] text-muted-2">
             Выбрано: {formatNumber(total)}
+            {filter === 'expiring'
+              ? ` · ≤ ${CASHBACK_EXPIRING_SOON_DAYS} дн. до сгорания`
+              : ''}
           </span>
         </div>
 

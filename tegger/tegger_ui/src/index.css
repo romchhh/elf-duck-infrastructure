@@ -4,41 +4,43 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 2%;
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 2%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 2%;
-    --primary: 212 95% 50%;
+    /* Dark theme — aligned with ELF DUCK CRM */
+    --background: 234 31% 4%;
+    --background-2: 232 28% 6%;
+    --foreground: 0 0% 96%;
+    --card: 232 26% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 232 26% 8%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 255 100% 68%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 18% 95%;
-    --secondary-foreground: 0 0% 2%;
-    --muted: 220 18% 97%;
-    --muted-foreground: 215 2% 42%;
-    --accent: 192 99% 93%;
-    --accent-foreground: 212 95% 40%;
-    --destructive: 0 72% 51%;
+    --secondary: 234 18% 13%;
+    --secondary-foreground: 0 0% 92%;
+    --muted: 230 16% 13%;
+    --muted-foreground: 228 12% 62%;
+    --accent: 255 100% 68%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 220 18% 93%;
-    --input: 220 18% 93%;
-    --ring: 212 95% 50%;
-    --section: 220 18% 97%;
-    --surface: 220 18% 95%;
-    --line-blue: 192 99% 93%;
+    --border: 234 18% 15%;
+    --input: 234 18% 15%;
+    --ring: 255 100% 68%;
+    --section: 232 28% 6%;
+    --surface: 232 26% 7%;
+    --line-blue: 255 100% 68%;
     --radius: 0.75rem;
     --font-heading: 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-body: 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 215 2% 42%;
-    --sidebar-primary: 212 95% 50%;
+    --sidebar-background: 234 31% 4%;
+    --sidebar-foreground: 228 12% 62%;
+    --sidebar-primary: 255 100% 68%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 192 99% 93%;
-    --sidebar-accent-foreground: 212 95% 40%;
-    --sidebar-border: 220 18% 93%;
-    --sidebar-ring: 212 95% 50%;
+    --sidebar-accent: 234 18% 13%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 234 18% 15%;
+    --sidebar-ring: 255 100% 68%;
   }
 }
 
@@ -59,17 +61,17 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(220 18% 90%);
+    background: hsl(234 18% 22%);
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(220 18% 85%);
+    background: hsl(234 18% 30%);
   }
 }
 
 @layer components {
   .brand-grid-bg {
-    background-image: radial-gradient(hsl(192 99% 93%) 1px, transparent 1px);
+    background-image: radial-gradient(hsl(255 100% 68% / 0.12) 1px, transparent 1px);
     background-size: 18px 18px;
   }
   .brand-eyebrow {

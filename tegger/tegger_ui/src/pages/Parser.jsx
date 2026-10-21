@@ -178,7 +178,7 @@ export default function Parser() {
             </div>
           </Section>
 
-          {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+          {error && <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
           {/* Action */}
           <div className="flex items-center gap-3">
             <BrandButton variant="primary" onClick={handleRun} disabled={!canRun}>
@@ -262,7 +262,7 @@ function Section({ title, children }) {
 
 function Stat({ label, value, accent }) {
   return (
-    <div className={cn("rounded-lg p-3", accent ? "bg-blue-50" : "bg-muted/50")}>
+    <div className={cn("rounded-lg p-3", accent ? "bg-primary/10" : "bg-muted/50")}>
       <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className={cn("text-xl font-bold tabular-nums mt-0.5", accent && "text-primary")}>
         {value.toLocaleString("ru-RU")}

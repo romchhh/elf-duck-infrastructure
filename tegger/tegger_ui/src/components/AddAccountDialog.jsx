@@ -139,7 +139,7 @@ export default function AddAccountDialog({ open, onClose, onCreated }) {
               </div>
             </div>
           )}
-          {error && <div role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+          {error && <div role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
           <p className="text-xs text-muted-foreground">Новый аккаунт не включается в Migration или worker автоматически. Код и пароль не записываются в журнал.</p>
         </div>
 
@@ -161,7 +161,7 @@ function MethodBtn({ active, onClick, icon: Icon, label }) {
     <button type="button" onClick={onClick}
       className={cn(
         "flex flex-col items-center gap-2 rounded-lg border p-4 text-sm font-medium transition",
-        active ? "border-primary bg-blue-50 text-primary" : "border-border text-muted-foreground hover:bg-muted"
+        active ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-muted"
       )}>
       <Icon className="h-5 w-5" strokeWidth={1.5} />
       {label}
