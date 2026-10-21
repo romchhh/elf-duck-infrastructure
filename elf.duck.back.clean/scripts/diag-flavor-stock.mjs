@@ -11,6 +11,7 @@ import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import PickupPoint from "../models/PickupPoint.js";
 import Cart from "../models/Cart.js";
+import Order from "../models/Order.js";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 dotenv.config({ path: path.join(backendRoot, ".env") });
@@ -74,6 +75,35 @@ for (const c of carts) {
   }
 }
 
+// Реальний резерв із відкритих замовлень (ще не released).
+const openOrders = await Order.find({
+  pickupPointId: point._id,
+  status: { $nin: ["canceled", "completed", "annulled"] },
+  stockReservedAt: { $ne: null },
+  $or: [{ stockReleasedAt: null }, { stockReleasedAt: { $exists: false } }],
+  items: {
+    $elemMatch: {
+      productKey,
+      flavors: { $elemMatch: { flavorKey } },
+    },
+  },
+})
+  .select({ status: 1, items: 1 })
+  .lean();
+
+let orderQty = 0;
+for (const o of openOrders) {
+  for (const it of o.items || []) {
+    if (it.productKey !== productKey) continue;
+    for (const fl of it.flavors || []) {
+      if (fl.flavorKey === flavorKey) orderQty += Number(fl.qty || 0);
+    }
+  }
+}
+
+const expectedReserved = cartQty + orderQty;
+const ghostReserve = reserved > expectedReserved;
+
 console.log({
   mongoDatabase: mongoose.connection.name,
   productKey,
@@ -82,18 +112,23 @@ console.log({
   point: point.key,
   totalQty: total,
   reservedQty: reserved,
+  expectedReserved,
   availableInMiniApp: available,
+  listedOnAssortment: stock?.listedOnAssortment !== false,
+  sheetLabel: stock?.sheetLabel || "",
   activeCartsWithFlavor: carts.length,
   qtyInThoseCarts: cartQty,
-  ghostReserve: reserved > cartQty,
+  openOrdersWithFlavor: openOrders.length,
+  qtyInOpenOrders: orderQty,
+  ghostReserve,
 });
 
-if (fixReserved && reserved > 0 && cartQty === 0) {
+if (fixReserved && ghostReserve) {
   await Product.updateOne(
     { productKey, "flavors.flavorKey": flavorKey },
     {
       $set: {
-        "flavors.$[f].stockByPickupPoint.$[s].reservedQty": 0,
+        "flavors.$[f].stockByPickupPoint.$[s].reservedQty": expectedReserved,
         "flavors.$[f].stockByPickupPoint.$[s].updatedAt": new Date(),
       },
     },
@@ -104,7 +139,11 @@ if (fixReserved && reserved > 0 && cartQty === 0) {
       ],
     }
   );
-  console.log("fixed: reservedQty=0 — потім: docker compose restart api");
+  console.log(
+    `fixed: reservedQty ${reserved} → ${expectedReserved} (carts+orders)`
+  );
+} else if (fixReserved && !ghostReserve) {
+  console.log("skip fix: reserved matches carts/orders");
 }
 
 if (total === 0) {

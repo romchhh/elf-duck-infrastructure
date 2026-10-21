@@ -440,6 +440,8 @@ const handleOpenInTegger = async () => {
     {
       key: 'name',
       header: 'Клиент',
+      align: 'left',
+      width: '28%',
       render: (r) => (
         <div className="flex items-center gap-2">
           <button
@@ -475,6 +477,8 @@ const handleOpenInTegger = async () => {
     {
       key: 'status',
       header: 'Статус',
+      align: 'left',
+      width: '12%',
       render: (r) => <Badge status={statusMap[r.status]} />,
     },
     {

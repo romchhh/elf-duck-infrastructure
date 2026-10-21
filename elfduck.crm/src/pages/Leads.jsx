@@ -501,7 +501,7 @@ export default function Leads() {
                           className={
                             column.align === 'right'
                               ? 'w-full justify-end'
-                              : ''
+                              : 'w-full justify-start'
                           }
                         />
                       </th>

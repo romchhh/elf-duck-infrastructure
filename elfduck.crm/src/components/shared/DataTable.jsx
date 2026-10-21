@@ -37,6 +37,11 @@ export default function DataTable({
                       active={sortKey === columnSortKey}
                       direction={sortDirection}
                       onClick={() => onSort(columnSortKey)}
+                      className={
+                        c.align === 'right'
+                          ? 'w-full justify-end'
+                          : 'w-full justify-start'
+                      }
                     />
                   ) : (
                     c.header

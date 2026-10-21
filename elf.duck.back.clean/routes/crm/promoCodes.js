@@ -2,16 +2,15 @@ import express from "express";
 import mongoose from "mongoose";
 import { requireCrmPushAdmin } from "./deps.js";
 import { PROMO_CODES_COLLECTION } from "../../lib/server/runtimeState.js";
+import {
+  normalizePromoCodeValue,
+  getPromoMaxActivationsPerUser,
+} from "../../lib/crm/promoLimits.js";
 
 const router = express.Router();
 
 function normalizePromoCode(value) {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "")
-    .replace(/[^A-Z0-9_-]/g, "")
-    .slice(0, 32);
+  return normalizePromoCodeValue(value);
 }
 
 function mapPromoCode(row) {
@@ -22,6 +21,7 @@ function mapPromoCode(row) {
     isActive: row?.isActive !== false,
     expiresAt: row?.expiresAt || null,
     maxActivations: Math.max(0, Number(row?.maxActivations || 0)),
+    maxActivationsPerUser: getPromoMaxActivationsPerUser(row),
     note: String(row?.note || ""),
     activationsCount: Number(row?.activationsCount || 0),
     createdAt: row?.createdAt || null,
@@ -68,6 +68,15 @@ router.post(
         0,
         Math.min(1_000_000, Number(req.body?.maxActivations || 0))
       );
+
+      const perUserRaw = req.body?.maxActivationsPerUser;
+      const maxActivationsPerUser =
+        perUserRaw === undefined || perUserRaw === null || perUserRaw === ""
+          ? 1
+          : Math.max(
+              0,
+              Math.min(1_000_000, Number(perUserRaw || 0))
+            );
 
       let expiresAt = null;
 
@@ -124,6 +133,7 @@ router.post(
               isActive: true,
               expiresAt,
               maxActivations,
+              maxActivationsPerUser,
               note,
               updatedAt: now,
             },
@@ -144,13 +154,57 @@ router.post(
 
       return res.json({
         ok: true,
-        promoCode: mapPromoCode(promoCode || { code, amountZl, expiresAt, maxActivations, note }),
+        promoCode: mapPromoCode(
+          promoCode || {
+            code,
+            amountZl,
+            expiresAt,
+            maxActivations,
+            maxActivationsPerUser,
+            note,
+          }
+        ),
       });
     } catch (error) {
       console.error("POST /crm/promo-codes error:", error);
       return res.status(500).json({
         ok: false,
         error: "PROMO_CODE_CREATE_FAILED",
+      });
+    }
+  }
+);
+
+router.delete(
+  "/promo-codes/:id",
+  requireCrmPushAdmin,
+  async (req, res) => {
+    try {
+      const id = String(req.params?.id || "").trim();
+      if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "INVALID_PROMO_CODE_ID",
+        });
+      }
+
+      const result = await mongoose.connection
+        .collection(PROMO_CODES_COLLECTION)
+        .deleteOne({ _id: new mongoose.Types.ObjectId(id) });
+
+      if (!result?.deletedCount) {
+        return res.status(404).json({
+          ok: false,
+          error: "PROMO_NOT_FOUND",
+        });
+      }
+
+      return res.json({ ok: true, deletedId: id });
+    } catch (error) {
+      console.error("DELETE /crm/promo-codes/:id error:", error);
+      return res.status(500).json({
+        ok: false,
+        error: "PROMO_CODE_DELETE_FAILED",
       });
     }
   }

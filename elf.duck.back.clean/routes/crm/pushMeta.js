@@ -92,7 +92,7 @@ router.get(
         audiences: [
           {
             key: "all",
-            label: "Все",
+            label: "Все (клиенты + лиды)",
           },
           {
             key: "customers",

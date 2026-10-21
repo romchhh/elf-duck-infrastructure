@@ -1,4 +1,5 @@
 import { bindApiGlobals } from "./bindApiGlobals.js";
+import { loadSmartPricingSettings } from "../../lib/crm/smartPricingSettings.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -286,8 +287,13 @@ app.put("/cart", async (req, res) => {
       }
     }
 
+  const smartPricingSettings = await loadSmartPricingSettings();
   const { repricedItems: smartPricedItems, smartPricingMeta } =
-    repriceCartItemsWithSmartPricing(cleanItemsBase, pricingProducts);
+    repriceCartItemsWithSmartPricing(
+      cleanItemsBase,
+      pricingProducts,
+      smartPricingSettings
+    );
 
   const referralFirstOrderDiscountEligibility =
     await getIsReferralFirstOrderDiscountEligible(telegramId, smartPricedItems);

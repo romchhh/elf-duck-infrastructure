@@ -1,4 +1,10 @@
 import { bindApiGlobals } from "./bindApiGlobals.js";
+import {
+  getPromoMaxActivations,
+  getPromoMaxActivationsPerUser,
+  isPromoGlobalLimitReached,
+  isPromoPerUserLimitReached,
+} from "../../lib/crm/promoLimits.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -1569,9 +1575,7 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
       return res.status(400).json({ ok: false, error: "PROMO_EXPIRED" });
     }
 
-    const maxActivations = Math.max(0, Number(promoCode?.maxActivations || 0));
-    const activationsCount = Number(promoCode?.activationsCount || 0);
-    if (maxActivations > 0 && activationsCount >= maxActivations) {
+    if (isPromoGlobalLimitReached(promoCode)) {
       return res.status(409).json({ ok: false, error: "PROMO_LIMIT_REACHED" });
     }
 
@@ -1598,6 +1602,8 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
 
     const now = new Date();
     const safeTelegramId = String(telegramId || "");
+    const maxPerUser = getPromoMaxActivationsPerUser(promoCode);
+    const maxGlobal = getPromoMaxActivations(promoCode);
 
     const existingUser = await User.collection.findOne(
       { telegramId: safeTelegramId },
@@ -1607,35 +1613,20 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
 
-    const alreadyUsedByUser = Array.isArray(existingUser.promoCodeActivations)
-      ? existingUser.promoCodeActivations.some(
-          (activation) => normalizePromoCode(activation?.code) === code
-        )
-      : false;
-
-    const alreadyUsedOnPromo = Array.isArray(promoCode?.activations)
-      ? promoCode.activations.some(
-          (activation) => String(activation?.telegramId || "") === safeTelegramId
-        )
-      : false;
-
-    const alreadyUsedOnOrder = await Order.exists({
-      userTelegramId: safeTelegramId,
-      "payment.promoCode": code,
-      "payment.promoDiscountZl": { $gt: 0 },
-    });
-
-    if (alreadyUsedByUser || alreadyUsedOnPromo || alreadyUsedOnOrder) {
+    if (isPromoPerUserLimitReached(existingUser, promoCode, safeTelegramId, code)) {
       return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
     }
 
+    const userFilter =
+      maxPerUser === 1
+        ? {
+            telegramId: safeTelegramId,
+            promoCodeActivations: { $not: { $elemMatch: { code } } },
+          }
+        : { telegramId: safeTelegramId };
+
     const updateResult = await User.collection.findOneAndUpdate(
-      {
-        telegramId: safeTelegramId,
-        promoCodeActivations: {
-          $not: { $elemMatch: { code } },
-        },
-      },
+      userFilter,
       {
         $push: {
           promoCodeActivations: {
@@ -1657,11 +1648,16 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
       return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
     }
 
+    const promoFilter = {
+      _id: promoCode._id,
+      ...(maxGlobal > 0 ? { activationsCount: { $lt: maxGlobal } } : {}),
+      ...(maxPerUser === 1
+        ? { "activations.telegramId": { $ne: safeTelegramId } }
+        : {}),
+    };
+
     const promoUpdate = await mongoose.connection.collection(PROMO_CODES_COLLECTION).updateOne(
-      {
-        _id: promoCode._id,
-        "activations.telegramId": { $ne: safeTelegramId },
-      },
+      promoFilter,
       {
         $inc: { activationsCount: 1 },
         $push: {
@@ -1689,7 +1685,11 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
           },
         }
       );
-      return res.status(409).json({ ok: false, error: "PROMO_ALREADY_USED", usedCode: code });
+      return res.status(409).json({
+        ok: false,
+        error: maxGlobal > 0 ? "PROMO_LIMIT_REACHED" : "PROMO_ALREADY_USED",
+        usedCode: code,
+      });
     }
 
     const remainingToPayZl = Number(

@@ -1751,6 +1751,10 @@ const confirmCreateTpl = () => {
                     )
                   )}
               </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-2">
+                «Все» = клиенты с покупками + лиды. Не считаем тех, кто только
+                открыл бота без заказов и без реферала.
+              </p>
 
               <textarea
                 value={telegram}
@@ -2638,7 +2642,9 @@ function PushPromoCreator({ onCreated }) {
   const [code, setCode] = useState('');
   const [amountZl, setAmountZl] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
+  const [noExpiry, setNoExpiry] = useState(true);
   const [maxActivations, setMaxActivations] = useState('');
+  const [maxActivationsPerUser, setMaxActivationsPerUser] = useState('1');
   const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -2658,7 +2664,10 @@ function PushPromoCreator({ onCreated }) {
       .trim()
       .toUpperCase();
     const amount = Number(amountZl);
-    const limit = Number(maxActivations || 0);
+    const globalLimit = Number(maxActivations || 0);
+    const perUserLimit = Number(
+      maxActivationsPerUser === '' ? 1 : maxActivationsPerUser
+    );
 
     if (!normalizedCode || normalizedCode.length < 3) {
       toast({
@@ -2676,8 +2685,23 @@ function PushPromoCreator({ onCreated }) {
       return;
     }
 
+    if (!Number.isFinite(perUserLimit) || perUserLimit < 0) {
+      toast({
+        title: 'Лимит на клиента должен быть числом (0 = без лимита)',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     let expiresAtIso = null;
-    if (expiresAt) {
+    if (!noExpiry) {
+      if (!expiresAt) {
+        toast({
+          title: 'Укажите срок действия или включите «Бессрочный»',
+          variant: 'destructive',
+        });
+        return;
+      }
       const parsed = new Date(expiresAt);
       if (!Number.isFinite(parsed.getTime()) || parsed.getTime() <= Date.now()) {
         toast({
@@ -2698,7 +2722,11 @@ function PushPromoCreator({ onCreated }) {
           code: normalizedCode,
           amountZl: amount,
           expiresAt: expiresAtIso,
-          maxActivations: Number.isFinite(limit) && limit > 0 ? limit : 0,
+          maxActivations:
+            Number.isFinite(globalLimit) && globalLimit > 0 ? globalLimit : 0,
+          maxActivationsPerUser: Number.isFinite(perUserLimit)
+            ? perUserLimit
+            : 1,
           note: String(note || '').trim(),
         }),
       });
@@ -2716,7 +2744,9 @@ function PushPromoCreator({ onCreated }) {
       setCode('');
       setAmountZl('');
       setExpiresAt('');
+      setNoExpiry(true);
       setMaxActivations('');
+      setMaxActivationsPerUser('1');
       setNote('');
       refetchPromos();
     } catch (error) {
@@ -2745,45 +2775,93 @@ function PushPromoCreator({ onCreated }) {
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="Код (например SECOND15)"
+            placeholder="Код (например WELCOME15)"
             className="input-base"
           />
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={amountZl}
-              onChange={(e) => setAmountZl(e.target.value)}
-              placeholder="Сумма, zł"
-              type="number"
-              min="1"
-              step="1"
-              className="input-base"
-            />
-            <input
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              type="datetime-local"
-              title="Срок действия"
-              style={{ colorScheme: 'dark' }}
-              className="input-base"
-            />
+          <input
+            value={amountZl}
+            onChange={(e) => setAmountZl(e.target.value)}
+            placeholder="Сумма, zł"
+            type="number"
+            min="1"
+            step="1"
+            className="input-base"
+          />
+
+          <div className="space-y-1.5 rounded-lg border border-border-soft p-2.5">
+            <label className="flex items-center gap-2 text-[12px] text-foreground">
+              <input
+                type="checkbox"
+                checked={noExpiry}
+                onChange={(e) => {
+                  setNoExpiry(e.target.checked);
+                  if (e.target.checked) setExpiresAt('');
+                }}
+                className="rounded border-border"
+              />
+              Бессрочный (без даты окончания)
+            </label>
+            {!noExpiry ? (
+              <input
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                type="datetime-local"
+                title="Срок действия"
+                style={{ colorScheme: 'dark' }}
+                className="input-base"
+              />
+            ) : (
+              <p className="text-[11px] leading-relaxed text-muted-2">
+                Бессрочность не отменяет лимиты активаций — только дату
+                окончания.
+              </p>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              value={maxActivations}
-              onChange={(e) => setMaxActivations(e.target.value)}
-              placeholder="Лимит активаций (0 = ∞)"
-              type="number"
-              min="0"
-              step="1"
-              className="input-base"
-            />
-            <input
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Заметка"
-              className="input-base"
-            />
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-[11px] text-muted-2">
+                Общий лимит (все клиенты)
+              </label>
+              <input
+                value={maxActivations}
+                onChange={(e) => setMaxActivations(e.target.value)}
+                placeholder="0 = без общего лимита"
+                type="number"
+                min="0"
+                step="1"
+                className="input-base"
+                title="Сколько раз промокод могут использовать все клиенты вместе"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] text-muted-2">
+                Лимит на одного клиента
+              </label>
+              <input
+                value={maxActivationsPerUser}
+                onChange={(e) => setMaxActivationsPerUser(e.target.value)}
+                placeholder="1"
+                type="number"
+                min="0"
+                step="1"
+                className="input-base"
+                title="Сколько раз каждый клиент может использовать этот промокод (0 = без лимита)"
+              />
+            </div>
           </div>
+
+          <p className="text-[11px] leading-relaxed text-muted-2">
+            Для авторассылки после первого заказа: бессрочный, общий лимит = 0,
+            на клиента = 1 (например 15 zł).
+          </p>
+
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Заметка"
+            className="input-base"
+          />
           <button
             type="button"
             onClick={createPromo}
@@ -2798,38 +2876,83 @@ function PushPromoCreator({ onCreated }) {
       {recentPromos.length > 0 ? (
         <div className={open ? 'mt-3 pt-3 border-t border-border-soft' : 'mt-3'}>
           <p className="mb-1.5 text-[11px] text-muted-2">
-            Созданные промокоды (использовано / лимит):
+            Созданные промокоды (общее · на клиента):
           </p>
           <div className="space-y-1.5">
             {recentPromos.map((row) => {
               const max = Number(row.maxActivations || 0);
               const used = Number(row.activationsCount || 0);
-              const limitLabel = max > 0 ? `${used}/${max}` : `${used}/∞`;
+              const perUser = Number(
+                row.maxActivationsPerUser === undefined ||
+                  row.maxActivationsPerUser === null
+                  ? 1
+                  : row.maxActivationsPerUser
+              );
+              const globalLabel = max > 0 ? `${used}/${max}` : `${used}/∞`;
+              const perUserLabel = perUser > 0 ? `${perUser}/кл.` : '∞/кл.';
               return (
-                <button
+                <div
                   key={row.id || row.code}
-                  type="button"
-                  onClick={() => onCreated?.(row.code)}
-                  className="flex w-full items-center justify-between gap-2 rounded-md border border-border px-2.5 py-1.5 text-left text-[11px] text-muted-foreground transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:text-foreground"
-                  title={
-                    [
-                      `${row.amountZl} zł`,
-                      row.expiresAt
-                        ? `до ${new Date(row.expiresAt).toLocaleString('ru')}`
-                        : 'без срока',
-                      row.note || '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')
-                  }
+                  className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1"
                 >
-                  <span className="truncate font-medium text-foreground">
-                    {row.code}
-                  </span>
-                  <span className="shrink-0 text-muted-2">
-                    {row.amountZl} zł · {limitLabel}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => onCreated?.(row.code)}
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    title={
+                      [
+                        `${row.amountZl} zł`,
+                        row.expiresAt
+                          ? `до ${new Date(row.expiresAt).toLocaleString('ru')}`
+                          : 'бессрочный',
+                        `общий ${globalLabel}`,
+                        `на клиента ${perUserLabel}`,
+                        row.note || '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')
+                    }
+                  >
+                    <span className="truncate font-medium text-foreground">
+                      {row.code}
+                    </span>
+                    <span className="shrink-0 text-muted-2">
+                      {row.amountZl} zł · {globalLabel} · {perUserLabel}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    title="Удалить промокод"
+                    onClick={async () => {
+                      const id = String(row.id || '').trim();
+                      if (!id) return;
+                      if (
+                        !window.confirm(
+                          `Удалить промокод «${row.code}»? Это действие нельзя отменить.`
+                        )
+                      ) {
+                        return;
+                      }
+                      try {
+                        await crmFetchJson(
+                          `/crm/promo-codes/${encodeURIComponent(id)}`,
+                          { method: 'DELETE' }
+                        );
+                        toast({ title: `Промокод ${row.code} удалён` });
+                        refetchPromos();
+                      } catch (error) {
+                        toast({
+                          title: 'Не удалось удалить промокод',
+                          description: error?.message || 'DELETE_FAILED',
+                          variant: 'destructive',
+                        });
+                      }
+                    }}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)]"
+                  >
+                    ×
+                  </button>
+                </div>
               );
             })}
           </div>

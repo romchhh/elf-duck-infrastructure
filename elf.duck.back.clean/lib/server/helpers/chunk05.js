@@ -23,6 +23,11 @@ import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import crmRouter from "../../../routes/crm.js";
+import {
+  DEFAULT_SMART_PRICING,
+  discountFromTiers,
+  unitPriceFromTiers,
+} from "../../crm/smartPricingSettings.js";
 
 const APP_URL = String(
   process.env.APP_URL ||
@@ -278,20 +283,28 @@ export function isSalePromoProduct(product) {
   return String(product?.newBadge || "").trim().toUpperCase() === "SALE";
 }
 
-export function getSmartDiscountPerItem(unitsQty) {
-  const qty = Math.max(0, Number(unitsQty || 0));
-  if (qty >= 5) return 15;
-  if (qty >= 3) return 10;
-  if (qty >= 2) return 5;
-  return 0;
+export function getSmartDiscountPerItem(unitsQty, settings = DEFAULT_SMART_PRICING) {
+  const tiers =
+    settings?.liquidDiscounts || DEFAULT_SMART_PRICING.liquidDiscounts;
+  return discountFromTiers(unitsQty, tiers);
 }
 
-export function getCartridgeSmartUnitPrice(unitsQty) {
-  const qty = Math.max(0, Number(unitsQty || 0));
-  if (qty >= 5) return 20;
-  if (qty >= 3) return 23;
-  if (qty >= 2) return 25;
-  return 30;
+export function getDisposableSmartDiscountPerItem(
+  unitsQty,
+  settings = DEFAULT_SMART_PRICING
+) {
+  const tiers =
+    settings?.disposableDiscounts || DEFAULT_SMART_PRICING.disposableDiscounts;
+  return discountFromTiers(unitsQty, tiers);
+}
+
+export function getCartridgeSmartUnitPrice(
+  unitsQty,
+  settings = DEFAULT_SMART_PRICING
+) {
+  const tiers =
+    settings?.cartridgePrices || DEFAULT_SMART_PRICING.cartridgePrices;
+  return unitPriceFromTiers(unitsQty, tiers);
 }
 
 export function isLiquidSmartPriceProduct(product) {
@@ -314,7 +327,12 @@ export function isCartridgeSmartPriceProduct(product) {
   return CARTRIDGES_CATEGORY_KEYS.has(categoryKey);
 }
 
-export function repriceCartItemsWithSmartPricing(items, products) {
+export function repriceCartItemsWithSmartPricing(
+  items,
+  products,
+  smartPricingSettings = DEFAULT_SMART_PRICING
+) {
+  const settings = smartPricingSettings || DEFAULT_SMART_PRICING;
   const prodByKey = new Map(
     (products || []).map((p) => [String(p?.productKey || "").trim(), p])
   );
@@ -340,9 +358,18 @@ export function repriceCartItemsWithSmartPricing(items, products) {
     return sum + Math.max(1, Number(it?.qty || 1));
   }, 0);
 
-  const liquidDiscountPerItem = getSmartDiscountPerItem(liquidUnitsQty);
-  const disposableDiscountPerItem = getSmartDiscountPerItem(disposableUnitsQty);
-  const cartridgeUnitPrice = getCartridgeSmartUnitPrice(cartridgeUnitsQty);
+  const liquidDiscountPerItem = getSmartDiscountPerItem(
+    liquidUnitsQty,
+    settings
+  );
+  const disposableDiscountPerItem = getDisposableSmartDiscountPerItem(
+    disposableUnitsQty,
+    settings
+  );
+  const cartridgeUnitPrice = getCartridgeSmartUnitPrice(
+    cartridgeUnitsQty,
+    settings
+  );
 
   const repricedItems = (items || []).map((it) => {
     const product = prodByKey.get(String(it?.productKey || "").trim());

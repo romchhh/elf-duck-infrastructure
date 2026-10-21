@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
 import { cn } from '@/lib/utils';
-import { CRM_API_URL } from '@/lib/crmFetch';
+import { CRM_API_URL, crmFetchJson } from '@/lib/crmFetch';
 import {
   CATEGORY_VARIANTS,
   PRODUCT_BADGE_PRESETS,
@@ -43,6 +43,161 @@ import {
   FlavorGradientPickers,
   RgbTripletField,
 } from '@/pages/catalog/CatalogColorFields';
+
+function TierInputs({ title, hint, values, onChange, suffix = 'zł' }) {
+  const fields = [
+    { key: 'qty1', label: '1 шт.' },
+    { key: 'qty2', label: '2 шт.' },
+    { key: 'qty3', label: '3 шт.' },
+    { key: 'qty5', label: '5+ шт.' },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <div className="text-[12px] font-medium text-foreground">{title}</div>
+        {hint ? (
+          <p className="mt-0.5 text-[11px] text-muted-2">{hint}</p>
+        ) : null}
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {fields.map((field) => (
+          <label key={field.key} className="block text-[11px] text-muted-2">
+            {field.label}
+            <Input
+              type="number"
+              min="0"
+              step="1"
+              className="mt-1"
+              value={Number(values?.[field.key] ?? 0)}
+              onChange={(e) =>
+                onChange({
+                  ...values,
+                  [field.key]: Number(e.target.value || 0),
+                })
+              }
+            />
+            <span className="mt-0.5 block text-[10px] text-muted-2">{suffix}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SmartPricingPanel() {
+  const [settings, setSettings] = useState(null);
+  const [exampleBase, setExampleBase] = useState(60);
+
+  const { isLoading, isError, refetch } = useQuery({
+    queryKey: ['crm-smart-pricing'],
+    queryFn: async () => {
+      const data = await crmFetchJson('/crm/settings/smart-pricing');
+      setSettings(data.settings);
+      return data.settings;
+    },
+  });
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      crmFetchJson('/crm/settings/smart-pricing', {
+        method: 'PUT',
+        body: JSON.stringify({ settings }),
+      }),
+    onSuccess: (data) => {
+      setSettings(data.settings);
+      toast({ title: 'Смарт-цены сохранены' });
+      refetch();
+    },
+    onError: (e) =>
+      toast({
+        variant: 'destructive',
+        title: 'Не удалось сохранить',
+        description: String(e.message || e),
+      }),
+  });
+
+  if (isLoading || !settings) {
+    return (
+      <div className="rounded-2xl surface-card p-4 text-[13px] text-muted-2">
+        Загружаем смарт-цены…
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="rounded-2xl surface-card p-4 text-[13px] text-red-400">
+        Не удалось загрузить смарт-цены
+      </div>
+    );
+  }
+
+  const preview = (discount) =>
+    Math.max(0, Number(exampleBase || 0) - Number(discount || 0)).toFixed(0);
+
+  return (
+    <div className="space-y-4 rounded-2xl surface-card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[14px] font-semibold text-foreground">Смарт-цены</h2>
+          <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
+            Для жидкостей и одноразок — скидка от базовой цены товара в каталоге.
+            Пример: база {exampleBase} zł → 1 шт. {preview(settings.liquidDiscounts.qty1)} zł,
+            2 шт. {preview(settings.liquidDiscounts.qty2)} zł, 3 шт.{' '}
+            {preview(settings.liquidDiscounts.qty3)} zł, 5+ шт.{' '}
+            {preview(settings.liquidDiscounts.qty5)} zł. Картриджи — фиксированная цена за штуку.
+          </p>
+        </div>
+        <label className="text-[11px] text-muted-2">
+          Пример базы, zł
+          <Input
+            type="number"
+            min="1"
+            className="mt-1 w-24"
+            value={exampleBase}
+            onChange={(e) => setExampleBase(Number(e.target.value || 0))}
+          />
+        </label>
+      </div>
+
+      <TierInputs
+        title="Жидкости — скидка от базы"
+        hint="Сколько zł вычитается из цены каталога"
+        values={settings.liquidDiscounts}
+        onChange={(liquidDiscounts) =>
+          setSettings((s) => ({ ...s, liquidDiscounts }))
+        }
+        suffix="zł скидки"
+      />
+      <TierInputs
+        title="Одноразки — скидка от базы"
+        values={settings.disposableDiscounts}
+        onChange={(disposableDiscounts) =>
+          setSettings((s) => ({ ...s, disposableDiscounts }))
+        }
+        suffix="zł скидки"
+      />
+      <TierInputs
+        title="Картриджи — цена за штуку"
+        hint="Абсолютная цена, не скидка"
+        values={settings.cartridgePrices}
+        onChange={(cartridgePrices) =>
+          setSettings((s) => ({ ...s, cartridgePrices }))
+        }
+        suffix="zł / шт."
+      />
+
+      <Button
+        size="sm"
+        disabled={saveMut.isPending}
+        onClick={() => saveMut.mutate()}
+      >
+        {saveMut.isPending ? 'Сохраняем…' : 'Сохранить смарт-цены'}
+      </Button>
+    </div>
+  );
+}
 
 function ImageUrlField({ label, value, onChange, compact }) {
   const [uploading, setUploading] = useState(false);
@@ -539,6 +694,8 @@ export default function Catalog() {
           Карточки как в mini app: фон, утка, плашки, цены. Клик по карточке — редактирование.
         </p>
       </div>
+
+      <SmartPricingPanel />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">
