@@ -1799,8 +1799,8 @@ const confirmCreateTpl = () => {
                   )}
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-muted-2">
-                «Все» = клиенты с покупками + лиды. Не считаем тех, кто только
-                открыл бота без заказов и без реферала.
+                «Все» = клиенты + лиды. «Лиды» = все, кто открыл бота и ещё не
+                сделал покупку (реферал не обязателен).
               </p>
               {audienceIdsTruncated ? (
                 <p className="mt-2 text-[11px] leading-relaxed text-[hsl(0_80%_68%)]">

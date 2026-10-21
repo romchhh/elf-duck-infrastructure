@@ -100,7 +100,7 @@ router.get(
           },
           {
             key: "leads",
-            label: "Лиды",
+            label: "Лиды (без покупок)",
           },
           {
             key: "favorites",

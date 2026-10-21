@@ -180,8 +180,8 @@ export async function buildPushAudiencePreview({
       .toLowerCase()
       .startsWith("guest_");
 
-  // «Все» в Push = клієнти CRM ∪ ліди (не всі User у Mongo).
-  // Інакше в аудиторію потрапляють тисячі тих, хто лише відкрив бота.
+  // «Все» = усі User (клієнти + ліди). Лід = без завершеної покупки
+  // (як у /crm/leads), включно з тими, хто лише відкрив бота.
   const isCrmUniverseAudience =
     normalizedAudience === "all" || !normalizedAudience;
 
@@ -215,14 +215,51 @@ export async function buildPushAudiencePreview({
     },
   };
 
-  // Швидкий підрахунок CRM-всесвіту: покупці + ліди без покупок.
-  const canFastCrmUniverse =
-    isCrmUniverseAudience &&
+  // Швидкий підрахунок без зайвих фільтрів.
+  const canFastAudience =
+    (isCrmUniverseAudience ||
+      normalizedAudience === "customers" ||
+      normalizedAudience === "leads") &&
     !hasTokenFilter &&
     !needsFavorites &&
     !hasExtraFilters;
 
-  if (canFastCrmUniverse) {
+  if (canFastAudience) {
+    const emptyPreview = (total, telegramIds = []) => {
+      const truncated = total > CRM_PUSH_AUDIENCE_ID_CAP;
+      return {
+        total,
+        requestedUsernames: 0,
+        matchedUsernames: 0,
+        missingUsernames: [],
+        sample: [],
+        telegramIds: includeTelegramIds
+          ? telegramIds.slice(0, CRM_PUSH_AUDIENCE_ID_CAP)
+          : [],
+        audienceIdsTruncated: truncated,
+        audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
+      };
+    };
+
+    // «Все» = усі валідні User (≈ клієнти ∪ ліди).
+    if (isCrmUniverseAudience) {
+      if (!includeTelegramIds) {
+        const total = await User.countDocuments(baseUserMatch);
+        return emptyPreview(total);
+      }
+
+      const rows = await User.find(baseUserMatch)
+        .select({ telegramId: 1 })
+        .lean();
+      const ids = [];
+      for (const row of rows) {
+        const id = String(row?.telegramId || "").trim();
+        if (!id || isGuestTelegramId(id)) continue;
+        ids.push(id);
+      }
+      return emptyPreview(ids.length, ids);
+    }
+
     const { statsByUser } = await loadSalesStatsBundle(range);
     const buyerIds = new Set(
       [...statsByUser.keys()]
@@ -230,48 +267,23 @@ export async function buildPushAudiencePreview({
         .filter((id) => id && !isGuestTelegramId(id))
     );
 
-    const leadRows = await User.find({
-      ...baseUserMatch,
-      "referral.invitedByTelegramId": { $exists: true, $nin: [null, ""] },
-    })
+    if (normalizedAudience === "customers") {
+      const ids = [...buyerIds];
+      return emptyPreview(ids.length, ids);
+    }
+
+    // «Лиды» = User без завершеної покупки (як у CRM Лиды).
+    const rows = await User.find(baseUserMatch)
       .select({ telegramId: 1 })
       .lean();
-
-    const crmIds = new Set(buyerIds);
-    for (const row of leadRows) {
+    const leadIds = [];
+    for (const row of rows) {
       const id = String(row?.telegramId || "").trim();
       if (!id || isGuestTelegramId(id)) continue;
-      crmIds.add(id);
+      if (buyerIds.has(id)) continue;
+      leadIds.push(id);
     }
-
-    const total = crmIds.size;
-
-    const truncated = total > CRM_PUSH_AUDIENCE_ID_CAP;
-
-    if (!includeTelegramIds) {
-      return {
-        total,
-        requestedUsernames: 0,
-        matchedUsernames: 0,
-        missingUsernames: [],
-        sample: [],
-        telegramIds: [],
-        audienceIdsTruncated: truncated,
-        audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
-      };
-    }
-
-    const telegramIds = [...crmIds].slice(0, CRM_PUSH_AUDIENCE_ID_CAP);
-    return {
-      total,
-      requestedUsernames: 0,
-      matchedUsernames: 0,
-      missingUsernames: [],
-      sample: [],
-      telegramIds,
-      audienceIdsTruncated: truncated,
-      audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
-    };
+    return emptyPreview(leadIds.length, leadIds);
   }
 
   const [favoriteCustomerRows, cachedBundle] = await Promise.all([
@@ -366,9 +378,6 @@ export async function buildPushAudiencePreview({
           ) || null;
 
         const purchases = Number(stats?.purchases || 0);
-        const invitedBy = String(
-          user?.referral?.invitedByTelegramId || ""
-        ).trim();
 
         /*
          * Список @username / telegramId (один або багато).
@@ -387,32 +396,20 @@ export async function buildPushAudiencePreview({
         }
 
         /*
-         * «Все» = клієнти (є покупки) ∪ ліди (реферал без покупок).
+         * «Все» = усі валідні User (клієнти + ліди).
+         * Додатковий відсів не потрібен — baseUserMatch уже без guest_.
          */
-        if (isCrmUniverseAudience) {
-          if (purchases <= 0 && !invitedBy) {
-            return false;
-          }
-        }
 
         /*
          * Аудитория: лиды.
-         *
-         * Лид =
-         * приглашён через рефералку,
-         * но ещё не совершал покупок.
+         * Як у /crm/leads: будь-хто без завершеної покупки
+         * (включно з тими, хто лише відкрив бота; реферал не обов'язковий).
          */
-            if (
-            normalizedAudience ===
-            "leads"
-            ) {
-            if (!invitedBy) {
-              return false;
-            }
-            if (purchases > 0) {
-                return false;
-            }
-            }
+        if (normalizedAudience === "leads") {
+          if (purchases > 0) {
+            return false;
+          }
+        }
 
         if (
           normalizedAudience ===
