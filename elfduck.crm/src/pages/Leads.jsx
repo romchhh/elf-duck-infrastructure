@@ -409,9 +409,15 @@ export default function Leads() {
 
           <span className="text-[12px] text-muted-2">
             Лидов:{' '}
-            {formatNumber(
-              leadCount
-            )}
+            {formatNumber(leadCount)}
+            {Number(summary.sleeping || 0) > 0 ? (
+              <>
+                {' '}
+                · свежих {formatNumber(summary.freshLeads ?? 0)}
+                {' / '}
+                спящих {formatNumber(summary.sleeping || 0)}
+              </>
+            ) : null}
           </span>
         </div>
 

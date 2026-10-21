@@ -52,24 +52,38 @@ router.get(
           .toLowerCase();
 
         /*
-        * Лид =
-        * любой пользователь,
-        * который появился в User,
-        * но ещё не совершил
-        * завершённую покупку.
-        */
-        const users =
-        await User.find({
-            telegramId: {
+         * Лид = любой User без завершённой покупки
+         * (включая тех, кто только открыл бота; реферал не нужен).
+         * Период фильтрует по дате регистрации (createdAt).
+         * Для «всё время» также берём документы без createdAt.
+         */
+        const userMatch = {
+          telegramId: {
             $exists: true,
             $ne: "",
-            },
+            $not: { $regex: /^guest_/i },
+          },
+        };
 
-            createdAt: {
+        if (range.key === "all") {
+          userMatch.$or = [
+            {
+              createdAt: {
+                $gte: range.from,
+                $lt: range.to,
+              },
+            },
+            { createdAt: { $exists: false } },
+            { createdAt: null },
+          ];
+        } else {
+          userMatch.createdAt = {
             $gte: range.from,
             $lt: range.to,
-            },
-        })
+          };
+        }
+
+        const users = await User.find(userMatch)
           .select({
             telegramId: 1,
             username: 1,
@@ -394,28 +408,26 @@ router.get(
         );
 
       /*
-       * KPI считаем до поиска.
+       * KPI до поиска.
+       * «Лидов» = ВСЕ без покупки (свежие + спящие).
+       * Раньше в leads попадали только ≤8 дней — из‑за этого
+       * на «Всё время» оставалось ~140 при тысячах спящих.
        */
-      const leads =
-        rows.filter(
-          (row) =>
-            row.status ===
-            "lead"
-        ).length;
+      const freshLeads = rows.filter(
+        (row) => row.status === "lead"
+      ).length;
 
-      const sleeping =
-        rows.filter(
-          (row) =>
-            row.status ===
-            "sleeping"
-        ).length;
+      const sleeping = rows.filter(
+        (row) => row.status === "sleeping"
+      ).length;
 
-        const clients = 0;
+      const leads = freshLeads + sleeping;
 
-      const totalInvited =
-        rows.length;
+      const clients = 0;
 
-        const conversion = 0;
+      const totalInvited = rows.length;
+
+      const conversion = 0;
 
       /*
        * Поиск.
@@ -523,6 +535,7 @@ router.get(
 
         summary: {
           leads,
+          freshLeads,
           sleeping,
           clients,
           conversion,
