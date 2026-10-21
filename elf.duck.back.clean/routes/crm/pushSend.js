@@ -339,6 +339,19 @@ router.post(
         });
       }
 
+      if (audienceResult?.audienceIdsTruncated === true) {
+        return res.status(400).json({
+          ok: false,
+          error: "AUDIENCE_TOO_LARGE",
+          total: Number(audienceResult?.total || 0),
+          cap: Number(
+            audienceResult?.audienceIdCap || telegramIds.length
+          ),
+          message:
+            "Аудитория больше лимита рассылки. Сузьте фильтры или увеличьте CRM_PUSH_AUDIENCE_ID_CAP.",
+        });
+      }
+
       const runCampaign =
         req.app?.locals
           ?.runCrmBroadcastCampaign;
@@ -424,6 +437,10 @@ router.post(
                 normalizePushString(
                   body?.telegram
                 ),
+
+              cashbackExpiringSoon: Boolean(
+                body?.cashbackExpiringSoon
+              ),
             },
 
             message: {

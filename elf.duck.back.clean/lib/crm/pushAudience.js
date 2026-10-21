@@ -246,6 +246,8 @@ export async function buildPushAudiencePreview({
 
     const total = crmIds.size;
 
+    const truncated = total > CRM_PUSH_AUDIENCE_ID_CAP;
+
     if (!includeTelegramIds) {
       return {
         total,
@@ -254,7 +256,8 @@ export async function buildPushAudiencePreview({
         missingUsernames: [],
         sample: [],
         telegramIds: [],
-        audienceIdsTruncated: false,
+        audienceIdsTruncated: truncated,
+        audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
       };
     }
 
@@ -266,7 +269,8 @@ export async function buildPushAudiencePreview({
       missingUsernames: [],
       sample: [],
       telegramIds,
-      audienceIdsTruncated: total > telegramIds.length,
+      audienceIdsTruncated: truncated,
+      audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
     };
   }
 
@@ -334,6 +338,7 @@ export async function buildPushAudiencePreview({
     : User.find(baseUserMatch).select(userSelect);
 
   let matchedTotal = 0;
+  let matchedWithTelegramId = 0;
   const matchedSample = [];
   const matchedTelegramIds = [];
   const matchedTokenHits = new Set();
@@ -668,11 +673,12 @@ if (
       });
     }
 
-    if (
-      includeTelegramIds &&
-      matchedTelegramIds.length < CRM_PUSH_AUDIENCE_ID_CAP
-    ) {
-      if (telegramId) {
+    if (telegramId) {
+      matchedWithTelegramId += 1;
+      if (
+        includeTelegramIds &&
+        matchedTelegramIds.length < CRM_PUSH_AUDIENCE_ID_CAP
+      ) {
         matchedTelegramIds.push(telegramId);
       }
     }
@@ -697,6 +703,8 @@ if (
     return true;
   });
 
+  const truncated = matchedWithTelegramId > CRM_PUSH_AUDIENCE_ID_CAP;
+
   return {
     total: matchedTotal,
     requestedUsernames: audienceTokens.length,
@@ -704,7 +712,7 @@ if (
     missingUsernames,
     sample: matchedSample,
     telegramIds: includeTelegramIds ? matchedTelegramIds : [],
-    audienceIdsTruncated:
-      includeTelegramIds && matchedTotal > matchedTelegramIds.length,
+    audienceIdsTruncated: truncated,
+    audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
   };
 }

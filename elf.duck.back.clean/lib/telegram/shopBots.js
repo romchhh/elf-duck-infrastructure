@@ -438,11 +438,12 @@ app.locals.runCrmBroadcastCampaign =
             pendingTelegramIds
           ) {
             try {
-if (photoUrl) {
+// file_id надёжнее URL (CDN/прокси могут отвалиться mid-campaign)
+if (photoFileId) {
   await bot.telegram
     .sendPhoto(
       telegramId,
-      { url: photoUrl },
+      photoFileId,
       {
         caption: messageText,
         parse_mode: "HTML",
@@ -451,11 +452,11 @@ if (photoUrl) {
           : {}),
       }
     );
-} else if (photoFileId) {
+} else if (photoUrl) {
   await bot.telegram
     .sendPhoto(
       telegramId,
-      photoFileId,
+      { url: photoUrl },
       {
         caption: messageText,
         parse_mode: "HTML",

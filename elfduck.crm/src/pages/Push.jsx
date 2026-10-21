@@ -658,12 +658,21 @@ onSuccess: (data) => {
   });
 
   const recipients = Number(audiencePreview?.total || 0);
+  const audienceIdsTruncated =
+    audiencePreview?.audienceIdsTruncated === true;
+  const audiencePayloadSynced =
+    JSON.stringify(audiencePayload) ===
+    JSON.stringify(debouncedAudiencePayload);
   const audienceCountPending =
-    audiencePreviewLoading || audiencePreviewPlaceholder;
+    audiencePreviewLoading ||
+    audiencePreviewPlaceholder ||
+    !audiencePayloadSynced;
   const audienceReady =
     Boolean(audiencePreview) &&
     !audiencePreviewError &&
-    !audienceCountPending;
+    !audienceCountPending &&
+    audiencePayloadSynced &&
+    !audienceIdsTruncated;
   const audiencePreviewErrorLabel = (() => {
     if (!audiencePreviewError) return null;
     const msg = String(
@@ -869,8 +878,9 @@ const removeMedia = () => {
                       .filter((btn) => String(btn?.text || '').trim())
                       .map((btn) => ({
                         text: String(btn.text || '').trim(),
-                        kind: 'web_app',
+                        kind: btn.kind === 'url' ? 'url' : 'web_app',
                         path: String(btn.path || '/').trim() || '/',
+                        url: String(btn.url || '').trim(),
                       })),
                     buttonText: '',
                     buttonUrl: '',
@@ -1088,8 +1098,15 @@ const deleteTemplate =
   const sendCampaignMutation =
     useMutation({
       mutationFn:
-        () =>
-          crmFetch(
+        () => {
+          if (
+            JSON.stringify(audiencePayload) !==
+            JSON.stringify(debouncedAudiencePayload)
+          ) {
+            throw new Error('AUDIENCE_PREVIEW_STALE');
+          }
+
+          return crmFetch(
             '/crm/push/send',
             {
               method:
@@ -1102,7 +1119,8 @@ const deleteTemplate =
 
                     name: campaignNameFromBody(),
 
-                    ...audiencePayload,
+                    // Тот же payload, что и у preview — без debounce-race
+                    ...debouncedAudiencePayload,
 
                     title: '',
 
@@ -1131,7 +1149,8 @@ const deleteTemplate =
                   }
                 ),
             }
-          ),
+          );
+        },
 
       onSuccess:
         async (
@@ -1198,8 +1217,23 @@ const deleteTemplate =
             AUDIENCE_EMPTY:
               'По выбранным фильтрам нет получателей',
 
+            AUDIENCE_TOO_LARGE:
+              'Аудитория больше лимита рассылки. Сузьте фильтры.',
+
+            AUDIENCE_PREVIEW_STALE:
+              'Счётчик аудитории ещё обновляется — подождите секунду и отправьте снова',
+
             MESSAGE_REQUIRED:
-              'Заполни заголовок, текст или промокод',
+              'Заполни текст сообщения',
+
+            WEBAPP_URL_NOT_CONFIGURED:
+              'На backend не задан WEBAPP_URL для кнопок магазина',
+
+            INVALID_BUTTON_URL:
+              'Некорректный URL у одной из кнопок',
+
+            BUTTON_TEXT_AND_URL_REQUIRED_TOGETHER:
+              'Текст и URL кнопки нужно заполнять вместе',
 
             CRM_BROADCAST_ENGINE_UNAVAILABLE:
               'Модуль рассылки на backend сейчас недоступен',
@@ -1296,12 +1330,15 @@ const deleteTemplate =
           }))
         );
       } else if (template.buttonText) {
+        const legacyUrl = String(template.buttonUrl || '').trim();
+        const isExternal =
+          /^https?:\/\//i.test(legacyUrl) || /^tg:/i.test(legacyUrl);
         setInlineButtons([
           {
             text: String(template.buttonText || ''),
-            kind: 'web_app',
-            path: String(template.buttonUrl || '/'),
-            url: '',
+            kind: isExternal ? 'url' : 'web_app',
+            path: isExternal ? '/' : legacyUrl || '/',
+            url: isExternal ? legacyUrl : '',
           },
         ]);
       }
@@ -1393,6 +1430,8 @@ const confirmCreateTpl = () => {
       if (
         recipients <= 0 ||
         !audienceReady ||
+        audienceIdsTruncated ||
+        !audiencePayloadSynced ||
         sendCampaignMutation.isPending
       ) {
         return;
@@ -1429,6 +1468,12 @@ const confirmCreateTpl = () => {
 
     const direction = campSortDirection === 'asc' ? 1 : -1;
     const getValue = (row) => {
+      if (campSortKey === 'sentAt') {
+        const raw = row?.startedAt || row?.createdAt || null;
+        if (!raw) return null;
+        const ts = new Date(raw).getTime();
+        return Number.isFinite(ts) ? ts : null;
+      }
       const value = row?.[campSortKey];
       if (value == null || value === '') return null;
       if (typeof value === 'number') return value;
@@ -1716,7 +1761,9 @@ const confirmCreateTpl = () => {
                 ? audiencePreviewErrorLabel || 'ошибка'
                 : audienceCountPending
                   ? '…'
-                  : num(recipients)}{' '}
+                  : audienceIdsTruncated
+                    ? `>${num(recipients)}`
+                    : num(recipients)}{' '}
               получателей
             </div>
           </div>
@@ -1755,6 +1802,13 @@ const confirmCreateTpl = () => {
                 «Все» = клиенты с покупками + лиды. Не считаем тех, кто только
                 открыл бота без заказов и без реферала.
               </p>
+              {audienceIdsTruncated ? (
+                <p className="mt-2 text-[11px] leading-relaxed text-[hsl(0_80%_68%)]">
+                  Аудитория больше лимита рассылки (
+                  {num(audiencePreview?.audienceIdCap || 30000)}). Сузьте
+                  фильтры — иначе отправка будет заблокирована.
+                </p>
+              ) : null}
 
               <textarea
                 value={telegram}
@@ -2220,11 +2274,13 @@ const confirmCreateTpl = () => {
               title={
                 !body.trim()
                   ? 'Введите текст сообщения'
-                  : !audienceReady
-                    ? 'Считаем аудиторию…'
-                    : recipients <= 0
-                      ? 'Нет получателей по выбранным фильтрам (проверьте поле @telegram и чипы)'
-                      : undefined
+                  : audienceIdsTruncated
+                    ? 'Аудитория больше лимита — сузьте фильтры'
+                    : !audienceReady
+                      ? 'Считаем аудиторию…'
+                      : recipients <= 0
+                        ? 'Нет получателей по выбранным фильтрам (проверьте поле @telegram и чипы)'
+                        : undefined
               }
               className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-[hsl(255_100%_68%)] to-[hsl(280_90%_60%)] px-4 py-2 text-[13px] font-medium text-white shadow-[0_4px_20px_-6px_hsl(255_100%_68%)] disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -3023,7 +3079,8 @@ function PushAutomationsPanel() {
           </h3>
           <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
             Событие: после первой успешной покупки бот отправит офер с
-            промокодом (кампания попадёт в аналитику конверсии).
+            промокодом (кампания попадёт в аналитику конверсии). Задержка
+            сохраняется в базе и переживает рестарт API.
           </p>
         </div>
         <Chip

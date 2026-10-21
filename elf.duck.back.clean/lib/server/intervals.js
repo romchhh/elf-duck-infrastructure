@@ -5,6 +5,7 @@ import {
   startSheetStockPullInterval,
 } from "../googleSheets/stockPullScheduler.js";
 import { processPickupShiftCloseReminders } from "./pickupShiftClose.js";
+import { processDueFirstPurchaseAutomations } from "../crm/pushAutomations.js";
 
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(
   process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000
@@ -81,4 +82,17 @@ export function startServerIntervals() {
       console.error("sheet stock pull cron error:", e);
     });
   }, 60 * 1000);
+
+  // Отложенные автопуши после первой покупки (переживают рестарт API)
+  setInterval(() => {
+    processDueFirstPurchaseAutomations().catch((e) => {
+      console.error("first purchase automation due error:", e);
+    });
+  }, 30 * 1000);
+
+  setTimeout(() => {
+    processDueFirstPurchaseAutomations().catch((e) => {
+      console.error("first purchase automation initial run error:", e);
+    });
+  }, 15 * 1000);
 }

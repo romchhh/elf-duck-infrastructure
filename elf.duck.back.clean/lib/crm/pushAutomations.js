@@ -34,6 +34,7 @@ export async function ensurePushAutomationIndexes() {
         { unique: true }
       ),
       sendsCollection().createIndex({ createdAt: -1 }),
+      sendsCollection().createIndex({ status: 1, runAt: 1 }),
     ]);
   } catch (error) {
     console.error(
@@ -123,35 +124,89 @@ async function countCompletedPurchases(telegramId) {
   });
 }
 
+async function releaseClaimedSend(telegramId, reason) {
+  await sendsCollection().updateOne(
+    {
+      trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+      telegramId,
+      status: { $in: ["queued", "running"] },
+    },
+    {
+      $set: {
+        status: "scheduled",
+        runAt: new Date(Date.now() + 30_000),
+        lastError: String(reason || "RETRY"),
+        updatedAt: new Date(),
+      },
+    }
+  );
+}
+
 async function sendFirstPurchaseAutomationNow({
   telegramId,
   orderId,
   automation,
+  alreadyClaimed = false,
 }) {
   const message = normalizeMessage(automation?.message || {});
   if (!message.title && !message.text && !message.promo) {
+    if (alreadyClaimed) {
+      await sendsCollection().updateOne(
+        {
+          trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+          telegramId,
+        },
+        {
+          $set: {
+            status: "cancelled",
+            cancelledAt: new Date(),
+            lastError: "MESSAGE_EMPTY",
+          },
+        }
+      );
+    }
     return { ok: false, reason: "MESSAGE_EMPTY" };
   }
 
   if (typeof broadcastRunner !== "function") {
+    if (alreadyClaimed) {
+      await releaseClaimedSend(telegramId, "BROADCAST_ENGINE_UNAVAILABLE");
+    }
     return { ok: false, reason: "BROADCAST_ENGINE_UNAVAILABLE" };
   }
 
-  let claimed = false;
-  try {
-    await sendsCollection().insertOne({
-      trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
-      telegramId,
-      orderId: String(orderId || ""),
-      status: "queued",
-      createdAt: new Date(),
-    });
-    claimed = true;
-  } catch (error) {
-    if (error?.code === 11000) {
-      return { ok: false, reason: "ALREADY_SENT" };
+  let claimed = alreadyClaimed;
+  if (!claimed) {
+    try {
+      await sendsCollection().insertOne({
+        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        telegramId,
+        orderId: String(orderId || ""),
+        status: "queued",
+        createdAt: new Date(),
+      });
+      claimed = true;
+    } catch (error) {
+      if (error?.code === 11000) {
+        return { ok: false, reason: "ALREADY_SENT" };
+      }
+      throw error;
     }
-    throw error;
+  } else {
+    await sendsCollection().updateOne(
+      {
+        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        telegramId,
+        status: { $in: ["scheduled", "running"] },
+      },
+      {
+        $set: {
+          status: "queued",
+          orderId: String(orderId || ""),
+          startedAt: new Date(),
+        },
+      }
+    );
   }
 
   try {
@@ -203,10 +258,15 @@ async function sendFirstPurchaseAutomationNow({
     return { ok: true, campaignId: String(campaign._id) };
   } catch (error) {
     if (claimed) {
-      await sendsCollection().deleteOne({
-        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
-        telegramId,
-      });
+      if (alreadyClaimed) {
+        await releaseClaimedSend(telegramId, "SEND_FAILED");
+      } else {
+        await sendsCollection().deleteOne({
+          trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+          telegramId,
+          status: { $in: ["queued", "running", "scheduled"] },
+        });
+      }
     }
     console.error("first purchase automation send failed:", error);
     return { ok: false, reason: "SEND_FAILED" };
@@ -215,7 +275,7 @@ async function sendFirstPurchaseAutomationNow({
 
 /**
  * Після першої успішної покупки — спец. офер з промокодом.
- * Викликати fire-and-forget після completed/shipped.
+ * Delay зберігається в Mongo (status=scheduled), не в setTimeout.
  */
 export async function maybeTriggerFirstPurchaseAutomation(order) {
   try {
@@ -255,17 +315,126 @@ export async function maybeTriggerFirstPurchaseAutomation(order) {
     };
 
     if (delayMs > 0) {
-      setTimeout(() => {
-        sendFirstPurchaseAutomationNow(payload).catch((error) => {
-          console.error("delayed first purchase automation error:", error);
+      const runAt = new Date(Date.now() + delayMs);
+      try {
+        await sendsCollection().insertOne({
+          trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+          telegramId,
+          orderId: String(order?._id || ""),
+          status: "scheduled",
+          runAt,
+          createdAt: new Date(),
         });
-      }, delayMs);
-      return { ok: true, scheduled: true, delayMinutes: automation.delayMinutes };
+      } catch (error) {
+        if (error?.code === 11000) {
+          return { ok: false, reason: "ALREADY_SENT" };
+        }
+        throw error;
+      }
+      return {
+        ok: true,
+        scheduled: true,
+        delayMinutes: automation.delayMinutes,
+        runAt,
+      };
     }
 
     return sendFirstPurchaseAutomationNow(payload);
   } catch (error) {
     console.error("maybeTriggerFirstPurchaseAutomation error:", error);
     return { ok: false, reason: "ERROR" };
+  }
+}
+
+/**
+ * Обробка відкладених first_purchase (після рестарту API теж підхоплює).
+ */
+export async function processDueFirstPurchaseAutomations() {
+  try {
+    if (typeof broadcastRunner !== "function") {
+      return { ok: false, reason: "BROADCAST_ENGINE_UNAVAILABLE", processed: 0 };
+    }
+
+    const now = new Date();
+
+    // Зависшие running после краша процесса — вернуть в очередь
+    await sendsCollection().updateMany(
+      {
+        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        status: "running",
+        startedAt: { $lte: new Date(Date.now() - 5 * 60 * 1000) },
+      },
+      {
+        $set: {
+          status: "scheduled",
+          runAt: now,
+          lastError: "STALE_RUNNING_RECOVERY",
+          updatedAt: now,
+        },
+      }
+    );
+
+    const due = await sendsCollection()
+      .find({
+        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        status: "scheduled",
+        runAt: { $lte: now },
+      })
+      .sort({ runAt: 1 })
+      .limit(40)
+      .toArray();
+
+    if (!due.length) {
+      return { ok: true, processed: 0 };
+    }
+
+    const automation = await getPushAutomation(
+      PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE
+    );
+
+    let processed = 0;
+    for (const row of due) {
+      const telegramId = String(row?.telegramId || "").trim();
+      if (!telegramId) continue;
+
+      const claimed = await sendsCollection().findOneAndUpdate(
+        {
+          _id: row._id,
+          status: "scheduled",
+        },
+        {
+          $set: {
+            status: "running",
+            startedAt: new Date(),
+          },
+        },
+        { returnDocument: "after" }
+      );
+
+      const claimedDoc = claimed?.value || claimed;
+      if (!claimedDoc?._id) continue;
+
+      if (!automation?.enabled) {
+        await sendsCollection().updateOne(
+          { _id: row._id },
+          { $set: { status: "cancelled", cancelledAt: new Date() } }
+        );
+        continue;
+      }
+
+      const result = await sendFirstPurchaseAutomationNow({
+        telegramId,
+        orderId: String(row?.orderId || ""),
+        automation,
+        alreadyClaimed: true,
+      });
+
+      if (result?.ok) processed += 1;
+    }
+
+    return { ok: true, processed };
+  } catch (error) {
+    console.error("processDueFirstPurchaseAutomations error:", error);
+    return { ok: false, reason: "ERROR", processed: 0 };
   }
 }
