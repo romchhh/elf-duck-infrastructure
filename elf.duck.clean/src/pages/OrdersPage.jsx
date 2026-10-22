@@ -168,6 +168,37 @@ const isMokotowOrderPoint = (order = {}) => {
   return getOrderVisualBlob(order).includes("mokot");
 };
 
+/** Wola + доставка (курʼєр / InPost) — без підказки Tytuł/Imię для BLIK. */
+const shouldHideBlikTransferHint = (order = {}) => {
+  if (isWolaOrderPoint(order)) return true;
+
+  const deliveryType = String(order?.deliveryType || "").trim().toLowerCase();
+  const deliveryMethod = String(order?.deliveryMethod || "").trim().toLowerCase();
+  if (deliveryType === "delivery" || deliveryMethod === "courier" || deliveryMethod === "inpost") {
+    return true;
+  }
+
+  const point = getOrderPickupPoint(order);
+  const key = String(point?.key || order?.pickupPointKey || order?.pickupPoint?.key || "")
+    .trim()
+    .toLowerCase();
+  if (
+    key === "delivery" ||
+    key === "delivery-2" ||
+    key.includes("wola-inpost") ||
+    key.includes("inpost")
+  ) {
+    return true;
+  }
+
+  const blob = getOrderVisualBlob(order);
+  if (blob.includes("delivery") || blob.includes("inpost") || blob.includes("dostawa")) {
+    return true;
+  }
+
+  return false;
+};
+
 /** Imię for BLIK transfer hint — Mokotów: Vitalii; other points: Dmytro. */
 const getBlikRecipientFirstName = (order = {}) => {
   if (isMokotowOrderPoint(order)) return "Vitalii";
@@ -2371,7 +2402,8 @@ useEffect(() => {
                         : t("ПОЛУЧИТЬ РЕКВИЗИТЫ", "POBIERZ DANE")}
                     </button>
 
-                    {paymentMethod === "blik" && !isWolaOrderPoint(activePaymentOrder) && (
+                    {paymentMethod === "blik" &&
+                      !shouldHideBlikTransferHint(activePaymentOrder) && (
                     <div className="paymentBlikNotice" role="note">
                         <div className="paymentBlikNoticeTitle">
                             {t(
