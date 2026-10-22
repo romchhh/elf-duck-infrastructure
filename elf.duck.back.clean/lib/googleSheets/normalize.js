@@ -174,7 +174,8 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "hqd-30-ml": ["LIQ HQD", "HQD"],
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
     "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI"],
-    "oxva-30-ml-20-mg": ["LIQ OXVA", "OXVA", "OXVA 20 MG", "OXVA 30 ML"],
+    // Без голого «OXVA» — інакше fuzzy ловить «OXVA POD» / «OXVA CATRIDGE».
+    "oxva-30-ml-20-mg": ["LIQ OXVA", "OXVA 20 MG", "OXVA 30 ML"],
     "oxva-pod": ["OXVA POD"],
     "xros-5-mini-pod": ["XROS 5 MINI POD"],
     "xros-5-pod": ["XROS 5 POD"],
@@ -238,7 +239,13 @@ export function headerMatchesWanted(header, wantedSet) {
     const shorter = compact.length <= wCompact.length ? compact : wCompact;
     const longer = compact.length <= wCompact.length ? wCompact : compact;
     if (shorter.length < 3) continue;
-    if (longer.includes(shorter)) return true;
+    if (!longer.includes(shorter)) continue;
+    // «OXVA» не має матчити «OXVA POD» / «OXVA CATRIDGE» (додаткові літерні токени).
+    const idx = longer.indexOf(shorter);
+    const after = longer.slice(idx + shorter.length);
+    if (!after) return true;
+    if (/^[A-ZА-ЯІЇЄҐ]/.test(after)) continue;
+    return true;
   }
 
   return false;

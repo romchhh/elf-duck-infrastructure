@@ -6,6 +6,7 @@ import {
 } from "../googleSheets/stockPullScheduler.js";
 import { processPickupShiftCloseReminders } from "./pickupShiftClose.js";
 import { processDueFirstPurchaseAutomations } from "../crm/pushAutomations.js";
+import { reconcileGhostReservedStock } from "./reconcileGhostReserved.js";
 import helpers from "./helpers/index.js";
 
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(
@@ -79,6 +80,23 @@ export function startServerIntervals() {
   runIntervalJob("processOrdersWithoutPaymentConfirm");
 
   runIntervalJob("processCashbackLedgerExpirations");
+
+  // Ghost reserved: звірка з відкритими замовленнями (переживає рестарт)
+  const runGhostReconcile = () => {
+    reconcileGhostReservedStock()
+      .then((r) => {
+        if (r?.fixed > 0) {
+          console.log(
+            `[intervals] ghost-reserve reconcile: fixed=${r.fixed} scanned=${r.scanned} ${r.durationMs}ms`
+          );
+        }
+      })
+      .catch((e) => {
+        console.error("[intervals] ghost-reserve reconcile error:", e);
+      });
+  };
+  setTimeout(runGhostReconcile, 20 * 1000);
+  setInterval(runGhostReconcile, 5 * 60 * 1000);
 
   setInterval(() => {
     runIntervalJob("processDailyPointStats");

@@ -29,6 +29,7 @@ import {
 } from "./config.js";
 import { getAssortmentSheetModelName } from "../server/helpers/chunk09.js";
 import { cacheInvalidate } from "../server/helpers/chunk01.js";
+import { getSyncedPickupPointKeysByKey } from "../server/pickupPointSync.js";
 
 export const STOCK_PULL_POINT_KEYS = [
   "praga",
@@ -38,6 +39,22 @@ export const STOCK_PULL_POINT_KEYS = [
   "delivery-2",
   "delivery",
 ];
+
+/** wola ↔ delivery-2: один pull оновлює обидві Mongo-точки (одна таблиця). */
+function expandSyncedStockPullPointKeys(pointKeys = []) {
+  const out = [];
+  for (const raw of pointKeys) {
+    const key = normKey(raw);
+    if (!key) continue;
+    for (const synced of getSyncedPickupPointKeysByKey(key)) {
+      const k = normKey(synced);
+      if (k && !out.includes(k) && resolveSpreadsheetIdForPointKey(k)) {
+        out.push(k);
+      }
+    }
+  }
+  return out;
+}
 
 /** Мінімум блоків моделей на листі: менше — вважаємо, що лист порожній/зламаний і Mongo не чіпаємо. */
 const MIN_SHEET_BLOCKS = 20;
@@ -124,9 +141,9 @@ function queueAssortmentStockOp(
 ) {
   const total = Math.max(0, Number(existing?.totalQty ?? sheetQty ?? 0));
   const reserved = Math.max(0, Number(existing?.reservedQty || 0));
-  // reservedQty не перезаписуємо зі знімка: інакше pull затирає бронь замовлення.
-  const nextReserved = reserved;
   const nextTotal = meta.listedOnAssortment === false ? total : sheetQty;
+  // Бронь замовлень лишаємо, але ghost reserved (> total) обрізаємо до totalQty.
+  const nextReserved = Math.min(reserved, Math.max(0, Number(nextTotal || 0)));
 
   const qtyUnchanged =
     existing &&
@@ -148,6 +165,9 @@ function queueAssortmentStockOp(
         point: pointKeysLabel,
         from: total,
         to: nextTotal,
+        ...(reserved !== nextReserved
+          ? { reservedFrom: reserved, reservedTo: nextReserved }
+          : {}),
       });
     }
 
@@ -157,6 +177,7 @@ function queueAssortmentStockOp(
         update: {
           $set: {
             "flavors.$[f].stockByPickupPoint.$[s].totalQty": nextTotal,
+            "flavors.$[f].stockByPickupPoint.$[s].reservedQty": nextReserved,
             "flavors.$[f].stockByPickupPoint.$[s].listedOnAssortment":
               meta.listedOnAssortment,
             "flavors.$[f].stockByPickupPoint.$[s].sheetLabel": meta.sheetLabel,
@@ -428,10 +449,11 @@ async function syncStockPull(opts = {}) {
     return { ok: false, reason: "DISABLED" };
   }
 
-  const requested =
+  const requestedRaw =
     Array.isArray(opts.pointKeys) && opts.pointKeys.length
       ? opts.pointKeys
       : STOCK_PULL_POINT_KEYS.filter((k) => SPREADSHEET_ID_BY_POINT_KEY[k]);
+  const requested = expandSyncedStockPullPointKeys(requestedRaw);
 
   const groups = groupPointKeysBySpreadsheet(requested);
   if (!groups.length) {
@@ -569,7 +591,8 @@ export function resolvePointKeysFromSheetWebhook(body = {}) {
     .replace(/,+$/, "");
 
   if (explicit) {
-    return resolveSpreadsheetIdForPointKey(explicit) ? [explicit] : [];
+    if (!resolveSpreadsheetIdForPointKey(explicit)) return [];
+    return expandSyncedStockPullPointKeys([explicit]);
   }
 
   const sid = String(body.spreadsheetId || body.spreadsheet_id || "").trim();
@@ -579,7 +602,7 @@ export function resolvePointKeysFromSheetWebhook(body = {}) {
   for (const key of STOCK_PULL_POINT_KEYS) {
     if (SPREADSHEET_ID_BY_POINT_KEY[key] === sid) keys.push(key);
   }
-  return [...new Set(keys)];
+  return expandSyncedStockPullPointKeys([...new Set(keys)]);
 }
 
 /**
@@ -625,7 +648,9 @@ export function queueStockPullForPointKey(pointKey) {
   const key = normKey(pointKey);
   if (!key || !resolveSpreadsheetIdForPointKey(key)) return;
 
-  pendingPointKeys.add(key);
+  for (const synced of expandSyncedStockPullPointKeys([key])) {
+    pendingPointKeys.add(synced);
+  }
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
     debounceTimer = null;
