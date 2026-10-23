@@ -28,6 +28,17 @@ import {
 const DONE_STATUSES = new Set(["completed", "done"]);
 const SKIP_SHIFT_STATUSES = new Set(["canceled", "annulled"]);
 
+/** За скільки хвилин до кінця зміни слати «Завершение смены» (5–10 хв). */
+const SHIFT_CLOSE_REMINDER_LEAD_MINUTES = Math.min(
+  30,
+  Math.max(
+    5,
+    Number(process.env.SHIFT_CLOSE_REMINDER_LEAD_MINUTES || 10)
+  )
+);
+/** Якщо джоб спізнився — ще кілька хвилин після «вікна до закриття». */
+const SHIFT_CLOSE_REMINDER_CATCHUP_MINUTES = 5;
+
 function normalizePointKey(value) {
   return String(value || "")
     .trim()
@@ -197,22 +208,26 @@ export async function onPickupOrderCompletedByManager(order) {
   });
 }
 
-async function sendShiftCloseReminder(point, { total, done, dayKey }) {
+async function sendShiftCloseReminder(point, { total, done, shiftEnd }) {
   const chatId = String(point?.notificationChatId || "").trim();
   if (!chatId || !bot?.telegram) {
     return { ok: false, reason: "NO_CHAT" };
   }
 
   const title = String(point?.title || point?.address || point?.key || "Точка").trim();
+  const closeLabel = String(shiftEnd || "").trim();
 
   const text = [
     `📋 <b>Завершение смены — ${title}</b>`,
+    closeLabel ? `Закрытие точки: <b>${closeLabel}</b>` : ``,
     ``,
     `<b>${done}/${total}</b> заказов завершены.`,
     done < total
       ? `Для полного завершения дня закройте все завязки.`
       : `Все заказы закрыты — статистика дня отправляется в группу.`,
-  ].join("\n");
+  ]
+    .filter((line, idx, arr) => !(line === "" && arr[idx - 1] === ""))
+    .join("\n");
 
   await bot.telegram.sendMessage(chatId, text, {
     parse_mode: "HTML",
@@ -253,7 +268,10 @@ export async function processPickupShiftCloseReminders(now = new Date()) {
     const endMinutes = parseWarsawTimeToMinutes(shiftEnd);
     if (endMinutes === null) continue;
 
-    if (nowMinutes < endMinutes || nowMinutes >= endMinutes + 30) {
+    // Раніше: з моменту закриття (20:00). Треба: за 5–10 хв до кінця зміни.
+    const windowStart = Math.max(0, endMinutes - SHIFT_CLOSE_REMINDER_LEAD_MINUTES);
+    const windowEnd = endMinutes + SHIFT_CLOSE_REMINDER_CATCHUP_MINUTES;
+    if (nowMinutes < windowStart || nowMinutes >= windowEnd) {
       continue;
     }
 
@@ -271,12 +289,18 @@ export async function processPickupShiftCloseReminders(now = new Date()) {
       kind: "shift_close_reminder",
       dayKey,
       pointKey,
+      shiftEnd,
+      leadMinutes: SHIFT_CLOSE_REMINDER_LEAD_MINUTES,
     });
 
     if (!claimed) continue;
 
     try {
-      await sendShiftCloseReminder(point, counts);
+      await sendShiftCloseReminder(point, {
+        ...counts,
+        shiftEnd,
+        minutesBeforeClose: Math.max(0, endMinutes - nowMinutes),
+      });
 
       if (counts.done >= counts.total) {
         await trySendDailyStatsForPointEarly(point, dayKey, {
