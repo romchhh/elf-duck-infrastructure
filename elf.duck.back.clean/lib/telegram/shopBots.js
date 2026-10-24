@@ -311,22 +311,50 @@ app.locals.runCrmBroadcastCampaign =
           )
       );
 
-    const { buildPushMessageHtml, buildPushReplyMarkup } = await import(
-      "../crm/pushMessageFormat.js"
+    const {
+      buildPushMessageHtmlByLanguage,
+      buildPushReplyMarkup,
+    } = await import("../crm/pushMessageFormat.js");
+    const { normalizeAppLanguage } = await import(
+      "../crm/userLanguage.js"
     );
 
     const photoUrl = String(message?.photoUrl || "").trim();
     const photoFileId = String(message?.photoFileId || "").trim();
 
-    const messageText = buildPushMessageHtml(message);
+    const htmlByLang = buildPushMessageHtmlByLanguage(message);
+    const messageTextPl = htmlByLang.pl;
+    const messageTextRu = htmlByLang.ru;
+    const defaultMessageText =
+      htmlByLang.defaultLanguage === "ru"
+        ? messageTextRu
+        : messageTextPl;
 
-    if (!messageText) {
+    if (!messageTextPl && !messageTextRu && !defaultMessageText) {
       throw new Error("MESSAGE_REQUIRED");
     }
 
     const replyMarkup = buildPushReplyMarkup(message, {
       campaignId: safeCampaignId,
     });
+
+    // Мови отримувачів — щоб слати PL/RU варіант
+    const languageByTelegramId = new Map();
+    if (pendingTelegramIds.length > 0) {
+      const langRows = await User.find({
+        telegramId: { $in: pendingTelegramIds },
+      })
+        .select({ telegramId: 1, language: 1 })
+        .lean();
+      for (const row of langRows) {
+        const id = String(row?.telegramId || "").trim();
+        if (!id) continue;
+        languageByTelegramId.set(
+          id,
+          normalizeAppLanguage(row?.language)
+        );
+      }
+    }
 
     /*
      * Продолжаем старые counters,
@@ -440,6 +468,18 @@ app.locals.runCrmBroadcastCampaign =
             pendingTelegramIds
           ) {
             try {
+const userLang = languageByTelegramId.get(telegramId) || "";
+const messageText =
+  userLang === "ru"
+    ? messageTextRu || defaultMessageText
+    : userLang === "pl"
+      ? messageTextPl || defaultMessageText
+      : defaultMessageText;
+
+if (!messageText) {
+  throw new Error("MESSAGE_REQUIRED");
+}
+
 // file_id надёжнее URL (CDN/прокси могут отвалиться mid-campaign)
 if (photoFileId) {
   await bot.telegram

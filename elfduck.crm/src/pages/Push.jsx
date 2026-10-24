@@ -219,12 +219,28 @@ export default function Push() {
   ] = useState('');
 
   /*
-   * MESSAGE — лише текст (markdown) + інлайн-кнопки мініапу
+   * MESSAGE — PL + RU текст (markdown) + інлайн-кнопки мініапу
    */
 
-  const [body, setBody] = useState(
+  const [bodyPl, setBodyPl] = useState('');
+  const [bodyRu, setBodyRu] = useState(
     '**Соскучились по вкусам?**\n\nВернись и получи −15% на ELF KING.'
   );
+  const [messageLang, setMessageLang] = useState('ru');
+
+  const body = messageLang === 'pl' ? bodyPl : bodyRu;
+  const setBody = (next) => {
+    const apply = (prev) =>
+      typeof next === 'function' ? next(prev) : next;
+    if (messageLang === 'pl') {
+      setBodyPl(apply);
+    } else {
+      setBodyRu(apply);
+    }
+  };
+  const hasMessageText =
+    Boolean(String(bodyPl || '').trim()) ||
+    Boolean(String(bodyRu || '').trim());
 
   const [inlineButtons, setInlineButtons] = useState([
     { text: 'Открыть магазин', kind: 'web_app', path: '/' },
@@ -239,7 +255,7 @@ export default function Push() {
   };
 
   const campaignNameFromBody = () => {
-    const firstLine = String(body || '')
+    const firstLine = String(bodyPl || bodyRu || '')
       .split('\n')
       .map((line) => line.replace(/\*+/g, '').trim())
       .find(Boolean);
@@ -884,6 +900,7 @@ const removeMedia = () => {
                   {
                     title: tplName.trim(),
                     text: body.trim(),
+                    language: messageLang,
                     photoUrl: photoUrl || templatePhotoPreviewUrl || '',
                     photoFileId: photoFileId || '',
                     photoPreviewUrl: photoUrl || templatePhotoPreviewUrl || '',
@@ -1137,7 +1154,12 @@ const deleteTemplate =
 
                     title: '',
 
-                    text: body.trim(),
+                    text:
+                      bodyPl.trim() ||
+                      bodyRu.trim(),
+                    textPl: bodyPl.trim(),
+                    textRu: bodyRu.trim(),
+                    defaultLanguage: 'pl',
 
                     promo: '',
 
@@ -1170,7 +1192,8 @@ const deleteTemplate =
           data
         ) => {
           setCampPage(1);
-          setBody('');
+          setBodyPl('');
+          setBodyRu('');
           setInlineButtons([
             { text: 'Открыть магазин', kind: 'web_app', path: '/' },
           ]);
@@ -1327,11 +1350,22 @@ const deleteTemplate =
         template.id
       );
 
-      setBody(
+      const tplText =
         template.text ||
-          template.preview ||
-          ''
-      );
+        template.preview ||
+        '';
+      const tplLang =
+        String(template?.language || '')
+          .trim()
+          .toLowerCase() === 'pl'
+          ? 'pl'
+          : 'ru';
+      setMessageLang(tplLang);
+      if (tplLang === 'pl') {
+        setBodyPl(tplText);
+      } else {
+        setBodyRu(tplText);
+      }
 
       const suggestedAudience = String(
         template?.suggestedAudience || ''
@@ -1452,6 +1486,7 @@ const confirmCreateTpl = () => {
         !audienceReady ||
         audienceIdsTruncated ||
         !audiencePayloadSynced ||
+        !hasMessageText ||
         sendCampaignMutation.isPending
       ) {
         return;
@@ -1999,6 +2034,14 @@ const confirmCreateTpl = () => {
                     : ''}
                 </p>
               ) : null}
+              {audienceLangUnknown > 0 &&
+              !audiencePreviewError &&
+              !audienceCountPending ? (
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
+                  н/д — мова ще не збережена (після відкриття мініапу). Їм піде
+                  текст мови за замовчуванням (PL), якщо є обидва варіанти.
+                </p>
+              ) : null}
               {requestedUsernames > 0 ? (
                 <p className="mt-1 text-[11px] text-muted-2">
                   Зі списку: {matchedUsernames} / {requestedUsernames}
@@ -2025,12 +2068,43 @@ const confirmCreateTpl = () => {
         {/* MESSAGE */}
 
         <div className="flex h-full flex-col rounded-2xl surface-card p-5">
-          <h3 className="font-heading text-[14px] font-semibold text-foreground">
-            Сообщение
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-heading text-[14px] font-semibold text-foreground">
+              Сообщение
+            </h3>
+            <div className="inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
+              {[
+                { key: 'pl', label: 'PL' },
+                { key: 'ru', label: 'RU' },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setMessageLang(item.key)}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors',
+                    messageLang === item.key
+                      ? 'bg-[hsl(255_100%_68%/0.18)] text-foreground'
+                      : 'text-muted-2 hover:text-foreground'
+                  )}
+                >
+                  {item.label}
+                  {(item.key === 'pl' ? bodyPl : bodyRu).trim()
+                    ? ' ✓'
+                    : ''}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="mt-4 space-y-3">
-            <Field label="Текст">
+            <Field
+              label={
+                messageLang === 'pl'
+                  ? 'Текст (PL)'
+                  : 'Текст (RU)'
+              }
+            >
               <div className="mb-1.5 flex flex-wrap gap-1">
                 {[
                   { label: 'B', tip: 'Жирный ** **', before: '**', after: '**' },
@@ -2053,11 +2127,16 @@ const confirmCreateTpl = () => {
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 rows={8}
-                placeholder={'**Заголовок**\n\nТекст з markdown…'}
+                placeholder={
+                  messageLang === 'pl'
+                    ? '**Tęsknimy za smakami?**\n\nWróć i weź −15% na ELF KING.'
+                    : '**Заголовок**\n\nТекст з markdown…'
+                }
                 className="input-base resize-none font-mono text-[12px]"
               />
               <p className="mt-1 text-[11px] text-muted-2">
-                Markdown: **жирний**, _курсив_, `код`, [текст](https://…)
+                Заповніть PL і RU — кожен отримає свій варіант. Без мови в профілі
+                → PL (якщо є), інакше RU.
               </p>
             </Field>
 
@@ -2266,12 +2345,12 @@ const confirmCreateTpl = () => {
               disabled={
                 recipients <= 0 ||
                 !audienceReady ||
-                !body.trim() ||
+                !hasMessageText ||
                 sendCampaignMutation.isPending
               }
               title={
-                !body.trim()
-                  ? 'Введите текст сообщения'
+                !hasMessageText
+                  ? 'Введите текст PL и/или RU'
                   : audienceIdsTruncated
                     ? 'Аудитория больше лимита — сузьте фильтры'
                     : !audienceReady

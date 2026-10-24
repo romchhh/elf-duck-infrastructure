@@ -160,10 +160,29 @@ router.post(
           body?.title
         );
 
+      const textPl =
+        normalizePushString(
+          body?.textPl
+        );
+
+      const textRu =
+        normalizePushString(
+          body?.textRu
+        );
+
       const text =
         normalizePushString(
           body?.text
-        );
+        ) ||
+        textPl ||
+        textRu;
+
+      const defaultLanguage =
+        String(body?.defaultLanguage || "pl")
+          .trim()
+          .toLowerCase() === "ru"
+          ? "ru"
+          : "pl";
 
       const promo =
         normalizePushString(
@@ -193,7 +212,7 @@ router.post(
 
       const buttons = normalizePushButtons(body?.buttons);
 
-      if (!title && !text && !promo) {
+      if (!title && !text && !textPl && !textRu && !promo) {
         return res.status(400).json({
           ok: false,
           error: "MESSAGE_REQUIRED",
@@ -450,6 +469,9 @@ router.post(
             message: {
               title,
               text,
+              textPl,
+              textRu,
+              defaultLanguage,
               promo,
               photoUrl,
               photoFileId,
@@ -496,6 +518,9 @@ router.post(
           message: {
             title,
             text,
+            textPl,
+            textRu,
+            defaultLanguage,
             promo,
             photoUrl,
             photoFileId,

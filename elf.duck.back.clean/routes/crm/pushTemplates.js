@@ -370,6 +370,13 @@ router.post(
           });
       }
 
+      const language =
+        String(req.body?.language || "")
+          .trim()
+          .toLowerCase() === "pl"
+          ? "pl"
+          : "ru";
+
       const result =
         await mongoose
           .connection
@@ -379,6 +386,7 @@ router.post(
           .insertOne({
             title,
             text,
+            language,
             photoUrl,
             photoFileId,
             photoPreviewUrl,

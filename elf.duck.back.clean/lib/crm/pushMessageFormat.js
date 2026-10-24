@@ -76,6 +76,49 @@ export function buildPushMessageHtml(message = {}) {
 }
 
 /**
+ * PL/RU варіанти тексту розсилки.
+ * Legacy `text` — якщо відповідної мови немає.
+ * unknown → defaultLanguage (pl за замовчуванням).
+ */
+export function resolvePushTextForLanguage(message = {}, language = "") {
+  const textPl = String(message?.textPl || "").trim();
+  const textRu = String(message?.textRu || "").trim();
+  const legacy = String(message?.text || "").trim();
+  const fallback =
+    String(message?.defaultLanguage || "pl").trim().toLowerCase() === "ru"
+      ? "ru"
+      : "pl";
+
+  const lang =
+    language === "pl" || language === "ru" ? language : fallback;
+
+  if (lang === "ru") {
+    return textRu || legacy || textPl;
+  }
+  return textPl || legacy || textRu;
+}
+
+/** Готові HTML для pl / ru / default (один раз перед циклом розсилки). */
+export function buildPushMessageHtmlByLanguage(message = {}) {
+  const shared = {
+    title: message?.title,
+    promo: message?.promo,
+  };
+  const textPl = resolvePushTextForLanguage(message, "pl");
+  const textRu = resolvePushTextForLanguage(message, "ru");
+  const defaultLang =
+    String(message?.defaultLanguage || "pl").trim().toLowerCase() === "ru"
+      ? "ru"
+      : "pl";
+
+  return {
+    pl: buildPushMessageHtml({ ...shared, text: textPl }),
+    ru: buildPushMessageHtml({ ...shared, text: textRu }),
+    defaultLanguage: defaultLang,
+  };
+}
+
+/**
  * Додає ?pc=<campaignId> до URL мініапу для трекінгу відкриттів з розсилки.
  */
 export function appendPushCampaignParam(url, campaignId) {

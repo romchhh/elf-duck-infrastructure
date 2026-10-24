@@ -61,6 +61,22 @@ const broadcastCampaignSchema =
           default: "",
         },
 
+        textPl: {
+          type: String,
+          default: "",
+        },
+
+        textRu: {
+          type: String,
+          default: "",
+        },
+
+        /** Для User без language: pl | ru */
+        defaultLanguage: {
+          type: String,
+          default: "pl",
+        },
+
         promo: {
           type: String,
           default: "",
