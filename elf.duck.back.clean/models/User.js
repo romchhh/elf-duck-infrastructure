@@ -8,6 +8,9 @@ const userSchema = new mongoose.Schema(
     lastName: String,
     photoUrl: String,
 
+    /** Мова мініапу: pl | ru (для CRM-статистики та push) */
+    language: { type: String, default: "" },
+
     /** Index in TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_TOKEN_2 — which shop bot the user opened */
     shopBotIndex: { type: Number, default: 0 },
     /** Set when shopBotIndex was saved from verified mini-app initData */

@@ -1,4 +1,5 @@
 import { bindApiGlobals } from "./bindApiGlobals.js";
+import { normalizeAppLanguage } from "../../lib/crm/userLanguage.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -27,7 +28,8 @@ app.post("/register-user", async (req, res) => {
     const lastName = String(tgUser?.last_name || "").trim();
     const photoUrl = String(tgUser?.photo_url || "").trim();
 
-    const { ref, pushCampaignId: pushCampaignIdRaw } = req.body || {};
+    const { ref, pushCampaignId: pushCampaignIdRaw, language: languageRaw } =
+      req.body || {};
     // Prefer body ref, fall back to signed initData start_param (more reliable than initDataUnsafe)
     const refFromBody = String(ref || "").trim();
     const refFromInit = String(verified?.startParam || "").trim();
@@ -35,6 +37,9 @@ app.post("/register-user", async (req, res) => {
       .replace(/^ref_/, "")
       .trim();
     const pushCampaignId = String(pushCampaignIdRaw || "").trim();
+    const appLanguage =
+      normalizeAppLanguage(languageRaw) ||
+      normalizeAppLanguage(tgUser?.language_code);
 
     // Single upsert instead of findOne → create/save → findById. One round-trip
     // for the common "returning user" path.
@@ -44,6 +49,7 @@ app.post("/register-user", async (req, res) => {
     if (firstName) set.firstName = firstName;
     if (lastName) set.lastName = lastName;
     if (photoUrl) set.photoUrl = photoUrl;
+    if (appLanguage) set.language = appLanguage;
     if (verified?.botToken) {
       set.shopBotIndex = resolveShopBotIndexFromToken(verified.botToken);
       set.shopBotKnown = true;
@@ -92,6 +98,34 @@ app.post("/register-user", async (req, res) => {
   } catch (e) {
     console.error("/register-user error:", e);
     res.status(500).json({ ok: false, error: "Server error" });
+  }
+});
+
+// мова мініапу (pl/ru) — для CRM статистики
+app.post("/user/language", async (req, res) => {
+  try {
+    const telegramId = requireTrustedTelegramId(req, res);
+    if (!telegramId) return;
+
+    const language = normalizeAppLanguage(req.body?.language);
+    if (!language) {
+      return res.status(400).json({ ok: false, error: "INVALID_LANGUAGE" });
+    }
+
+    const user = await User.findOneAndUpdate(
+      { telegramId },
+      { $set: { language } },
+      { new: true }
+    ).lean();
+
+    if (!user) {
+      return res.status(404).json({ ok: false, error: "User not found" });
+    }
+
+    return res.json({ ok: true, language, user });
+  } catch (e) {
+    console.error("/user/language error:", e);
+    return res.status(500).json({ ok: false, error: "Server error" });
   }
 });
 

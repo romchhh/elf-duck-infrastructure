@@ -1,3 +1,5 @@
+import { API_URL } from "../api.js";
+
 export const getDeviceLanguage = () => {
   const lang =
     window?.navigator?.languages?.[0] ||
@@ -46,6 +48,35 @@ export const getCurrentLanguage = () => {
     : "ru";
 };
 
+/** Зберегти мову в CRM User (fire-and-forget). */
+export const persistAppLanguage = (
+  language
+) => {
+  const safeLanguage =
+    language === "pl" ? "pl" : "ru";
+
+  try {
+    const initData =
+      window?.Telegram?.WebApp?.initData ||
+      "";
+    if (!initData) return;
+
+    fetch(`${API_URL}/user/language`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-telegram-init-data": initData,
+      },
+      body: JSON.stringify({
+        language: safeLanguage,
+      }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+};
+
 export const setCurrentLanguage = (
   language
 ) => {
@@ -61,6 +92,8 @@ export const setCurrentLanguage = (
     "language",
     safeLanguage
   );
+
+  persistAppLanguage(safeLanguage);
 
   return safeLanguage;
 };

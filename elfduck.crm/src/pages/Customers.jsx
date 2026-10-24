@@ -343,6 +343,14 @@ const total =
     pagination.total || 0
   );
 
+const languageStats =
+  summaryData.languages || {};
+const langPl = Number(languageStats.pl || 0);
+const langRu = Number(languageStats.ru || 0);
+const langUnknown = Number(languageStats.unknown || 0);
+const hasLanguageStats =
+  langPl > 0 || langRu > 0 || langUnknown > 0;
+
 const summary = [
   {
     label: 'Клиентов',
@@ -374,6 +382,17 @@ const summary = [
       formatMoney(
         summaryData.averageCheck
       ),
+  },
+
+  {
+    label: 'Язык PL / RU',
+    value: hasLanguageStats
+      ? `${formatNumber(langPl)} / ${formatNumber(langRu)}${
+          langUnknown > 0
+            ? ` · н/д ${formatNumber(langUnknown)}`
+            : ''
+        }`
+      : '—',
   },
 ];
 
@@ -550,7 +569,7 @@ const handleOpenInTegger = async () => {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         {summary.map((s) => (
           <KpiCard key={s.label} label={s.label} value={s.value} />
         ))}

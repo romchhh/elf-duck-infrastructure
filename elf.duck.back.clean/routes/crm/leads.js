@@ -6,6 +6,11 @@ import {
   Order,
   User,
 } from "./deps.js";
+import {
+  bumpLanguageStat,
+  emptyLanguageStats,
+  normalizeAppLanguage,
+} from "../../lib/crm/userLanguage.js";
 
 const router = express.Router();
 
@@ -90,6 +95,7 @@ router.get(
             firstName: 1,
             lastName: 1,
             createdAt: 1,
+            language: 1,
 
             "referral.invitedByTelegramId": 1,
           })
@@ -390,6 +396,8 @@ router.get(
               firstPurchaseAt,
 
               status,
+
+              language: normalizeAppLanguage(user?.language) || "",
             };
           }
         );
@@ -428,6 +436,11 @@ router.get(
       const totalInvited = rows.length;
 
       const conversion = 0;
+
+      const languages = emptyLanguageStats();
+      for (const row of rows) {
+        bumpLanguageStat(languages, row.language);
+      }
 
       /*
        * Поиск.
@@ -540,6 +553,7 @@ router.get(
           clients,
           conversion,
           totalInvited,
+          languages,
         },
 
         rows:

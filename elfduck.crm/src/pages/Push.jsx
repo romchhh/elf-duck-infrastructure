@@ -53,6 +53,10 @@ import {
 
 const TPL_PAGE_SIZE = 5;
 const CAMPAIGN_PAGE_SIZE = 10;
+const LANGUAGE_FILTERS = [
+  { key: 'pl', label: 'PL' },
+  { key: 'ru', label: 'RU' },
+];
 
 const crmFetch = crmFetchJson;
 
@@ -201,6 +205,13 @@ export default function Push() {
     cashbackExpiringSoon,
     setCashbackExpiringSoon,
   ] = useState(false);
+
+  const [
+    languages,
+    setLanguages,
+  ] = useState(
+    new Set()
+  );
 
   const [
     telegram,
@@ -550,6 +561,11 @@ onSuccess: (data) => {
           ).trim(),
 
         cashbackExpiringSoon,
+
+        languages: selectedOrNone(
+          languages,
+          LANGUAGE_FILTERS
+        ),
       }),
 
       [
@@ -561,6 +577,7 @@ onSuccess: (data) => {
         favProduct,
         telegram,
         cashbackExpiringSoon,
+        languages,
         pushMeta.statuses,
         pushMeta.categories,
         pushMeta.locations,
@@ -680,6 +697,14 @@ onSuccess: (data) => {
   const missingUsernames = Array.isArray(audiencePreview?.missingUsernames)
     ? audiencePreview.missingUsernames
     : [];
+  const audienceLanguages = audiencePreview?.languages || {};
+  const audienceLangPl = Number(audienceLanguages.pl || 0);
+  const audienceLangRu = Number(audienceLanguages.ru || 0);
+  const audienceLangUnknown = Number(audienceLanguages.unknown || 0);
+  const hasAudienceLanguageStats =
+    audienceLangPl > 0 ||
+    audienceLangRu > 0 ||
+    audienceLangUnknown > 0;
 
     useEffect(() => {
   return () => {
@@ -1308,6 +1333,13 @@ const deleteTemplate =
           ''
       );
 
+      const suggestedAudience = String(
+        template?.suggestedAudience || ''
+      ).trim();
+      if (suggestedAudience) {
+        setAudience(suggestedAudience);
+      }
+
       if (Array.isArray(template.buttons) && template.buttons.length) {
         setInlineButtons(
           template.buttons.map((btn) => ({
@@ -1772,6 +1804,25 @@ const confirmCreateTpl = () => {
               </p>
             )}
 
+            <Section label="Язык">
+              <div className="flex flex-wrap gap-2">
+                {LANGUAGE_FILTERS.map((item) => (
+                  <Chip
+                    key={item.key}
+                    active={languages.has(item.key)}
+                    onClick={() =>
+                      toggle(languages, item.key, setLanguages)
+                    }
+                  >
+                    {item.label}
+                  </Chip>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-muted-2">
+                Без выбора — все языки. PL / RU по языку мини-приложения.
+              </p>
+            </Section>
+
             <Section label="Статус клиента">
               <div
                 className={cn(
@@ -1938,6 +1989,16 @@ const confirmCreateTpl = () => {
                       : num(recipients)}
                 </span>
               </div>
+              {!audiencePreviewError &&
+              !audienceCountPending &&
+              hasAudienceLanguageStats ? (
+                <p className="mt-1 text-[11px] text-muted-2">
+                  PL {num(audienceLangPl)} · RU {num(audienceLangRu)}
+                  {audienceLangUnknown > 0
+                    ? ` · н/д ${num(audienceLangUnknown)}`
+                    : ''}
+                </p>
+              ) : null}
               {requestedUsernames > 0 ? (
                 <p className="mt-1 text-[11px] text-muted-2">
                   Зі списку: {matchedUsernames} / {requestedUsernames}
@@ -2289,6 +2350,32 @@ const confirmCreateTpl = () => {
                 : 'Применить'}
             </span>
           </div>
+
+          {(template.language ||
+            template.suggestedAudience ||
+            template.isDefault) && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {template.language ? (
+                <span className="rounded border border-border-soft px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-2">
+                  {String(template.language).toUpperCase()}
+                </span>
+              ) : null}
+              {template.suggestedAudience === 'leads' ? (
+                <span className="rounded border border-[hsl(255_100%_68%/0.35)] bg-[hsl(255_100%_68%/0.1)] px-1.5 py-0.5 text-[10px] text-[hsl(255_100%_75%)]">
+                  Лиды
+                </span>
+              ) : template.suggestedAudience ? (
+                <span className="rounded border border-border-soft px-1.5 py-0.5 text-[10px] text-muted-2">
+                  {template.suggestedAudience}
+                </span>
+              ) : null}
+              {template.isDefault ? (
+                <span className="rounded border border-border-soft px-1.5 py-0.5 text-[10px] text-muted-2">
+                  Готовый
+                </span>
+              ) : null}
+            </div>
+          )}
 
           <div className="mt-1 text-[12px] text-muted-foreground">
             {template.preview ||

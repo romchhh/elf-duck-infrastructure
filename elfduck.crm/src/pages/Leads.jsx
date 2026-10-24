@@ -399,6 +399,14 @@ export default function Leads() {
         0
     );
 
+  const languageStats =
+    summary.languages || {};
+  const langPl = Number(languageStats.pl || 0);
+  const langRu = Number(languageStats.ru || 0);
+  const langUnknown = Number(languageStats.unknown || 0);
+  const hasLanguageStats =
+    langPl > 0 || langRu > 0 || langUnknown > 0;
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -416,6 +424,20 @@ export default function Leads() {
                 · свежих {formatNumber(summary.freshLeads ?? 0)}
                 {' / '}
                 спящих {formatNumber(summary.sleeping || 0)}
+              </>
+            ) : null}
+            {hasLanguageStats ? (
+              <>
+                {' '}
+                · PL {formatNumber(langPl)}
+                {' / '}
+                RU {formatNumber(langRu)}
+                {langUnknown > 0 ? (
+                  <>
+                    {' / '}
+                    н/д {formatNumber(langUnknown)}
+                  </>
+                ) : null}
               </>
             ) : null}
           </span>

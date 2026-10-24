@@ -7,6 +7,7 @@ import {
   mongoose,
   BroadcastCampaign,
 } from "./deps.js";
+import { ensureDefaultPushTemplates } from "../../lib/crm/pushDefaultTemplates.js";
 
 const router = express.Router();
 
@@ -21,6 +22,8 @@ router.get(
     res
   ) => {
     try {
+      await ensureDefaultPushTemplates();
+
       const templates =
         await mongoose
           .connection
@@ -196,6 +199,12 @@ for (
                 template
                   ?.isDefault ===
                 true,
+
+              slug: String(template?.slug || ""),
+              language: String(template?.language || ""),
+              suggestedAudience: String(
+                template?.suggestedAudience || ""
+              ),
 
               used: Number(
                 template?.used ||

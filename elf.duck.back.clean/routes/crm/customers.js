@@ -10,6 +10,10 @@ import {
   User,
 } from "./deps.js";
 import { buildCustomerSalesStats } from "../../lib/crm/sales.js";
+import {
+  emptyLanguageStats,
+  languageStatsFromUsers,
+} from "../../lib/crm/userLanguage.js";
 
 const router = express.Router();
 
@@ -303,6 +307,16 @@ router.get(
           ? Number((totalRevenue / totalPurchases).toFixed(2))
           : 0;
 
+      let languages = emptyLanguageStats();
+      if (telegramIds.length > 0) {
+        const languageUsers = await User.find({
+          telegramId: { $in: telegramIds },
+        })
+          .select({ language: 1 })
+          .lean();
+        languages = languageStatsFromUsers(languageUsers);
+      }
+
       if (statusFilter === "favorites") {
         rows = rows.filter((row) => row.isFavorite);
       } else if (statusFilter !== "all") {
@@ -447,6 +461,7 @@ router.get(
           active,
           topLtv,
           averageCheck,
+          languages,
         },
         rows: pageRows,
         pagination: {

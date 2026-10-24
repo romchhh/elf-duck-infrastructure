@@ -16,6 +16,7 @@ import {
 } from "./utils/guestLocalStore";
 import { isGuestShopping } from "./utils/shoppingSession";
 import { API_URL } from "./api.js";
+import { getCurrentLanguage } from "./utils/i18n";
 
 const UserContext = createContext(null);
 
@@ -105,6 +106,7 @@ useEffect(() => {
     lastName: tgUser.last_name,
     photoUrl: tgUser.photo_url,
     ref: startParam || null,
+    language: getCurrentLanguage(),
     ...(pushCampaignId ? { pushCampaignId: String(pushCampaignId) } : {}),
   };
 

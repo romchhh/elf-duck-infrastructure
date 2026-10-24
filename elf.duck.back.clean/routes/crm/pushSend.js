@@ -87,6 +87,8 @@ router.post(
           cashbackExpiringSoon: Boolean(
             req.body?.cashbackExpiringSoon
           ),
+
+          languages: req.body?.languages || [],
         });
 
       return res.json({
@@ -309,6 +311,8 @@ router.post(
           cashbackExpiringSoon: Boolean(
             body?.cashbackExpiringSoon
           ),
+
+          languages: body?.languages || [],
         });
 
       const telegramIds =

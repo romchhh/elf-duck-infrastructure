@@ -13,6 +13,11 @@ import {
 } from "./pushText.js";
 import { isCashbackExpiringSoon } from "./cashbackExpiring.js";
 import { getCustomerStatus } from "./analytics/customers.js";
+import {
+  bumpLanguageStat,
+  emptyLanguageStats,
+  normalizeAppLanguage,
+} from "./userLanguage.js";
 
 const SALES_STATS_CACHE_TTL_MS = 60_000;
 let salesStatsCache = {
@@ -141,6 +146,7 @@ export async function buildPushAudiencePreview({
   favProduct = "",
   telegram = "",
   cashbackExpiringSoon = false,
+  languages = [],
   includeTelegramIds = false,
 }) {
   const audienceTokens = parsePushAudienceTokens(telegram);
@@ -149,6 +155,12 @@ export async function buildPushAudiencePreview({
   const normalizedAudience = String(audience || "all")
     .trim()
     .toLowerCase();
+
+  const normalizedLanguages = new Set(
+    (Array.isArray(languages) ? languages : [])
+      .map((value) => normalizeAppLanguage(value))
+      .filter(Boolean)
+  );
 
   const normalizedStatuses = new Set(
     (Array.isArray(statuses) ? statuses : [])
@@ -205,7 +217,8 @@ export async function buildPushAudiencePreview({
     safeMinCheck > 0 ||
     safeMinCashback > 0 ||
     Boolean(normalizedFavProduct) ||
-    cashbackExpiringSoon;
+    cashbackExpiringSoon ||
+    normalizedLanguages.size > 0;
 
   const baseUserMatch = {
     telegramId: {
@@ -225,7 +238,7 @@ export async function buildPushAudiencePreview({
     !hasExtraFilters;
 
   if (canFastAudience) {
-    const emptyPreview = (total, telegramIds = []) => {
+    const emptyPreview = (total, telegramIds = [], languages = emptyLanguageStats()) => {
       const truncated = total > CRM_PUSH_AUDIENCE_ID_CAP;
       return {
         total,
@@ -238,18 +251,22 @@ export async function buildPushAudiencePreview({
           : [],
         audienceIdsTruncated: truncated,
         audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
+        languages,
       };
+    };
+
+    const tallyLanguages = (rows) => {
+      const stats = emptyLanguageStats();
+      for (const row of rows) {
+        bumpLanguageStat(stats, normalizeAppLanguage(row?.language));
+      }
+      return stats;
     };
 
     // «Все» = усі валідні User (≈ клієнти ∪ ліди).
     if (isCrmUniverseAudience) {
-      if (!includeTelegramIds) {
-        const total = await User.countDocuments(baseUserMatch);
-        return emptyPreview(total);
-      }
-
       const rows = await User.find(baseUserMatch)
-        .select({ telegramId: 1 })
+        .select({ telegramId: 1, language: 1 })
         .lean();
       const ids = [];
       for (const row of rows) {
@@ -257,7 +274,7 @@ export async function buildPushAudiencePreview({
         if (!id || isGuestTelegramId(id)) continue;
         ids.push(id);
       }
-      return emptyPreview(ids.length, ids);
+      return emptyPreview(ids.length, ids, tallyLanguages(rows));
     }
 
     const { statsByUser } = await loadSalesStatsBundle(range);
@@ -268,22 +285,32 @@ export async function buildPushAudiencePreview({
     );
 
     if (normalizedAudience === "customers") {
-      const ids = [...buyerIds];
-      return emptyPreview(ids.length, ids);
+      const rows = await User.find({
+        ...baseUserMatch,
+        telegramId: { $in: [...buyerIds] },
+      })
+        .select({ telegramId: 1, language: 1 })
+        .lean();
+      const ids = rows
+        .map((row) => String(row?.telegramId || "").trim())
+        .filter((id) => id && !isGuestTelegramId(id));
+      return emptyPreview(ids.length, ids, tallyLanguages(rows));
     }
 
     // «Лиды» = User без завершеної покупки (як у CRM Лиды).
     const rows = await User.find(baseUserMatch)
-      .select({ telegramId: 1 })
+      .select({ telegramId: 1, language: 1 })
       .lean();
+    const leadRows = [];
     const leadIds = [];
     for (const row of rows) {
       const id = String(row?.telegramId || "").trim();
       if (!id || isGuestTelegramId(id)) continue;
       if (buyerIds.has(id)) continue;
       leadIds.push(id);
+      leadRows.push(row);
     }
-    return emptyPreview(leadIds.length, leadIds);
+    return emptyPreview(leadIds.length, leadIds, tallyLanguages(leadRows));
   }
 
   const [favoriteCustomerRows, cachedBundle] = await Promise.all([
@@ -319,6 +346,7 @@ export async function buildPushAudiencePreview({
     cashbackBalance: 1,
     cashbackLedger: 1,
     referral: 1,
+    language: 1,
   };
 
   // Список @username / id — шукаємо напряму, без повного скану бази.
@@ -416,6 +444,14 @@ export async function buildPushAudiencePreview({
           "customers"
         ) {
           if (purchases <= 0) {
+            return false;
+          }
+        }
+
+        if (normalizedLanguages.size > 0) {
+          const lang =
+            normalizeAppLanguage(user?.language) || "unknown";
+          if (!normalizedLanguages.has(lang)) {
             return false;
           }
         }
@@ -643,12 +679,18 @@ if (
         return true;
   };
 
+  const languageStats = emptyLanguageStats();
+
   const consumeUser = (user) => {
     if (!userMatchesPushAudience(user)) {
       return;
     }
 
     matchedTotal += 1;
+    bumpLanguageStat(
+      languageStats,
+      normalizeAppLanguage(user?.language)
+    );
 
     const telegramId = String(user?.telegramId || "").trim();
     const username = String(user?.username || "").trim().toLowerCase();
@@ -667,6 +709,7 @@ if (
         username: String(user?.username || ""),
         name: getPushUserDisplayName(user),
         cashbackBalance: Number(user?.cashbackBalance || 0),
+        language: normalizeAppLanguage(user?.language) || "",
       });
     }
 
@@ -711,5 +754,6 @@ if (
     telegramIds: includeTelegramIds ? matchedTelegramIds : [],
     audienceIdsTruncated: truncated,
     audienceIdCap: CRM_PUSH_AUDIENCE_ID_CAP,
+    languages: languageStats,
   };
 }
