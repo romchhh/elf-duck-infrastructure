@@ -76,12 +76,32 @@ export function buildPushMessageHtml(message = {}) {
 }
 
 /**
+ * Додає ?pc=<campaignId> до URL мініапу для трекінгу відкриттів з розсилки.
+ */
+export function appendPushCampaignParam(url, campaignId) {
+  const id = String(campaignId || "").trim();
+  if (!id || !url) return String(url || "");
+
+  try {
+    const parsed = new URL(String(url), getWebAppBaseUrl() || "https://local.invalid");
+    parsed.searchParams.set("pc", id);
+    return parsed.toString();
+  } catch {
+    const base = String(url);
+    const sep = base.includes("?") ? "&" : "?";
+    return `${base}${sep}pc=${encodeURIComponent(id)}`;
+  }
+}
+
+/**
  * Інлайн-кнопки: web_app (мініап) або звичайний url.
  * buttons: [{ text, kind?: 'web_app'|'url', path?: string, url?: string }]
  * + legacy buttonText/buttonUrl
+ * options.campaignId — для трекінгу відкриттів апки
  */
-export function buildPushReplyMarkup(message = {}) {
+export function buildPushReplyMarkup(message = {}, options = {}) {
   const webAppBase = getWebAppBaseUrl();
+  const campaignId = String(options?.campaignId || "").trim();
   const rows = [];
 
   const buttons = Array.isArray(message?.buttons) ? message.buttons : [];
@@ -104,7 +124,12 @@ export function buildPushReplyMarkup(message = {}) {
       rows.push([
         {
           text,
-          web_app: { url: `${webAppBase}${normalizedPath}` },
+          web_app: {
+            url: appendPushCampaignParam(
+              `${webAppBase}${normalizedPath}`,
+              campaignId
+            ),
+          },
         },
       ]);
       continue;
@@ -136,7 +161,9 @@ export function buildPushReplyMarkup(message = {}) {
           rows.push([
             {
               text: buttonText,
-              web_app: { url: parsed.toString() },
+              web_app: {
+                url: appendPushCampaignParam(parsed.toString(), campaignId),
+              },
             },
           ]);
         } catch {
@@ -153,6 +180,18 @@ export function buildPushReplyMarkup(message = {}) {
         }
       }
     }
+  }
+
+  // Без кнопок відкриття апки не відстежити — додаємо дефолтну з pc=
+  if (!rows.length && campaignId && webAppBase) {
+    rows.push([
+      {
+        text: "Открыть магазин",
+        web_app: {
+          url: appendPushCampaignParam(`${webAppBase}/`, campaignId),
+        },
+      },
+    ]);
   }
 
   if (!rows.length) return undefined;

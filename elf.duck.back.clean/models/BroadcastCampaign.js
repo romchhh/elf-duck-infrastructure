@@ -132,6 +132,12 @@ const broadcastCampaignSchema =
         default: [],
         },
 
+      /** Користувачі, які відкрили мініап з кнопки цієї розсилки (?pc=) */
+      openedTelegramIds: {
+        type: [String],
+        default: [],
+      },
+
       processedTelegramIds: {
         type: [String],
         default: [],
@@ -148,6 +154,12 @@ const broadcastCampaignSchema =
       },
 
       sent: {
+        type: Number,
+        default: 0,
+      },
+
+      /** Унікальні відкриття мініапу з цієї розсилки */
+      opened: {
         type: Number,
         default: 0,
       },

@@ -71,6 +71,8 @@ router.get(
                 buyers: 0,
                 revenue: 0,
                 conversion: 0,
+                opened: 0,
+                promoApplications: 0,
                 };
 
             const purchases =
@@ -132,6 +134,22 @@ router.get(
 
             row.conversion =
                 conversion;
+
+            row.opened = Math.max(
+              Number(analytics.opened || 0),
+              Number(row?.opened || 0),
+              Array.isArray(row?.openedTelegramIds)
+                ? row.openedTelegramIds.length
+                : 0
+            );
+
+            row.promoApplications = Number(
+              analytics.promoApplications || 0
+            );
+
+            row.promoCodes = Array.isArray(analytics.promoCodes)
+              ? analytics.promoCodes
+              : [];
 
             if (
                 storedPurchases !==
@@ -247,6 +265,17 @@ router.get(
                 row?.blocked ||
                   0
               ),
+
+            opened: Number(row?.opened || 0),
+
+            promoApplications: Number(
+              row?.promoApplications || 0
+            ),
+
+            promo:
+              String(row?.message?.promo || "").trim() ||
+              (Array.isArray(row?.promoCodes) && row.promoCodes[0]) ||
+              "",
 
             purchases:
               Number(

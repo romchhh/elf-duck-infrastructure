@@ -1755,6 +1755,15 @@ app.post("/orders/:id/arrived-at-pickup", async (req, res) => {
       return res.json({ ok: true, order, alreadyCompleted: true });
     }
 
+    // Кнопка «Я на месте» доступна только после подтверждения менеджером
+    // (mgr_pay_paid выставляет status = assembled).
+    if (String(order.status || "").trim().toLowerCase() !== "assembled") {
+      return res.status(409).json({
+        ok: false,
+        error: "ORDER_NOT_CONFIRMED_BY_MANAGER",
+      });
+    }
+
     const notifyResult = await notifyManagerClientArrived(order);
 
     if (!notifyResult?.ok) {

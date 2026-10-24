@@ -20,6 +20,7 @@ import Customers from "@/pages/Customers";
 import Leads from "@/pages/Leads";
 import Partners from "@/pages/Partners";
 import Cashback from "@/pages/Cashback";
+import PromoCodes from "@/pages/PromoCodes";
 import Push from "@/pages/Push";
 import Products from "@/pages/Products";
 import Locations from "@/pages/Locations";
@@ -46,6 +47,7 @@ function AppRoutes() {
 
         <Route path="/marketing/partners" element={<Partners />} />
         <Route path="/marketing/cashback" element={<Cashback />} />
+        <Route path="/marketing/promo-codes" element={<PromoCodes />} />
         <Route path="/marketing/push" element={<Push />} />
 
         <Route path="/analytics/products" element={<Products />} />

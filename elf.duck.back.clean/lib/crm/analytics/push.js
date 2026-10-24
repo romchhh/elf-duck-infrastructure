@@ -5,6 +5,8 @@ import PickupPoint from "../../../models/PickupPoint.js";
 import User from "../../../models/User.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import { PUSH_ATTRIBUTION_WINDOW_DAYS } from "../constants.js";
+import { PROMO_CODES_COLLECTION } from "../../server/runtimeState.js";
+import { normalizePromoCodeValue } from "../promoLimits.js";
 import {
   getCompletedOrderMatch,
   getSaleDateExpression,
@@ -15,6 +17,25 @@ import {
 } from "../sales.js";
 import { getPeriodRange, getWarsawDateKey } from "../datetime.js";
 
+/** Промокоди з поля promo або з тексту «Промокод: CODE» / `CODE`. */
+export function extractCampaignPromoCodes(message = {}) {
+  const codes = new Set();
+  const direct = normalizePromoCodeValue(message?.promo);
+  if (direct) codes.add(direct);
+
+  const blob = `${message?.title || ""}\n${message?.text || ""}`;
+  const patterns = [
+    /Промокод\s*[:：]\s*`?([A-Z0-9_-]{3,32})`?/gi,
+    /Promo\s*code\s*[:：]\s*`?([A-Z0-9_-]{3,32})`?/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of blob.matchAll(pattern)) {
+      const code = normalizePromoCodeValue(match[1]);
+      if (code) codes.add(code);
+    }
+  }
+  return [...codes];
+}
 
 export function getPushAttributionWindowEnd(
   startedAt,
@@ -65,6 +86,14 @@ export async function buildPushCampaignAnalytics(
         purchases: 0,
         buyers: new Set(),
         revenue: 0,
+        opened: Math.max(
+          Number(campaign?.opened || 0),
+          Array.isArray(campaign?.openedTelegramIds)
+            ? campaign.openedTelegramIds.length
+            : 0
+        ),
+        promoApplications: 0,
+        promoCodes: extractCampaignPromoCodes(campaign?.message),
       },
     ])
   );
@@ -455,6 +484,83 @@ export async function buildPushCampaignAnalytics(
   }
 
   /*
+   * Застосування промокодів з розсилки
+   * серед тих, хто її отримав, у вікні attribution.
+   */
+  const promoCampaignMeta = campaigns
+    .map((campaign) => {
+      const id = String(campaign?._id || "");
+      const analytics = result.get(id);
+      const promoCodes = analytics?.promoCodes || [];
+      if (!id || !promoCodes.length) return null;
+
+      const startedAt = new Date(
+        campaign?.startedAt || campaign?.createdAt || ""
+      );
+      if (Number.isNaN(startedAt.getTime())) return null;
+
+      const sentSet = new Set(
+        (
+          Array.isArray(campaign?.sentTelegramIds)
+            ? campaign.sentTelegramIds
+            : []
+        )
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      );
+
+      return {
+        id,
+        promoCodes,
+        startedAt,
+        windowEnd: getPushAttributionWindowEnd(startedAt),
+        sentSet,
+      };
+    })
+    .filter(Boolean);
+
+  if (promoCampaignMeta.length > 0) {
+    const allPromoCodes = [
+      ...new Set(promoCampaignMeta.flatMap((row) => row.promoCodes)),
+    ];
+
+    const promoDocs = await mongoose.connection
+      .collection(PROMO_CODES_COLLECTION)
+      .find({ code: { $in: allPromoCodes } })
+      .project({ code: 1, activations: 1 })
+      .toArray();
+
+    const activationsByCode = new Map();
+    for (const doc of promoDocs) {
+      const code = normalizePromoCodeValue(doc?.code);
+      if (!code) continue;
+      activationsByCode.set(
+        code,
+        Array.isArray(doc?.activations) ? doc.activations : []
+      );
+    }
+
+    for (const meta of promoCampaignMeta) {
+      const uniqueUsers = new Set();
+      for (const code of meta.promoCodes) {
+        const activations = activationsByCode.get(code) || [];
+        for (const item of activations) {
+          const telegramId = String(item?.telegramId || "").trim();
+          if (!telegramId || !meta.sentSet.has(telegramId)) continue;
+          const at = new Date(item?.activatedAt || "");
+          if (!Number.isFinite(at.getTime())) continue;
+          if (at < meta.startedAt || at >= meta.windowEnd) continue;
+          uniqueUsers.add(`${code}:${telegramId}`);
+        }
+      }
+      const analytics = result.get(meta.id);
+      if (analytics) {
+        analytics.promoApplications = uniqueUsers.size;
+      }
+    }
+  }
+
+  /*
    * Финализируем показатели.
    */
   for (
@@ -486,6 +592,18 @@ export async function buildPushCampaignAnalytics(
       Number(
         analytics.revenue.toFixed(2)
       );
+
+    analytics.opened = Math.max(
+      Number(analytics.opened || 0),
+      Number(campaign?.opened || 0),
+      Array.isArray(campaign?.openedTelegramIds)
+        ? campaign.openedTelegramIds.length
+        : 0
+    );
+
+    analytics.promoApplications = Number(
+      analytics.promoApplications || 0
+    );
 
     /*
      * Conversion =

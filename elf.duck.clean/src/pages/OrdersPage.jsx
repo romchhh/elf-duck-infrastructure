@@ -389,6 +389,8 @@ useEffect(() => {
     const [paymentPromoCode, setPaymentPromoCode] = useState("");
     const [paymentPromoSubmitting, setPaymentPromoSubmitting] = useState(false);
     const [paymentPromoHint, setPaymentPromoHint] = useState(null);
+    const [paymentPromoOpen, setPaymentPromoOpen] = useState(false);
+    const paymentPromoInputRef = useRef(null);
 
     const [cashAmountDraft, setCashAmountDraft] = useState("");
     const cashAmountInputRef = useRef(null);
@@ -433,6 +435,7 @@ useEffect(() => {
         setPaymentPromoCode("");
         setPaymentPromoHint(null);
         setPaymentPromoSubmitting(false);
+        setPaymentPromoOpen(false);
         setCashbackDraft(
             Number(order?.payment?.cashbackAppliedZl || 0) > 0
                 ? String(Math.floor(Number(order.payment.cashbackAppliedZl)))
@@ -526,6 +529,7 @@ useEffect(() => {
         setPaymentPromoCode("");
         setPaymentPromoHint(null);
         setPaymentPromoSubmitting(false);
+        setPaymentPromoOpen(false);
         setIsPaymentOpen(false);
 
         setTimeout(() => {
@@ -641,6 +645,7 @@ useEffect(() => {
             }
 
             setPaymentPromoCode("");
+            setPaymentPromoOpen(false);
             setPaymentPromoHint({
                 type: "success",
                 message: t(
@@ -651,6 +656,7 @@ useEffect(() => {
             haptic.light();
         } catch (error) {
             console.error("payment promo apply error", error);
+            setPaymentPromoOpen(true);
             setPaymentPromoHint({
                 type: "error",
                 message: t(
@@ -662,6 +668,19 @@ useEffect(() => {
         } finally {
             setPaymentPromoSubmitting(false);
         }
+    };
+
+    const togglePaymentPromoOpen = () => {
+        if (promoCodeApplied && promoDiscountZl > 0) return;
+        if (cashbackFullyPaid) return;
+        haptic.light();
+        setPaymentPromoOpen((prev) => {
+            const next = !prev;
+            if (next) {
+                setTimeout(() => paymentPromoInputRef.current?.focus?.(), 40);
+            }
+            return next;
+        });
     };
 
     useEffect(() => {
@@ -1272,12 +1291,18 @@ useEffect(() => {
 
     const canShowArrivalNotify = (order) => {
         const status = String(order?.status || "").toLowerCase();
-        const deliveryType = String(order?.deliveryType || "").toLowerCase();
+        const deliveryType = String(
+            order?.checkoutDeliveryType || order?.deliveryType || ""
+        ).toLowerCase();
 
         if (deliveryType !== "pickup") return false;
-        if (["completed", "canceled", "annulled", "shipped"].includes(status)) return false;
+        if (["completed", "canceled", "annulled", "shipped"].includes(status)) {
+            return false;
+        }
 
-        return true;
+        // Кнопка «Я на месте» — тільки після підтвердження менеджером
+        // (mgr_pay_paid → status assembled).
+        return status === "assembled";
     };
 
     const handleCancelOrder = async (order) => {
@@ -2431,26 +2456,70 @@ useEffect(() => {
                     )}
 
                     <div className="paymentPromoBlock">
-                        <div className="paymentPromoLabel">
-                            {t("Промокод", "Kod promocyjny")}
-                        </div>
-                        {promoCodeApplied && promoDiscountZl > 0 ? (
-                            <div className="paymentPromoHint is-success">
-                                {t(
-                                    `Применён ${promoCodeApplied}: −${formatMoney(promoDiscountZl)} ZŁ`,
-                                    `Zastosowano ${promoCodeApplied}: −${formatMoney(promoDiscountZl)} ZŁ`
+                        <button
+                            type="button"
+                            className={`paymentCashbackField paymentPromoField ${
+                                promoCodeApplied && promoDiscountZl > 0
+                                    ? "is-applied"
+                                    : ""
+                            } ${paymentPromoOpen ? "is-open" : ""}`}
+                            disabled={
+                                Boolean(promoCodeApplied && promoDiscountZl > 0) ||
+                                cashbackFullyPaid
+                            }
+                            aria-expanded={
+                                promoCodeApplied && promoDiscountZl > 0
+                                    ? undefined
+                                    : paymentPromoOpen
+                            }
+                            onClick={togglePaymentPromoOpen}
+                        >
+                            <span className="checkoutSelectLeft paymentCashbackFieldLeft">
+                                <img
+                                    src={selectPaymentMethod}
+                                    className="checkoutSelectIcon"
+                                    alt=""
+                                />
+                                <span className="checkoutSelectText">
+                                    {promoCodeApplied && promoDiscountZl > 0
+                                        ? t("ПРОМОКОД", "KOD PROMO")
+                                        : t(
+                                              "У ВАС ЕСТЬ ПРОМОКОД?",
+                                              "MASZ KOD PROMOCYJNY?"
+                                          )}
+                                </span>
+                            </span>
+
+                            <span className="paymentCashbackValueWrap">
+                                {promoCodeApplied && promoDiscountZl > 0 ? (
+                                    <span className="paymentCashbackValue paymentPromoAppliedValue">
+                                        {promoCodeApplied} −{formatMoney(promoDiscountZl)}
+                                    </span>
+                                ) : (
+                                    <span
+                                        className={`paymentPromoChevron ${
+                                            paymentPromoOpen ? "is-open" : ""
+                                        }`}
+                                        aria-hidden
+                                    />
                                 )}
-                            </div>
-                        ) : (
-                            <>
+                            </span>
+                        </button>
+
+                        {promoCodeApplied && promoDiscountZl > 0 ? null : paymentPromoOpen ? (
+                            <div className="paymentPromoExpand">
                                 <div className="paymentCashbackInputRow paymentPromoInputRow">
                                     <input
+                                        ref={paymentPromoInputRef}
                                         type="text"
                                         autoCapitalize="characters"
                                         autoCorrect="off"
                                         spellCheck={false}
                                         className="paymentInputField paymentPromoInput"
-                                        placeholder={t("Введите промокод", "Wpisz kod promocyjny")}
+                                        placeholder={t(
+                                            "Введите промокод",
+                                            "Wpisz kod promocyjny"
+                                        )}
                                         value={paymentPromoCode}
                                         disabled={
                                             paymentPromoSubmitting ||
@@ -2509,74 +2578,52 @@ useEffect(() => {
                                         )}
                                     </div>
                                 )}
-                            </>
-                        )}
+                            </div>
+                        ) : paymentPromoHint?.type === "error" ? (
+                            <div className="paymentPromoHint is-error">
+                                {paymentPromoHint.message}
+                            </div>
+                        ) : null}
                     </div>
 
-                    <div className="paymentCashbackField">
-                    <span className="checkoutSelectLeft paymentCashbackFieldLeft">
-                        <img src={selectPaymentMethod} className="checkoutSelectIcon" alt="" />
-                        <span className="checkoutSelectText">
-                        {cashbackAppliedZl > 0
-                            ? t("БАЛАНС / СПИСАНО", "SALDO / UŻYTO")
-                            : t("КЭШБЕК", "CASHBACK")}
-                        </span>
-                    </span>
-
-                    <span className="paymentCashbackValueWrap">
-                        <span className="paymentCashbackValue">
-                        {cashbackAppliedZl > 0
-                            ? `${formatMoney(cashbackBalance)} / ${formatMoney(cashbackAppliedZl)}`
-                            : formatMoney(cashbackBalance)}
-                        </span>
-                        <img className="paymentCashbackCoin" src={zlotyIcon} alt="" />
-                    </span>
-                    </div>
-
-                    {!cashbackFullyPaid && canUseCashback && (
-                    <>
-                        <div className="paymentCashbackInputRow">
-                            <input
-                                type="tel"
-                                inputMode="numeric"
-                                className="paymentInputField paymentCashbackAmountInput"
-                                placeholder={t("Сумма", "Kwota")}
-                                value={cashbackDraft}
-                                disabled={isSavingCashback || paymentSubmitting}
-                                onChange={(e) => {
-                                    setCashbackDraft(
-                                        String(e.target.value || "").replace(/[^0-9]/g, "")
-                                    );
-                                }}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        saveCashbackAmount();
-                                    }
-                                }}
+                    <button
+                        type="button"
+                        className={`paymentCashbackField ${
+                            canUseCashback && !cashbackFullyPaid ? "is-tappable" : ""
+                        }`}
+                        disabled={cashbackFullyPaid || !canUseCashback}
+                        onClick={() => {
+                            if (cashbackFullyPaid || !canUseCashback) return;
+                            haptic.light();
+                            openCashbackEditor();
+                        }}
+                    >
+                        <span className="checkoutSelectLeft paymentCashbackFieldLeft">
+                            <img
+                                src={selectPaymentMethod}
+                                className="checkoutSelectIcon"
+                                alt=""
                             />
-                            <button
-                                type="button"
-                                className="paymentCashbackMaxBtn"
-                                onClick={fillMaxCashback}
-                                disabled={
-                                    isSavingCashback ||
-                                    paymentSubmitting ||
-                                    maxCashbackApplicableZl <= 0
-                                }
-                            >
-                                Max
-                            </button>
-                        </div>
+                            <span className="checkoutSelectText">
+                                {cashbackAppliedZl > 0
+                                    ? t("БАЛАНС / СПИСАНО", "SALDO / UŻYTO")
+                                    : t("КЭШБЕК", "CASHBACK")}
+                            </span>
+                        </span>
 
-                        <div className="paymentCashbackHint">
-                            {t(
-                                "Кешбэком можно оплатить до 40% стоимости вашего заказа",
-                                "Cashbackiem można opłacić do 40% wartości Twojego zamówienia"
-                            )}
-                        </div>
-                    </>
-                    )}
+                        <span className="paymentCashbackValueWrap">
+                            <span className="paymentCashbackValue">
+                                {cashbackAppliedZl > 0
+                                    ? `${formatMoney(cashbackBalance)} / ${formatMoney(cashbackAppliedZl)}`
+                                    : formatMoney(cashbackBalance)}
+                            </span>
+                            <img
+                                className="paymentCashbackCoin"
+                                src={zlotyIcon}
+                                alt=""
+                            />
+                        </span>
+                    </button>
 
                     <button
                     type="button"
@@ -3327,19 +3374,8 @@ useEffect(() => {
                     ? cardManagerDisplayCurrency
                     : "PLN";
 
-                const isPickup =
-                    String(o?.checkoutDeliveryType || o?.deliveryType || "").toLowerCase() === "pickup" ||
-                    String(o?.methodLabel || "").toLowerCase().includes(lang === "pl" ? "odbiór" : "самовывоз");
-
-                const orderStatusKeyForNotify = String(o?.status || "").trim().toLowerCase();
-
-                // показываем подблок только если это самовывоз и заказ ещё не завершён/не отменён/не аннулирован
-                const paymentStatusKeyForNotify = String(o?.payment?.status || "").trim().toLowerCase();
-
-                const showNotifyBlock =
-                    isPickup &&
-                    !["completed", "canceled", "annulled", "shipped"].includes(orderStatusKeyForNotify) &&
-                    ["paid", "awaiting"].includes(paymentStatusKeyForNotify);
+                // «Я на месте» — только после подтверждения менеджером (status assembled)
+                const showNotifyBlock = canShowArrivalNotify(o);
 
                 const arrivalCooldownLeftMs = getArrivalCooldownLeftMs(o?._id);
 
@@ -3592,14 +3628,12 @@ useEffect(() => {
                             try {
                             if (!telegramId || !o?._id) return;
 
-                            const paymentStatus = String(o?.payment?.status || "").trim().toLowerCase();
-
-                            if (!["paid", "awaiting"].includes(paymentStatus)) {
+                            if (!canShowArrivalNotify(o)) {
                                 haptic.heavy();
                                 alert(
                                 t(
-                                    "Нельзя уведомить менеджера о прибытии до подтверждённой оплаты",
-                                    "Nie można powiadomić menedżera o przybyciu przed potwierdzeniem płatności"
+                                    "Кнопка «Я на месте» появится после подтверждения заказа менеджером",
+                                    "Przycisk «Jestem na miejscu» pojawi się po potwierdzeniu zamówienia przez menedżera"
                                 )
                                 );
                                 return;

@@ -79,6 +79,25 @@ useEffect(() => {
     }
   }
 
+  // pc= from CRM push web_app button (?pc=<campaignId>)
+  let pushCampaignId = null;
+  try {
+    pushCampaignId = new URLSearchParams(window.location.search).get("pc");
+  } catch {
+    pushCampaignId = null;
+  }
+  if (pushCampaignId) {
+    try {
+      sessionStorage.setItem("elf_push_campaign_id", String(pushCampaignId));
+    } catch {}
+  } else {
+    try {
+      pushCampaignId = sessionStorage.getItem("elf_push_campaign_id");
+    } catch {
+      pushCampaignId = null;
+    }
+  }
+
   const body = {
     telegramId: String(tgUser.id),
     username: tgUser.username,
@@ -86,6 +105,7 @@ useEffect(() => {
     lastName: tgUser.last_name,
     photoUrl: tgUser.photo_url,
     ref: startParam || null,
+    ...(pushCampaignId ? { pushCampaignId: String(pushCampaignId) } : {}),
   };
 
   const optimisticUser = {
@@ -117,6 +137,11 @@ useEffect(() => {
     .then((data) => {
       if (data?.ok && data.user) {
         setUser(data.user);
+        if (pushCampaignId) {
+          try {
+            sessionStorage.removeItem("elf_push_campaign_id");
+          } catch {}
+        }
         return;
       }
       console.error("register-user failed", data);

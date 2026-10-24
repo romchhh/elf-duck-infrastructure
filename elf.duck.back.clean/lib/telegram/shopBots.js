@@ -324,7 +324,9 @@ app.locals.runCrmBroadcastCampaign =
       throw new Error("MESSAGE_REQUIRED");
     }
 
-    const replyMarkup = buildPushReplyMarkup(message);
+    const replyMarkup = buildPushReplyMarkup(message, {
+      campaignId: safeCampaignId,
+    });
 
     /*
      * Продолжаем старые counters,

@@ -12,6 +12,10 @@ const meta = {
   '/catalog': { title: 'Каталог', subtitle: 'Карточки товаров и категорий с превью' },
   '/marketing/partners': { title: 'Партнёры', subtitle: 'Партнёрская программа' },
   '/marketing/cashback': { title: 'Кэшбэк', subtitle: 'Программа лояльности' },
+  '/marketing/promo-codes': {
+    title: 'Промокоды',
+    subtitle: 'Статистика и управление промокодами',
+  },
   '/marketing/push': { title: 'Push-рассылки', subtitle: 'Создание и аналитика кампаний' },
   '/analytics/products': { title: 'Аналитика товаров', subtitle: 'Выручка и динамика продаж (не каталог)' },
   '/analytics/locations': { title: 'Точки', subtitle: 'Сравнение точек продаж' },

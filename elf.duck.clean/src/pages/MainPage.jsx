@@ -533,19 +533,17 @@ const MainPage = () => {
 
     if (!orderId || activeOrderArrivalSubmitting) return;
 
-    const paymentStatus = String(
-      activeOrder?.payment?.status || ""
-    )
+    const orderStatus = String(activeOrder?.status || "")
       .trim()
       .toLowerCase();
 
-    if (!["paid", "awaiting"].includes(paymentStatus)) {
+    if (orderStatus !== "assembled") {
       haptic.heavy();
 
       showMainPageAlert(
         t(
-          "Нельзя уведомить менеджера о прибытии до подтверждённой оплаты",
-          "Nie można powiadomić menedżera o przybyciu przed potwierdzeniem płatności"
+          "Кнопка «Я на месте» появится после подтверждения заказа менеджером",
+          "Przycisk «Jestem na miejscu» pojawi się po potwierdzeniu zamówienia przez menedżera"
         )
       );
 
@@ -1196,15 +1194,12 @@ const MainPage = () => {
 
       .includes("odbiór");
 
+  // «Я на месте» — тільки після підтвердження менеджером (status assembled)
   const showActiveOrderArrivalBlock =
-
     activeOrderIsPickup &&
-
-    ["paid", "awaiting"].includes(
-
-      activeOrderPaymentStatus
-
-    );
+    String(activeOrder?.status || "")
+      .trim()
+      .toLowerCase() === "assembled";
 
   const activeOrderArrivalCooldownLeftMs =
 

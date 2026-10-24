@@ -1951,6 +1951,28 @@ body {
   border: 1px solid rgba(255,255,255,0.55);
 
   color: rgba(255,255,255,0.92);
+  font: inherit;
+  text-align: left;
+  cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button.paymentCashbackField {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.paymentCashbackField.is-tappable:not(:disabled) {
+  cursor: pointer;
+}
+
+.paymentCashbackField.is-tappable:not(:disabled):active {
+  transform: scale(0.995);
+}
+
+.paymentCashbackField:disabled {
+  opacity: 1;
+  cursor: default;
 }
 
 .paymentCashbackFieldLeft {
@@ -1990,17 +2012,70 @@ body {
 
 .paymentPromoBlock {
   width: 100%;
-  margin-top: 12px;
+  margin-top: 10px;
+  margin-bottom: 8px;
   box-sizing: border-box;
 }
 
-.paymentPromoLabel {
-  margin: 0 0 6px 2px;
-  font-family: Unbounded-Medium;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.62);
+.paymentPromoField {
+  margin-top: 0;
+  cursor: pointer;
+}
+
+.paymentPromoField:not(:disabled):active {
+  transform: scale(0.995);
+}
+
+.paymentPromoField.is-open {
+  border-color: rgba(255, 255, 255, 0.72);
+}
+
+.paymentPromoField.is-applied {
+  border-color: rgba(141, 255, 176, 0.45);
+  background: rgba(40, 90, 55, 0.28);
+  cursor: default;
+}
+
+.paymentPromoField.is-applied:disabled {
+  opacity: 1;
+}
+
+.paymentPromoAppliedValue {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: #8dffb0;
+}
+
+.paymentPromoChevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(255, 255, 255, 0.7);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.7);
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.paymentPromoChevron.is-open {
+  transform: rotate(225deg);
+  margin-top: 4px;
+}
+
+.paymentPromoExpand {
+  margin-top: 8px;
+  animation: paymentPromoReveal 0.18s ease;
+}
+
+@keyframes paymentPromoReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .paymentPromoInputRow {

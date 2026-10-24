@@ -27,13 +27,14 @@ app.post("/register-user", async (req, res) => {
     const lastName = String(tgUser?.last_name || "").trim();
     const photoUrl = String(tgUser?.photo_url || "").trim();
 
-    const { ref } = req.body || {};
+    const { ref, pushCampaignId: pushCampaignIdRaw } = req.body || {};
     // Prefer body ref, fall back to signed initData start_param (more reliable than initDataUnsafe)
     const refFromBody = String(ref || "").trim();
     const refFromInit = String(verified?.startParam || "").trim();
     const normalizedRef = String(refFromBody || refFromInit || "")
       .replace(/^ref_/, "")
       .trim();
+    const pushCampaignId = String(pushCampaignIdRaw || "").trim();
 
     // Single upsert instead of findOne → create/save → findById. One round-trip
     // for the common "returning user" path.
@@ -69,6 +70,22 @@ app.post("/register-user", async (req, res) => {
       user = await User.findById(user._id).lean();
     } else {
       user = user.toObject ? user.toObject() : user;
+    }
+
+    // Трекінг відкриття мініапу з кнопки CRM-розсилки (?pc=campaignId)
+    if (pushCampaignId && mongoose.Types.ObjectId.isValid(pushCampaignId)) {
+      BroadcastCampaign.updateOne(
+        {
+          _id: new mongoose.Types.ObjectId(pushCampaignId),
+          openedTelegramIds: { $ne: telegramId },
+        },
+        {
+          $addToSet: { openedTelegramIds: telegramId },
+          $inc: { opened: 1 },
+        }
+      ).catch((error) => {
+        console.error("push campaign open track error:", error);
+      });
     }
 
     return res.json({ ok: true, user });
