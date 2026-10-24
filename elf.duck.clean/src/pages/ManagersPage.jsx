@@ -59,9 +59,9 @@ const ManagersPage = () => {
   const [avatarLoaded, setAvatarLoaded] = useState(false);
 
   const banners = [
+      banerIMG,
       assortmentRestockBannerIMG,
       deliveryBannerIMG,
-      banerIMG,
   ];
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 

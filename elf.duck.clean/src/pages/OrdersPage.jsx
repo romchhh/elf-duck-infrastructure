@@ -1852,9 +1852,9 @@ useEffect(() => {
     /* ================= BANNER DOTS SECTION ================= */
 
     const banners = [
+        banerIMG,
         assortmentRestockBannerIMG,
         deliveryBannerIMG,
-        banerIMG,
     ];
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
