@@ -30,7 +30,7 @@ router.get(
           .collection(
             BROADCAST_TEMPLATES_COLLECTION
           )
-          .find({})
+          .find({ dismissed: { $ne: true } })
           .sort({
             isDefault: -1,
             createdAt: -1,
@@ -473,32 +473,40 @@ router.delete(
           BROADCAST_TEMPLATES_COLLECTION
         );
 
-      let result = null;
+      const objectId = mongoose.Types.ObjectId.isValid(id)
+        ? new mongoose.Types.ObjectId(id)
+        : null;
 
-      if (
-        mongoose.Types.ObjectId.isValid(id)
-      ) {
-        result =
-          await collection.deleteOne({
-            _id:
-              new mongoose.Types.ObjectId(
-                id
-              ),
-          });
-      }
+      const existing = objectId
+        ? await collection.findOne({ _id: objectId })
+        : await collection.findOne({ id });
 
-      if (!result?.deletedCount) {
-        result =
-          await collection.deleteOne({
-            id,
-          });
-      }
-
-      if (!result?.deletedCount) {
+      if (!existing || existing.dismissed === true) {
         return res.status(404).json({
           ok: false,
           error: "TEMPLATE_NOT_FOUND",
         });
+      }
+
+      // Готові шаблони мають slug: якщо видалити документ, GET знову їх створить.
+      if (String(existing.slug || "").trim()) {
+        await collection.updateOne(
+          { _id: existing._id },
+          {
+            $set: {
+              dismissed: true,
+              updatedAt: new Date(),
+            },
+          }
+        );
+      } else {
+        const result = await collection.deleteOne({ _id: existing._id });
+        if (!result?.deletedCount) {
+          return res.status(404).json({
+            ok: false,
+            error: "TEMPLATE_NOT_FOUND",
+          });
+        }
       }
 
       return res.json({

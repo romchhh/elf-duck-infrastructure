@@ -19,8 +19,6 @@ import zlotyIcon from "../assets/zlotyIcon.webp";
 
 import hideSideMenuIcon from "../assets/hideSideMenuIcon.webp";
 
-import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
-
 import bucketDuckIMG from "../assets/bucketDuckIMG.webp";
 
 import savedDuckIMG from "../assets/savedDuckIMG.webp";
@@ -430,43 +428,6 @@ export default function PromoPage() {
                                     </button>
                                 </div>
                             ) : null}
-                        </div>
-                    </div>
-
-                    <div className="balanceCard">
-                        <div className="balanceContent">
-                        <div className="balanceInfo">
-                           <span className="balanceTitle">{t("ПРОМОКОД", "PROMOCODE")}</span>
-
-                            {/* <div className="balanceRow">
-                            <span className="balanceAmount">
-                                <img src={zlotyIcon} alt="" />
-                                {cashbackBalance.toFixed(1)}
-                            </span>
-
-                            <span className="balanceBadge">
-                                {t("кэшбек", "cashback")}
-                            </span>
-                            </div> */}
-
-                            <button
-                            type="button"
-                            className="balanceAction"
-                            onClick={() => {
-                                haptic.light();
-                                closeMenu();
-                                navigate("/promo");
-                            }}
-                            >
-                            {t("активировать", "aktywuj")}
-                            </button>
-                        </div>
-
-                        <img
-                            src={balanceCardDuckIMG}
-                            className="balanceDuck"
-                            alt=""
-                        />
                         </div>
                     </div>
 

@@ -45,9 +45,21 @@ export async function ensurePushAutomationIndexes() {
 }
 
 function normalizeMessage(message = {}) {
+  const textPl = String(message?.textPl || "").trim();
+  const textRu = String(message?.textRu || "").trim();
+  const text =
+    String(message?.text || "").trim() || textPl || textRu;
+  const defaultLanguage =
+    String(message?.defaultLanguage || "pl").trim().toLowerCase() === "ru"
+      ? "ru"
+      : "pl";
+
   return {
     title: String(message?.title || "").trim(),
-    text: String(message?.text || "").trim(),
+    text,
+    textPl,
+    textRu,
+    defaultLanguage,
     promo: String(message?.promo || "").trim(),
     photoUrl: String(message?.photoUrl || "").trim(),
     photoFileId: String(message?.photoFileId || "").trim(),
@@ -149,7 +161,13 @@ async function sendFirstPurchaseAutomationNow({
   alreadyClaimed = false,
 }) {
   const message = normalizeMessage(automation?.message || {});
-  if (!message.title && !message.text && !message.promo) {
+  if (
+    !message.title &&
+    !message.text &&
+    !message.textPl &&
+    !message.textRu &&
+    !message.promo
+  ) {
     if (alreadyClaimed) {
       await sendsCollection().updateOne(
         {

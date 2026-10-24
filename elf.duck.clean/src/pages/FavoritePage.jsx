@@ -29,9 +29,7 @@ import {
 
 } from "../utils/i18n";
 
-import banerIMG from "../assets/referralBanner.webp";
-import deliveryBannerIMG from "../assets/deliveryBanner.webp";
-import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
+import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
 import buyIcon from "../assets/buyIcon.webp";
@@ -44,7 +42,6 @@ import supportIcon from "../assets/supportIcon.webp";
 
 import hideSideMenuIcon from "../assets/hideSideMenuIcon.webp"
 
-import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
 import bucketDuckIMG from "../assets/bucketDuckIMG.webp";
 import managerDuckIMG from "../assets/managerDuckIMG.webp";
 import historyDuckIMG from "../assets/historyDuckIMG.webp";
@@ -292,11 +289,7 @@ const FavoritePage = () => {
 
     /* ================= BANNER DOTS SECTION ================= */
 
-    const banners = [
-        banerIMG,
-        assortmentRestockBannerIMG,
-        deliveryBannerIMG,
-    ];
+    const banners = getHomeBanners(language);
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -498,39 +491,6 @@ const FavoritePage = () => {
                             ) : null}
                         </div>
                     </div>
-
-                <div className="balanceCard">
-                  <div className="balanceContent">
-                      <div className="balanceInfo">
-                        <span className="balanceTitle">{t("ПРОМОКОД", "PROMOCODE")}</span>
-
-                        {/* <div className="balanceRow">
-                          <span className="balanceAmount">
-                            <img src={zlotyIcon} alt="" />
-                            {Number(user?.cashbackBalance || 0).toFixed(1)}
-                          </span>
-                          <span className="balanceBadge">{t("кэшбек", "cashback")}</span>
-                        </div> */}
-
-                        <button
-                          className="balanceAction"
-                          onClick={() => {
-                            haptic.light();
-                            closeMenu();
-                            navigate("/promo");
-                          }}
-                        >
-                          {t("активировать", "aktywuj")}
-                        </button>
-                      </div>
-
-                    <img
-                      src={balanceCardDuckIMG}
-                      className="balanceDuck"
-                      alt=""
-                    />
-                  </div>
-                </div>
 
                 <div className="sideMenuCard">
                   <span className="sideMenuCardAccent" />
@@ -770,9 +730,9 @@ const FavoritePage = () => {
                   onClick={() => {
                     haptic.heavy();
 
-                    if (src === banerIMG) {
-                      navigate("/referral");
-                      return;
+                    if (isReferralBanner(src)) {
+                        navigate("/referral");
+                        return;
                     }
                   }}
                 >

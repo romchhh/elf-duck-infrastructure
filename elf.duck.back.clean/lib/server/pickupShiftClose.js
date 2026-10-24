@@ -1,7 +1,8 @@
 /**
- * Самовывоз (Mokotów-style):
- *  - кінець зміни: нагадування X/Y закрито;
- *  - коли Y/Y — рання відправка «СТАТИСТИКА ДНЯ» в Telegram (і Google Sheets, як у cron).
+ * Самовывоз:
+ *  - за ~10 хв до кінця зміни — лише нагадування закрити відкриті чеки;
+ *  - «СТАТИСТИКА ДНЯ» йде в час закриття (:00) через daily stats cron.
+ *  - якщо всі чеки закриті раніше (менеджер) — рання відправка лишається.
  */
 import Order from "../../models/Order.js";
 import PickupPoint from "../../models/PickupPoint.js";
@@ -222,9 +223,7 @@ async function sendShiftCloseReminder(point, { total, done, shiftEnd }) {
     closeLabel ? `Закрытие точки: <b>${closeLabel}</b>` : ``,
     ``,
     `<b>${done}/${total}</b> заказов завершены.`,
-    done < total
-      ? `Для полного завершения дня закройте все завязки.`
-      : `Все заказы закрыты — статистика дня отправляется в группу.`,
+    `Для полного завершения дня закройте все завязки.`,
   ]
     .filter((line, idx, arr) => !(line === "" && arr[idx - 1] === ""))
     .join("\n");
@@ -281,7 +280,8 @@ export async function processPickupShiftCloseReminders(now = new Date()) {
     }
 
     const counts = await countPickupShiftOrders(point, dayKey, now);
-    if (counts.total === 0) {
+    // За 10 хв — лише прохання закрити відкриті чеки. Звіт іде в :00.
+    if (counts.total === 0 || counts.pending <= 0) {
       continue;
     }
 
@@ -301,12 +301,6 @@ export async function processPickupShiftCloseReminders(now = new Date()) {
         shiftEnd,
         minutesBeforeClose: Math.max(0, endMinutes - nowMinutes),
       });
-
-      if (counts.done >= counts.total) {
-        await trySendDailyStatsForPointEarly(point, dayKey, {
-          reason: "shift_end_all_closed",
-        });
-      }
     } catch (e) {
       await releaseDailyStatsDispatch(reminderKey);
       console.error("[shiftClose] reminder failed:", pointKey, e?.message || e);

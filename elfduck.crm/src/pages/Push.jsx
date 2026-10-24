@@ -62,9 +62,20 @@ const crmFetch = crmFetchJson;
 
 function CampaignMobileRow({
   r,
+  onDelete,
+  deleting,
 }) {
   return (
-    <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-3.5">
+    <div className="relative rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-3.5 pt-8">
+      <button
+        type="button"
+        title="Удалить из истории"
+        disabled={deleting || r.status === 'running' || r.status === 'queued'}
+        onClick={() => onDelete?.(r)}
+        className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-[16px] leading-none text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        ×
+      </button>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-medium text-foreground">
@@ -1052,6 +1063,47 @@ if (error?.status === 401) {
     },
   });
 
+  const deleteCampaignMutation = useMutation({
+    mutationFn: (campaignId) =>
+      crmFetch(
+        `/crm/push/campaigns/${encodeURIComponent(campaignId)}`,
+        { method: 'DELETE' }
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['crm-push-campaigns'],
+      });
+      toast({ title: 'Рассылка удалена из истории' });
+    },
+    onError: (error) => {
+      toast({
+        title:
+          error?.message === 'CAMPAIGN_STILL_RUNNING'
+            ? 'Рассылка ещё идёт — удалить нельзя'
+            : 'Не удалось удалить рассылку',
+        description: error?.message || 'DELETE_FAILED',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const deleteCampaign = (campaign) => {
+    const campaignId = String(campaign?.id || '').trim();
+    if (!campaignId || deleteCampaignMutation.isPending) return;
+    if (!isAuthenticated) {
+      setAuthModalOpen(true);
+      return;
+    }
+    if (
+      !window.confirm(
+        `Удалить «${campaign?.name || 'рассылку'}» из истории?`
+      )
+    ) {
+      return;
+    }
+    deleteCampaignMutation.mutate(campaignId);
+  };
+
   const clearCampaignsMutation = useMutation({
     mutationFn: () =>
       crmFetch(`/crm/push/campaigns?${periodQuery}`, {
@@ -1619,6 +1671,27 @@ const confirmCreateTpl = () => {
 
   const analyticsColumns = [
     {
+      key: 'remove',
+      header: '',
+      sortable: false,
+      width: 36,
+      render: (r) => (
+        <button
+          type="button"
+          title="Удалить из истории"
+          disabled={
+            deleteCampaignMutation.isPending ||
+            r.status === 'running' ||
+            r.status === 'queued'
+          }
+          onClick={() => deleteCampaign(r)}
+          className="flex h-6 w-6 items-center justify-center rounded text-[16px] leading-none text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ×
+        </button>
+      ),
+    },
+    {
       key: 'name',
       header: 'Кампания',
 
@@ -2141,11 +2214,22 @@ const confirmCreateTpl = () => {
             </Field>
 
             <PushPromoCreator
+              messageTexts={[bodyPl, bodyRu]}
               onCreated={(code) => {
                 if (!code) return;
                 setBody((current) => {
                   const chunk = `\`${code}\``;
                   const value = String(current || '');
+                  // Не дублювати, якщо код уже в тексті
+                  if (
+                    new RegExp(
+                      `(?:промокод|\\\`${code}\\\`)`,
+                      'i'
+                    ).test(value) &&
+                    value.toUpperCase().includes(String(code).toUpperCase())
+                  ) {
+                    return value;
+                  }
                   return value
                     ? `${value}${value.endsWith('\n') ? '' : '\n\n'}Промокод: ${chunk}`
                     : `Промокод: ${chunk}`;
@@ -2586,6 +2670,8 @@ const confirmCreateTpl = () => {
                   r.id
                 }
                 r={r}
+                onDelete={deleteCampaign}
+                deleting={deleteCampaignMutation.isPending}
               />
             )
           )}
@@ -2801,7 +2887,23 @@ const confirmCreateTpl = () => {
   );
 }
 
-function PushPromoCreator({ onCreated }) {
+function extractPromoCodesFromTexts(texts = []) {
+  const joined = (Array.isArray(texts) ? texts : [texts])
+    .map((value) => String(value || ''))
+    .join('\n');
+  const found = new Set();
+  for (const match of joined.matchAll(/`([A-Za-z0-9_-]{3,64})`/g)) {
+    found.add(String(match[1] || '').toUpperCase());
+  }
+  for (const match of joined.matchAll(
+    /(?:промокод|promo(?:\s*code)?)\s*[:：]?\s*`?([A-Za-z0-9_-]{3,64})`?/gi
+  )) {
+    found.add(String(match[1] || '').toUpperCase());
+  }
+  return [...found].filter(Boolean);
+}
+
+function PushPromoCreator({ onCreated, messageTexts = [] }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [listOpen, setListOpen] = useState(false);
@@ -2825,6 +2927,34 @@ function PushPromoCreator({ onCreated }) {
     : [];
   const recentPromos = allPromos.slice(0, 12);
   const promoCount = allPromos.length;
+
+  const messageTextsKey = Array.isArray(messageTexts)
+    ? messageTexts.map((value) => String(value || '')).join('\0')
+    : String(messageTexts || '');
+  const codesInMessage = useMemo(
+    () => extractPromoCodesFromTexts(messageTexts),
+    // messageTextsKey covers content changes when parent passes a fresh array
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messageTextsKey]
+  );
+  const knownCodeSet = useMemo(
+    () =>
+      new Set(
+        allPromos
+          .map((row) => String(row?.code || '').trim().toUpperCase())
+          .filter(Boolean)
+      ),
+    [allPromos]
+  );
+  const appliedCodes = codesInMessage.filter(
+    (value) => knownCodeSet.size === 0 || knownCodeSet.has(value)
+  );
+  const appliedLabel =
+    appliedCodes.length === 0
+      ? ''
+      : appliedCodes.length === 1
+        ? appliedCodes[0]
+        : appliedCodes.join(', ');
 
   const createPromo = async () => {
     const normalizedCode = String(code || '')
@@ -2935,19 +3065,43 @@ function PushPromoCreator({ onCreated }) {
         className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left"
         aria-expanded={panelOpen}
       >
-        <span className="text-[12px] font-medium text-foreground">
+        <span className="min-w-0 text-[12px] font-medium text-foreground">
           Промокоды
           {promoCount > 0 ? (
             <span className="ml-1.5 text-muted-2">· {promoCount}</span>
           ) : null}
+          {appliedLabel ? (
+            <span className="ml-1.5 inline-flex max-w-[160px] truncate align-middle rounded-md bg-[hsl(255_100%_68%/0.14)] px-1.5 py-0.5 text-[10px] font-semibold text-[hsl(255_100%_75%)]">
+              {appliedLabel}
+            </span>
+          ) : null}
         </span>
-        <span className="text-[11px] text-[hsl(255_100%_72%)]">
+        <span className="shrink-0 text-[11px] text-[hsl(255_100%_72%)]">
           {panelOpen ? 'Свернуть' : 'Открыть'}
         </span>
       </button>
 
       {panelOpen ? (
         <div className="space-y-2 border-t border-border-soft px-3 pb-3 pt-2.5">
+          {appliedLabel ? (
+            <div className="rounded-lg border border-[hsl(255_100%_68%/0.28)] bg-[hsl(255_100%_68%/0.08)] px-2.5 py-2">
+              <div className="text-[10px] uppercase tracking-[0.04em] text-muted-2">
+                В сообщении
+              </div>
+              <div className="mt-0.5 text-[13px] font-semibold text-[hsl(255_100%_75%)]">
+                {appliedLabel}
+              </div>
+              <p className="mt-1 text-[11px] text-muted-2">
+                Клик по коду в списке вставляет его в активный язык (PL/RU).
+              </p>
+            </div>
+          ) : (
+            <p className="text-[11px] text-muted-2">
+              Создайте код или кликните по существующему — он попадёт в текст
+              сообщения.
+            </p>
+          )}
+
           <button
             type="button"
             onClick={() => setOpen((value) => !value)}
@@ -3092,16 +3246,26 @@ function PushPromoCreator({ onCreated }) {
                       max > 0 ? `${used}/${max}` : `${used}/∞`;
                     const perUserLabel =
                       perUser > 0 ? `${perUser}/кл.` : '∞/кл.';
+                    const rowCode = String(row.code || '')
+                      .trim()
+                      .toUpperCase();
+                    const isApplied = appliedCodes.includes(rowCode);
                     return (
                       <div
                         key={row.id || row.code}
-                        className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1"
+                        className={cn(
+                          'flex items-center gap-1.5 rounded-md border px-2 py-1',
+                          isApplied
+                            ? 'border-[hsl(255_100%_68%/0.45)] bg-[hsl(255_100%_68%/0.1)]'
+                            : 'border-border'
+                        )}
                       >
                         <button
                           type="button"
                           onClick={() => onCreated?.(row.code)}
                           className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                           title={[
+                            isApplied ? 'Уже в сообщении' : 'Вставить в сообщение',
                             `${row.amountZl} zł`,
                             row.expiresAt
                               ? `до ${new Date(row.expiresAt).toLocaleString('ru')}`
@@ -3115,6 +3279,11 @@ function PushPromoCreator({ onCreated }) {
                         >
                           <span className="truncate font-medium text-foreground">
                             {row.code}
+                            {isApplied ? (
+                              <span className="ml-1.5 text-[10px] font-semibold text-[hsl(255_100%_75%)]">
+                                в тексте
+                              </span>
+                            ) : null}
                           </span>
                           <span className="shrink-0 text-muted-2">
                             {row.amountZl} zł · {globalLabel} · {perUserLabel}
@@ -3172,9 +3341,16 @@ function PushAutomationsPanel() {
   const [enabled, setEnabled] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState('0');
   const [title, setTitle] = useState('');
-  const [text, setText] = useState('');
+  const [textPl, setTextPl] = useState('');
+  const [textRu, setTextRu] = useState('');
+  const [autoLang, setAutoLang] = useState('ru');
   const [promo, setPromo] = useState('');
   const [dirty, setDirty] = useState(false);
+  const autoText = autoLang === 'pl' ? textPl : textRu;
+  const setAutoText = (value) => {
+    if (autoLang === 'pl') setTextPl(value);
+    else setTextRu(value);
+  };
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['crm-push-automations'],
@@ -3188,7 +3364,11 @@ function PushAutomationsPanel() {
     setEnabled(row.enabled === true);
     setDelayMinutes(String(row.delayMinutes || 0));
     setTitle(String(row.message?.title || ''));
-    setText(String(row.message?.text || ''));
+    const savedPl = String(row.message?.textPl || '');
+    const savedRu = String(row.message?.textRu || '');
+    const legacy = String(row.message?.text || '');
+    setTextPl(savedPl);
+    setTextRu(savedRu || (!savedPl ? legacy : ''));
     setPromo(String(row.message?.promo || ''));
   }, [data, dirty]);
 
@@ -3201,7 +3381,10 @@ function PushAutomationsPanel() {
           delayMinutes: Number(delayMinutes || 0),
           message: {
             title: title.trim(),
-            text: text.trim(),
+            text: textPl.trim() || textRu.trim(),
+            textPl: textPl.trim(),
+            textRu: textRu.trim(),
+            defaultLanguage: 'pl',
             promo: promo.trim(),
           },
         }),
@@ -3228,9 +3411,8 @@ function PushAutomationsPanel() {
             Автоматические рассылки
           </h3>
           <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-            Событие: после первой успешной покупки бот отправит офер с
-            промокодом (кампания попадёт в аналитику конверсии). Задержка
-            сохраняется в базе и переживает рестарт API.
+            После первой покупки бот шлёт офер. Заполните PL и RU — клиент
+            получит текст своей мови. Без мови в профілі піде PL, якщо він є.
           </p>
         </div>
         <Chip
@@ -3270,16 +3452,43 @@ function PushAutomationsPanel() {
               placeholder="SECOND15"
             />
           </Field>
-          <Field label="Текст">
+          <Field
+            label={autoLang === 'pl' ? 'Текст (PL)' : 'Текст (RU)'}
+          >
+            <div className="mb-1.5 inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
+              {[
+                { key: 'pl', label: 'PL', filled: Boolean(textPl.trim()) },
+                { key: 'ru', label: 'RU', filled: Boolean(textRu.trim()) },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setAutoLang(item.key)}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 text-[11px] font-medium',
+                    autoLang === item.key
+                      ? 'bg-[hsl(255_100%_68%/0.18)] text-foreground'
+                      : 'text-muted-2'
+                  )}
+                >
+                  {item.label}
+                  {item.filled ? ' ✓' : ''}
+                </button>
+              ))}
+            </div>
             <textarea
-              value={text}
+              value={autoText}
               onChange={(e) => {
-                setText(e.target.value);
+                setAutoText(e.target.value);
                 setDirty(true);
               }}
               rows={4}
               className="input-base resize-none lg:col-span-1"
-              placeholder="Вернись за вторым заказом со скидкой…"
+              placeholder={
+                autoLang === 'pl'
+                  ? 'Wróć po drugie zamówienie ze zniżką…'
+                  : 'Вернись за вторым заказом со скидкой…'
+              }
             />
           </Field>
           <Field label="Задержка (мин)">
@@ -3303,6 +3512,7 @@ function PushAutomationsPanel() {
 
       <div className="mt-4">
         <PushPromoCreator
+          messageTexts={[promo, textPl, textRu, title]}
           onCreated={(code) => {
             if (code) {
               setPromo(code);
@@ -3317,7 +3527,10 @@ function PushAutomationsPanel() {
         onClick={() => saveMutation.mutate()}
         disabled={
           saveMutation.isPending ||
-          (!title.trim() && !text.trim() && !promo.trim())
+          (!title.trim() &&
+            !textPl.trim() &&
+            !textRu.trim() &&
+            !promo.trim())
         }
         className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-gradient-to-r from-[hsl(255_100%_68%)] to-[hsl(280_90%_60%)] px-4 text-[12px] font-medium text-white disabled:opacity-50"
       >

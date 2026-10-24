@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import {
   buildPushCampaignAnalytics,
   getPeriodRange,
@@ -331,6 +332,50 @@ router.get(
             error?.message ||
             "CRM_PUSH_CAMPAIGNS_FAILED",
         });
+    }
+  }
+);
+
+router.delete(
+  "/push/campaigns/:id",
+  requireCrmPushAdmin,
+  async (req, res) => {
+    try {
+      const id = String(req.params?.id || "").trim();
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "CAMPAIGN_ID_REQUIRED",
+        });
+      }
+
+      const campaign = await BroadcastCampaign.findById(id)
+        .select({ status: 1 })
+        .lean();
+
+      if (!campaign) {
+        return res.status(404).json({
+          ok: false,
+          error: "CAMPAIGN_NOT_FOUND",
+        });
+      }
+
+      if (campaign.status === "running" || campaign.status === "queued") {
+        return res.status(409).json({
+          ok: false,
+          error: "CAMPAIGN_STILL_RUNNING",
+        });
+      }
+
+      await BroadcastCampaign.deleteOne({ _id: campaign._id });
+
+      return res.json({ ok: true, id });
+    } catch (error) {
+      console.error("DELETE /crm/push/campaigns/:id error:", error);
+      return res.status(500).json({
+        ok: false,
+        error: "CRM_PUSH_CAMPAIGN_DELETE_FAILED",
+      });
     }
   }
 );

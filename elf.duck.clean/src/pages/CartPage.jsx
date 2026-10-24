@@ -22,7 +22,6 @@ import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp";
 import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
-import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
 import bucketDuckIMG from "../assets/bucketDuckIMG.webp";
 import historyDuckIMG from "../assets/historyDuckIMG.webp";
 import managerDuckIMG from "../assets/managerDuckIMG.webp";
@@ -3737,39 +3736,6 @@ if (pointBlob.includes("srodmiescie")) {
                             ) : null}
                         </div>
                     </div>
-
-                <div className="balanceCard">
-                  <div className="balanceContent">
-                      <div className="balanceInfo">
-                        <span className="balanceTitle">{t("ПРОМОКОД", "PROMOCODE")}</span>
-
-                        {/* <div className="balanceRow">
-                          <span className="balanceAmount">
-                            <img src={zlotyIcon} alt="" />
-                            {Number(user?.cashbackBalance || 0).toFixed(1)}
-                          </span>
-                          <span className="balanceBadge">{t("кэшбек", "cashback")}</span>
-                        </div> */}
-
-                        <button
-                          className="balanceAction"
-                          onClick={() => {
-                            haptic.light();
-                            closeMenu();
-                            navigate("/promo");
-                          }}
-                        >
-                          {t("активировать", "aktywuj")}
-                        </button>
-                      </div>
-
-                    <img
-                      src={balanceCardDuckIMG}
-                      className="balanceDuck"
-                      alt=""
-                    />
-                  </div>
-                </div>
 
                 <div className="sideMenuCard">
                   <span className="sideMenuCardAccent" />

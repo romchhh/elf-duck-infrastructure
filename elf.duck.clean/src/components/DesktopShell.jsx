@@ -8,7 +8,6 @@ import bucketDuckIMG from "../assets/bucketDuckIMG.webp";
 import historyDuckIMG from "../assets/historyDuckIMG.webp";
 import savedDuckIMG from "../assets/savedDuckIMG.webp";
 import refferalDucksIMG from "../assets/refferalDucksIMG.webp";
-import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
 import managerDuckIMG from "../assets/managerDuckIMG.webp";
 import categoriesIcon from "../assets/categoriesIcon.webp";
 import "../styles/desktop.css";
@@ -24,7 +23,6 @@ const NAV = [
   { to: "/orders", labelRu: "Заказы", labelPl: "Zamówienia", icon: historyDuckIMG },
   { to: "/favorites", labelRu: "Избранное", labelPl: "Ulubione", icon: savedDuckIMG },
   { to: "/referral", labelRu: "Реферал", labelPl: "Polecenia", icon: refferalDucksIMG },
-  { to: "/promo", labelRu: "Промокод", labelPl: "Promokod", icon: balanceCardDuckIMG },
   { to: "/managers", labelRu: "Поддержка", labelPl: "Wsparcie", icon: managerDuckIMG },
 ];
 

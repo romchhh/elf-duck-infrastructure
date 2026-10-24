@@ -22,14 +22,11 @@ import logo from "../assets/logo3.webp";
 import zlotyIcon from "../assets/zlotyIcon.webp";
 import telegramIcon from "../assets/telegramIcon.webp";
 import supportIcon from "../assets/supportIcon.webp";
-import banerIMG from "../assets/referralBanner.webp";
-import deliveryBannerIMG from "../assets/deliveryBanner.webp";
-import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
+import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
 import pickupIcon from "../assets/pickupIcon.webp";
 import deliveryIcon from "../assets/deliveryIcon.webp";
 import managerTgIcon from "../assets/managerTgIcon.webp";
 import googlePinIcon from "../assets/googlePinIcon.webp";
-import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
 import managerDuckIMG from "../assets/managerDuckIMG.webp";
 import bucketDuckIMG from "../assets/bucketDuckIMG.webp";
 import historyDuckIMG from "../assets/historyDuckIMG.webp";
@@ -58,11 +55,7 @@ const ManagersPage = () => {
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [avatarLoaded, setAvatarLoaded] = useState(false);
 
-  const banners = [
-      banerIMG,
-      assortmentRestockBannerIMG,
-      deliveryBannerIMG,
-  ];
+  const banners = getHomeBanners();
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
   useEffect(() => {
@@ -600,39 +593,6 @@ const ManagersPage = () => {
                         </div>
                     </div>
 
-                <div className="balanceCard">
-                <div className="balanceContent">
-                      <div className="balanceInfo">
-                        <span className="balanceTitle">{t("ПРОМОКОД", "PROMOCODE")}</span>
-
-                        {/* <div className="balanceRow">
-                          <span className="balanceAmount">
-                            <img src={zlotyIcon} alt="" />
-                            {Number(user?.cashbackBalance || 0).toFixed(1)}
-                          </span>
-                          <span className="balanceBadge">{t("кэшбек", "cashback")}</span>
-                        </div> */}
-
-                        <button
-                          className="balanceAction"
-                          onClick={() => {
-                            haptic.light();
-                            closeMenu();
-                            navigate("/promo");
-                          }}
-                        >
-                          {t("активировать", "aktywuj")}
-                        </button>
-                      </div>
-
-                    <img
-                    src={balanceCardDuckIMG}
-                    className="balanceDuck"
-                    alt=""
-                    />
-                </div>
-                </div>
-
                 <div className="sideMenuCard">
                 <span className="sideMenuCardAccent" />
 
@@ -862,7 +822,7 @@ const ManagersPage = () => {
                   onClick={() => {
                     haptic.heavy();
 
-                    if (src === banerIMG) {
+                    if (isReferralBanner(src)) {
                       navigate("/referral");
                       return;
                     }

@@ -29,9 +29,7 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   "https://elfduck-api.telebots.site";
 
-import banerIMG from "../assets/referralBanner.webp";
-import deliveryBannerIMG from "../assets/deliveryBanner.webp";
-import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
+import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
   
@@ -44,7 +42,6 @@ import tetherIcon from "../assets/tetherIcon.webp";
 import sideMenuBackIcon from "../assets/sideMenuBackIcon.webp";  
 import hideSideMenuIcon from "../assets/hideSideMenuIcon.webp"
 import backIcon from "../assets/backIcon.webp";
-import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
 import bucketDuckIMG from "../assets/bucketDuckIMG.webp";
 
 import historyDuckIMG from "../assets/historyDuckIMG.webp";
@@ -1876,11 +1873,7 @@ useEffect(() => {
 
     /* ================= BANNER DOTS SECTION ================= */
 
-    const banners = [
-        banerIMG,
-        assortmentRestockBannerIMG,
-        deliveryBannerIMG,
-    ];
+    const banners = getHomeBanners(language);
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -2990,39 +2983,6 @@ useEffect(() => {
                         </div>
                     </div>
 
-                    <div className="balanceCard">
-                    <div className="balanceContent">
-                      <div className="balanceInfo">
-                        <span className="balanceTitle">{t("ПРОМОКОД", "PROMOCODE")}</span>
-
-                        {/* <div className="balanceRow">
-                          <span className="balanceAmount">
-                            <img src={zlotyIcon} alt="" />
-                            {Number(user?.cashbackBalance || 0).toFixed(1)}
-                          </span>
-                          <span className="balanceBadge">{t("кэшбек", "cashback")}</span>
-                        </div> */}
-
-                        <button
-                          className="balanceAction"
-                          onClick={() => {
-                            haptic.light();
-                            closeMenu();
-                            navigate("/promo");
-                          }}
-                        >
-                          {t("активировать", "aktywuj")}
-                        </button>
-                      </div>
-
-                            <img
-                            src={balanceCardDuckIMG}
-                            className="balanceDuck"
-                            alt=""
-                        />
-                    </div>
-                    </div>
-
                     <div className="sideMenuCard">
                     <span className="sideMenuCardAccent" />
 
@@ -3256,9 +3216,9 @@ useEffect(() => {
                                 onClick={() => {
                                     haptic.heavy();
 
-                                    if (src === banerIMG) {
-                                    navigate("/referral");
-                                    return;
+                                    if (isReferralBanner(src)) {
+                                        navigate("/referral");
+                                        return;
                                     }
                                 }}
                                 >

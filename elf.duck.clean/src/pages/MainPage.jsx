@@ -61,9 +61,7 @@ import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
 import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
-import banerIMG from "../assets/referralBanner.webp";
-import deliveryBannerIMG from "../assets/deliveryBanner.webp";
-import assortmentRestockBannerIMG from "../assets/assortmentRestockBanner.webp";
+import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
 import categoriesIcon from "../assets/categoriesIcon.webp";
 import allItemsIcon from "../assets/allItemsIcon.webp";    
   
@@ -79,7 +77,6 @@ import pickupIcon from "../assets/pickupIcon.webp";
 import percentIcon from "../assets/percentIcon.webp";
 import sideMenuBackIcon from "../assets/sideMenuBackIcon.webp";
 import hideSideMenuIcon from "../assets/hideSideMenuIcon.webp"
-import balanceCardDuckIMG from "../assets/promocodeCardDuckIMG.webp";
 import managerDuckIMG from "../assets/managerDuckIMG.webp";
 import bucketDuckIMG from "../assets/bucketDuckIMG.webp";
 import historyDuckIMG from "../assets/historyDuckIMG.webp";
@@ -1649,11 +1646,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
   /* ================= BANNER DOTS SECTION ================= */
 
-  const banners = [
-    banerIMG,
-    assortmentRestockBannerIMG,
-    deliveryBannerIMG,
-  ];
+  const banners = getHomeBanners();
   
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -3527,39 +3520,6 @@ navigate("/cart");
                         </div>
                     </div>
 
-                  <div className="balanceCard">
-                    <div className="balanceContent">
-                      <div className="balanceInfo">
-                        <span className="balanceTitle">{t("ПРОМОКОД", "PROMOKOD")}</span>
-
-                        {/* <div className="balanceRow">
-                          <span className="balanceAmount">
-                            <img src={zlotyIcon} alt="" />
-                            {Number(user?.cashbackBalance || 0).toFixed(1)}
-                          </span>
-                          <span className="balanceBadge">{t("кэшбек", "cashback")}</span>
-                        </div> */}
-
-                        <button
-                          className="balanceAction"
-                          onClick={() => {
-                            haptic.light();
-                            closeMenu();
-                            navigate("/promo");
-                          }}
-                        >
-                          {t("активировать", "aktywuj")}
-                        </button>
-                      </div>
-
-                      <img
-                        src={balanceCardDuckIMG}
-                        className="balanceDuck"
-                        alt=""
-                      />
-                    </div>
-                  </div>
-
                   <div className="sideMenuCard">
                     <span className="sideMenuCardAccent" />
 
@@ -4081,7 +4041,7 @@ navigate("/cart");
                     onClick={() => {
                       haptic.heavy();
 
-                      if (src === banerIMG) {
+                      if (isReferralBanner(src)) {
                         navigate("/referral");
                         return;
                       }
