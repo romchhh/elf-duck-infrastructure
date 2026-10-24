@@ -178,11 +178,11 @@ router.post(
         textRu;
 
       const defaultLanguage =
-        String(body?.defaultLanguage || "pl")
+        String(body?.defaultLanguage || "ru")
           .trim()
-          .toLowerCase() === "ru"
-          ? "ru"
-          : "pl";
+          .toLowerCase() === "pl"
+          ? "pl"
+          : "ru";
 
       const promo =
         normalizePushString(

@@ -1211,7 +1211,7 @@ const deleteTemplate =
                       bodyRu.trim(),
                     textPl: bodyPl.trim(),
                     textRu: bodyRu.trim(),
-                    defaultLanguage: 'pl',
+                    defaultLanguage: 'ru',
 
                     promo: '',
 
@@ -2112,7 +2112,7 @@ const confirmCreateTpl = () => {
               !audienceCountPending ? (
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
                   н/д — мова ще не збережена (після відкриття мініапу). Їм піде
-                  текст мови за замовчуванням (PL), якщо є обидва варіанти.
+                  текст мови за замовчуванням (RU), якщо є обидва варіанти.
                 </p>
               ) : null}
               {requestedUsernames > 0 ? (
@@ -2209,7 +2209,7 @@ const confirmCreateTpl = () => {
               />
               <p className="mt-1 text-[11px] text-muted-2">
                 Заповніть PL і RU — кожен отримає свій варіант. Без мови в профілі
-                → PL (якщо є), інакше RU.
+                → RU (якщо є), інакше PL.
               </p>
             </Field>
 
@@ -3384,7 +3384,7 @@ function PushAutomationsPanel() {
             text: textPl.trim() || textRu.trim(),
             textPl: textPl.trim(),
             textRu: textRu.trim(),
-            defaultLanguage: 'pl',
+            defaultLanguage: 'ru',
             promo: promo.trim(),
           },
         }),
@@ -3412,7 +3412,7 @@ function PushAutomationsPanel() {
           </h3>
           <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
             После первой покупки бот шлёт офер. Заполните PL и RU — клиент
-            получит текст своей мови. Без мови в профілі піде PL, якщо він є.
+            получит текст своей мови. Без мови в профілі піде RU, якщо він є.
           </p>
         </div>
         <Chip

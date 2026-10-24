@@ -78,16 +78,16 @@ export function buildPushMessageHtml(message = {}) {
 /**
  * PL/RU варіанти тексту розсилки.
  * Legacy `text` — якщо відповідної мови немає.
- * unknown → defaultLanguage (pl за замовчуванням).
+ * unknown → defaultLanguage (ru за замовчуванням).
  */
 export function resolvePushTextForLanguage(message = {}, language = "") {
   const textPl = String(message?.textPl || "").trim();
   const textRu = String(message?.textRu || "").trim();
   const legacy = String(message?.text || "").trim();
   const fallback =
-    String(message?.defaultLanguage || "pl").trim().toLowerCase() === "ru"
-      ? "ru"
-      : "pl";
+    String(message?.defaultLanguage || "ru").trim().toLowerCase() === "pl"
+      ? "pl"
+      : "ru";
 
   const lang =
     language === "pl" || language === "ru" ? language : fallback;
@@ -107,9 +107,9 @@ export function buildPushMessageHtmlByLanguage(message = {}) {
   const textPl = resolvePushTextForLanguage(message, "pl");
   const textRu = resolvePushTextForLanguage(message, "ru");
   const defaultLang =
-    String(message?.defaultLanguage || "pl").trim().toLowerCase() === "ru"
-      ? "ru"
-      : "pl";
+    String(message?.defaultLanguage || "ru").trim().toLowerCase() === "pl"
+      ? "pl"
+      : "ru";
 
   return {
     pl: buildPushMessageHtml({ ...shared, text: textPl }),

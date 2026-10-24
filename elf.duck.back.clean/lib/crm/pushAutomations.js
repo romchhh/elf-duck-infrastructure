@@ -50,9 +50,9 @@ function normalizeMessage(message = {}) {
   const text =
     String(message?.text || "").trim() || textPl || textRu;
   const defaultLanguage =
-    String(message?.defaultLanguage || "pl").trim().toLowerCase() === "ru"
-      ? "ru"
-      : "pl";
+    String(message?.defaultLanguage || "ru").trim().toLowerCase() === "pl"
+      ? "pl"
+      : "ru";
 
   return {
     title: String(message?.title || "").trim(),

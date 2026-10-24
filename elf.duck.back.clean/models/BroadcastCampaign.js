@@ -74,7 +74,7 @@ const broadcastCampaignSchema =
         /** Для User без language: pl | ru */
         defaultLanguage: {
           type: String,
-          default: "pl",
+          default: "ru",
         },
 
         promo: {
