@@ -101,7 +101,7 @@ import {
 
   getCurrentLanguage,
 
-  setCurrentLanguage,
+  switchAppLanguage,
 
   t,
 
@@ -3286,24 +3286,10 @@ navigate("/cart");
     }, 280); // = transition-duration
   };
 
-    const selectLanguage = (
-
-        nextLanguage
-
-        ) => {
-
-        const safeLanguage =
-
-            setCurrentLanguage(nextLanguage);
-
+    const selectLanguage = async (nextLanguage) => {
         haptic.light();
-
-        setLanguage(safeLanguage);
-
         setLanguageMenuOpen(false);
-
-        window.location.reload();
-
+        await switchAppLanguage(nextLanguage);
     };
 
   useEffect(() => {

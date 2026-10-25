@@ -16,7 +16,11 @@ import {
 } from "./utils/guestLocalStore";
 import { isGuestShopping } from "./utils/shoppingSession";
 import { API_URL } from "./api.js";
-import { getCurrentLanguage } from "./utils/i18n";
+import {
+  getCurrentLanguage,
+  persistAppLanguage,
+  setCurrentLanguage,
+} from "./utils/i18n";
 
 const UserContext = createContext(null);
 
@@ -139,6 +143,10 @@ useEffect(() => {
     .then((data) => {
       if (data?.ok && data.user) {
         setUser(data.user);
+        // Підстрахувати User.language після register (якщо зміна мови обірвалась reload)
+        const appLang = getCurrentLanguage();
+        setCurrentLanguage(appLang);
+        void persistAppLanguage(appLang);
         if (pushCampaignId) {
           try {
             sessionStorage.removeItem("elf_push_campaign_id");

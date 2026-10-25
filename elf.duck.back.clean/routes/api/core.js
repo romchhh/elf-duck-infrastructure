@@ -37,9 +37,10 @@ app.post("/register-user", async (req, res) => {
       .replace(/^ref_/, "")
       .trim();
     const pushCampaignId = String(pushCampaignIdRaw || "").trim();
-    const appLanguage =
-      normalizeAppLanguage(languageRaw) ||
-      normalizeAppLanguage(tgUser?.language_code);
+    // Мова з мініапу (localStorage) важливіша за Telegram language_code —
+    // інакше кожен /register-user затирає PL на ru/uk з клієнта Telegram.
+    const bodyLanguage = normalizeAppLanguage(languageRaw);
+    const tgLanguage = normalizeAppLanguage(tgUser?.language_code);
 
     // Single upsert instead of findOne → create/save → findById. One round-trip
     // for the common "returning user" path.
@@ -49,7 +50,7 @@ app.post("/register-user", async (req, res) => {
     if (firstName) set.firstName = firstName;
     if (lastName) set.lastName = lastName;
     if (photoUrl) set.photoUrl = photoUrl;
-    if (appLanguage) set.language = appLanguage;
+    if (bodyLanguage) set.language = bodyLanguage;
     if (verified?.botToken) {
       set.shopBotIndex = resolveShopBotIndexFromToken(verified.botToken);
       set.shopBotKnown = true;
@@ -60,6 +61,19 @@ app.post("/register-user", async (req, res) => {
       { $set: set, $setOnInsert: setOnInsert },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+
+    // Telegram language_code — лише якщо в User ще порожньо
+    if (
+      !normalizeAppLanguage(user?.language) &&
+      (bodyLanguage || tgLanguage)
+    ) {
+      const fillLanguage = bodyLanguage || tgLanguage;
+      user = await User.findOneAndUpdate(
+        { telegramId },
+        { $set: { language: fillLanguage } },
+        { new: true }
+      );
+    }
 
     let mutated = false;
     if (!user.referral?.code) {

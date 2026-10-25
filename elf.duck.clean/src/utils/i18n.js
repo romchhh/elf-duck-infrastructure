@@ -48,8 +48,8 @@ export const getCurrentLanguage = () => {
     : "ru";
 };
 
-/** Зберегти мову в CRM User (fire-and-forget). */
-export const persistAppLanguage = (
+/** Зберегти мову в User (чекаємо відповіді — щоб reload не обірвав запит). */
+export const persistAppLanguage = async (
   language
 ) => {
   const safeLanguage =
@@ -59,9 +59,9 @@ export const persistAppLanguage = (
     const initData =
       window?.Telegram?.WebApp?.initData ||
       "";
-    if (!initData) return;
+    if (!initData) return false;
 
-    fetch(`${API_URL}/user/language`, {
+    const res = await fetch(`${API_URL}/user/language`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -71,9 +71,13 @@ export const persistAppLanguage = (
         language: safeLanguage,
       }),
       keepalive: true,
-    }).catch(() => {});
+    });
+
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => ({}));
+    return data?.ok === true;
   } catch {
-    // ignore
+    return false;
   }
 };
 
@@ -93,8 +97,20 @@ export const setCurrentLanguage = (
     safeLanguage
   );
 
-  persistAppLanguage(safeLanguage);
+  return safeLanguage;
+};
 
+/** Зміна мови в меню: зберегти в API, потім reload. */
+export const switchAppLanguage = async (
+  language
+) => {
+  const safeLanguage = setCurrentLanguage(language);
+  try {
+    await persistAppLanguage(safeLanguage);
+  } catch {
+    // все одно reload — localStorage уже pl/ru
+  }
+  window.location.reload();
   return safeLanguage;
 };
 

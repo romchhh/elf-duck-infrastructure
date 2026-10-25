@@ -10,7 +10,7 @@ import {
 
   getCurrentLanguage,
 
-  setCurrentLanguage,
+  switchAppLanguage,
 
   t,
 
@@ -400,25 +400,11 @@ const ManagersPage = () => {
         }, 280); // = transition-duration
     };
 
-        const selectLanguage = (
-    
-            nextLanguage
-    
-            ) => {
-    
-            const safeLanguage =
-    
-                setCurrentLanguage(nextLanguage);
-    
-            haptic.light();
-    
-            setLanguage(safeLanguage);
-    
-            setLanguageMenuOpen(false);
-    
-            window.location.reload();
-    
-        };
+        const selectLanguage = async (nextLanguage) => {
+        haptic.light();
+        setLanguageMenuOpen(false);
+        await switchAppLanguage(nextLanguage);
+    };
 
     useEffect(() => {
         if (menuVisible) {

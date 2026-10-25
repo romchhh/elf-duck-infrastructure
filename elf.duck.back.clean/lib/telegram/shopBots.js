@@ -1038,13 +1038,21 @@ if (photoFileId) {
       const hasReferralBonus =
         referralAttached || Boolean(String(me?.referral?.usedCode || "").trim());
 
+      // Свіжий language з БД (мінiап міг зберегти pl після останнього open)
+      const freshLangRow = await User.findOne({ telegramId: tgId })
+        .select({ language: 1 })
+        .lean();
+      const savedLang = normalizeAppLanguage(
+        freshLangRow?.language ?? me?.language
+      );
+
       const startLang =
-        normalizeAppLanguage(me?.language) ||
+        savedLang ||
         normalizeAppLanguage(ctx.from?.language_code) ||
         "ru";
 
-      // Persist Telegram language if User ще без мови
-      if (!normalizeAppLanguage(me?.language) && startLang) {
+      // Telegram language_code — лише якщо в User ще порожньо (не затирати pl з мініапу)
+      if (!savedLang && startLang) {
         User.updateOne(
           { telegramId: tgId },
           { $set: { language: startLang } }

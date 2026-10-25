@@ -33,7 +33,7 @@ import {
 
   getCurrentLanguage,
 
-  setCurrentLanguage,
+  switchAppLanguage,
 
   t,
 
@@ -88,24 +88,10 @@ export default function PromoPage() {
         }, 280);
     };
 
-    const selectLanguage = (
-
-        nextLanguage
-
-        ) => {
-
-        const safeLanguage =
-
-            setCurrentLanguage(nextLanguage);
-
+    const selectLanguage = async (nextLanguage) => {
         haptic.light();
-
-        setLanguage(safeLanguage);
-
         setLanguageMenuOpen(false);
-
-        window.location.reload();
-
+        await switchAppLanguage(nextLanguage);
     };
 
     useEffect(() => {
