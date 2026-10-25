@@ -10,13 +10,27 @@ import {
   grantManualCashbackToUser,
   deductManualCashbackFromUser,
 } from "../../lib/cashback/manualAdmin.js";
+import {
+  findCashbackUserByQuery,
+  normalizeCashbackUsername,
+} from "../../lib/cashback/findUser.js";
 
 const router = express.Router();
 
-const normalizeCashbackUsername = (raw) =>
-  String(raw || "")
-    .trim()
-    .replace(/^@+/, "");
+function ledgerSourceLabel(source, type) {
+  const key = String(source || "").trim();
+  const map = {
+    manual_admin_grant: "Начисление (админ/CRM)",
+    manual_admin_deduct: "Списание (админ/CRM)",
+    order_earned_cashback: "Начисление за заказ",
+    order_payment_refund: "Возврат на баланс после отмены",
+    cashback_replace: "Корректировка кэшбэка на заказе",
+  };
+  if (map[key]) return map[key];
+  if (String(type || "") === "refund") return "Возврат на баланс";
+  if (key) return key;
+  return "Движение кэшбэка";
+}
 
 router.get(
   "/cashback",
@@ -577,36 +591,184 @@ router.get(
 
 router.get("/cashback/user", async (req, res) => {
   try {
-    const username = normalizeCashbackUsername(req.query?.username);
+    const username = normalizeCashbackUsername(
+      req.query?.username || req.query?.q || ""
+    );
     if (!username) {
       return res.status(400).json({ ok: false, error: "USERNAME_REQUIRED" });
     }
 
-    const user = await User.findOne(
-      { username },
-      {
-        telegramId: 1,
-        username: 1,
-        firstName: 1,
-        lastName: 1,
-        cashbackBalance: 1,
-        cashbackLedger: 1,
-      }
-    ).lean();
+    const userDoc = await findCashbackUserByQuery(username, {
+      telegramId: 1,
+      username: 1,
+      firstName: 1,
+      lastName: 1,
+      cashbackBalance: 1,
+      cashbackLedger: 1,
+    });
+    const user = userDoc?.toObject ? userDoc.toObject() : userDoc;
 
     if (!user) {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
 
+    const telegramId = String(user.telegramId || "").trim();
     const ledger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
     const activeLots = ledger.filter(
       (row) => !row?.expiredAt && Number(row?.remainingZl || 0) > 0
     );
 
+    const cashbackOrders = await Order.find(
+      {
+        userTelegramId: telegramId,
+        $or: [
+          { "payment.cashbackAppliedZl": { $gt: 0 } },
+          { "payment.cashbackOriginalAppliedZl": { $gt: 0 } },
+          { "payment.cashbackRefundedAmountZl": { $gt: 0 } },
+        ],
+      },
+      {
+        orderNo: 1,
+        status: 1,
+        totalZl: 1,
+        createdAt: 1,
+        cancelledAt: 1,
+        updatedAt: 1,
+        payment: 1,
+      }
+    )
+      .sort({ createdAt: -1 })
+      .limit(40)
+      .lean();
+
+    const orderHistory = cashbackOrders.map((order) => {
+      const payment = order?.payment || {};
+      const appliedZl = Number(
+        payment.cashbackOriginalAppliedZl || payment.cashbackAppliedZl || 0
+      );
+      const stillAppliedZl = Number(payment.cashbackAppliedZl || 0);
+      const refundedZl = Number(payment.cashbackRefundedAmountZl || 0);
+      const refundedAt = payment.cashbackRefundedAt || null;
+      const status = String(order?.status || "").trim();
+      const cancelledLike = /cancel|annul|reject|fail/i.test(status) ||
+        Boolean(order?.cancelledAt);
+
+      let refundStatus = "none";
+      if (refundedZl > 0 && refundedAt) {
+        refundStatus = "refunded";
+      } else if (appliedZl > 0 && cancelledLike && stillAppliedZl <= 0 && !refundedAt) {
+        refundStatus = "unclear";
+      } else if (appliedZl > 0 && cancelledLike && stillAppliedZl > 0) {
+        refundStatus = "missing";
+      } else if (stillAppliedZl > 0) {
+        refundStatus = "held";
+      }
+
+      return {
+        orderId: String(order?._id || ""),
+        orderNo: String(order?.orderNo || ""),
+        status,
+        totalZl: Number(order?.totalZl || 0),
+        createdAt: order?.createdAt || null,
+        cancelledAt: order?.cancelledAt || null,
+        cashbackAppliedZl: stillAppliedZl,
+        cashbackOriginalAppliedZl: appliedZl,
+        cashbackRefundedAmountZl: refundedZl,
+        cashbackAppliedAt: payment.cashbackAppliedAt || null,
+        cashbackRefundedAt: refundedAt,
+        refundStatus,
+      };
+    });
+
+    const history = [];
+
+    for (const order of orderHistory) {
+      const spendAmount = Number(
+        order.cashbackOriginalAppliedZl || order.cashbackAppliedZl || 0
+      );
+      if (spendAmount > 0) {
+        history.push({
+          id: `spend-${order.orderId}`,
+          at: order.cashbackAppliedAt || order.createdAt,
+          kind: "spend",
+          amountZl: spendAmount,
+          label: `Списано на заказ #${order.orderNo || "—"}`,
+          orderId: order.orderId,
+          orderNo: order.orderNo,
+          orderStatus: order.status,
+          refundStatus: order.refundStatus,
+        });
+      }
+      if (Number(order.cashbackRefundedAmountZl || 0) > 0) {
+        history.push({
+          id: `refund-order-${order.orderId}`,
+          at: order.cashbackRefundedAt || order.cancelledAt || order.createdAt,
+          kind: "refund",
+          amountZl: Number(order.cashbackRefundedAmountZl || 0),
+          label: `Возврат на баланс (заказ #${order.orderNo || "—"})`,
+          orderId: order.orderId,
+          orderNo: order.orderNo,
+          orderStatus: order.status,
+          refundStatus: order.refundStatus,
+        });
+      }
+    }
+
+    for (const row of ledger) {
+      const source = String(row?.source || "").trim();
+      // spend/refund по заказам уже в orderHistory
+      if (source === "order_payment_refund") continue;
+
+      const amountZl = Number(row?.amountZl || 0);
+      const earnedAt = row?.earnedAt || row?.createdAt || null;
+      let kind = "grant";
+      if (source === "manual_admin_deduct") kind = "deduct";
+      else if (source === "order_earned_cashback") kind = "earn";
+      else if (source === "cashback_replace" || String(row?.type || "") === "refund") {
+        kind = "refund";
+      } else if (source === "manual_admin_grant" || amountZl > 0) {
+        kind = "grant";
+      }
+
+      history.push({
+        id: `ledger-${String(row?._id || `${source}-${earnedAt}`)}`,
+        at: earnedAt,
+        kind,
+        amountZl,
+        remainingZl: Number(row?.remainingZl || 0),
+        label: ledgerSourceLabel(source, row?.type),
+        source,
+        orderId: row?.orderId || row?.sourceOrderId
+          ? String(row?.orderId || row?.sourceOrderId)
+          : "",
+        expiresAt: row?.expiresAt || null,
+      });
+
+      if (row?.expiredAt) {
+        const expiredAmount = Number(
+          row?.expiredAmountZl || amountZl || 0
+        );
+        history.push({
+          id: `expire-${String(row?._id || `${source}-exp`)}`,
+          at: row.expiredAt,
+          kind: "expire",
+          amountZl: Number(expiredAmount.toFixed(2)),
+          label: "Сгорел срок действия",
+          source,
+        });
+      }
+    }
+
+    history.sort((a, b) => {
+      const ta = a?.at ? new Date(a.at).getTime() : 0;
+      const tb = b?.at ? new Date(b.at).getTime() : 0;
+      return tb - ta;
+    });
+
     return res.json({
       ok: true,
       user: {
-        telegramId: String(user.telegramId || ""),
+        telegramId,
         username: String(user.username || ""),
         firstName: String(user.firstName || ""),
         lastName: String(user.lastName || ""),
@@ -617,7 +779,11 @@ router.get("/cashback/user", async (req, res) => {
         remainingZl: Number(row?.remainingZl || 0),
         expiresAt: row?.expiresAt || null,
         source: String(row?.source || ""),
+        amountZl: Number(row?.amountZl || 0),
+        earnedAt: row?.earnedAt || null,
       })),
+      orders: orderHistory,
+      history: history.slice(0, 80),
     });
   } catch (error) {
     console.error("GET /crm/cashback/user error:", error);
@@ -638,7 +804,7 @@ router.post("/cashback/grant", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_AMOUNT" });
     }
 
-    const user = await User.findOne({ username });
+    const user = await findCashbackUserByQuery(username);
     if (!user) {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
@@ -681,7 +847,7 @@ router.post("/cashback/deduct", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_AMOUNT" });
     }
 
-    const user = await User.findOne({ username });
+    const user = await findCashbackUserByQuery(username);
     if (!user) {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
@@ -713,5 +879,6 @@ router.post("/cashback/deduct", async (req, res) => {
     });
   }
 });
+
 
 export default router;

@@ -133,6 +133,50 @@ function formatExpireDate(value) {
     .replace('.', '');
 }
 
+function formatDateTime(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('ru-RU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Warsaw',
+  })
+    .format(new Date(value))
+    .replace(/\s?г\.?$/, '')
+    .replace('.', '');
+}
+
+function historyKindMeta(kind) {
+  const key = String(kind || '');
+  if (key === 'spend') {
+    return { label: 'Списание', className: 'text-[hsl(0_75%_68%)]' };
+  }
+  if (key === 'refund') {
+    return { label: 'Возврат', className: 'text-[hsl(142_70%_58%)]' };
+  }
+  if (key === 'deduct') {
+    return { label: 'Списание', className: 'text-[hsl(0_75%_68%)]' };
+  }
+  if (key === 'expire') {
+    return { label: 'Сгорел', className: 'text-[hsl(36_90%_62%)]' };
+  }
+  if (key === 'earn' || key === 'grant') {
+    return { label: 'Начисление', className: 'text-[hsl(255_100%_72%)]' };
+  }
+  return { label: 'Операция', className: 'text-muted-foreground' };
+}
+
+function refundStatusLabel(status) {
+  const key = String(status || '');
+  if (key === 'refunded') return { text: 'Вернули на баланс', ok: true };
+  if (key === 'missing') return { text: 'Не вернули (всё ещё списано)', ok: false };
+  if (key === 'unclear') return { text: 'Отмена есть, возврат не зафиксирован', ok: false };
+  if (key === 'held') return { text: 'Держится на заказе', ok: null };
+  return { text: '—', ok: null };
+}
+
 const adjustErrorText = (code) => {
   const key = String(code || '').trim();
   const map = {
@@ -151,15 +195,17 @@ function normalizeAdjustUsername(raw) {
   return String(raw || '').trim().replace(/^@+/, '');
 }
 
-function CashbackAdjustPanel({ onAdjusted }) {
+function CashbackAdjustPanel({ onAdjusted, inspectQuery = '', inspectNonce = 0 }) {
   const [mode, setMode] = useState('lookup');
   const [username, setUsername] = useState('');
   const [amountZl, setAmountZl] = useState('');
   const [lookup, setLookup] = useState(null);
 
   const lookupMutation = useMutation({
-    mutationFn: async () => {
-      const u = normalizeAdjustUsername(username);
+    mutationFn: async (overrideUsername) => {
+      const u = normalizeAdjustUsername(
+        overrideUsername !== undefined ? overrideUsername : username
+      );
       if (!u) throw new Error('USERNAME_REQUIRED');
       return crmFetchJson(
         `/crm/cashback/user?username=${encodeURIComponent(u)}`
@@ -167,9 +213,12 @@ function CashbackAdjustPanel({ onAdjusted }) {
     },
     onSuccess: (data) => {
       setLookup(data);
+      if (data?.user?.username) {
+        setUsername(`@${data.user.username}`);
+      }
       toast({
         title: 'Баланс получен',
-        description: `${formatMoney(data?.cashbackBalance)} · @${data?.user?.username || ''}`,
+        description: `${formatMoney(data?.cashbackBalance)} · @${data?.user?.username || data?.user?.telegramId || ''}`,
       });
     },
     onError: (error) => {
@@ -182,6 +231,27 @@ function CashbackAdjustPanel({ onAdjusted }) {
     },
   });
 
+  useEffect(() => {
+    if (!inspectNonce) return;
+    const u = normalizeAdjustUsername(inspectQuery);
+    if (!u) return;
+    setMode('lookup');
+    setUsername(/^\d+$/.test(u) ? u : `@${u}`);
+    lookupMutation.mutate(u);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inspectNonce]);
+
+  const refreshLookup = async (preferredUsername) => {
+    const u = normalizeAdjustUsername(preferredUsername || username);
+    if (!u) return;
+    try {
+      const data = await lookupMutation.mutateAsync(u);
+      setLookup(data);
+    } catch {
+      // toast уже в onError
+    }
+  };
+
   const grantMutation = useMutation({
     mutationFn: async () => {
       const u = normalizeAdjustUsername(username);
@@ -193,17 +263,13 @@ function CashbackAdjustPanel({ onAdjusted }) {
         body: JSON.stringify({ username: u, amountZl: amount }),
       });
     },
-    onSuccess: (data) => {
-      setLookup({
-        user: data?.user,
-        cashbackBalance: data?.cashbackBalance,
-        activeLots: [],
-      });
+    onSuccess: async (data) => {
       onAdjusted?.();
       toast({
         title: 'Кэшбэк начислен',
         description: `Новый баланс: ${formatMoney(data?.cashbackBalance)}`,
       });
+      await refreshLookup(data?.user?.username || username);
     },
     onError: (error) => {
       toast({
@@ -225,17 +291,13 @@ function CashbackAdjustPanel({ onAdjusted }) {
         body: JSON.stringify({ username: u, amountZl: amount }),
       });
     },
-    onSuccess: (data) => {
-      setLookup({
-        user: data?.user,
-        cashbackBalance: data?.cashbackBalance,
-        activeLots: [],
-      });
+    onSuccess: async (data) => {
       onAdjusted?.();
       toast({
         title: 'Кэшбэк списан',
         description: `Новый баланс: ${formatMoney(data?.cashbackBalance)}`,
       });
+      await refreshLookup(data?.user?.username || username);
     },
     onError: (error) => {
       toast({
@@ -252,7 +314,7 @@ function CashbackAdjustPanel({ onAdjusted }) {
     deductMutation.isPending;
 
   const runPrimary = () => {
-    if (mode === 'lookup') lookupMutation.mutate();
+    if (mode === 'lookup') lookupMutation.mutate(undefined);
     else if (mode === 'grant') grantMutation.mutate();
     else deductMutation.mutate();
   };
@@ -264,6 +326,9 @@ function CashbackAdjustPanel({ onAdjusted }) {
         ? 'Начислить'
         : 'Списать';
 
+  const orders = Array.isArray(lookup?.orders) ? lookup.orders : [];
+  const history = Array.isArray(lookup?.history) ? lookup.history : [];
+
   return (
     <div className="rounded-2xl surface-card p-6 space-y-4">
       <div>
@@ -271,7 +336,7 @@ function CashbackAdjustPanel({ onAdjusted }) {
           Управление балансом клиента
         </h3>
         <p className="mt-0.5 text-[12px] text-muted-foreground">
-          Начисление, списание и проверка по Telegram @username (как в админ-боте)
+          @username или Telegram ID · регистр не важен · история списаний и возвратов
         </p>
       </div>
 
@@ -286,7 +351,6 @@ function CashbackAdjustPanel({ onAdjusted }) {
             type="button"
             onClick={() => {
               setMode(item.key);
-              setLookup(null);
             }}
             className={cn(
               'rounded-lg border px-3 py-1.5 text-[12px] transition-colors',
@@ -303,12 +367,18 @@ function CashbackAdjustPanel({ onAdjusted }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block space-y-1.5">
           <span className="text-[11px] uppercase tracking-wider text-muted-2">
-            Username
+            Username / ID
           </span>
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="@username"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                runPrimary();
+              }
+            }}
+            placeholder="@username или telegram id"
             className="h-9 w-full rounded-lg border border-border bg-[hsl(232_26%_7%)] px-3 text-[13px] outline-none focus:border-[hsl(255_100%_68%/0.4)]"
           />
         </label>
@@ -339,27 +409,151 @@ function CashbackAdjustPanel({ onAdjusted }) {
       </Button>
 
       {lookup?.user && (
-        <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-4 text-[13px] space-y-1">
-          <div className="font-medium text-foreground">
-            {[lookup.user.firstName, lookup.user.lastName].filter(Boolean).join(' ') ||
-              '—'}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-4 text-[13px] space-y-1">
+            <div className="font-medium text-foreground">
+              {[lookup.user.firstName, lookup.user.lastName].filter(Boolean).join(' ') ||
+                '—'}
+            </div>
+            <div className="text-muted-foreground">
+              @{lookup.user.username || '—'} · ID {lookup.user.telegramId || '—'}
+            </div>
+            <div className="pt-2 text-[hsl(255_100%_72%)] font-semibold">
+              Баланс: {formatMoney(lookup.cashbackBalance)}
+            </div>
+            {Array.isArray(lookup.activeLots) && lookup.activeLots.length > 0 && (
+              <ul className="mt-2 space-y-1 text-[12px] text-muted-2">
+                {lookup.activeLots.slice(0, 6).map((row, i) => (
+                  <li key={i}>
+                    {formatMoney(row.remainingZl)} · сгорит{' '}
+                    {formatExpireDate(row.expiresAt)}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <div className="text-muted-foreground">
-            @{lookup.user.username || '—'} · ID {lookup.user.telegramId || '—'}
+
+          <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-4 space-y-3">
+            <div>
+              <div className="text-[13px] font-medium text-foreground">
+                Заказы с кэшбэком
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-2">
+                Здесь видно: списали на заказ и вернули ли после отмены
+              </p>
+            </div>
+
+            {orders.length === 0 ? (
+              <div className="text-[12px] text-muted-2">
+                Заказов с кэшбэком не найдено
+              </div>
+            ) : (
+              <ul className="space-y-2.5">
+                {orders.map((order) => {
+                  const refund = refundStatusLabel(order.refundStatus);
+                  return (
+                    <li
+                      key={order.orderId}
+                      className="rounded-lg border border-border-soft/80 px-3 py-2.5 text-[12px]"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-medium text-foreground">
+                          #{order.orderNo || '—'}
+                        </span>
+                        <span className="text-muted-2">
+                          {formatDateTime(order.createdAt)} · {order.status || '—'}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 text-muted-foreground">
+                        Списано:{' '}
+                        <span className="text-foreground">
+                          {formatMoney(
+                            order.cashbackOriginalAppliedZl ||
+                              order.cashbackAppliedZl
+                          )}
+                        </span>
+                        {Number(order.cashbackAppliedZl || 0) > 0 &&
+                          Number(order.cashbackAppliedZl) !==
+                            Number(order.cashbackOriginalAppliedZl || 0) && (
+                            <span className="text-muted-2">
+                              {' '}
+                              (сейчас на заказе {formatMoney(order.cashbackAppliedZl)})
+                            </span>
+                          )}
+                      </div>
+                      <div
+                        className={cn(
+                          'mt-1',
+                          refund.ok === true && 'text-[hsl(142_70%_58%)]',
+                          refund.ok === false && 'text-[hsl(0_75%_68%)]',
+                          refund.ok == null && 'text-muted-2'
+                        )}
+                      >
+                        {Number(order.cashbackRefundedAmountZl || 0) > 0
+                          ? `Возврат: ${formatMoney(order.cashbackRefundedAmountZl)} · ${formatDateTime(order.cashbackRefundedAt)}`
+                          : refund.text}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
-          <div className="pt-2 text-[hsl(255_100%_72%)] font-semibold">
-            Баланс: {formatMoney(lookup.cashbackBalance)}
+
+          <div className="rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-4 space-y-3">
+            <div>
+              <div className="text-[13px] font-medium text-foreground">
+                История операций
+              </div>
+              <p className="mt-0.5 text-[11px] text-muted-2">
+                Начисления, списания, возвраты и сгорания
+              </p>
+            </div>
+
+            {history.length === 0 ? (
+              <div className="text-[12px] text-muted-2">История пуста</div>
+            ) : (
+              <ul className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                {history.map((item) => {
+                  const meta = historyKindMeta(item.kind);
+                  const sign =
+                    item.kind === 'spend' ||
+                    item.kind === 'deduct' ||
+                    item.kind === 'expire'
+                      ? '−'
+                      : '+';
+                  return (
+                    <li
+                      key={item.id}
+                      className="flex items-start justify-between gap-3 border-b border-border-soft/60 pb-2 last:border-0 last:pb-0"
+                    >
+                      <div className="min-w-0">
+                        <div className={cn('text-[11px] font-medium', meta.className)}>
+                          {meta.label}
+                        </div>
+                        <div className="truncate text-[12px] text-foreground">
+                          {item.label}
+                        </div>
+                        <div className="text-[11px] text-muted-2">
+                          {formatDateTime(item.at)}
+                          {item.orderStatus ? ` · ${item.orderStatus}` : ''}
+                        </div>
+                      </div>
+                      <div
+                        className={cn(
+                          'shrink-0 text-[13px] font-medium tabular-nums',
+                          meta.className
+                        )}
+                      >
+                        {sign}
+                        {formatMoney(item.amountZl)}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
-          {Array.isArray(lookup.activeLots) && lookup.activeLots.length > 0 && (
-            <ul className="mt-2 space-y-1 text-[12px] text-muted-2">
-              {lookup.activeLots.slice(0, 6).map((row, i) => (
-                <li key={i}>
-                  {formatMoney(row.remainingZl)} · сгорит{' '}
-                  {formatExpireDate(row.expiresAt)}
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
     </div>
@@ -487,6 +681,17 @@ export default function Cashback() {
     page,
     setPage,
   ] = useState(1);
+
+  const [inspectQuery, setInspectQuery] = useState('');
+  const [inspectNonce, setInspectNonce] = useState(0);
+
+  const openClientLookup = (row) => {
+    const q = String(row?.username || row?.telegramId || '').trim();
+    if (!q) return;
+    setInspectQuery(q);
+    setInspectNonce((n) => n + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const { sortKey, sortDirection, toggleSort, appendSortParams } =
     useTableSort();
@@ -972,6 +1177,8 @@ export default function Cashback() {
       </div>
 
       <CashbackAdjustPanel
+        inspectQuery={inspectQuery}
+        inspectNonce={inspectNonce}
         onAdjusted={() => {
           queryClient.invalidateQueries({
             queryKey: ['crm-cashback'],
@@ -1039,9 +1246,14 @@ export default function Cashback() {
 
       <div className="space-y-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="font-heading text-[15px] font-semibold text-foreground">
-            Кэшбэк клиентов
-          </h3>
+          <div>
+            <h3 className="font-heading text-[15px] font-semibold text-foreground">
+              Кэшбэк клиентов
+            </h3>
+            <p className="mt-0.5 text-[11px] text-muted-2">
+              Клик по клиенту открывает проверку и историю сверху
+            </p>
+          </div>
 
           <div className="flex items-center gap-3">
             <div className="relative w-full sm:w-auto">
@@ -1152,6 +1364,7 @@ export default function Cashback() {
                   sortKey={sortKey}
                   sortDirection={sortDirection}
                   onSort={toggleSort}
+                  onRowClick={openClientLookup}
                 />
               )}
           </div>
@@ -1183,14 +1396,14 @@ export default function Cashback() {
               !isError &&
               rows.map(
                 (r) => (
-                  <CashbackMobileRow
-                    key={
-                      r.id
-                    }
-                    r={
-                      r
-                    }
-                  />
+                  <button
+                    key={r.id}
+                    type="button"
+                    className="block w-full text-left"
+                    onClick={() => openClientLookup(r)}
+                  >
+                    <CashbackMobileRow r={r} />
+                  </button>
                 )
               )}
           </div>

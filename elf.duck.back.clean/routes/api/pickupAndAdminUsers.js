@@ -5,6 +5,10 @@ import {
   deductManualCashbackFromUser,
 } from "../../lib/cashback/manualAdmin.js";
 import {
+  findCashbackUserByQuery,
+  normalizeCashbackUsername,
+} from "../../lib/cashback/findUser.js";
+import {
   buildUsersExportRows,
   sendUsersExportCsvResponse,
 } from "../../lib/usersExport.js";
@@ -113,25 +117,21 @@ app.get("/admin/users/cashback/by-username", async (req, res) => {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
-    const username = String(req.query?.username || "")
-      .trim()
-      .replace(/^@+/, "");
+    const username = normalizeCashbackUsername(req.query?.username);
 
     if (!username) {
       return res.status(400).json({ ok: false, error: "USERNAME_REQUIRED" });
     }
 
-    const user = await User.findOne(
-      { username },
-      {
-        telegramId: 1,
-        username: 1,
-        firstName: 1,
-        lastName: 1,
-        cashbackBalance: 1,
-        cashbackLedger: 1,
-      }
-    ).lean();
+    const userDoc = await findCashbackUserByQuery(username, {
+      telegramId: 1,
+      username: 1,
+      firstName: 1,
+      lastName: 1,
+      cashbackBalance: 1,
+      cashbackLedger: 1,
+    });
+    const user = userDoc?.toObject ? userDoc.toObject() : userDoc;
 
     if (!user) {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
@@ -171,8 +171,7 @@ app.post("/admin/users/cashback/deduct-by-username", async (req, res) => {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
-    const usernameRaw = String(req.body?.username || "").trim();
-    const username = usernameRaw.replace(/^@+/, "").trim();
+    const username = normalizeCashbackUsername(req.body?.username);
     const amountZl = Number(req.body?.amountZl || 0);
     const grantedByTelegramId = String(req.body?.grantedByTelegramId || "").trim();
     const grantedByUsername = String(req.body?.grantedByUsername || "").trim();
@@ -185,7 +184,7 @@ app.post("/admin/users/cashback/deduct-by-username", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_AMOUNT" });
     }
 
-    const user = await User.findOne({ username });
+    const user = await findCashbackUserByQuery(username);
     if (!user) {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
@@ -222,8 +221,7 @@ app.post("/admin/users/cashback/grant-by-username", async (req, res) => {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
-    const usernameRaw = String(req.body?.username || "").trim();
-    const username = usernameRaw.replace(/^@+/, "").trim();
+    const username = normalizeCashbackUsername(req.body?.username);
     const amountZl = Number(req.body?.amountZl || 0);
     // const note = String(req.body?.note || "").trim();
     const grantedByTelegramId = String(req.body?.grantedByTelegramId || "").trim();
@@ -237,7 +235,7 @@ app.post("/admin/users/cashback/grant-by-username", async (req, res) => {
       return res.status(400).json({ ok: false, error: "INVALID_CASHBACK_AMOUNT" });
     }
 
-    const user = await User.findOne({ username });
+    const user = await findCashbackUserByQuery(username);
     if (!user) {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
