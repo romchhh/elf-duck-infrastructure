@@ -123,17 +123,18 @@ export async function notifyInviterReferralBonusReady(referredUser) {
     { telegramId: 1, shopBotIndex: 1, shopBotKnown: 1 }
   ).lean();
 
+  const {
+    getClientAppLanguage,
+    buildReferralBonusReadyClientMessage,
+    claimReferralBonusButtonText,
+  } = await import("../../telegram/clientOrderMessages.js");
+
+  const inviterLang = await getClientAppLanguage(inviterId);
   const refLabel = getReferralDisplayName(referredUser);
-  const text = [
-    "🎁 <b>Реферальный бонус готов!</b>",
-    "",
-    `Ваш реферал <b>${String(refLabel || "друг")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")}</b> совершил покупку.`,
-    "",
-    "Заберите бонус за реферала в кабинете — <b>25 zł</b> на баланс.",
-  ].join("\n");
+  const text = buildReferralBonusReadyClientMessage({
+    lang: inviterLang,
+    referralLabel: refLabel,
+  });
 
   const webAppBase = String(
     process.env.WEBAPP_URL || process.env.APP_URL || ""
@@ -151,7 +152,7 @@ export async function notifyInviterReferralBonusReady(referredUser) {
       inline_keyboard: [
         [
           {
-            text: "Забрать бонус в кабинете",
+            text: claimReferralBonusButtonText(inviterLang),
             web_app: { url: `${webAppBase}/referral` },
           },
         ],

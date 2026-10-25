@@ -23,6 +23,10 @@ import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import crmRouter from "../../../routes/crm.js";
+import {
+  buildUnpaidPaymentReminderClientMessage,
+  getClientAppLanguage,
+} from "../../telegram/clientOrderMessages.js";
 
 const APP_URL = String(
   process.env.APP_URL ||
@@ -546,27 +550,14 @@ export async function processOrdersWithoutPaymentConfirm() {
           continue;
         }
 
-        const orderNo =
-          escapeHtml(
-            freshOrder?.orderNo || "—"
-          );
-
-        const reminderText =
-          shouldSendNineMinuteReminder
-            ? [
-                "⚠️ <b>ПОСЛЕДНИЙ ШАГ</b>",
-                "",
-                `Заказ <b>#${orderNo}</b> ещё не передан менеджеру.`,
-                "",
-                "Выберите способ оплаты примерно в течение 1 минуты, иначе заказ будет аннулирован.",
-              ].join("\n")
-            : [
-                "⏳ <b>ОСТАЛСЯ ПОСЛЕДНИЙ ШАГ</b>",
-                "",
-                `Заказ <b>#${orderNo}</b> создан, но менеджер его ещё не получил.`,
-                "",
-                "Выберите способ оплаты, чтобы заказ ушёл менеджеру.",
-              ].join("\n");
+        const clientLang = await getClientAppLanguage(
+          freshOrder?.userTelegramId
+        );
+        const reminderText = buildUnpaidPaymentReminderClientMessage({
+          lang: clientLang,
+          orderNo: freshOrder?.orderNo || "—",
+          urgent: shouldSendNineMinuteReminder,
+        });
 
         /*
          * Сначала отправляем.

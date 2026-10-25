@@ -416,6 +416,14 @@ export async function sendCashbackExpiringSoonNotification(user, expiringRows) {
       return;
     }
 
+    const {
+      getClientAppLanguage,
+      buildCashbackExpiringSoonClientMessage,
+      formatCashbackExpireDateLocalized,
+    } = await import("../../telegram/clientOrderMessages.js");
+
+    const lang = await getClientAppLanguage(user.telegramId);
+
     const sorted = [...expiringRows].sort(
       (a, b) => new Date(a.expiresAt).getTime() - new Date(b.expiresAt).getTime()
     );
@@ -423,7 +431,10 @@ export async function sendCashbackExpiringSoonNotification(user, expiringRows) {
     const first = sorted[0];
     const firstAmount = Number(first?.remainingZl || 0).toFixed(2);
     const firstDays = Math.max(0, daysUntilDate(first?.expiresAt));
-    const firstExpireText = formatCashbackExpireDate(first?.expiresAt);
+    const firstExpireText = formatCashbackExpireDateLocalized(
+      first?.expiresAt,
+      lang
+    );
 
     const otherActiveRows = (Array.isArray(user?.cashbackLedger) ? user.cashbackLedger : [])
       .filter((row) => !row?.expiredAt && Number(row?.remainingZl || 0) > 0)
@@ -435,24 +446,36 @@ export async function sendCashbackExpiringSoonNotification(user, expiringRows) {
     );
 
     const nextRowsText = otherActiveRows.length
-      ? `\n\nОстаток после сгорания этой части: <b>${remainingAfterFirst.toFixed(2)} zł</b>\n\nДругие части кэшбека:\n${otherActiveRows
-          .map((row) => {
-            const expireText = formatCashbackExpireDate(row?.expiresAt);
-            return `• ${Number(row?.remainingZl || 0).toFixed(2)} zł — ${expireText}`;
-          })
-          .join("\n")}`
-      : `\n\nПосле сгорания этой части активного кэшбека не останется.`;
+      ? lang === "pl"
+        ? `\n\nSaldo po wygaśnięciu tej części: <b>${remainingAfterFirst.toFixed(2)} zł</b>\n\nInne części cashbacku:\n${otherActiveRows
+            .map((row) => {
+              const expireText = formatCashbackExpireDateLocalized(
+                row?.expiresAt,
+                lang
+              );
+              return `• ${Number(row?.remainingZl || 0).toFixed(2)} zł — ${expireText}`;
+            })
+            .join("\n")}`
+        : `\n\nОстаток после сгорания этой части: <b>${remainingAfterFirst.toFixed(2)} zł</b>\n\nДругие части кэшбека:\n${otherActiveRows
+            .map((row) => {
+              const expireText = formatCashbackExpireDateLocalized(
+                row?.expiresAt,
+                lang
+              );
+              return `• ${Number(row?.remainingZl || 0).toFixed(2)} zł — ${expireText}`;
+            })
+            .join("\n")}`
+      : lang === "pl"
+        ? `\n\nPo wygaśnięciu tej części aktywnego cashbacku nie pozostanie.`
+        : `\n\nПосле сгорания этой части активного кэшбека не останется.`;
 
-    const text = [
-      `💰 <b>КЭШБЕК СКОРО СГОРИТ</b>`,
-      ``,
-      `Твой кэшбек <b>${firstAmount} zł</b> сгорит:`,
-      `<b>${firstExpireText}</b>`,
-      `(через <b>${firstDays}</b> дн.)`,
-      ``,
-      `Успей использовать!`,
+    const text = buildCashbackExpiringSoonClientMessage({
+      lang,
+      firstAmount,
+      firstExpireText,
+      firstDays,
       nextRowsText,
-    ].join("\n");
+    });
 
     await sendClientTelegramMessage(
       user.telegramId,

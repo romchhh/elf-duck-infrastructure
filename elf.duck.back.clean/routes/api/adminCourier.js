@@ -98,7 +98,11 @@ app.post("/admin/courier/customer-message", requireAdmin, async (req, res) => {
       return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
     }
 
-    const buttonText = "Связаться";
+    const { getClientAppLanguage, contactButtonText } = await import(
+      "../../lib/telegram/clientOrderMessages.js"
+    );
+    const clientLang = await getClientAppLanguage(user.telegramId);
+    const buttonText = contactButtonText(clientLang);
     const managerUsernameSafe = String(managerUsername || "")
       .trim()
       .replace(/^@+/, "");

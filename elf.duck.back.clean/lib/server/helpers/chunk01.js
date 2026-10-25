@@ -116,17 +116,16 @@ export async function sendManagerRelayToClient(clientMessageState, messageText) 
     }).lean();
   }
 
+  const { getClientAppLanguage, buildManagerRelayToClientMessage } =
+    await import("../../telegram/clientOrderMessages.js");
+  const clientLang = await getClientAppLanguage(clientTelegramId);
   await sendClientTelegramMessage(
     clientTelegramId,
-    [
-      "💬 <b>Сообщение от менеджера</b>",
-      "",
-      `Заказ: <b>#${escapeHtml(
-        clientMessageState?.orderNo || "—"
-      )}</b>`,
-      "",
-      escapeHtml(messageText),
-    ].join("\n"),
+    buildManagerRelayToClientMessage({
+      lang: clientLang,
+      orderNo: clientMessageState?.orderNo || "—",
+      messageText,
+    }),
     { parse_mode: "HTML" },
     { order }
   );

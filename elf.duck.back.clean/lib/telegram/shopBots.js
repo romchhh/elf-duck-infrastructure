@@ -13,6 +13,23 @@ import { getTelegramBotTokens } from "./botTokens.js";
 import { createShopBotClient } from "./shopBotClient.js";
 import { setShopBotUsername } from "./shopBotReferralLink.js";
 import { getStartBannerUrl } from "../config/rootConfig.js";
+import {
+  botStartErrorText,
+  buildBotStartCaption,
+  buildCashAwaitingClientMessage,
+  buildCourierAcceptedClientMessage,
+  buildCourierArrivedClientMessage,
+  buildCourierSoonClientMessage,
+  buildInpostPaymentConfirmedClientMessage,
+  buildPaymentConfirmedClientMessage,
+  contactManagerButtonText,
+  fallbackArrivalTime,
+  fallbackDeliveryWindow,
+  fallbackPickupPoint,
+  getClientAppLanguage,
+  visitShopButtonText,
+} from "./clientOrderMessages.js";
+import { normalizeAppLanguage } from "../crm/userLanguage.js";
 
 export async function bootstrapShopTelegramBots(app) {
   Object.assign(globalThis, getServerContext());
@@ -916,6 +933,8 @@ if (photoFileId) {
           username,
           firstName,
           lastName,
+          language:
+            normalizeAppLanguage(ctx.from?.language_code) || "",
           cashbackBalance: 0,
           cashbackLedger: [],
           shopBotIndex: Number(shopBotIndex) || 0,
@@ -1019,11 +1038,25 @@ if (photoFileId) {
       const hasReferralBonus =
         referralAttached || Boolean(String(me?.referral?.usedCode || "").trim());
 
-      const caption = hasReferralBonus
-        ? "Добро пожаловать в ELF DUCK SHOP!\n\n🎁 У тебя 10% скидки на первый заказ (от 65 zł). Жми кнопку ниже 👇"
-        : "Добро пожаловать в ELF DUCK SHOP!";
+      const startLang =
+        normalizeAppLanguage(me?.language) ||
+        normalizeAppLanguage(ctx.from?.language_code) ||
+        "ru";
+
+      // Persist Telegram language if User ще без мови
+      if (!normalizeAppLanguage(me?.language) && startLang) {
+        User.updateOne(
+          { telegramId: tgId },
+          { $set: { language: startLang } }
+        ).catch(() => {});
+      }
+
+      const caption = buildBotStartCaption({
+        lang: startLang,
+        hasReferralBonus,
+      });
       const keyboard = Markup.inlineKeyboard([
-        [Markup.button.webApp("💨 Посетить магазин 🛍️", openLink)],
+        [Markup.button.webApp(visitShopButtonText(startLang), openLink)],
       ]);
 
       if (START_BANNER_URL) {
@@ -1039,7 +1072,9 @@ if (photoFileId) {
     } catch (e) {
       console.error("bot.start error:", e);
       try {
-        await ctx.reply("Произошла ошибка при открытии магазина. Попробуйте ещё раз.");
+        const errLang =
+          normalizeAppLanguage(ctx.from?.language_code) || "ru";
+        await ctx.reply(botStartErrorText(errLang));
       } catch {}
     }
   });
@@ -1073,16 +1108,18 @@ if (photoFileId) {
         order
       );
 
+    const clientLang = await getClientAppLanguage(clientTelegramId);
+
     const arrivalTime =
       String(
         order?.arrivalTime || ""
-      ).trim() || "указанное время";
+      ).trim() || fallbackArrivalTime(clientLang);
 
     const pointAddress = String(
       point?.address ||
         order?.pickupPointAddress ||
         order?.methodLabel ||
-        "указанная точка самовывоза"
+        fallbackPickupPoint(clientLang)
     ).trim();
 
     const paymentMethod = String(
@@ -1114,19 +1151,12 @@ if (photoFileId) {
           0
       );
 
-      text = [
-        "✅ <b>ВАШ ЗАКАЗ В ПРОЦЕССЕ СБОРА!</b>",
-        "",
-        `Ожидаем вас в <b>${escapeHtml(
-          arrivalTime
-        )}</b>.`,
-        `К оплате: <b>${remainingToPayZl.toFixed(
-          2
-        )} PLN</b>.`,
-        `Локация: <b>${escapeHtml(
-          pointAddress
-        )}</b>.`,
-      ].join("\n");
+      text = buildCashAwaitingClientMessage({
+        lang: clientLang,
+        arrivalTime,
+        pointAddress,
+        remainingToPayZl,
+      });
     }
 
     /*
@@ -1136,17 +1166,11 @@ if (photoFileId) {
     else if (
       paymentStatus === "paid"
     ) {
-      text = [
-        "✅ <b>ОПЛАТА ПОДТВЕРЖДЕНА!</b>",
-        "",
-        "Ваш заказ в процессе сбора.",
-        `Ожидаем вас в <b>${escapeHtml(
-          arrivalTime
-        )}</b>.`,
-        `Локация: <b>${escapeHtml(
-          pointAddress
-        )}</b>.`,
-      ].join("\n");
+      text = buildPaymentConfirmedClientMessage({
+        lang: clientLang,
+        arrivalTime,
+        pointAddress,
+      });
     } else {
       return false;
     }
@@ -1193,8 +1217,7 @@ if (photoFileId) {
             inline_keyboard: [
               [
                 {
-                  text:
-                    "💬 Связаться с менеджером",
+                  text: contactManagerButtonText(clientLang),
 
                   url:
                     managerTelegramUrl,
@@ -1282,41 +1305,29 @@ if (photoFileId) {
             )
           : managerContactUsernameRaw || "—";
 
+    const clientLang = await getClientAppLanguage(clientTelegramId);
+
     const deliveryWindow = String(
       order?.deliveryTimeWindow ||
       order?.arrivalTime ||
-      "указанный промежуток времени"
+      fallbackDeliveryWindow(clientLang)
     ).trim();
 
     let text = "";
 
     if (type === "accepted") {
-      text = [
-        "✅ <b>Ваш заказ принят!</b>",
-        "",
-        "Мы в процессе сбора вашего заказа.",
-        `Ожидайте курьера в промежутке <b>${escapeHtml(
-          deliveryWindow
-        )}</b>.`,
-      ].join("\n");
+      text = buildCourierAcceptedClientMessage({
+        lang: clientLang,
+        deliveryWindow,
+      });
     }
 
     if (type === "soon") {
-      text = [
-        "🚗 <b>Курьер выехал и будет через 15 минут!</b>",
-        "",
-        "Ищите серую Honda с номерами WB 084CY.",
-        "",
-        "Пожалуйста, выйдите навстречу — курьер может ожидать не более 5 минут. В случае опоздания курьер вправе уехать, а повторная доставка оплачивается в двойном размере.",
-      ].join("\n");
+      text = buildCourierSoonClientMessage({ lang: clientLang });
     }
 
     if (type === "arrived") {
-      text = [
-        "📍 <b>Курьер на месте!</b>",
-        "",
-        "Если не видите курьера — свяжитесь с менеджером.",
-      ].join("\n");
+      text = buildCourierArrivedClientMessage({ lang: clientLang });
     }
 
     if (!text) {
@@ -1329,8 +1340,7 @@ if (photoFileId) {
             inline_keyboard: [
               [
                 {
-                  text:
-                    "💬 Связаться с менеджером",
+                  text: contactManagerButtonText(clientLang),
                   url:
                     `tg://user?id=${encodeURIComponent(
                       pointManagerTelegramId
@@ -1664,17 +1674,13 @@ if (photoFileId) {
               "accepted"
             );
           } else if (isInpostOrder) {
-            const inpostPaidText = [
-              "✅ <b>МЕНЕДЖЕР ПОДТВЕРДИЛ ВАШУ ТРАНЗАКЦИЮ!</b>",
-              "",
-              `Заказ <b>#${escapeHtml(
-                freshPaidOrder?.orderNo || "—"
-              )}</b> оплачен.`,
-              "",
-              "Мы в процессе сбора вашего заказа и отправим его до конца рабочего дня.",
-              "",
-              "Ожидайте дальнейших сообщений.",
-            ].join("\n");
+            const inpostLang = await getClientAppLanguage(
+              freshPaidOrder?.userTelegramId
+            );
+            const inpostPaidText = buildInpostPaymentConfirmedClientMessage({
+              lang: inpostLang,
+              orderNo: freshPaidOrder?.orderNo || "—",
+            });
 
             const inpostPaidExtra = {
               parse_mode: "HTML",
@@ -1683,7 +1689,7 @@ if (photoFileId) {
                 inline_keyboard: [
                   [
                     {
-                      text: "💬 Связаться с менеджером",
+                      text: contactManagerButtonText(inpostLang),
                       url: "https://t.me/elfduck_inpost",
                     },
                   ],
@@ -2872,15 +2878,14 @@ if (
               : `@${courierUsernameRaw}`)
           : "—";
 
+          const clientLang = await getClientAppLanguage(safeTelegramId);
           await sendClientTelegramMessage(
             safeTelegramId,
-            [
-              `🚚 <b>КУРЬЕР ПРИБЫЛ НА АДРЕС</b>`,
-              ``,
-              `Курьер прибыл по заказу <b>#${orderNo}</b>.`,
-              ``,
-              `📲 <b>Связь с менеджером:</b> ${escapeHtml(managerContactUsername)}`,
-            ].join("\n"),
+            buildCourierArrivedClientMessage({
+              lang: clientLang,
+              orderNo,
+              managerContact: managerContactUsername,
+            }),
             {
               parse_mode: "HTML",
               disable_web_page_preview: true,

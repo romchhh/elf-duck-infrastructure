@@ -23,6 +23,13 @@ import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import crmRouter from "../../../routes/crm.js";
+import {
+  buildInpostPaymentConfirmedClientMessage,
+  buildInpostShippedClientMessage,
+  contactManagerButtonText,
+  getClientAppLanguage,
+  trackParcelButtonText,
+} from "../../telegram/clientOrderMessages.js";
 
 const APP_URL = String(
   process.env.APP_URL ||
@@ -152,17 +159,11 @@ export async function notifyClientAboutInpostPaymentConfirmed(
     return false;
   }
 
-  const text = [
-    "✅ <b>МЕНЕДЖЕР ПОДТВЕРДИЛ ВАШУ ТРАНЗАКЦИЮ!</b>",
-    "",
-    `Заказ <b>#${escapeHtml(
-      order?.orderNo || "—"
-    )}</b> оплачен.`,
-    "",
-    "Мы уже собираем ваш заказ и отправим его до конца рабочего дня.",
-    "",
-    "Ожидайте дальнейших сообщений.",
-  ].join("\n");
+  const clientLang = await getClientAppLanguage(clientTelegramId);
+  const text = buildInpostPaymentConfirmedClientMessage({
+    lang: clientLang,
+    orderNo: order?.orderNo || "—",
+  });
 
   await sendClientTelegramMessage(
     clientTelegramId,
@@ -175,7 +176,7 @@ export async function notifyClientAboutInpostPaymentConfirmed(
         inline_keyboard: [
           [
             {
-              text: "💬 Связаться с менеджером",
+              text: contactManagerButtonText(clientLang),
               url: "https://t.me/elfduck_inpost",
             },
           ],
@@ -238,33 +239,17 @@ export async function notifyClientAboutInpostShipment(order) {
       ""
   ).trim();
 
-  const lines = [
-    "📦 <b>ВАШ ЗАКАЗ ОТПРАВЛЕН!</b>",
-    "",
-    `Заказ <b>#${escapeHtml(
-      order?.orderNo || "—"
-    )}</b> передан в InPost.`,
-    "",
-    `Трекинг-номер: <code>${escapeHtml(
-      trackingNumber
-    )}</code>`,
-  ];
-
-  if (lockerAddress) {
-    lines.push("");
-    lines.push(
-      `Пачкомат: <b>${escapeHtml(
-        lockerAddress
-      )}</b>`
-    );
-  }
-
-  lines.push("");
-  lines.push("Спасибо за покупку ❤️");
+  const clientLang = await getClientAppLanguage(clientTelegramId);
+  const text = buildInpostShippedClientMessage({
+    lang: clientLang,
+    orderNo: order?.orderNo || "—",
+    trackingNumber,
+    lockerAddress,
+  });
 
   await sendClientTelegramMessage(
     clientTelegramId,
-    lines.join("\n"),
+    text,
     {
       parse_mode: "HTML",
       disable_web_page_preview: true,
@@ -273,7 +258,7 @@ export async function notifyClientAboutInpostShipment(order) {
         inline_keyboard: [
           [
             {
-              text: "📦 Отследить посылку",
+              text: trackParcelButtonText(clientLang),
               url: trackingUrl,
             },
           ],

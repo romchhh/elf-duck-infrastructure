@@ -24,6 +24,11 @@ import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import crmRouter from "../../../routes/crm.js";
 import { formatOrderFlavorCharacteristicLabel } from "../../orderFlavorLabel.js";
+import {
+  buildAlmostReadyClientMessage,
+  getClientAppLanguage,
+  payOrderButtonText,
+} from "../../telegram/clientOrderMessages.js";
 
 const APP_URL = String(
   process.env.APP_URL ||
@@ -884,24 +889,25 @@ try {
     const safeTelegramId = String(order?.userTelegramId || "").trim();
 
     if (safeTelegramId) {
-      const clientLines = [
-        `🛒 <b>ЗАКАЗ ПОЧТИ ГОТОВ!</b>`,
-        ``,
-        `🔢 <b>Номер заказа:</b> #${escapeHtml(order.orderNo)}`,
-        `💰 <b>Сумма:</b> ${managerAmountText}`,
-        ``,
-        `⚠️ <b>Остался последний шаг!</b>`,
-        ``,
-        `Ваш заказ пока не передан менеджеру. Чтобы менеджер получил заказ и начал его готовить, необходимо выбрать способ оплаты.`,
-        ``,
-        `☑ После этого заказ будет отправлен менеджеру на проверку.`,
-        ``,
-        `Не забудьте выбрать способ оплаты — без этого менеджер не получит ваш заказ!`,
-      ];
-
-      const clientText = clientLines.join("\n");
+      const clientLang = await getClientAppLanguage(safeTelegramId);
+      const clientText = buildAlmostReadyClientMessage({
+        lang: clientLang,
+        orderNo: order.orderNo,
+        amountText: managerAmountText,
+      });
       const clientReplyMarkup = {
-        inline_keyboard: [[{ text: "💳 Перейти к оплате", web_app: { url: `${APP_URL}/cart?orderId=${encodeURIComponent(String(order?._id || ""))}` } }]],
+        inline_keyboard: [
+          [
+            {
+              text: payOrderButtonText(clientLang),
+              web_app: {
+                url: `${APP_URL}/cart?orderId=${encodeURIComponent(
+                  String(order?._id || "")
+                )}`,
+              },
+            },
+          ],
+        ],
       };
 
 if (!skipClientNotification) {
@@ -2083,20 +2089,12 @@ export async function sendClientOrderCreatedInfo(order) {
     );
 
     const amountText = `${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`;
-    const lines = [
-      `🛒 <b>ЗАКАЗ ПОЧТИ ГОТОВ!</b>`,
-      ``,
-      `🔢 <b>Номер заказа:</b> #${escapeHtml(orderNo)}`,
-      `💰 <b>Сумма:</b> ${amountText}`,
-      ``,
-      `⚠️ <b>Остался последний шаг!</b>`,
-      ``,
-      `Ваш заказ пока не передан менеджеру. Чтобы менеджер получил заказ и начал его готовить, необходимо выбрать способ оплаты.`,
-      ``,
-      `☑ После этого заказ будет отправлен менеджеру на проверку.`,
-      ``,
-      `Не забудьте выбрать способ оплаты — без этого менеджер не получит ваш заказ!`,
-    ];
+    const clientLang = await getClientAppLanguage(order.userTelegramId);
+    const clientText = buildAlmostReadyClientMessage({
+      lang: clientLang,
+      orderNo,
+      amountText,
+    });
 
     const extra = {
       parse_mode: "HTML",
@@ -2106,7 +2104,12 @@ export async function sendClientOrderCreatedInfo(order) {
     if (orderLink) {
       extra.reply_markup = {
         inline_keyboard: [
-          [{ text: "💳 Перейти к оплате", web_app: { url: orderLink } }],
+          [
+            {
+              text: payOrderButtonText(clientLang),
+              web_app: { url: orderLink },
+            },
+          ],
         ],
       };
     }
@@ -2121,7 +2124,7 @@ export async function sendClientOrderCreatedInfo(order) {
             String(order.userTelegramId),
             { url: photoUrl },
             {
-              caption: lines.join("\n"),
+              caption: clientText,
               ...extra,
             }
           );
@@ -2129,7 +2132,7 @@ export async function sendClientOrderCreatedInfo(order) {
 
         return clientBot.telegram.sendMessage(
           String(order.userTelegramId),
-          lines.join("\n"),
+          clientText,
           extra
         );
       },
