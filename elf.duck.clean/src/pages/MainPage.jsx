@@ -1686,7 +1686,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     });
   };
 
-  const bannersVisible = !activeOrderLoading && !activeOrder;
+  const bannersVisible = !activeOrderLoading;
   useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
     intervalMs: 5000,
     enabled: bannersVisible,
@@ -4017,7 +4017,7 @@ navigate("/cart");
             </div>
           )}
 
-          {!activeOrderLoading && !activeOrder && (
+          {!activeOrderLoading && (
             <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
               <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
                 {banners.map((src, i) => (
