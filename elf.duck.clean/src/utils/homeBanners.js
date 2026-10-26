@@ -1,18 +1,22 @@
 import referralBannerRu from "../assets/referralBanner.webp";
 import referralBannerPl from "../assets/referralBannerPl.webp";
-import assortmentRestockBannerRu from "../assets/assortmentRestockBanner.webp";
-import assortmentRestockBannerPl from "../assets/assortmentRestockBannerPl.webp";
-import deliveryBannerRu from "../assets/deliveryBanner.webp";
-import deliveryBannerPl from "../assets/deliveryBannerPl.webp";
+import assortmentRestockBanner from "../assets/assortmentRestockBanner.webp";
+import deliveryBanner from "../assets/deliveryBanner.webp";
 import { getCurrentLanguage } from "./i18n";
 
-/** Банери головної каруселі: той самий порядок для PL і RU. */
+/**
+ * Карусель головної, як раніше:
+ * 1. Реферальна програма
+ * 2. Поповнення асортименту
+ * 3. Доставка від 200 zł
+ * Польські файли розіграшу / HELLODUCK сюди не входять.
+ */
 export function getHomeBanners(language = getCurrentLanguage()) {
   const isPl = language === "pl";
   return [
     isPl ? referralBannerPl : referralBannerRu,
-    isPl ? assortmentRestockBannerPl : assortmentRestockBannerRu,
-    isPl ? deliveryBannerPl : deliveryBannerRu,
+    assortmentRestockBanner,
+    deliveryBanner,
   ];
 }
 
