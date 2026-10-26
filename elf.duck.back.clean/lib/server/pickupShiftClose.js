@@ -21,6 +21,8 @@ import {
 } from "./helpers/orderStatsDay.js";
 import {
   getOrderPointMatch,
+  getPointStatsSendTime,
+  getScheduleEndHHMM,
   getWarsawDayKey,
   getWarsawTimeMinutes,
   parseWarsawTimeToMinutes,
@@ -71,15 +73,7 @@ export function getPointShiftEndTime(point, dateLike = new Date()) {
     return null;
   }
 
-  const raw = String(
-    rawSchedule?.to ||
-      rawSchedule?.openTo ||
-      rawSchedule?.periods?.[0]?.to ||
-      rawSchedule?.periods?.[0]?.openTo ||
-      "20:00"
-  ).trim();
-
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(raw) ? raw : "20:00";
+  return getScheduleEndHHMM(rawSchedule) || "20:00";
 }
 
 export async function countPickupShiftOrders(point, dayKey, dateLike = new Date()) {
@@ -132,9 +126,6 @@ export async function trySendDailyStatsForPointEarly(point, dayKey, { reason = "
   }
 
   const dayOrders = await loadStatsDayOrders(point, dayKey);
-  if (!dayOrders.length) {
-    return { ok: false, reason: "NO_DAY_ORDERS" };
-  }
 
   const { sendDailyPointStats, sendDailyPointStatsToGoogleSheet } = await import(
     "./helpers/chunk10.js"
@@ -204,9 +195,120 @@ export async function onPickupOrderCompletedByManager(order) {
     return { ok: true, skipped: true, total, done };
   }
 
+  const sendTime = getPointStatsSendTime(point);
+  const sendMinutes = parseWarsawTimeToMinutes(sendTime || "");
+  const nowMinutes = getWarsawTimeMinutes(new Date());
+  if (sendMinutes != null && nowMinutes < sendMinutes) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "BEFORE_STATS_CLOCK",
+      total,
+      done,
+      sendTime,
+    };
+  }
+
   return await trySendDailyStatsForPointEarly(point, dayKey, {
     reason: "all_shift_orders_completed",
   });
+}
+
+function previousWarsawDayKey(now = new Date()) {
+  const { start } = getWarsawCalendarDayBounds(now);
+  return getWarsawDayKey(new Date(start.getTime() - 60 * 1000));
+}
+
+/**
+ * «СТАТИСТИКА ДНЯ» в Telegram рівно з часу закриття і далі до кінця доби (доганяє пропуск).
+ * Окремо від Google Sheets, щоб важкий sync не блокував групу.
+ * Якщо вчорашній звіт не пішов — доганяє його наступного дня.
+ */
+export async function processDueTelegramDailyStats(now = new Date()) {
+  const todayKey = getWarsawDayKey(now);
+  const yesterdayKey = previousWarsawDayKey(now);
+  const nowMinutes = getWarsawTimeMinutes(now);
+
+  const points = await PickupPoint.find(
+    {
+      $or: [
+        { statsChatId: { $exists: true, $ne: "" } },
+        { notificationChatId: { $exists: true, $ne: "" } },
+      ],
+    },
+    {
+      key: 1,
+      title: 1,
+      address: 1,
+      notificationChatId: 1,
+      statsChatId: 1,
+      statsSendTime: 1,
+      scheduleByDate: 1,
+      workEnd: 1,
+      closeTime: 1,
+      workingHours: 1,
+      schedule: 1,
+    }
+  ).lean();
+
+  const due = [];
+
+  for (const point of points) {
+    const todaySend = getPointStatsSendTime(point, now);
+    const todaySendMinutes = parseWarsawTimeToMinutes(todaySend || "");
+    if (todaySend && todaySendMinutes != null && nowMinutes >= todaySendMinutes) {
+      due.push({ point, dayKey: todayKey, sendTime: todaySend });
+    }
+
+    const yesterdayNoon = new Date(
+      getWarsawCalendarDayBounds(now).start.getTime() - 12 * 60 * 60 * 1000
+    );
+    const yesterdaySend = getPointStatsSendTime(point, yesterdayNoon);
+    if (yesterdaySend) {
+      due.push({
+        point,
+        dayKey: yesterdayKey,
+        sendTime: yesterdaySend,
+        catchup: true,
+      });
+    }
+  }
+
+  for (const item of due) {
+    const pointKey = normalizePointKey(item.point?.key);
+    const telegramDedupeKey = `${String(item.point?._id || "")}:${item.dayKey}`;
+    try {
+      if (await isDailyStatsDispatchRecorded(telegramDedupeKey)) {
+        continue;
+      }
+
+      console.log("[DAILY STATS][TELEGRAM DUE]", {
+        pointKey,
+        dayKey: item.dayKey,
+        sendTime: item.sendTime,
+        catchup: Boolean(item.catchup),
+        warsawNow: nowMinutes,
+      });
+
+      const result = await trySendDailyStatsForPointEarly(item.point, item.dayKey, {
+        reason: item.catchup ? "catchup_previous_day" : "shift_clock",
+      });
+
+      if (!result?.ok) {
+        console.error("[DAILY STATS][TELEGRAM NOT SENT]", {
+          pointKey,
+          dayKey: item.dayKey,
+          reason: result?.reason || result?.telegramResult?.reason || result,
+        });
+      }
+    } catch (error) {
+      console.error("[DAILY STATS][TELEGRAM DUE ERROR]", {
+        pointKey,
+        dayKey: item.dayKey,
+        message: error?.message || error,
+      });
+    }
+  }
 }
 
 async function sendShiftCloseReminder(point, { total, done, shiftEnd }) {

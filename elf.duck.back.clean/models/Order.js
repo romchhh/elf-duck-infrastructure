@@ -174,6 +174,10 @@ const orderSchema = new mongoose.Schema(
         default: 0,
       },
 
+      /** Annul/cancel refund failed — CRM history shows «Не вернули» */
+      cashbackRefundFailedAt: { type: Date, default: null },
+      cashbackRefundFailReason: { type: String, default: "" },
+
       promoCode: { type: String, default: "" },
       promoCodeId: { type: String, default: "" },
       promoDiscountZl: { type: Number, default: 0 },

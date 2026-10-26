@@ -947,13 +947,50 @@ export function getWarsawTimeHHMM(dateLike = new Date()) {
     timeZone: "Europe/Warsaw",
     hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
     hour12: false,
   }).formatToParts(new Date(dateLike));
 
-  const hour = parts.find((p) => p.type === "hour")?.value || "00";
+  let hour = parts.find((p) => p.type === "hour")?.value || "00";
   const minute = parts.find((p) => p.type === "minute")?.value || "00";
+  // Деякі ICU віддають 24:00 замість 00:00 — інакше порівняння часу зриває звіт.
+  if (hour === "24") hour = "00";
 
   return `${hour}:${minute}`;
+}
+
+function normalizeStatsClockHHMM(raw) {
+  const match = String(raw || "")
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return "";
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return "";
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+/** Найпізніший кінець графіка на день (to / openTo / periods). */
+export function getScheduleEndHHMM(rawSchedule) {
+  if (!rawSchedule || rawSchedule.isOpen === false) return "";
+
+  const candidates = [rawSchedule.to, rawSchedule.openTo];
+  const periods = Array.isArray(rawSchedule.periods) ? rawSchedule.periods : [];
+  for (const period of periods) {
+    candidates.push(period?.to, period?.openTo);
+  }
+
+  let best = "";
+  let bestMinutes = -1;
+  for (const value of candidates) {
+    const hhmm = normalizeStatsClockHHMM(value);
+    if (!hhmm) continue;
+    const minutes = parseWarsawTimeToMinutes(hhmm);
+    if (minutes == null || minutes < bestMinutes) continue;
+    bestMinutes = minutes;
+    best = hhmm;
+  }
+  return best;
 }
 
 export function parseWarsawTimeToMinutes(hhmm) {
@@ -1005,25 +1042,26 @@ export function getPointStatsSendTime(point, dateLike = new Date()) {
    * а не в момент закриття прийому замовлень у графіку (часто 22:00).
    */
   if (pointKey === "delivery") {
-    const courierRaw = String(
+    const courierRaw = normalizeStatsClockHHMM(
       point?.statsSendTime || "23:00"
-    ).trim();
-    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(courierRaw)
-      ? courierRaw
-      : "23:00";
+    );
+    return courierRaw || "23:00";
   }
 
-  const raw = String(
-    rawSchedule?.to ||
-      point?.statsSendTime ||
+  // Самовывіз / InPost: звіт у час закриття графіка (:00), не за 10 хв і не в statsSendTime.
+  const scheduleEnd = getScheduleEndHHMM(rawSchedule);
+  if (scheduleEnd) return scheduleEnd;
+
+  const fallback = normalizeStatsClockHHMM(
+    point?.statsSendTime ||
       point?.workEnd ||
       point?.closeTime ||
       point?.workingHours?.to ||
       point?.schedule?.endTime ||
       "23:59"
-  ).trim();
+  );
 
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(raw) ? raw : "23:59";
+  return fallback || "23:59";
 }
 
 export function getOrderPointMatch(point) {

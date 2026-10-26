@@ -171,8 +171,8 @@ function historyKindMeta(kind) {
 function refundStatusLabel(status) {
   const key = String(status || '');
   if (key === 'refunded') return { text: 'Вернули на баланс', ok: true };
-  if (key === 'missing') return { text: 'Не вернули (всё ещё списано)', ok: false };
-  if (key === 'unclear') return { text: 'Отмена есть, возврат не зафиксирован', ok: false };
+  if (key === 'missing') return { text: 'Не вернули — кэшбек всё ещё списан', ok: false };
+  if (key === 'unclear') return { text: 'Отмена/аннуляция есть, возврат не зафиксирован', ok: false };
   if (key === 'held') return { text: 'Держится на заказе', ok: null };
   return { text: '—', ok: null };
 }

@@ -4,7 +4,10 @@ import {
   processSheetStockPullCron,
   startSheetStockPullInterval,
 } from "../googleSheets/stockPullScheduler.js";
-import { processPickupShiftCloseReminders } from "./pickupShiftClose.js";
+import {
+  processDueTelegramDailyStats,
+  processPickupShiftCloseReminders,
+} from "./pickupShiftClose.js";
 import { processDueFirstPurchaseAutomations } from "../crm/pushAutomations.js";
 import { reconcileGhostReservedStock } from "./reconcileGhostReserved.js";
 import helpers from "./helpers/index.js";
@@ -71,7 +74,16 @@ export function startServerIntervals() {
     processPickupShiftCloseReminders().catch((e) => {
       console.error("pickup shift close reminder error:", e);
     });
+    processDueTelegramDailyStats().catch((e) => {
+      console.error("telegram daily stats error:", e);
+    });
   }, 60 * 1000);
+
+  setTimeout(() => {
+    processDueTelegramDailyStats().catch((e) => {
+      console.error("telegram daily stats initial error:", e);
+    });
+  }, 20 * 1000);
 
   setTimeout(() => {
     runIntervalJob("processStaleCarts");

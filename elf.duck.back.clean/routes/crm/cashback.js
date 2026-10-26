@@ -632,7 +632,8 @@ router.get("/cashback/user", async (req, res) => {
         status: 1,
         totalZl: 1,
         createdAt: 1,
-        cancelledAt: 1,
+        canceledAt: 1,
+        annulledAt: 1,
         updatedAt: 1,
         payment: 1,
       }
@@ -650,11 +651,14 @@ router.get("/cashback/user", async (req, res) => {
       const refundedZl = Number(payment.cashbackRefundedAmountZl || 0);
       const refundedAt = payment.cashbackRefundedAt || null;
       const status = String(order?.status || "").trim();
-      const cancelledLike = /cancel|annul|reject|fail/i.test(status) ||
-        Boolean(order?.cancelledAt);
+      const closedAt = order?.canceledAt || order?.annulledAt || null;
+      const cancelledLike =
+        /cancel|annul|reject|fail/i.test(status) || Boolean(closedAt);
 
       let refundStatus = "none";
-      if (refundedZl > 0 && refundedAt) {
+      if (payment?.cashbackRefundFailedAt && !(refundedZl > 0 && refundedAt)) {
+        refundStatus = "missing";
+      } else if (refundedZl > 0 && refundedAt) {
         refundStatus = "refunded";
       } else if (appliedZl > 0 && cancelledLike && stillAppliedZl <= 0 && !refundedAt) {
         refundStatus = "unclear";
@@ -670,7 +674,7 @@ router.get("/cashback/user", async (req, res) => {
         status,
         totalZl: Number(order?.totalZl || 0),
         createdAt: order?.createdAt || null,
-        cancelledAt: order?.cancelledAt || null,
+        canceledAt: closedAt,
         cashbackAppliedZl: stillAppliedZl,
         cashbackOriginalAppliedZl: appliedZl,
         cashbackRefundedAmountZl: refundedZl,
@@ -702,7 +706,7 @@ router.get("/cashback/user", async (req, res) => {
       if (Number(order.cashbackRefundedAmountZl || 0) > 0) {
         history.push({
           id: `refund-order-${order.orderId}`,
-          at: order.cashbackRefundedAt || order.cancelledAt || order.createdAt,
+          at: order.cashbackRefundedAt || order.canceledAt || order.createdAt,
           kind: "refund",
           amountZl: Number(order.cashbackRefundedAmountZl || 0),
           label: `Возврат на баланс (заказ #${order.orderNo || "—"})`,

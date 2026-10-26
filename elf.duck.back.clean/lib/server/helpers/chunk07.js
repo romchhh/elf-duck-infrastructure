@@ -483,6 +483,8 @@ export async function refundOrderCashback(order) {
     cashbackRemainingToPayZl: Number(freshOrder.totalZl || 0),
     cashbackFullyPaid: false,
     cashbackAppliedAt: null,
+    cashbackRefundFailedAt: null,
+    cashbackRefundFailReason: "",
     method:
       payment?.method === "cashback"
         ? null
@@ -1617,12 +1619,69 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
     }
 
     // Partial cashback can leave payment.method empty → timeout annul must still refund.
+    // Не ковтаємо помилку мовчки: retry + мітка, інакше клієнт втрачає кэшбек.
     try {
       await refundOrderCashback(freshOrder);
     } catch (refundErr) {
       console.error(
         "annulOrderBecauseNoPaymentConfirm refundOrderCashback error:",
         refundErr
+      );
+      try {
+        const retryOrder = await Order.findById(orderId);
+        if (retryOrder) {
+          await refundOrderCashback(retryOrder);
+        }
+      } catch (retryErr) {
+        console.error(
+          "CRITICAL annulOrder cashback refund retry failed:",
+          orderId,
+          retryErr
+        );
+        try {
+          await Order.updateOne(
+            { _id: orderId },
+            {
+              $set: {
+                "payment.cashbackRefundFailedAt": new Date(),
+                "payment.cashbackRefundFailReason": String(
+                  retryErr?.message || refundErr?.message || "REFUND_FAILED"
+                ).slice(0, 200),
+              },
+            }
+          );
+        } catch (markErr) {
+          console.error(
+            "annulOrder mark cashbackRefundFailedAt error:",
+            markErr
+          );
+        }
+      }
+    }
+
+    // Якщо refund не кинув, але кэшбек лишився «на замовленні» — теж мітимо
+    try {
+      const afterRefund = await Order.findById(orderId).lean();
+      const pay = afterRefund?.payment || {};
+      const stillHeld = Number(pay?.cashbackAppliedZl || 0) > 0;
+      const wasApplied =
+        Number(pay?.cashbackOriginalAppliedZl || pay?.cashbackAppliedZl || 0) >
+        0;
+      if (wasApplied && stillHeld && !pay?.cashbackRefundedAt) {
+        await Order.updateOne(
+          { _id: orderId },
+          {
+            $set: {
+              "payment.cashbackRefundFailedAt": new Date(),
+              "payment.cashbackRefundFailReason": "STILL_HELD_AFTER_ANNUL",
+            },
+          }
+        );
+      }
+    } catch (checkErr) {
+      console.error(
+        "annulOrder cashback held-check error:",
+        checkErr
       );
     }
 
