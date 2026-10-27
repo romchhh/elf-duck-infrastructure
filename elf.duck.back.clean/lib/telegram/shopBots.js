@@ -1878,6 +1878,13 @@ if (photoFileId) {
       // --- PATCH 3: replace block for unpaid status ---
       await order.save();
 
+      try {
+        const { releaseOrderPromoUse } = await import("../crm/promoOrderUse.js");
+        await releaseOrderPromoUse(order);
+      } catch (promoErr) {
+        console.error("mgr_pay_unpaid releaseOrderPromoUse error:", promoErr);
+      }
+
       const freshUnpaidOrder = await Order.findById(order._id);
       if (!freshUnpaidOrder) {
         throw new Error("ORDER_NOT_FOUND_AFTER_UNPAID");

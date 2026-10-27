@@ -3,6 +3,7 @@ import Order from "../../models/Order.js";
 import BroadcastCampaign from "../../models/BroadcastCampaign.js";
 import { getCompletedOrderMatch } from "./sales.js";
 import { normalizePushButtons } from "./pushMessageFormat.js";
+import { formatCashbackExpireDateLocalized } from "../telegram/clientOrderMessages.js";
 
 export const CRM_PUSH_AUTOMATIONS_COLLECTION = "crm_push_automations";
 export const CRM_PUSH_AUTOMATION_SENDS_COLLECTION =
@@ -11,6 +12,7 @@ export const CRM_PUSH_AUTOMATION_SENDS_COLLECTION =
 export const PUSH_AUTOMATION_TRIGGERS = {
   FIRST_PURCHASE: "first_purchase",
   LEAD_FOLLOWUP: "lead_followup",
+  CASHBACK_EXPIRING: "cashback_expiring",
 };
 
 const MAX_DELAY_MINUTES = 14 * 24 * 60;
@@ -18,6 +20,7 @@ const MAX_DELAY_MINUTES = 14 * 24 * 60;
 const AUTOMATION_LABELS = {
   first_purchase: "Авто · первая покупка",
   lead_followup: "Авто · лиды",
+  cashback_expiring: "Авто · кэшбек сгорает",
 };
 
 let broadcastRunner = null;
@@ -36,15 +39,20 @@ function sendsCollection() {
 
 export async function ensurePushAutomationIndexes() {
   try {
-    await Promise.all([
-      automationsCollection().createIndex({ trigger: 1 }, { unique: true }),
-      sendsCollection().createIndex(
-        { trigger: 1, telegramId: 1 },
-        { unique: true }
-      ),
-      sendsCollection().createIndex({ createdAt: -1 }),
-      sendsCollection().createIndex({ status: 1, runAt: 1 }),
-    ]);
+    await automationsCollection().createIndex({ trigger: 1 }, { unique: true });
+    await sendsCollection()
+      .dropIndex("trigger_1_telegramId_1")
+      .catch(() => {});
+    await sendsCollection().updateMany(
+      { subjectId: { $exists: false } },
+      { $set: { subjectId: "" } }
+    );
+    await sendsCollection().createIndex(
+      { trigger: 1, telegramId: 1, subjectId: 1 },
+      { unique: true }
+    );
+    await sendsCollection().createIndex({ createdAt: -1 });
+    await sendsCollection().createIndex({ status: 1, runAt: 1 });
   } catch (error) {
     console.error(
       "Push automation index sync failed:",
@@ -147,11 +155,18 @@ async function countCompletedPurchases(telegramId) {
   });
 }
 
-async function releaseClaimedSend(trigger, telegramId, reason) {
+function sendKey(trigger, telegramId, subjectId = "") {
+  return {
+    trigger: String(trigger || "").trim(),
+    telegramId: String(telegramId || "").trim(),
+    subjectId: String(subjectId || ""),
+  };
+}
+
+async function releaseClaimedSend(trigger, telegramId, reason, subjectId = "") {
   await sendsCollection().updateOne(
     {
-      trigger,
-      telegramId,
+      ...sendKey(trigger, telegramId, subjectId),
       status: { $in: ["queued", "running"] },
     },
     {
@@ -171,9 +186,15 @@ async function sendAutomationNow({
   orderId,
   automation,
   alreadyClaimed = false,
+  subjectId = "",
+  messageOverride = null,
 }) {
   const key = String(trigger || "").trim();
-  const message = normalizeMessage(automation?.message || {});
+  const subject = String(subjectId || "");
+  const identity = sendKey(key, telegramId, subject);
+  const message = normalizeMessage(
+    messageOverride || automation?.message || {}
+  );
   if (
     !message.title &&
     !message.text &&
@@ -183,7 +204,7 @@ async function sendAutomationNow({
   ) {
     if (alreadyClaimed) {
       await sendsCollection().updateOne(
-        { trigger: key, telegramId },
+        identity,
         {
           $set: {
             status: "cancelled",
@@ -198,7 +219,12 @@ async function sendAutomationNow({
 
   if (typeof broadcastRunner !== "function") {
     if (alreadyClaimed) {
-      await releaseClaimedSend(key, telegramId, "BROADCAST_ENGINE_UNAVAILABLE");
+      await releaseClaimedSend(
+        key,
+        telegramId,
+        "BROADCAST_ENGINE_UNAVAILABLE",
+        subject
+      );
     }
     return { ok: false, reason: "BROADCAST_ENGINE_UNAVAILABLE" };
   }
@@ -207,8 +233,7 @@ async function sendAutomationNow({
   if (!claimed) {
     try {
       await sendsCollection().insertOne({
-        trigger: key,
-        telegramId,
+        ...identity,
         orderId: String(orderId || ""),
         status: "queued",
         createdAt: new Date(),
@@ -223,8 +248,7 @@ async function sendAutomationNow({
   } else {
     await sendsCollection().updateOne(
       {
-        trigger: key,
-        telegramId,
+        ...identity,
         status: { $in: ["scheduled", "running"] },
       },
       {
@@ -241,7 +265,9 @@ async function sendAutomationNow({
     const campaign = await BroadcastCampaign.create({
       name: `${AUTOMATION_LABELS[key] || "Авто"} · ${telegramId}`,
       audience:
-        key === PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP ? "leads" : "customers",
+        key === PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP
+          ? "leads"
+          : "customers",
       filters: {
         statuses: [],
         categoryKeys: [],
@@ -270,26 +296,22 @@ async function sendAutomationNow({
       message,
     });
 
-    await sendsCollection().updateOne(
-      { trigger: key, telegramId },
-      {
-        $set: {
-          status: "sent",
-          campaignId: String(campaign._id),
-          sentAt: new Date(),
-        },
-      }
-    );
+    await sendsCollection().updateOne(identity, {
+      $set: {
+        status: "sent",
+        campaignId: String(campaign._id),
+        sentAt: new Date(),
+      },
+    });
 
     return { ok: true, campaignId: String(campaign._id) };
   } catch (error) {
     if (claimed) {
       if (alreadyClaimed) {
-        await releaseClaimedSend(key, telegramId, "SEND_FAILED");
+        await releaseClaimedSend(key, telegramId, "SEND_FAILED", subject);
       } else {
         await sendsCollection().deleteOne({
-          trigger: key,
-          telegramId,
+          ...identity,
           status: { $in: ["queued", "running", "scheduled"] },
         });
       }
@@ -369,6 +391,7 @@ export async function maybeTriggerFirstPurchaseAutomation(order) {
         await sendsCollection().insertOne({
           trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
           telegramId,
+          subjectId: "",
           orderId: String(order?._id || ""),
           status: "scheduled",
           runAt,
@@ -434,8 +457,9 @@ export async function maybeScheduleLeadFollowup(telegramId) {
       await sendsCollection().insertOne({
         trigger: PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP,
         telegramId: id,
+        subjectId: "",
         orderId: "",
-        status: delayMs > 0 ? "scheduled" : "scheduled",
+        status: "scheduled",
         runAt,
         createdAt: new Date(),
       });
@@ -552,6 +576,7 @@ export async function processDueFirstPurchaseAutomations() {
         orderId: String(row?.orderId || ""),
         automation,
         alreadyClaimed: true,
+        subjectId: String(row?.subjectId || ""),
       });
 
       if (result?.ok) processed += 1;
@@ -562,4 +587,76 @@ export async function processDueFirstPurchaseAutomations() {
     console.error("processDueFirstPurchaseAutomations error:", error);
     return { ok: false, reason: "ERROR", processed: 0 };
   }
+}
+
+function fillExpireToken(value, { amount, days, date }) {
+  return String(value || "")
+    .replaceAll("{amount}", amount)
+    .replaceAll("{days}", String(days))
+    .replaceAll("{date}", date);
+}
+
+/**
+ * Один раз на каждую порцию кэшбека, когда до сгорания остаётся 5 дней или меньше.
+ * Повторная порция с другой датой уходит отдельно.
+ */
+export async function notifyCashbackExpiringAutomation(user, rows) {
+  const telegramId = String(user?.telegramId || "").trim();
+  const batch = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  if (!telegramId || telegramId.startsWith("guest_") || !batch.length) {
+    return { ok: false, reason: "NO_TELEGRAM" };
+  }
+
+  const automation = await getPushAutomation(
+    PUSH_AUTOMATION_TRIGGERS.CASHBACK_EXPIRING
+  );
+  if (!automation?.enabled) {
+    return { ok: false, reason: "DISABLED" };
+  }
+
+  const sorted = [...batch].sort(
+    (a, b) => new Date(a?.expiresAt).getTime() - new Date(b?.expiresAt).getTime()
+  );
+  const nearest = sorted[0];
+  const expiresAt = new Date(nearest?.expiresAt);
+  const days = Math.max(
+    0,
+    Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+  );
+  const amount = batch
+    .reduce((sum, row) => sum + Math.max(0, Number(row?.remainingZl || 0)), 0)
+    .toFixed(2);
+  const datePl = formatCashbackExpireDateLocalized(expiresAt, "pl");
+  const dateRu = formatCashbackExpireDateLocalized(expiresAt, "ru");
+  const base = automation.message || {};
+  const messageOverride = {
+    ...base,
+    title: fillExpireToken(base.title, { amount, days, date: dateRu }),
+    text: fillExpireToken(base.text, { amount, days, date: dateRu }),
+    textPl: fillExpireToken(base.textPl, { amount, days, date: datePl }),
+    textRu: fillExpireToken(base.textRu, { amount, days, date: dateRu }),
+  };
+
+  const subjectId = sorted
+    .map((row) => String(row?._id || ""))
+    .filter(Boolean)
+    .sort()
+    .join(",")
+    .slice(0, 240);
+
+  await ensurePushAutomationIndexes();
+
+  const result = await sendAutomationNow({
+    trigger: PUSH_AUTOMATION_TRIGGERS.CASHBACK_EXPIRING,
+    telegramId,
+    automation,
+    messageOverride,
+    subjectId,
+  });
+
+  if (result?.reason === "ALREADY_SENT") {
+    return { ok: true, already: true };
+  }
+
+  return result;
 }

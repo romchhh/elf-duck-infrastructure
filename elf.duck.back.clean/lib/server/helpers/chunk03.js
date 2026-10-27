@@ -351,6 +351,13 @@ export async function completeInpostShipment(
    * собственная защита от повторного начисления.
    */
   if (!wasAlreadyShipped) {
+    try {
+      const { commitOrderPromoUse } = await import("../../crm/promoOrderUse.js");
+      await commitOrderPromoUse(order);
+    } catch (promoErr) {
+      console.error("inpost commitOrderPromoUse error:", promoErr);
+    }
+
     await applyOrderCashback(order);
 
     try {

@@ -2,6 +2,8 @@ import express from "express";
 import {
   getCustomerStatus,
   isCustomerActive,
+  getCustomerIntervalDays,
+  getMeanCustomerIntervalDays,
   getCustomerSegment,
   CRM_FAVORITE_CUSTOMERS_COLLECTION,
   requireCrmPushAdmin,
@@ -19,24 +21,6 @@ const router = express.Router();
 
 const CUSTOMER_STATS_CACHE_TTL_MS = 5 * 60_000;
 const customerStatsCache = new Map();
-
-function averageIntervalDays(firstSaleAt, lastSaleAt, purchases) {
-  const count = Number(purchases || 0);
-  if (count < 2 || !firstSaleAt || !lastSaleAt) {
-    return null;
-  }
-
-  const firstMs = new Date(firstSaleAt).getTime();
-  const lastMs = new Date(lastSaleAt).getTime();
-  if (Number.isNaN(firstMs) || Number.isNaN(lastMs) || lastMs < firstMs) {
-    return null;
-  }
-
-  // Σ consecutive gaps = last − first → mean = (last − first) / (n − 1)
-  return Math.round(
-    (lastMs - firstMs) / (count - 1) / (24 * 60 * 60 * 1000)
-  );
-}
 
 function getCustomerStatsCacheKey(range) {
   const fromMs = range?.from ? new Date(range.from).getTime() : 0;
@@ -260,17 +244,12 @@ router.get(
           name: telegramId,
           username: "",
           handle: telegramId,
-          status: getCustomerStatus({
-            firstSaleAt,
-            lastSaleAt,
-            range,
-          }),
           segment: getCustomerSegment(purchases),
           ltv,
           purchases,
           purchasesInPeriod: Number(stats.purchasesInPeriod || 0),
           revenueInPeriod: Number(stats.revenueInPeriod || 0),
-          interval: averageIntervalDays(firstSaleAt, lastSaleAt, purchases),
+          interval: getCustomerIntervalDays(firstSaleAt, lastSaleAt, purchases),
           avgCheck:
             purchases > 0
               ? Number((ltv / purchases).toFixed(2))
@@ -281,10 +260,29 @@ router.get(
         };
       });
 
+      const meanCustomerIntervalDays = getMeanCustomerIntervalDays(
+        rows.map((row) => row.interval).filter((value) => value != null)
+      );
+
+      for (const row of rows) {
+        row.status = getCustomerStatus({
+          firstSaleAt: row.firstSaleAt,
+          lastSaleAt: row.lastOrder,
+          intervalDays: row.interval,
+          averageIntervalDays: meanCustomerIntervalDays,
+          range,
+        });
+      }
+
       const customers = rows.length;
 
       const active = rows.filter((row) =>
-        isCustomerActive(row.lastOrder, range)
+        isCustomerActive({
+          lastSaleAt: row.lastOrder,
+          intervalDays: row.interval,
+          averageIntervalDays: meanCustomerIntervalDays,
+          range,
+        })
       ).length;
 
       const topLtv = rows.reduce(

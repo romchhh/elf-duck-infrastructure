@@ -59,6 +59,68 @@ export function parseAssortmentQty(cell) {
   return parseQty(cell);
 }
 
+/**
+ * Кількість для звірки. Порожня клітинка і текст на кшталт #VALUE! — не нуль.
+ * Повертає { ok:true, qty } або { ok:false }.
+ */
+export function readStrictSheetQty(cell) {
+  if (typeof cell === "number") {
+    if (!Number.isFinite(cell) || !Number.isInteger(cell)) {
+      return { ok: false };
+    }
+    return { ok: true, qty: cell };
+  }
+
+  const raw = String(cell ?? "").trim();
+  if (!raw) return { ok: false };
+  if (raw.startsWith("#")) return { ok: false };
+
+  const normalized = raw.replace(/\s/g, "").replace(",", ".");
+  if (!/^-?\d+$/.test(normalized)) return { ok: false };
+
+  const qty = Number(normalized);
+  if (!Number.isFinite(qty)) return { ok: false };
+  return { ok: true, qty };
+}
+
+/** Сума «КОЛ-ВО» по моделі. Блок — рядок, де поруч із назвою написано КОЛ-ВО. */
+export function listAssortmentModelStock(rows) {
+  const blocks = findAssortmentModelBlocks(rows).filter((block) =>
+    /^кол-во$/i.test(String(rows[block.headerRow]?.[block.qtyCol] || "").trim())
+  );
+
+  return blocks.map((block) => {
+    const flavors = collectBlockFlavorRows(rows, block);
+    if (!flavors.length) {
+      return { name: block.header, ok: true, qty: 0 };
+    }
+
+    let qty = 0;
+    const unreadable = [];
+    for (const flavor of flavors) {
+      const parsed = readStrictSheetQty(rows[flavor.row]?.[block.qtyCol]);
+      if (!parsed.ok) {
+        unreadable.push(flavor.cell);
+        continue;
+      }
+      qty += parsed.qty;
+    }
+
+    if (unreadable.length) {
+      const first = unreadable[0];
+      const extra =
+        unreadable.length > 1 ? ` и ещё ${unreadable.length - 1}` : "";
+      return {
+        name: block.header,
+        ok: false,
+        reason: `не удалось прочитать количество «${first}»${extra} во вкладке «Ассортимент».`,
+      };
+    }
+
+    return { name: block.header, ok: true, qty };
+  });
+}
+
 function parseQty(cell) {
   const n = Number(String(cell || "").replace(/\s/g, "").replace(",", "."));
   if (!Number.isFinite(n)) return 0;
@@ -221,6 +283,8 @@ function collectBlockFlavorRows(rows, block) {
     }
     if (/^кол-во$/i.test(flavorCell)) continue;
     if (/^total\b/i.test(flavorCell)) break;
+    // Next model block in the same columns: «NAME | КОЛ-ВО», without a blank row between.
+    if (/^кол-во$/i.test(String(row[block.qtyCol] || "").trim())) break;
     out.push({ row: r, cell: flavorCell });
   }
 

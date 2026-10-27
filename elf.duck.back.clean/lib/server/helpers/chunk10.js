@@ -866,6 +866,45 @@ export async function processDailyPointStats() {
       "delivery-2",
     ]);
 
+    const { isOrderReportSyncDisabledForPointKey } = await import(
+      "../../googleSheets/config.js"
+    );
+    const sharedReportSyncOff = isOrderReportSyncDisabledForPointKey(
+      "wola-inpost"
+    );
+
+    const reconcileShiftStock = async (point) => {
+      const pointKey = String(point?.key || "")
+        .trim()
+        .toLowerCase()
+        .replace(/,+$/, "");
+      try {
+        const { publishShiftStockReconcile } = await import(
+          "../../googleSheets/shiftStockReconcile.js"
+        );
+        const reconcileResult = await publishShiftStockReconcile({
+          point,
+          dayKey,
+        });
+        if (reconcileResult?.sent) {
+          console.log("[STOCK RECONCILE][SENT]", {
+            pointKey,
+            dayKey,
+            mismatches: reconcileResult.mismatches,
+            errors: reconcileResult.errors,
+          });
+        } else if (reconcileResult?.matched) {
+          console.log("[STOCK RECONCILE][MATCH]", { pointKey, dayKey });
+        }
+      } catch (reconcileError) {
+        console.error(
+          "[STOCK RECONCILE]",
+          pointKey,
+          reconcileError?.message || reconcileError
+        );
+      }
+    };
+
     for (const point of points) {
       console.log("[DAILY STATS][SEND]", {
         pointKey: String(point?.key || ""),
@@ -905,7 +944,13 @@ export async function processDailyPointStats() {
         sheetsDedupeKey
       );
 
+      const pointKey = String(point?.key || "")
+        .trim()
+        .toLowerCase()
+        .replace(/,+$/, "");
+
       if (telegramAlreadySent && sheetsAlreadySent) {
+        await reconcileShiftStock(point);
         continue;
       }
 
@@ -1035,11 +1080,6 @@ export async function processDailyPointStats() {
         })
       );
 
-      const pointKey = String(point?.key || "")
-        .trim()
-        .toLowerCase()
-        .replace(/,+$/, "");
-
       if (!telegramAlreadySent) {
         const claimedTelegram = await claimDailyStatsDispatch(
           telegramDedupeKey,
@@ -1072,6 +1112,8 @@ export async function processDailyPointStats() {
        * Wola и InPost не отправляем в Google
        * по отдельности. Ниже они будут объединены.
        */
+      let sheetsSettled = sheetsAlreadySent;
+
       if (
         !sharedGoogleSheetPointKeys.has(pointKey) &&
         !sheetsAlreadySent
@@ -1096,8 +1138,16 @@ export async function processDailyPointStats() {
               dayKey,
               reason: googleSheetResult?.reason || googleSheetResult,
             });
+          } else {
+            sheetsSettled = true;
           }
         }
+      }
+
+      if (sharedGoogleSheetPointKeys.has(pointKey)) {
+        if (sharedReportSyncOff) await reconcileShiftStock(point);
+      } else if (sheetsSettled) {
+        await reconcileShiftStock(point);
       }
     }
 
@@ -1123,12 +1173,7 @@ export async function processDailyPointStats() {
 
     const sharedSheetsDedupeKey = `wola-inpost:${dayKey}:google_sheets`;
 
-    const { isOrderReportSyncDisabledForPointKey } = await import(
-      "../../googleSheets/config.js"
-    );
-    const skipWolaInpostSheets = isOrderReportSyncDisabledForPointKey(
-      "wola-inpost"
-    );
+    const skipWolaInpostSheets = sharedReportSyncOff;
 
     if (
       !skipWolaInpostSheets &&
@@ -1210,6 +1255,26 @@ export async function processDailyPointStats() {
             });
           }
         }
+      }
+    }
+
+    if (
+      !skipWolaInpostSheets &&
+      wolaPoint &&
+      inpostPoint &&
+      (await isDailyStatsDispatchRecorded(sharedSheetsDedupeKey))
+    ) {
+      for (const sharedPoint of [wolaPoint, inpostPoint]) {
+        const sharedSendTime = getPointStatsSendTime(sharedPoint, now);
+        if (!sharedSendTime) continue;
+        const sharedSendMinutes = __chunk08.parseWarsawTimeToMinutes(
+          sharedSendTime
+        );
+        const sharedNowMinutes = __chunk08.getWarsawTimeMinutes(now);
+        if (sharedSendMinutes !== null && sharedNowMinutes < sharedSendMinutes) {
+          continue;
+        }
+        await reconcileShiftStock(sharedPoint);
       }
     }
   } catch (e) {

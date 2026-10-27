@@ -12,7 +12,11 @@ import {
   getPushLocationKey,
 } from "./pushText.js";
 import { isCashbackExpiringSoon } from "./cashbackExpiring.js";
-import { getCustomerStatus } from "./analytics/customers.js";
+import {
+  getCustomerIntervalDays,
+  getCustomerStatus,
+  getMeanCustomerIntervalDays,
+} from "./analytics/customers.js";
 import {
   bumpLanguageStat,
   emptyLanguageStats,
@@ -383,6 +387,18 @@ export async function buildPushAudiencePreview({
   const matchedTelegramIds = [];
   const matchedTokenHits = new Set();
 
+  const meanCustomerIntervalDays = getMeanCustomerIntervalDays(
+    [...statsByUser.values()]
+      .map((stats) =>
+        getCustomerIntervalDays(
+          stats?.firstSaleAt,
+          stats?.lastSaleAt,
+          stats?.purchases
+        )
+      )
+      .filter((value) => value != null)
+  );
+
   const userMatchesPushAudience = (user) => {
         const telegramId =
           String(
@@ -480,6 +496,12 @@ export async function buildPushAudiencePreview({
           const status = getCustomerStatus({
             firstSaleAt: stats?.firstSaleAt || null,
             lastSaleAt: stats?.lastSaleAt || null,
+            intervalDays: getCustomerIntervalDays(
+              stats?.firstSaleAt,
+              stats?.lastSaleAt,
+              stats?.purchases
+            ),
+            averageIntervalDays: meanCustomerIntervalDays,
             range,
           });
 

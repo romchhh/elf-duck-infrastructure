@@ -3652,7 +3652,15 @@ function AutomationCard({
               </p>
             </Field>
 
-            {delayMode === 'days' ? (
+            {delayMode === 'none' ? (
+              <p className="text-[11px] leading-relaxed text-muted-2">
+                Один раз, когда до сгорания остаётся 5 дней. Если сервер в этот
+                день молчал — уйдёт при следующей проверке, пока кэшбек ещё не
+                сгорел. В тексте можно вставить {'{amount}'} — сумма, {'{days}'}{' '}
+                — сколько дней, {'{date}'} — дата. Новая порция кэшбека получит
+                своё сообщение.
+              </p>
+            ) : delayMode === 'days' ? (
               <Field label="Через сколько дней">
                 <div className="flex flex-wrap items-center gap-2">
                   {[1, 2].map((days) => (
@@ -3794,8 +3802,9 @@ function PushAutomationsPanel({ templates = [] }) {
   return (
     <div className="space-y-4">
       <p className="text-[12px] leading-relaxed text-muted-foreground">
-        Каждая автоотправка попадает в историю рассылок: «Авто · первая покупка»
-        и «Авто · лиды». Клиент получает текст своей мови (PL или RU).
+        Каждая автоотправка попадает в историю рассылок: «Авто · первая покупка»,
+        «Авто · лиды» и «Авто · кэшбек сгорает». Клиент получает текст своей мови
+        (PL или RU).
       </p>
       <AutomationCard
         trigger="first_purchase"
@@ -3812,6 +3821,15 @@ function PushAutomationsPanel({ templates = [] }) {
         description="Один раз тем, кто открыл магазин и ещё ничего не купил. Удобно поставить 1 или 2 дня."
         delayMode="days"
         row={data?.automations?.lead_followup}
+        templates={templates}
+        isLoading={isLoading}
+      />
+      <AutomationCard
+        trigger="cashback_expiring"
+        heading="Кэшбек скоро сгорит"
+        description="Вместо старого напоминания бота. Включите и напишите текст — он уйдёт за 5 дней до сгорания, на языке клиента."
+        delayMode="none"
+        row={data?.automations?.cashback_expiring}
         templates={templates}
         isLoading={isLoading}
       />

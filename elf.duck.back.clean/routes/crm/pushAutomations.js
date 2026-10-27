@@ -16,9 +16,10 @@ router.get(
     try {
       await ensurePushAutomationIndexes();
 
-      const [firstPurchase, leadFollowup] = await Promise.all([
+      const [firstPurchase, leadFollowup, cashbackExpiring] = await Promise.all([
         getPushAutomation(PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE),
         getPushAutomation(PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP),
+        getPushAutomation(PUSH_AUTOMATION_TRIGGERS.CASHBACK_EXPIRING),
       ]);
 
       return res.json({
@@ -26,6 +27,7 @@ router.get(
         automations: {
           first_purchase: firstPurchase,
           lead_followup: leadFollowup,
+          cashback_expiring: cashbackExpiring,
         },
       });
     } catch (error) {

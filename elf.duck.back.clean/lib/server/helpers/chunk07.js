@@ -254,10 +254,8 @@ export async function processCashbackLedgerExpirations() {
         }
 
         const daysLeft = daysUntilDate(expiresAt);
-        if ((daysLeft === 3 || daysLeft === 4 || daysLeft === 5) && !row.warnedAt) {
+        if (daysLeft >= 1 && daysLeft <= 5 && !row.warnedAt) {
           rowsToWarn.push(row);
-          row.warnedAt = now;
-          changed = true;
         }
       }
 
@@ -268,7 +266,27 @@ export async function processCashbackLedgerExpirations() {
       }
 
       if (rowsToWarn.length) {
-        await sendCashbackExpiringSoonNotification(user, rowsToWarn);
+        try {
+          const { notifyCashbackExpiringAutomation } = await import(
+            "../../crm/pushAutomations.js"
+          );
+          const sent = await notifyCashbackExpiringAutomation(user, rowsToWarn);
+          if (sent?.ok) {
+            const warnedAt = new Date();
+            const warnedIds = new Set(
+              rowsToWarn.map((row) => String(row?._id || ""))
+            );
+            for (const row of ledger) {
+              if (warnedIds.has(String(row?._id || ""))) {
+                row.warnedAt = warnedAt;
+              }
+            }
+            user.markModified?.("cashbackLedger");
+            await user.save();
+          }
+        } catch (promoErr) {
+          console.error("cashback expiring automation error:", promoErr);
+        }
       }
 
       if (rowsJustExpired.length) {
@@ -1294,6 +1312,13 @@ export async function changePickupOrderStatusByManager(
 
     await fresh.save();
 
+    try {
+      const { releaseOrderPromoUse } = await import("../../crm/promoOrderUse.js");
+      await releaseOrderPromoUse(fresh);
+    } catch (promoErr) {
+      console.error("cancel releaseOrderPromoUse error:", promoErr);
+    }
+
     return fresh;
   }
 
@@ -1399,6 +1424,13 @@ export async function changePickupOrderStatusByManager(
       "changePickupOrderStatusByManager googleSheets hook error:",
       e
     );
+  }
+
+  try {
+    const { commitOrderPromoUse } = await import("../../crm/promoOrderUse.js");
+    await commitOrderPromoUse(completedOrder);
+  } catch (promoErr) {
+    console.error("complete commitOrderPromoUse error:", promoErr);
   }
 
   try {
@@ -1616,6 +1648,13 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
       } catch (releaseErr) {
         console.error("annulOrderBecauseNoPaymentConfirm releaseOrderReservedStock error:", releaseErr);
       }
+    }
+
+    try {
+      const { releaseOrderPromoUse } = await import("../../crm/promoOrderUse.js");
+      await releaseOrderPromoUse(freshOrder);
+    } catch (promoErr) {
+      console.error("annul releaseOrderPromoUse error:", promoErr);
     }
 
     // Partial cashback can leave payment.method empty → timeout annul must still refund.

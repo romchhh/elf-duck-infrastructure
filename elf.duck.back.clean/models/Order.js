@@ -182,6 +182,8 @@ const orderSchema = new mongoose.Schema(
       promoCodeId: { type: String, default: "" },
       promoDiscountZl: { type: Number, default: 0 },
       promoAppliedAt: { type: Date, default: null },
+      /** Код списан только после завершённой покупки. До этого это скидка на заказе, не активация. */
+      promoUseCommittedAt: { type: Date, default: null },
 
       managerMessageChatId: { type: String, default: "" },
       managerMessageId: { type: String, default: "" },

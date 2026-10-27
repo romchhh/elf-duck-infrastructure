@@ -66,8 +66,23 @@ export function findDayBlockStartCol(rows, dayHeader) {
   return block?.blockStart ?? -1;
 }
 
-/** One daily mini-table: title row with DD.MM, header, models, КАССА row. */
-export function findDayBlock(rows, dayHeader) {
+function headerRowHasStalo(rows, titleRow, blockStart) {
+  const header = rows[titleRow + 1] || [];
+  for (let offset = 0; offset < 11; offset += 1) {
+    const label = String(header[blockStart + offset] || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
+    if (label === "СТАЛО") return true;
+  }
+  return false;
+}
+
+/**
+ * One daily mini-table: title row with DD.MM, header, models, КАССА row.
+ * requireStalo skips a bare date in a calendar strip (25.10 26.10 27.10).
+ */
+export function findDayBlock(rows, dayHeader, { requireStalo = false } = {}) {
   const wanted = String(dayHeader || "").trim();
   if (!wanted) return null;
 
@@ -76,6 +91,7 @@ export function findDayBlock(rows, dayHeader) {
 
     for (let c = 0; c < row.length; c++) {
       if (String(row[c] || "").trim() !== wanted) continue;
+      if (requireStalo && !headerRowHasStalo(rows, r, c)) continue;
 
       let endRow = rows.length;
       for (let r2 = r + 2; r2 < rows.length; r2++) {

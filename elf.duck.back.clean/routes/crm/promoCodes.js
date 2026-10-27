@@ -13,6 +13,7 @@ import {
   getPromoMaxActivationsPerUser,
 } from "../../lib/crm/promoLimits.js";
 import Order from "../../models/Order.js";
+import { reconcileAllUnsoldPromoUses } from "../../lib/crm/promoOrderUse.js";
 
 const router = express.Router();
 
@@ -76,7 +77,8 @@ function mapPromoCode(row, statsByCode = new Map(), range = null) {
     discountZl: Number(Number(stats.discountZl || 0).toFixed(2)),
     /**
      * Конверсия промо в периоде:
-     * завершённые заказы с этим кодом / активации за период.
+     * завершённые заказы с этим кодом / активации, которые уже стали покупкой.
+     * Ввод кода без покупки сюда не входит.
      */
     conversion:
       periodActivations > 0
@@ -157,6 +159,8 @@ router.get("/promo-codes", requireCrmPushAdmin, async (req, res) => {
       req.query?.from || "",
       req.query?.to || ""
     );
+
+    await reconcileAllUnsoldPromoUses();
 
     const [promoCodes, statsByCode] = await Promise.all([
       mongoose.connection
