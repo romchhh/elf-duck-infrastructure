@@ -2205,12 +2205,12 @@ const confirmCreateTpl = () => {
                 {[
                   { label: 'B', tip: 'Жирный *текст*', before: '*', after: '*' },
                   { label: 'I', tip: 'Курсив _текст_', before: '_', after: '_' },
-                  { label: 'U', tip: 'Подчёркнутый __текст__', before: '__', after: '__' },
-                  { label: 'S', tip: 'Зачёркнутый ~~текст~~', before: '~~', after: '~~' },
-                  { label: '❝', tip: 'Цитата', before: '> ', after: '' },
                   { label: 'спойлер', tip: 'Спойлер ||текст||', before: '||', after: '||' },
                   { label: '`', tip: 'Код', before: '`', after: '`' },
                   { label: '🔗', tip: 'Посилання', before: '[текст](', after: 'https://)' },
+                  { label: 'U', tip: 'Подчёркнутый __текст__', before: '__', after: '__' },
+                  { label: 'S', tip: 'Зачёркнутый ~~текст~~', before: '~~', after: '~~' },
+                  { label: '❝', tip: 'Цитата', before: '> ', after: '' },
                 ].map((item) => (
                   <button
                     key={item.label}
@@ -3358,11 +3358,12 @@ function PushPromoCreator({ onCreated, messageTexts = [] }) {
 const AUTO_FORMAT = [
   { label: 'B', tip: 'Жирный *текст*', before: '*', after: '*' },
   { label: 'I', tip: 'Курсив _текст_', before: '_', after: '_' },
+  { label: 'спойлер', tip: 'Спойлер ||текст||', before: '||', after: '||' },
+  { label: '`', tip: 'Код', before: '`', after: '`' },
+  { label: '🔗', tip: 'Посилання', before: '[текст](', after: 'https://)' },
   { label: 'U', tip: 'Подчёркнутый __текст__', before: '__', after: '__' },
   { label: 'S', tip: 'Зачёркнутый ~~текст~~', before: '~~', after: '~~' },
   { label: '❝', tip: 'Цитата', before: '> ', after: '' },
-  { label: 'спойлер', tip: 'Спойлер ||текст||', before: '||', after: '||' },
-  { label: '`', tip: 'Код', before: '`', after: '`' },
 ];
 
 function formatSelection(value, start, end, before, after) {
@@ -3599,41 +3600,39 @@ function AutomationCard({
             </div>
 
             <Field label={autoLang === 'pl' ? 'Текст (PL)' : 'Текст (RU)'}>
-              <div className="mb-1.5 flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
-                  {[
-                    { key: 'pl', label: 'PL', filled: Boolean(textPl.trim()) },
-                    { key: 'ru', label: 'RU', filled: Boolean(textRu.trim()) },
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setAutoLang(item.key)}
-                      className={cn(
-                        'rounded-md px-2.5 py-1 text-[11px] font-medium',
-                        autoLang === item.key
-                          ? 'bg-[hsl(255_100%_68%/0.18)] text-foreground'
-                          : 'text-muted-2'
-                      )}
-                    >
-                      {item.label}
-                      {item.filled ? ' ✓' : ''}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {AUTO_FORMAT.map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      title={item.tip}
-                      onClick={() => insertFormat(item.before, item.after)}
-                      className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="mb-1.5 inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
+                {[
+                  { key: 'pl', label: 'PL', filled: Boolean(textPl.trim()) },
+                  { key: 'ru', label: 'RU', filled: Boolean(textRu.trim()) },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setAutoLang(item.key)}
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-[11px] font-medium',
+                      autoLang === item.key
+                        ? 'bg-[hsl(255_100%_68%/0.18)] text-foreground'
+                        : 'text-muted-2'
+                    )}
+                  >
+                    {item.label}
+                    {item.filled ? ' ✓' : ''}
+                  </button>
+                ))}
+              </div>
+              <div className="mb-1.5 flex flex-wrap gap-1">
+                {AUTO_FORMAT.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    title={item.tip}
+                    onClick={() => insertFormat(item.before, item.after)}
+                    className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
               <textarea
                 ref={textRef}
