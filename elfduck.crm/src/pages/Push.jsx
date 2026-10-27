@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   useMutation,
@@ -38,6 +38,10 @@ import {
 } from '@/components/ui/dialog';
 
 import { toast } from '@/components/ui/use-toast';
+import {
+  PUSH_PREVIEW_CLASS,
+  renderPushPreviewHtml,
+} from '@/lib/pushPreviewHtml';
 import { cn } from '@/lib/utils';
 import { CRM_API_URL, crmFetchJson } from '@/lib/crmFetch';
 import { compressImageForUpload } from '@/lib/compressImage';
@@ -257,11 +261,30 @@ export default function Push() {
     { text: 'Открыть магазин', kind: 'web_app', path: '/' },
   ]);
 
+  const bodyRef = useRef(null);
+
   const insertMarkdown = (before, after = before) => {
+    const el = bodyRef.current;
     setBody((current) => {
       const value = String(current || '');
-      const marker = `${before}текст${after}`;
-      return value ? `${value}${value.endsWith('\n') ? '' : '\n'}${marker}` : marker;
+      const start = el?.selectionStart ?? value.length;
+      const end = el?.selectionEnd ?? value.length;
+      const selected = value.slice(start, end) || 'текст';
+      const chunk =
+        before === '> '
+          ? selected
+              .split('\n')
+              .map((line) => `> ${line}`)
+              .join('\n')
+          : `${before}${selected}${after}`;
+      const next = value.slice(0, start) + chunk + value.slice(end);
+      const cursor = start + chunk.length;
+      requestAnimationFrame(() => {
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(cursor, cursor);
+      });
+      return next;
     });
   };
 
@@ -2180,8 +2203,12 @@ const confirmCreateTpl = () => {
             >
               <div className="mb-1.5 flex flex-wrap gap-1">
                 {[
-                  { label: 'B', tip: 'Жирный ** **', before: '**', after: '**' },
-                  { label: 'I', tip: 'Курсив _ _', before: '_', after: '_' },
+                  { label: 'B', tip: 'Жирный *текст*', before: '*', after: '*' },
+                  { label: 'I', tip: 'Курсив _текст_', before: '_', after: '_' },
+                  { label: 'U', tip: 'Подчёркнутый __текст__', before: '__', after: '__' },
+                  { label: 'S', tip: 'Зачёркнутый ~~текст~~', before: '~~', after: '~~' },
+                  { label: '❝', tip: 'Цитата', before: '> ', after: '' },
+                  { label: 'спойлер', tip: 'Спойлер ||текст||', before: '||', after: '||' },
                   { label: '`', tip: 'Код', before: '`', after: '`' },
                   { label: '🔗', tip: 'Посилання', before: '[текст](', after: 'https://)' },
                 ].map((item) => (
@@ -2197,6 +2224,7 @@ const confirmCreateTpl = () => {
                 ))}
               </div>
               <textarea
+                ref={bodyRef}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 rows={8}
@@ -2364,25 +2392,9 @@ const confirmCreateTpl = () => {
                   />
                 )}
                 <div
-                  className="whitespace-pre-wrap text-[11px] leading-snug text-muted-foreground [&_b]:font-semibold [&_b]:text-foreground [&_code]:rounded [&_code]:bg-[hsl(255_100%_68%/0.15)] [&_code]:px-1 [&_code]:text-[hsl(255_100%_75%)] [&_i]:italic"
+                  className={PUSH_PREVIEW_CLASS}
                   dangerouslySetInnerHTML={{
-                    __html: (() => {
-                      const raw = String(body || 'Текст сообщения');
-                      return raw
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-                        .replace(/__([^_\n]+)__/g, '<b>$1</b>')
-                        .replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, '<i>$1</i>')
-                        .replace(/(?<![\w_])_([^_\n]+)_(?![\w_])/g, '<i>$1</i>')
-                        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-                        .replace(
-                          /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi,
-                          '<a href="$2" class="underline">$1</a>'
-                        )
-                        .replace(/\n/g, '<br/>');
-                    })(),
+                    __html: renderPushPreviewHtml(body || 'Текст сообщения'),
                   }}
                 />
                 {inlineButtons.filter((b) => b.text?.trim()).length > 0 ? (
@@ -2457,7 +2469,7 @@ const confirmCreateTpl = () => {
         </div>
       </div>
 
-      <PushAutomationsPanel />
+      <PushAutomationsPanel templates={templates} />
 
       {/* TEMPLATES */}
 
@@ -2540,11 +2552,14 @@ const confirmCreateTpl = () => {
             </div>
           )}
 
-          <div className="mt-1 text-[12px] text-muted-foreground">
-            {template.preview ||
-              template.text ||
-              ''}
-          </div>
+          <div
+            className={`${PUSH_PREVIEW_CLASS} mt-1 line-clamp-4 text-[12px]`}
+            dangerouslySetInnerHTML={{
+              __html: renderPushPreviewHtml(
+                template.preview || template.text || ''
+              ),
+            }}
+          />
 
           <div className="mt-1 flex items-center gap-3 text-[11px] text-muted-2">
             <span>
@@ -2828,9 +2843,12 @@ const confirmCreateTpl = () => {
                 Содержимое
               </div>
 
-              <div className="mt-1 whitespace-pre-wrap text-[12px] text-muted-foreground">
-                {body || 'Текст сообщения'}
-              </div>
+              <div
+                className={`${PUSH_PREVIEW_CLASS} mt-1 text-[12px]`}
+                dangerouslySetInnerHTML={{
+                  __html: renderPushPreviewHtml(body || 'Текст сообщения'),
+                }}
+              />
 
               {inlineButtons.filter((b) => b.text?.trim()).length > 0 ? (
                 <div className="mt-2 space-y-1">
@@ -3337,32 +3355,76 @@ function PushPromoCreator({ onCreated, messageTexts = [] }) {
   );
 }
 
-function PushAutomationsPanel() {
+const AUTO_FORMAT = [
+  { label: 'B', tip: 'Жирный *текст*', before: '*', after: '*' },
+  { label: 'I', tip: 'Курсив _текст_', before: '_', after: '_' },
+  { label: 'U', tip: 'Подчёркнутый __текст__', before: '__', after: '__' },
+  { label: 'S', tip: 'Зачёркнутый ~~текст~~', before: '~~', after: '~~' },
+  { label: '❝', tip: 'Цитата', before: '> ', after: '' },
+  { label: 'спойлер', tip: 'Спойлер ||текст||', before: '||', after: '||' },
+  { label: '`', tip: 'Код', before: '`', after: '`' },
+];
+
+function formatSelection(value, start, end, before, after) {
+  const selected = value.slice(start, end) || 'текст';
+  const chunk =
+    before === '> '
+      ? selected
+          .split('\n')
+          .map((line) => `> ${line}`)
+          .join('\n')
+      : `${before}${selected}${after}`;
+  return {
+    next: value.slice(0, start) + chunk + value.slice(end),
+    cursor: start + chunk.length,
+  };
+}
+
+function AutomationCard({
+  trigger,
+  heading,
+  description,
+  delayMode,
+  row,
+  templates,
+  isLoading,
+}) {
+  const textRef = useRef(null);
   const [enabled, setEnabled] = useState(false);
-  const [delayMinutes, setDelayMinutes] = useState('0');
+  const [delayMinutes, setDelayMinutes] = useState(
+    delayMode === 'days' ? '2880' : '0'
+  );
   const [title, setTitle] = useState('');
   const [textPl, setTextPl] = useState('');
   const [textRu, setTextRu] = useState('');
   const [autoLang, setAutoLang] = useState('ru');
   const [promo, setPromo] = useState('');
+  const [buttons, setButtons] = useState([]);
+  const [templateId, setTemplateId] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoFileId, setPhotoFileId] = useState('');
   const [dirty, setDirty] = useState(false);
   const autoText = autoLang === 'pl' ? textPl : textRu;
+
   const setAutoText = (value) => {
-    if (autoLang === 'pl') setTextPl(value);
-    else setTextRu(value);
+    const next = typeof value === 'function' ? value(autoText) : value;
+    if (autoLang === 'pl') setTextPl(next);
+    else setTextRu(next);
   };
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ['crm-push-automations'],
-    queryFn: () => crmFetch('/crm/push/automations'),
-    staleTime: 30_000,
-  });
-
   useEffect(() => {
-    const row = data?.automations?.first_purchase;
     if (!row || dirty) return;
     setEnabled(row.enabled === true);
-    setDelayMinutes(String(row.delayMinutes || 0));
+    const savedDelay = Number(row.delayMinutes || 0);
+    setDelayMinutes(
+      String(
+        row.updatedAt
+          ? savedDelay
+          : delayMode === 'days'
+            ? 2880
+            : savedDelay
+      )
+    );
     setTitle(String(row.message?.title || ''));
     const savedPl = String(row.message?.textPl || '');
     const savedRu = String(row.message?.textRu || '');
@@ -3370,11 +3432,16 @@ function PushAutomationsPanel() {
     setTextPl(savedPl);
     setTextRu(savedRu || (!savedPl ? legacy : ''));
     setPromo(String(row.message?.promo || ''));
-  }, [data, dirty]);
+    setButtons(Array.isArray(row.message?.buttons) ? row.message.buttons : []);
+    setTemplateId(String(row.message?.templateId || ''));
+    setPhotoUrl(String(row.message?.photoUrl || ''));
+    setPhotoFileId(String(row.message?.photoFileId || ''));
+  }, [row, dirty, delayMode]);
 
+  const queryClient = useQueryClient();
   const saveMutation = useMutation({
     mutationFn: () =>
-      crmFetch('/crm/push/automations/first_purchase', {
+      crmFetch(`/crm/push/automations/${trigger}`, {
         method: 'PUT',
         body: JSON.stringify({
           enabled,
@@ -3386,12 +3453,18 @@ function PushAutomationsPanel() {
             textRu: textRu.trim(),
             defaultLanguage: 'ru',
             promo: promo.trim(),
+            buttons,
+            templateId,
+            photoUrl,
+            photoFileId,
           },
         }),
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['crm-push-automations'],
+      });
       setDirty(false);
-      refetch();
       toast({ title: 'Авторассылка сохранена' });
     },
     onError: (error) => {
@@ -3403,22 +3476,67 @@ function PushAutomationsPanel() {
     },
   });
 
+  const applyTemplate = (id) => {
+    const template = (templates || []).find((item) => item.id === id);
+    if (!template) return;
+    const lang =
+      String(template.language || '').trim().toLowerCase() === 'pl'
+        ? 'pl'
+        : 'ru';
+    const text = String(template.text || template.preview || '');
+    if (lang === 'pl') setTextPl(text);
+    else setTextRu(text);
+    setAutoLang(lang);
+    if (Array.isArray(template.buttons) && template.buttons.length) {
+      setButtons(
+        template.buttons.map((btn) => ({
+          text: String(btn?.text || ''),
+          kind: btn?.kind === 'url' ? 'url' : 'web_app',
+          path: String(btn?.path || '/'),
+          url: String(btn?.url || ''),
+        }))
+      );
+    }
+    setPhotoUrl(String(template.photoUrl || template.photoPreviewUrl || ''));
+    setPhotoFileId(String(template.photoFileId || ''));
+    setTemplateId(id);
+    setDirty(true);
+  };
+
+  const insertFormat = (before, after) => {
+    const el = textRef.current;
+    setAutoText((current) => {
+      const value = String(current || '');
+      const start = el?.selectionStart ?? value.length;
+      const end = el?.selectionEnd ?? value.length;
+      const { next, cursor } = formatSelection(value, start, end, before, after);
+      requestAnimationFrame(() => {
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(cursor, cursor);
+      });
+      return next;
+    });
+    setDirty(true);
+  };
+
+  const delayDays = Math.round((Number(delayMinutes || 0) / 1440) * 10) / 10;
+
   return (
     <div className="rounded-2xl surface-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-heading text-[14px] font-semibold text-foreground">
-            Автоматические рассылки
+            {heading}
           </h3>
           <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-            После первой покупки бот шлёт офер. Заполните PL и RU — клиент
-            получит текст своей мови. Без мови в профілі піде RU, якщо він є.
+            {description}
           </p>
         </div>
         <Chip
           active={enabled}
           onClick={() => {
-            setEnabled((v) => !v);
+            setEnabled((value) => !value);
             setDirty(true);
           }}
         >
@@ -3429,84 +3547,214 @@ function PushAutomationsPanel() {
       {isLoading ? (
         <p className="mt-4 text-[12px] text-muted-2">Загрузка…</p>
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <Field label="Заголовок">
-            <input
-              value={title}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                setDirty(true);
-              }}
-              className="input-base"
-              placeholder="Спасибо за первый заказ!"
-            />
-          </Field>
-          <Field label="Промокод">
-            <input
-              value={promo}
-              onChange={(e) => {
-                setPromo(e.target.value);
-                setDirty(true);
-              }}
-              className="input-base"
-              placeholder="SECOND15"
-            />
-          </Field>
-          <Field
-            label={autoLang === 'pl' ? 'Текст (PL)' : 'Текст (RU)'}
-          >
-            <div className="mb-1.5 inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
-              {[
-                { key: 'pl', label: 'PL', filled: Boolean(textPl.trim()) },
-                { key: 'ru', label: 'RU', filled: Boolean(textRu.trim()) },
-              ].map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setAutoLang(item.key)}
-                  className={cn(
-                    'rounded-md px-2.5 py-1 text-[11px] font-medium',
-                    autoLang === item.key
-                      ? 'bg-[hsl(255_100%_68%/0.18)] text-foreground'
-                      : 'text-muted-2'
-                  )}
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="space-y-3">
+            <Field label="Шаблон">
+              <select
+                defaultValue=""
+                onChange={(event) => {
+                  const id = event.target.value;
+                  event.target.value = '';
+                  if (id) applyTemplate(id);
+                }}
+                className="input-base"
+              >
+                <option value="">Вставить готовый шаблон…</option>
+                {(templates || []).map((template) => (
+                  <option key={template.id} value={template.id}>
+                    {String(template.language || 'ru').toUpperCase()} ·{' '}
+                    {template.name || template.title || 'Без названия'}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-muted-2">
+                Текст, кнопки и фото шаблона подставятся в язык шаблона. Второй
+                язык можно дописать вручную.
+              </p>
+            </Field>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Заголовок">
+                <input
+                  value={title}
+                  onChange={(event) => {
+                    setTitle(event.target.value);
+                    setDirty(true);
+                  }}
+                  className="input-base"
+                  placeholder="Заголовок"
+                />
+              </Field>
+              <Field label="Промокод">
+                <input
+                  value={promo}
+                  onChange={(event) => {
+                    setPromo(event.target.value);
+                    setDirty(true);
+                  }}
+                  className="input-base"
+                  placeholder="NOWY15"
+                />
+              </Field>
+            </div>
+
+            <Field label={autoLang === 'pl' ? 'Текст (PL)' : 'Текст (RU)'}>
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
+                  {[
+                    { key: 'pl', label: 'PL', filled: Boolean(textPl.trim()) },
+                    { key: 'ru', label: 'RU', filled: Boolean(textRu.trim()) },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setAutoLang(item.key)}
+                      className={cn(
+                        'rounded-md px-2.5 py-1 text-[11px] font-medium',
+                        autoLang === item.key
+                          ? 'bg-[hsl(255_100%_68%/0.18)] text-foreground'
+                          : 'text-muted-2'
+                      )}
+                    >
+                      {item.label}
+                      {item.filled ? ' ✓' : ''}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {AUTO_FORMAT.map((item) => (
+                    <button
+                      key={item.label}
+                      type="button"
+                      title={item.tip}
+                      onClick={() => insertFormat(item.before, item.after)}
+                      className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <textarea
+                ref={textRef}
+                value={autoText}
+                onChange={(event) => {
+                  setAutoText(event.target.value);
+                  setDirty(true);
+                }}
+                rows={6}
+                className="input-base resize-none font-mono text-[12px]"
+                placeholder="*Новинка* и она _очень_ крутая"
+              />
+              <p className="mt-1 text-[11px] text-muted-2">
+                *жирный* _курсив_ __подчёркнутый__ ~~зачёркнутый~~ ||спойлер||
+                строка с {'>'} — цитата. Можно и HTML: {'<b>'}, {'<i>'},{' '}
+                {'<blockquote>'}, {'<tg-spoiler>'}.
+              </p>
+            </Field>
+
+            {delayMode === 'days' ? (
+              <Field label="Через сколько дней">
+                <div className="flex flex-wrap items-center gap-2">
+                  {[1, 2].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => {
+                        setDelayMinutes(String(days * 1440));
+                        setDirty(true);
+                      }}
+                      className={cn(
+                        'rounded-lg border px-3 py-1.5 text-[12px]',
+                        Number(delayMinutes) === days * 1440
+                          ? 'border-[hsl(255_100%_68%/0.5)] text-foreground'
+                          : 'border-border text-muted-2'
+                      )}
+                    >
+                      {days} {days === 1 ? 'день' : 'дня'}
+                    </button>
+                  ))}
+                  <input
+                    value={Number.isFinite(delayDays) ? String(delayDays) : '2'}
+                    onChange={(event) => {
+                      const days = Math.min(
+                        14,
+                        Math.max(0, Number(event.target.value || 0))
+                      );
+                      setDelayMinutes(String(Math.round(days * 1440)));
+                      setDirty(true);
+                    }}
+                    type="number"
+                    min="0"
+                    max="14"
+                    step="1"
+                    className="input-base w-24"
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-muted-2">
+                  Отсчёт с первого захода лида в миниапп. Если успеет купить —
+                  сообщение не уйдёт. Каждому лиду один раз.
+                </p>
+              </Field>
+            ) : (
+              <Field label="Задержка (мин)">
+                <input
+                  value={delayMinutes}
+                  onChange={(event) => {
+                    setDelayMinutes(event.target.value);
+                    setDirty(true);
+                  }}
+                  type="number"
+                  min="0"
+                  max="20160"
+                  className="input-base"
+                />
+                <p className="mt-1 text-[11px] text-muted-2">
+                  0 — сразу после выполнения заказа. 1440 = 1 день, 2880 = 2 дня.
+                </p>
+              </Field>
+            )}
+
+            {buttons.some((btn) => btn.text) ? (
+              <p className="text-[11px] text-muted-2">
+                Кнопки: {buttons.map((btn) => btn.text).filter(Boolean).join(' · ')}
+              </p>
+            ) : null}
+          </div>
+
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-muted-2">
+              Как увидит клиент
+            </p>
+            <div className="mt-2 rounded-xl bg-[hsl(234_22%_11%)] p-3">
+              {title.trim() ? (
+                <div className="mb-1 text-[12px] font-semibold text-foreground">
+                  {title.trim()}
+                </div>
+              ) : null}
+              <div
+                className={PUSH_PREVIEW_CLASS}
+                dangerouslySetInnerHTML={{
+                  __html: renderPushPreviewHtml(
+                    autoText || 'Текст сообщения'
+                  ),
+                }}
+              />
+              {promo.trim() ? (
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  🎁 Промокод: <code>{promo.trim()}</code>
+                </p>
+              ) : null}
+              {buttons.filter((btn) => btn.text).map((btn, index) => (
+                <div
+                  key={`${btn.text}-${index}`}
+                  className="mt-1 rounded-md border border-[hsl(255_100%_68%/0.35)] px-2 py-1 text-center text-[10px] font-medium text-[hsl(255_100%_75%)]"
                 >
-                  {item.label}
-                  {item.filled ? ' ✓' : ''}
-                </button>
+                  {btn.text}
+                </div>
               ))}
             </div>
-            <textarea
-              value={autoText}
-              onChange={(e) => {
-                setAutoText(e.target.value);
-                setDirty(true);
-              }}
-              rows={4}
-              className="input-base resize-none lg:col-span-1"
-              placeholder={
-                autoLang === 'pl'
-                  ? 'Wróć po drugie zamówienie ze zniżką…'
-                  : 'Вернись за вторым заказом со скидкой…'
-              }
-            />
-          </Field>
-          <Field label="Задержка (мин)">
-            <input
-              value={delayMinutes}
-              onChange={(e) => {
-                setDelayMinutes(e.target.value);
-                setDirty(true);
-              }}
-              type="number"
-              min="0"
-              max="1440"
-              className="input-base"
-            />
-            <p className="mt-1 text-[11px] text-muted-2">
-              0 — сразу после выполнения заказа
-            </p>
-          </Field>
+          </div>
         </div>
       )}
 
@@ -3527,15 +3775,47 @@ function PushAutomationsPanel() {
         onClick={() => saveMutation.mutate()}
         disabled={
           saveMutation.isPending ||
-          (!title.trim() &&
-            !textPl.trim() &&
-            !textRu.trim() &&
-            !promo.trim())
+          (!title.trim() && !textPl.trim() && !textRu.trim() && !promo.trim())
         }
         className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-gradient-to-r from-[hsl(255_100%_68%)] to-[hsl(280_90%_60%)] px-4 text-[12px] font-medium text-white disabled:opacity-50"
       >
         {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить авторассылку'}
       </button>
+    </div>
+  );
+}
+
+function PushAutomationsPanel({ templates = [] }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['crm-push-automations'],
+    queryFn: () => crmFetch('/crm/push/automations'),
+    staleTime: 30_000,
+  });
+
+  return (
+    <div className="space-y-4">
+      <p className="text-[12px] leading-relaxed text-muted-foreground">
+        Каждая автоотправка попадает в историю рассылок: «Авто · первая покупка»
+        и «Авто · лиды». Клиент получает текст своей мови (PL или RU).
+      </p>
+      <AutomationCard
+        trigger="first_purchase"
+        heading="После первой покупки"
+        description="Бот шлёт офер, когда заказ выполнен. Вставьте шаблон — текст, кнопки и фото подставятся сами."
+        delayMode="minutes"
+        row={data?.automations?.first_purchase}
+        templates={templates}
+        isLoading={isLoading}
+      />
+      <AutomationCard
+        trigger="lead_followup"
+        heading="Лиды без покупки"
+        description="Один раз тем, кто открыл магазин и ещё ничего не купил. Удобно поставить 1 или 2 дня."
+        delayMode="days"
+        row={data?.automations?.lead_followup}
+        templates={templates}
+        isLoading={isLoading}
+      />
     </div>
   );
 }

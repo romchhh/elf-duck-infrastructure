@@ -7,13 +7,24 @@ function escapeHtml(value) {
 }
 
 /**
- * Легкий markdown → Telegram HTML.
- * Підтримка: **bold**, *italic*, _italic_, `code`, [text](https://...)
+ * Легкий markdown + дозволені Telegram HTML-теги.
+ * *жирный* **жирный** _курсив_ __подчёркнутый__ ~~зачёркнутый~~
+ * ||спойлер|| `код` > цитата [текст](https://...)
+ * Теги: b, i, u, s, code, pre, blockquote, tg-spoiler, a href=https
  */
 export function pushMarkdownToHtml(raw) {
   let text = escapeHtml(String(raw || ""));
 
-  // links first (URLs already escaped — restore : / for href)
+  text = text.replace(
+    /&lt;(\/?)(b|strong|i|em|u|ins|s|strike|del|code|pre|blockquote|tg-spoiler)&gt;/gi,
+    "<$1$2>"
+  );
+  text = text.replace(
+    /&lt;a\s+href=&quot;(https?:\/\/[^"&]+)&quot;&gt;/gi,
+    '<a href="$1">'
+  );
+  text = text.replace(/&lt;\/a&gt;/gi, "</a>");
+
   text = text.replace(
     /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/gi,
     (_, label, href) => {
@@ -34,10 +45,26 @@ export function pushMarkdownToHtml(raw) {
     }
   );
 
+  text = text.replace(
+    /(^|\n)((?:&gt; ?[^\n]*\n?)+)/g,
+    (match, lead, group) => {
+      const hadBreak = /\n$/.test(String(group || ""));
+      const inner = String(group || "")
+        .split("\n")
+        .map((line) => line.replace(/^&gt; ?/, ""))
+        .join("\n")
+        .replace(/\n$/, "");
+      if (!inner.trim()) return match;
+      return `${lead}<blockquote>${inner}</blockquote>${hadBreak ? "\n" : ""}`;
+    }
+  );
+
   text = text.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  text = text.replace(/\|\|([^|\n]+)\|\|/g, "<tg-spoiler>$1</tg-spoiler>");
+  text = text.replace(/~~([^~\n]+)~~/g, "<s>$1</s>");
   text = text.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
-  text = text.replace(/__([^_\n]+)__/g, "<b>$1</b>");
-  text = text.replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, "<i>$1</i>");
+  text = text.replace(/__([^_\n]+)__/g, "<u>$1</u>");
+  text = text.replace(/(?<![\w*])\*([^*\n]+)\*(?![\w*])/g, "<b>$1</b>");
   text = text.replace(/(?<![\w_])_([^_\n]+)_(?![\w_])/g, "<i>$1</i>");
 
   return text;

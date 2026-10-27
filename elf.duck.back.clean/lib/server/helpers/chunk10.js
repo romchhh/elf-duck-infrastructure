@@ -470,11 +470,21 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       .toFixed(2)
   );
 
+  const promoCodeDiscountTotalZl = Number(
+    (Array.isArray(orders) ? orders : [])
+      .reduce(
+        (sum, order) => sum + Math.max(0, Number(order?.payment?.promoDiscountZl || 0)),
+        0
+      )
+      .toFixed(2)
+  );
+
   const promoDiscountsBaseZl = Number(
     (
       salePromoDiscountTotalZl +
       referralDiscountTotalZl +
-      cashbackDiscountTotalZl
+      cashbackDiscountTotalZl +
+      promoCodeDiscountTotalZl
     ).toFixed(2)
   );
 

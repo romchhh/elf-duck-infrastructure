@@ -493,7 +493,7 @@ export async function sendOrderCreatedNotification(order, options = {}) {
       ``,
       itemsText || "—",
       ``,
-      `💰 <b>Сумма заказа:</b> ${managerAmountText}`,
+      `💰 <b>Сумма заказа:</b> ${Number(order.totalZl || 0).toFixed(2)} zł`,
       `💳 <b>Способ оплаты:</b> ${
         order?.payment?.cashbackFullyPaid
           ? "Кэшбек"
@@ -503,11 +503,15 @@ export async function sendOrderCreatedNotification(order, options = {}) {
         ? escapeHtml(managerForeignPaymentSubline)
         : null,
       ``,
+      order?.payment?.promoDiscountZl > 0
+        ? `🏷 <b>Оплачено промокодом${String(order?.payment?.promoCode || "").trim() ? ` ${escapeHtml(String(order.payment.promoCode).trim())}` : ""}:</b> ${Number(order.payment.promoDiscountZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+        : null,
       order?.payment?.cashbackAppliedZl > 0
         ? `🪙 <b>Оплачено кэшбеком:</b> ${Number(order.payment.cashbackAppliedZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
         : null,
-      order?.payment?.cashbackAppliedZl > 0 && Number(order?.payment?.cashbackRemainingToPayZl || 0) > 0
-        ? `💸 <b>Остаток к оплате:</b> ${Number(order.payment.cashbackRemainingToPayZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+      (Number(order?.payment?.promoDiscountZl || 0) > 0 || Number(order?.payment?.cashbackAppliedZl || 0) > 0) &&
+      getOrderPayablePlnZl(order) > 0
+        ? `💸 <b>Остаток к оплате:</b> ${getOrderPayablePlnZl(order).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
         : null,
       hasReferralFirstOrderDiscount
         ? `🎁 <b>Реферальная скидка:</b> ${referralFirstOrderDiscountPercent || 10}% на первый заказ${referralFirstOrderDiscountAppliedZl > 0 ? ` (${referralFirstOrderDiscountAppliedZl.toFixed(2)} PLN)` : ""}${inviterLabel ? `\n👤 <b>Пригласитель:</b> ${escapeHtml(inviterLabel)}` : ""}`
@@ -1148,7 +1152,7 @@ export async function refreshManagerOrderMessage(order) {
       ``,
       itemsText || "—",
       ``,
-      `💰 <b>Сумма заказа:</b> ${managerAmountText}`,
+      `💰 <b>Сумма заказа:</b> ${Number(order.totalZl || 0).toFixed(2)} zł`,
       `💳 <b>Способ оплаты:</b> ${
         order?.payment?.cashbackFullyPaid
           ? "Кэшбек"
@@ -1158,11 +1162,15 @@ export async function refreshManagerOrderMessage(order) {
         ? escapeHtml(managerForeignPaymentSubline)
         : null,
       ``,
+      order?.payment?.promoDiscountZl > 0
+        ? `🏷 <b>Оплачено промокодом${String(order?.payment?.promoCode || "").trim() ? ` ${escapeHtml(String(order.payment.promoCode).trim())}` : ""}:</b> ${Number(order.payment.promoDiscountZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+        : null,
       order?.payment?.cashbackAppliedZl > 0
         ? `🪙 <b>Оплачено кэшбеком:</b> ${Number(order.payment.cashbackAppliedZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
         : null,
-      order?.payment?.cashbackAppliedZl > 0 && Number(order?.payment?.cashbackRemainingToPayZl || 0) > 0
-        ? `💸 <b>Остаток к оплате:</b> ${Number(order.payment.cashbackRemainingToPayZl || 0).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
+      (Number(order?.payment?.promoDiscountZl || 0) > 0 || Number(order?.payment?.cashbackAppliedZl || 0) > 0) &&
+      getOrderPayablePlnZl(order) > 0
+        ? `💸 <b>Остаток к оплате:</b> ${getOrderPayablePlnZl(order).toFixed(2)} ${escapeHtml(order.currency || "PLN")}`
         : null,
       hasReferralFirstOrderDiscount
         ? `🎁 <b>Реферальная скидка:</b> ${referralFirstOrderDiscountPercent || 10}% на первый заказ${referralFirstOrderDiscountAppliedZl > 0 ? ` (${referralFirstOrderDiscountAppliedZl.toFixed(2)} PLN)` : ""}${inviterLabel ? `\n👤 <b>Пригласитель:</b> ${escapeHtml(inviterLabel)}` : ""}`

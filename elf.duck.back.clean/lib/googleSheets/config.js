@@ -107,7 +107,7 @@ function getSkipOrderAssortmentSyncPointKeys() {
   const cfg = getGoogleSheetsConfig().skipOrderAssortmentSyncPointKeys;
   const list = Array.isArray(cfg)
     ? cfg
-    : ["wola", "delivery-2", "delivery"];
+    : ["wola", "delivery-2"];
   return list.map((k) => normalizeGoogleSheetsPointKey(k)).filter(Boolean);
 }
 
@@ -131,7 +131,8 @@ export function isOrderReportSyncDisabledForPointKey(pointKey) {
 
 /**
  * Лист АССОРТИМЕНТ — не мінусувати з замовлень (лише pull таблиця → Mongo).
- * `skipOrderAssortmentSyncPointKeys`: wola, dostawa (delivery), InPost (delivery-2).
+ * `skipOrderAssortmentSyncPointKeys`: wola і InPost (delivery-2).
+ * Курʼєрська доставка (`delivery`) мінусує АССОРТИМЕНТ як інші точки.
  */
 export function isOrderAssortmentSyncDisabledForPointKey(pointKey) {
   const key = normalizeGoogleSheetsPointKey(pointKey);

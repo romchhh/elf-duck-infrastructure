@@ -2030,19 +2030,15 @@ body {
   background-image: url("../assets/pragaManagerBG.webp");
 }
 
-/* фон — фіксуємо до «закритої» висоти картки, щоб не розтягувався з dropdown */
+/* Фон на всю картку. Список часу absolute і висоту картки не міняє. */
 .pickupCheckoutCard::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: 240px;
+  inset: 0;
   background-size: cover;
-  background-position: center top;
+  background-position: right center;
   background-repeat: no-repeat;
-  opacity: 0.6;
+  opacity: 0.55;
   z-index: 0;
   pointer-events: none;
 }

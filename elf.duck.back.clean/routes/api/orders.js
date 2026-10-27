@@ -1885,9 +1885,7 @@ app.post("/orders/:id/payment-check", async (req, res) => {
     // );
 
     const cashbackRemainingToPayZl = Number(
-      prevPayment?.cashbackRemainingToPayZl ||
-      fallbackCashbackRemainingToPayZl ||
-      0
+      fallbackCashbackRemainingToPayZl || 0
     );
 
     // const cashbackFullyPaidFromBody = Boolean(

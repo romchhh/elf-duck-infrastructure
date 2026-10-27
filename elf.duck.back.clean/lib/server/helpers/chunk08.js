@@ -1169,34 +1169,31 @@ export function getOrderSalePromoDiscountTotalZl(order) {
 
 /**
  * Сумма для колонки «Скидки» в Google Sheets и Telegram-статистике.
- * Реф + кешбек + акція SALE (60→30). Смарт-сходинка [1]/[2]/[3-4]/[5] — не тут.
+ * Реф + кешбек + промокод + акція SALE (60→30). Смарт-сходинка [1]/[2]/[3-4]/[5] — не тут.
+ * Окремі колонки кешбеку і промокоду — з наступного місяця, зараз усе в «Скидки».
  */
 export function getOrderSheetsDiscountTotalZl(order) {
   const cashback = Number(order?.payment?.cashbackAppliedZl || 0);
   const referral = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
+  const promoCode = Math.max(0, Number(order?.payment?.promoDiscountZl || 0));
   const salePromo = getOrderSalePromoDiscountTotalZl(order);
-  return Number((cashback + referral + salePromo).toFixed(2));
+  return Number((cashback + referral + promoCode + salePromo).toFixed(2));
 }
 
 const KASA_PLN_SANITY_RATIO = 1.15;
 
-/** Сума до оплати в PLN (залишок після кешбеку або totalZl). */
+/** Сума до оплати в PLN: total − промокод − кешбек. */
 export function getOrderPayablePlnZl(order) {
   const payment = order?.payment || {};
   const totalZl = Number(order?.totalZl || 0);
+  const promoZl = Math.max(0, Number(payment?.promoDiscountZl || 0));
+  const cashbackZl = Math.max(0, Number(payment?.cashbackAppliedZl || 0));
 
   if (payment?.cashbackFullyPaid === true) {
     return 0;
   }
 
-  const cashbackAppliedZl = Number(payment?.cashbackAppliedZl || 0);
-  const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
-
-  if (cashbackAppliedZl > 0 && cashbackRemainingToPayZl >= 0) {
-    return Number(cashbackRemainingToPayZl.toFixed(2));
-  }
-
-  return Number(totalZl.toFixed(2));
+  return Number(Math.max(0, totalZl - promoZl - cashbackZl).toFixed(2));
 }
 
 function isLikelyPlnMislabeledAsForeign(displayAmount, payablePln) {
@@ -1303,10 +1300,11 @@ export function getOrderKasaPlnZl(order) {
   }
 
   const cashbackAppliedZl = Number(payment?.cashbackAppliedZl || 0);
-  const cashbackRemainingToPayZl = Number(payment?.cashbackRemainingToPayZl || 0);
+  const promoZl = Math.max(0, Number(payment?.promoDiscountZl || 0));
+  const netAfterPromoZl = Math.max(0, totalZl - promoZl);
 
-  if (cashbackAppliedZl > 0 && cashbackRemainingToPayZl >= 0) {
-    return clampKasaToOrderTotalZl(cashbackRemainingToPayZl, totalZl);
+  if (cashbackAppliedZl > 0) {
+    return clampKasaToOrderTotalZl(getOrderPayablePlnZl(order), netAfterPromoZl);
   }
 
   const managerDisplayCurrency = String(payment?.managerDisplayCurrency || "PLN")
@@ -1341,10 +1339,10 @@ export function getOrderKasaPlnZl(order) {
   }
 
   if (managerDisplayAmount > 0) {
-    return clampKasaToOrderTotalZl(managerDisplayAmount, totalZl);
+    return clampKasaToOrderTotalZl(managerDisplayAmount, netAfterPromoZl);
   }
 
-  return Number(totalZl.toFixed(2));
+  return Number(netAfterPromoZl.toFixed(2));
 }
 
 export function allocateCashbackBySubtotal(orderTotal, orderCashback, itemSubtotal) {

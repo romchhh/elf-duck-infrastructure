@@ -108,6 +108,14 @@ app.post("/register-user", async (req, res) => {
       });
     }
 
+    import("../../lib/crm/pushAutomations.js")
+      .then(({ maybeScheduleLeadFollowup }) =>
+        maybeScheduleLeadFollowup(telegramId)
+      )
+      .catch((error) => {
+        console.error("lead followup schedule error:", error);
+      });
+
     return res.json({ ok: true, user });
   } catch (e) {
     console.error("/register-user error:", e);

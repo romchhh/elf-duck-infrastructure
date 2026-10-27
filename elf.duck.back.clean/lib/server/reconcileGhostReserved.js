@@ -16,12 +16,41 @@ const OPEN_ORDER_STATUSES_EXCLUDED = [
   "annulled",
 ];
 
+/** Зібране замовлення старше цього віку вже не тримає склад. */
+const STALE_HOLD_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Ці точки не мінусують таблицю з замовлення — лист правлять руками, резерв після відправки лишній. */
+const SHEET_MANUAL_POINT_KEYS = new Set(["wola", "delivery-2"]);
+
+function pointKeyOf(pointById, pointId) {
+  return String(pointById.get(String(pointId))?.key || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+}
+
+function orderStillHoldsReserve(order, now, pointKey) {
+  const status = String(order?.status || "").trim().toLowerCase();
+  if (OPEN_ORDER_STATUSES_EXCLUDED.includes(status)) return false;
+
+  if (status === "shipped") {
+    if (order?.googleSheetSync?.appliedAt) return false;
+    if (SHEET_MANUAL_POINT_KEYS.has(pointKey)) return false;
+    return true;
+  }
+
+  const createdAt = new Date(order?.createdAt || 0).getTime();
+  if (!createdAt || now - createdAt > STALE_HOLD_MS) return false;
+  return true;
+}
+
 /**
  * @returns {{ ok: boolean, scanned: number, fixed: number, samples: object[] }}
  */
-export async function reconcileGhostReservedStock({ limitFixes = 400 } = {}) {
+export async function reconcileGhostReservedStock({ limitFixes = 2000 } = {}) {
   const startedAt = Date.now();
   const points = await PickupPoint.find({}, { _id: 1, key: 1 }).lean();
+  const pointById = new Map(points.map((point) => [String(point._id), point]));
   if (!points.length) {
     return { ok: true, scanned: 0, fixed: 0, samples: [] };
   }
@@ -44,6 +73,9 @@ export async function reconcileGhostReservedStock({ limitFixes = 400 } = {}) {
     expected.set(k, (expected.get(k) || 0) + qty);
   };
 
+  const nowMs = Date.now();
+  const releaseOrderIds = [];
+
   const openOrders = await Order.find({
     status: { $nin: OPEN_ORDER_STATUSES_EXCLUDED },
     stockReservedAt: { $type: "date" },
@@ -62,11 +94,35 @@ export async function reconcileGhostReservedStock({ limitFixes = 400 } = {}) {
       },
     ],
   })
-    .select({ items: 1, pickupPointId: 1 })
+    .select({
+      items: 1,
+      pickupPointId: 1,
+      status: 1,
+      createdAt: 1,
+      deliveryType: 1,
+      deliveryMethod: 1,
+      googleSheetSync: 1,
+    })
     .lean();
 
   for (const order of openOrders) {
-    const linked = await linkedIdsFor(order.pickupPointId);
+    let holdPointId = order.pickupPointId;
+    if (order.deliveryType === "delivery") {
+      const deliveryKey =
+        order.deliveryMethod === "inpost" ? "delivery-2" : "delivery";
+      const deliveryPoint = points.find(
+        (point) => pointKeyOf(pointById, point._id) === deliveryKey
+      );
+      if (deliveryPoint) holdPointId = deliveryPoint._id;
+    }
+
+    const pointKey = pointKeyOf(pointById, holdPointId);
+    if (!orderStillHoldsReserve(order, nowMs, pointKey)) {
+      releaseOrderIds.push(order._id);
+      continue;
+    }
+
+    const linked = await linkedIdsFor(holdPointId);
     for (const it of order.items || []) {
       const productKey = String(it?.productKey || "").trim();
       for (const fl of it.flavors || []) {
@@ -109,7 +165,8 @@ export async function reconcileGhostReservedStock({ limitFixes = 400 } = {}) {
         const wantRaw = Math.max(0, Number(expected.get(key) || 0));
         const want = Math.min(wantRaw, total);
 
-        if (want === reserved) continue;
+        // Лише знімаємо зайве. Не нарощуємо резерв — інакше живий залишок знову зникає.
+        if (want >= reserved) continue;
         if (fixed >= limitFixes) continue;
 
         fixed += 1;
@@ -147,6 +204,13 @@ export async function reconcileGhostReservedStock({ limitFixes = 400 } = {}) {
         });
       }
     }
+  }
+
+  if (releaseOrderIds.length) {
+    await Order.updateMany(
+      { _id: { $in: releaseOrderIds } },
+      { $set: { stockReleasedAt: new Date() } }
+    );
   }
 
   for (let i = 0; i < ops.length; i += 200) {

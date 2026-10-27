@@ -55,6 +55,8 @@ import orderBG from "../assets/orderBG.webp";
 import srodmiescieManagerBG from "../assets/srodmiescieManagerBG.webp";
 import srodmiescieManagerDuckIMG from "../assets/srodmiescieManagerDuck.webp";
 import selectPaymentMethod from "../assets/selectPaymentMethod.webp";
+import promoTicketIcon from "../assets/promoTicketIcon.svg";
+import cashbackCoinsIcon from "../assets/cashbackCoinsIcon.svg";
 
 import paymentDefaultIMG from "../assets/paymentDefaultIMG.webp";
 import paymentBlikIMG from "../assets/paymentBlikIMG.webp";
@@ -2455,8 +2457,8 @@ useEffect(() => {
                         >
                             <span className="checkoutSelectLeft paymentCashbackFieldLeft">
                                 <img
-                                    src={selectPaymentMethod}
-                                    className="checkoutSelectIcon"
+                                    src={promoTicketIcon}
+                                    className="checkoutSelectIcon paymentPerkIcon paymentPerkIconTicket"
                                     alt=""
                                 />
                                 <span className="checkoutSelectText">
@@ -2579,13 +2581,13 @@ useEffect(() => {
                     >
                         <span className="checkoutSelectLeft paymentCashbackFieldLeft">
                             <img
-                                src={selectPaymentMethod}
-                                className="checkoutSelectIcon"
+                                src={cashbackCoinsIcon}
+                                className="checkoutSelectIcon paymentPerkIcon paymentPerkIconCoins"
                                 alt=""
                             />
                             <span className="checkoutSelectText">
                                 {cashbackAppliedZl > 0
-                                    ? t("БАЛАНС / СПИСАНО", "SALDO / UŻYTO")
+                                    ? t("К СПИСАНИЮ", "DO POTRĄCENIA")
                                     : t("КЭШБЕК", "CASHBACK")}
                             </span>
                         </span>
@@ -2593,7 +2595,7 @@ useEffect(() => {
                         <span className="paymentCashbackValueWrap">
                             <span className="paymentCashbackValue">
                                 {cashbackAppliedZl > 0
-                                    ? `${formatMoney(cashbackBalance)} / ${formatMoney(cashbackAppliedZl)}`
+                                    ? `−${formatMoney(cashbackAppliedZl)}`
                                     : formatMoney(cashbackBalance)}
                             </span>
                             <img

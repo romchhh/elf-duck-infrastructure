@@ -2000,6 +2000,23 @@ button.paymentCashbackField {
   flex-shrink: 0;
 }
 
+.paymentPerkIcon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+}
+
+.paymentPerkIconTicket {
+  width: 24px;
+  height: 24px;
+}
+
+.paymentPerkIconCoins {
+  width: 22px;
+  height: 22px;
+}
+
 .paymentCashbackBtn {
   margin-top: 0;
 }

@@ -16,14 +16,16 @@ router.get(
     try {
       await ensurePushAutomationIndexes();
 
-      const firstPurchase = await getPushAutomation(
-        PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE
-      );
+      const [firstPurchase, leadFollowup] = await Promise.all([
+        getPushAutomation(PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE),
+        getPushAutomation(PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP),
+      ]);
 
       return res.json({
         ok: true,
         automations: {
           first_purchase: firstPurchase,
+          lead_followup: leadFollowup,
         },
       });
     } catch (error) {

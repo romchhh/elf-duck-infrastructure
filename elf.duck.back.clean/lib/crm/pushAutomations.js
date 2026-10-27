@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Order from "../../models/Order.js";
 import BroadcastCampaign from "../../models/BroadcastCampaign.js";
 import { getCompletedOrderMatch } from "./sales.js";
+import { normalizePushButtons } from "./pushMessageFormat.js";
 
 export const CRM_PUSH_AUTOMATIONS_COLLECTION = "crm_push_automations";
 export const CRM_PUSH_AUTOMATION_SENDS_COLLECTION =
@@ -9,6 +10,14 @@ export const CRM_PUSH_AUTOMATION_SENDS_COLLECTION =
 
 export const PUSH_AUTOMATION_TRIGGERS = {
   FIRST_PURCHASE: "first_purchase",
+  LEAD_FOLLOWUP: "lead_followup",
+};
+
+const MAX_DELAY_MINUTES = 14 * 24 * 60;
+
+const AUTOMATION_LABELS = {
+  first_purchase: "Авто · первая покупка",
+  lead_followup: "Авто · лиды",
 };
 
 let broadcastRunner = null;
@@ -65,6 +74,8 @@ function normalizeMessage(message = {}) {
     photoFileId: String(message?.photoFileId || "").trim(),
     buttonText: String(message?.buttonText || "").trim(),
     buttonUrl: String(message?.buttonUrl || "").trim(),
+    buttons: normalizePushButtons(message?.buttons || []),
+    templateId: String(message?.templateId || "").trim(),
   };
 }
 
@@ -104,7 +115,7 @@ export async function upsertPushAutomation(trigger, payload = {}) {
   }
 
   const delayMinutes = Math.min(
-    24 * 60,
+    MAX_DELAY_MINUTES,
     Math.max(0, Number(payload?.delayMinutes || 0))
   );
 
@@ -136,10 +147,10 @@ async function countCompletedPurchases(telegramId) {
   });
 }
 
-async function releaseClaimedSend(telegramId, reason) {
+async function releaseClaimedSend(trigger, telegramId, reason) {
   await sendsCollection().updateOne(
     {
-      trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+      trigger,
       telegramId,
       status: { $in: ["queued", "running"] },
     },
@@ -154,12 +165,14 @@ async function releaseClaimedSend(telegramId, reason) {
   );
 }
 
-async function sendFirstPurchaseAutomationNow({
+async function sendAutomationNow({
+  trigger,
   telegramId,
   orderId,
   automation,
   alreadyClaimed = false,
 }) {
+  const key = String(trigger || "").trim();
   const message = normalizeMessage(automation?.message || {});
   if (
     !message.title &&
@@ -170,10 +183,7 @@ async function sendFirstPurchaseAutomationNow({
   ) {
     if (alreadyClaimed) {
       await sendsCollection().updateOne(
-        {
-          trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
-          telegramId,
-        },
+        { trigger: key, telegramId },
         {
           $set: {
             status: "cancelled",
@@ -188,7 +198,7 @@ async function sendFirstPurchaseAutomationNow({
 
   if (typeof broadcastRunner !== "function") {
     if (alreadyClaimed) {
-      await releaseClaimedSend(telegramId, "BROADCAST_ENGINE_UNAVAILABLE");
+      await releaseClaimedSend(key, telegramId, "BROADCAST_ENGINE_UNAVAILABLE");
     }
     return { ok: false, reason: "BROADCAST_ENGINE_UNAVAILABLE" };
   }
@@ -197,7 +207,7 @@ async function sendFirstPurchaseAutomationNow({
   if (!claimed) {
     try {
       await sendsCollection().insertOne({
-        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        trigger: key,
         telegramId,
         orderId: String(orderId || ""),
         status: "queued",
@@ -213,7 +223,7 @@ async function sendFirstPurchaseAutomationNow({
   } else {
     await sendsCollection().updateOne(
       {
-        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        trigger: key,
         telegramId,
         status: { $in: ["scheduled", "running"] },
       },
@@ -229,8 +239,9 @@ async function sendFirstPurchaseAutomationNow({
 
   try {
     const campaign = await BroadcastCampaign.create({
-      name: `Авто: первая покупка · ${telegramId}`,
-      audience: "customers",
+      name: `${AUTOMATION_LABELS[key] || "Авто"} · ${telegramId}`,
+      audience:
+        key === PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP ? "leads" : "customers",
       filters: {
         statuses: [],
         categoryKeys: [],
@@ -260,10 +271,7 @@ async function sendFirstPurchaseAutomationNow({
     });
 
     await sendsCollection().updateOne(
-      {
-        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
-        telegramId,
-      },
+      { trigger: key, telegramId },
       {
         $set: {
           status: "sent",
@@ -277,18 +285,25 @@ async function sendFirstPurchaseAutomationNow({
   } catch (error) {
     if (claimed) {
       if (alreadyClaimed) {
-        await releaseClaimedSend(telegramId, "SEND_FAILED");
+        await releaseClaimedSend(key, telegramId, "SEND_FAILED");
       } else {
         await sendsCollection().deleteOne({
-          trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+          trigger: key,
           telegramId,
           status: { $in: ["queued", "running", "scheduled"] },
         });
       }
     }
-    console.error("first purchase automation send failed:", error);
+    console.error("push automation send failed:", key, error);
     return { ok: false, reason: "SEND_FAILED" };
   }
+}
+
+async function sendFirstPurchaseAutomationNow(payload) {
+  return sendAutomationNow({
+    ...payload,
+    trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+  });
 }
 
 /**
@@ -301,6 +316,22 @@ export async function maybeTriggerFirstPurchaseAutomation(order) {
     if (!telegramId || telegramId.startsWith("guest_")) {
       return { ok: false, reason: "NO_TELEGRAM" };
     }
+
+    await sendsCollection().updateMany(
+      {
+        trigger: PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP,
+        telegramId,
+        status: { $in: ["scheduled", "queued"] },
+      },
+      {
+        $set: {
+          status: "cancelled",
+          cancelledAt: new Date(),
+          lastError: "PURCHASED",
+          updatedAt: new Date(),
+        },
+      }
+    );
 
     const automation = await getPushAutomation(
       PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE
@@ -365,7 +396,70 @@ export async function maybeTriggerFirstPurchaseAutomation(order) {
 }
 
 /**
- * Обробка відкладених first_purchase (після рестарту API теж підхоплює).
+ * Лід без покупки: один раз, через delayMinutes після відкриття мініапу.
+ * Повторний захід не створює другу відправку.
+ */
+export async function maybeScheduleLeadFollowup(telegramId) {
+  try {
+    const id = String(telegramId || "").trim();
+    if (!id || id.startsWith("guest_")) {
+      return { ok: false, reason: "NO_TELEGRAM" };
+    }
+
+    const automation = await getPushAutomation(
+      PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP
+    );
+    if (!automation?.enabled) {
+      return { ok: false, reason: "DISABLED" };
+    }
+
+    const purchases = await countCompletedPurchases(id);
+    if (purchases > 0) {
+      return { ok: false, reason: "ALREADY_CUSTOMER" };
+    }
+
+    const existing = await sendsCollection().findOne({
+      trigger: PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP,
+      telegramId: id,
+    });
+    if (existing) {
+      return { ok: false, reason: "ALREADY_SENT" };
+    }
+
+    const delayMs =
+      Math.max(0, Number(automation.delayMinutes || 0)) * 60 * 1000;
+    const runAt = new Date(Date.now() + delayMs);
+
+    try {
+      await sendsCollection().insertOne({
+        trigger: PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP,
+        telegramId: id,
+        orderId: "",
+        status: delayMs > 0 ? "scheduled" : "scheduled",
+        runAt,
+        createdAt: new Date(),
+      });
+    } catch (error) {
+      if (error?.code === 11000) {
+        return { ok: false, reason: "ALREADY_SENT" };
+      }
+      throw error;
+    }
+
+    return { ok: true, scheduled: true, runAt };
+  } catch (error) {
+    console.error("maybeScheduleLeadFollowup error:", error);
+    return { ok: false, reason: "ERROR" };
+  }
+}
+
+const DUE_TRIGGERS = [
+  PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+  PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP,
+];
+
+/**
+ * Відкладені авторозсилки (після рестарту API теж підхоплює).
  */
 export async function processDueFirstPurchaseAutomations() {
   try {
@@ -375,10 +469,9 @@ export async function processDueFirstPurchaseAutomations() {
 
     const now = new Date();
 
-    // Зависшие running после краша процесса — вернуть в очередь
     await sendsCollection().updateMany(
       {
-        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        trigger: { $in: DUE_TRIGGERS },
         status: "running",
         startedAt: { $lte: new Date(Date.now() - 5 * 60 * 1000) },
       },
@@ -394,7 +487,7 @@ export async function processDueFirstPurchaseAutomations() {
 
     const due = await sendsCollection()
       .find({
-        trigger: PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
+        trigger: { $in: DUE_TRIGGERS },
         status: "scheduled",
         runAt: { $lte: now },
       })
@@ -406,31 +499,27 @@ export async function processDueFirstPurchaseAutomations() {
       return { ok: true, processed: 0 };
     }
 
-    const automation = await getPushAutomation(
-      PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE
-    );
-
+    const automationByTrigger = new Map();
     let processed = 0;
+
     for (const row of due) {
       const telegramId = String(row?.telegramId || "").trim();
-      if (!telegramId) continue;
+      const trigger = String(row?.trigger || "").trim();
+      if (!telegramId || !DUE_TRIGGERS.includes(trigger)) continue;
 
       const claimed = await sendsCollection().findOneAndUpdate(
-        {
-          _id: row._id,
-          status: "scheduled",
-        },
-        {
-          $set: {
-            status: "running",
-            startedAt: new Date(),
-          },
-        },
+        { _id: row._id, status: "scheduled" },
+        { $set: { status: "running", startedAt: new Date() } },
         { returnDocument: "after" }
       );
 
       const claimedDoc = claimed?.value || claimed;
       if (!claimedDoc?._id) continue;
+
+      if (!automationByTrigger.has(trigger)) {
+        automationByTrigger.set(trigger, await getPushAutomation(trigger));
+      }
+      const automation = automationByTrigger.get(trigger);
 
       if (!automation?.enabled) {
         await sendsCollection().updateOne(
@@ -440,7 +529,25 @@ export async function processDueFirstPurchaseAutomations() {
         continue;
       }
 
-      const result = await sendFirstPurchaseAutomationNow({
+      if (trigger === PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP) {
+        const purchases = await countCompletedPurchases(telegramId);
+        if (purchases > 0) {
+          await sendsCollection().updateOne(
+            { _id: row._id },
+            {
+              $set: {
+                status: "cancelled",
+                cancelledAt: new Date(),
+                lastError: "PURCHASED",
+              },
+            }
+          );
+          continue;
+        }
+      }
+
+      const result = await sendAutomationNow({
+        trigger,
         telegramId,
         orderId: String(row?.orderId || ""),
         automation,

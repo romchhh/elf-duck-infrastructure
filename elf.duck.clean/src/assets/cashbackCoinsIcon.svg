@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="cbCoin" x1="18" y1="8" x2="50" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE38A"/>
+      <stop offset="0.45" stop-color="#F5B93A"/>
+      <stop offset="1" stop-color="#C47A12"/>
+    </linearGradient>
+    <linearGradient id="cbCoinEdge" x1="16" y1="20" x2="48" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE9A8"/>
+      <stop offset="1" stop-color="#A86408"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="32" cy="46" rx="18" ry="7.2" fill="url(#cbCoinEdge)"/>
+  <ellipse cx="32" cy="42.5" rx="18" ry="7.2" fill="#E8A020"/>
+  <ellipse cx="32" cy="34" rx="18" ry="7.2" fill="url(#cbCoinEdge)"/>
+  <ellipse cx="32" cy="30.5" rx="18" ry="7.2" fill="#F0B02A"/>
+  <ellipse cx="32" cy="22" rx="18" ry="7.2" fill="url(#cbCoinEdge)"/>
+  <ellipse cx="32" cy="18.2" rx="18" ry="7.2" fill="url(#cbCoin)"/>
+  <ellipse cx="26" cy="16.2" rx="7" ry="2.4" fill="#fff" opacity="0.45"/>
+</svg>
