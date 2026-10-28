@@ -1,9 +1,11 @@
-telethon
-python-dotenv
-PySocks
-python-socks[asyncio]
-fastapi
-uvicorn[standard]
-argon2-cffi
-Pillow>=11.0
-python-multipart>=0.0.20
+# Pinned for reproducible Docker builds (Python 3.12, linux amd64/arm64).
+pyaes==1.6.1
+telethon==1.45.0
+python-dotenv==1.2.4
+PySocks==1.7.1
+python-socks[asyncio]==3.2.0
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+argon2-cffi==25.1.0
+Pillow==11.3.0
+python-multipart==0.0.20
