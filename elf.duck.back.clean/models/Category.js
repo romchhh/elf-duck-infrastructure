@@ -18,6 +18,9 @@ const categorySchema = new mongoose.Schema(
     // персонаж/утка на карточке
     cardDuckUrl: { type: String, default: "" },
 
+    /** Готове фото картки (фон+утка) — один запит замість двох */
+    cardImageUrl: { type: String, default: "" },
+
     // класс позиционирования персонажа (cardImageLeft, cardImageRight, cardImageLeft2, ...)
     classCardDuck: { type: String, default: "" },
 

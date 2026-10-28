@@ -2141,9 +2141,10 @@ const incQty = (key) => {
     const title2 = (p?.title2 ?? snap?.title2 ?? "") || "";
     const cardBgUrl = (p?.cardBgUrl ?? snap?.cardBgUrl ?? "") || "";
 
-    // в деталях заказа у тебя может не быть утки в snapshot — тогда берем текущую из productsByKey,
-    // а если товара уже нет/не грузится — fallback на orderImgUrl
+    // в деталях заказа у тебе може не бути качки в snapshot — тоді беремо з productsByKey,
+    // а якщо товару вже немає — fallback на orderImgUrl
     const cardDuckUrl = (p?.cardDuckUrl ?? snap?.orderImgUrl ?? "") || "";
+    const cardImageUrl = (p?.cardImageUrl ?? snap?.cardImageUrl ?? "") || "";
 
     return {
       product: p,
@@ -2151,6 +2152,7 @@ const incQty = (key) => {
       title2,
       cardBgUrl,
       cardDuckUrl,
+      cardImageUrl,
       classCardDuck: p?.classCardDuck || "",
       newBadge: p?.newBadge || "",
       unitPrice,
@@ -4038,7 +4040,7 @@ if (pointBlob.includes("srodmiescie")) {
                         className="cartCardInner"
                         data-side={isRight ? "right" : "left"}
                       >
-                        {/* фон — обычный <img> вместо CSS var, чтобы браузер грузил с loading="eager" */}
+                        {/* Корзина: окремо фон + PNG (не cardImageUrl — інші пропорції/layout) */}
                         {r.cardBgUrl ? (
                           <img
                             className="cartCardBg"
@@ -4049,7 +4051,6 @@ if (pointBlob.includes("srodmiescie")) {
                             decoding="async"
                           />
                         ) : null}
-
                         {r.cardDuckUrl ? (
                           <img
                             className="cartCardDuck"

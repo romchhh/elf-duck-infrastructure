@@ -51,6 +51,13 @@ app.post("/admin/categories", requireAdmin, async (req, res) => {
       sortOrder: Number(b.sortOrder || 0),
     });
 
+    try {
+      const { refreshCardImageUrl } = await import("../../lib/crm/cardComposite.js");
+      await refreshCardImageUrl(created, { kind: "category" });
+    } catch (bakeErr) {
+      console.warn("POST /admin/categories bake card:", bakeErr?.message || bakeErr);
+    }
+
     return res.json({ ok: true, category: created });
   } catch (e) {
     console.error("POST /admin/categories error:", e);
@@ -97,6 +104,20 @@ app.patch("/admin/categories/:id", requireAdmin, async (req, res) => {
 
     const cat = await Category.findByIdAndUpdate(id, update, { new: true });
     if (!cat) return res.status(404).json({ ok: false, error: "Category not found" });
+
+    if (
+      update.cardBgUrl !== undefined ||
+      update.cardDuckUrl !== undefined ||
+      update.classCardDuck !== undefined ||
+      update.showOverlay !== undefined
+    ) {
+      try {
+        const { refreshCardImageUrl } = await import("../../lib/crm/cardComposite.js");
+        await refreshCardImageUrl(cat, { kind: "category" });
+      } catch (bakeErr) {
+        console.warn("PATCH /admin/categories bake card:", bakeErr?.message || bakeErr);
+      }
+    }
 
     return res.json({ ok: true, category: cat });
   } catch (e) {

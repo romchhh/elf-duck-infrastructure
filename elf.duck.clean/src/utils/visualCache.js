@@ -1,6 +1,6 @@
 import { enrichProductVisuals } from "../lib/productImages.js";
 
-const STORAGE_KEY = "product_visual_cache_v31";
+const STORAGE_KEY = "product_visual_cache_v32";
 
 const pickVisualFields = (product) => {
   if (!product || typeof product !== "object") return null;
@@ -16,7 +16,9 @@ const pickVisualFields = (product) => {
     title2: String(product.title2 || ""),
     cardBgUrl: String(product.cardBgUrl || ""),
     cardDuckUrl: String(product.cardDuckUrl || ""),
+    cardImageUrl: String(product.cardImageUrl || ""),
     orderImgUrl: String(product.orderImgUrl || ""),
+    orderImageUrl: String(product.orderImageUrl || ""),
     classCardDuck: String(product.classCardDuck || ""),
     classCardBg: String(product.classCardBg || ""),
     titleModal: String(product.titleModal || ""),

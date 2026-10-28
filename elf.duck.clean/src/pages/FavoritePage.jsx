@@ -18,6 +18,11 @@ import {
   orderProductsForTwoColumnGrid,
   resolveProductActionsClass,
 } from "../lib/productCardLayout.js";
+import {
+  getBakedCardImageUrl,
+  getProductHeroUrl,
+  hasBakedCardImage,
+} from "../lib/cardMedia.js";
 
 import {
 
@@ -781,7 +786,8 @@ const FavoritePage = () => {
                     }`}
                     onClick={() => {
                       haptic.heavy();
-                      if (product.orderImgUrl) preloadImage(product.orderImgUrl);
+                      const hero = getProductHeroUrl(product);
+                      if (hero) preloadImage(hero);
                       navigate("/", {
                         state: {
                           openCatalogView: "all",
@@ -793,27 +799,39 @@ const FavoritePage = () => {
                   >
                     <div className="cardBg" />
 
-                    {product.cardBgUrl ? (
-                    <img
-                      src={product.cardBgUrl}
-                      className={product.classCardBg || "cardImageFull"}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      fetchpriority="low"
-                    />
-                    ) : null}
-
-                    {product.cardDuckUrl ? (
-                    <img
-                        src={product.cardDuckUrl}
-                        className={product.classCardDuck || "cardImageLeft"}
+                    {hasBakedCardImage(product) ? (
+                      <img
+                        src={getBakedCardImageUrl(product)}
+                        className="cardImageFull cardImageFull--baked"
                         alt=""
                         loading="lazy"
                         decoding="async"
                         fetchpriority="low"
-                    />
-                    ) : null}
+                      />
+                    ) : (
+                      <>
+                        {product.cardBgUrl ? (
+                          <img
+                            src={product.cardBgUrl}
+                            className={product.classCardBg || "cardImageFull"}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            fetchpriority="low"
+                          />
+                        ) : null}
+                        {product.cardDuckUrl ? (
+                          <img
+                            src={product.cardDuckUrl}
+                            className={product.classCardDuck || "cardImageLeft"}
+                            alt=""
+                            loading="lazy"
+                            decoding="async"
+                            fetchpriority="low"
+                          />
+                        ) : null}
+                      </>
+                    )}
 
                     <div className="productTop">
                     <div className="productTitle">
@@ -847,7 +865,8 @@ const FavoritePage = () => {
                       type="button"
                       className="actionButton cart pulse"
                       onPointerDown={() => {
-                        if (product.orderImgUrl) preloadImage(product.orderImgUrl);
+                        const hero = getProductHeroUrl(product);
+                      if (hero) preloadImage(hero);
                       }}
                       onClick={(e) => {
                         e.preventDefault();

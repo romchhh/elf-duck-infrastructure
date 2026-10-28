@@ -46,6 +46,13 @@ app.post("/admin/products", requireAdmin, async (req, res) => {
       flavors: Array.isArray(b.flavors) ? b.flavors : [],
     });
 
+    try {
+      const { refreshCardImageUrl } = await import("../../lib/crm/cardComposite.js");
+      await refreshCardImageUrl(created, { kind: "product" });
+    } catch (bakeErr) {
+      console.warn("POST /admin/products bake card:", bakeErr?.message || bakeErr);
+    }
+
     res.json({ ok: true, product: created });
   } catch (e) {
     console.error("POST /admin/products error:", e);
@@ -101,6 +108,20 @@ app.patch("/admin/products/:id", requireAdmin, async (req, res) => {
 
     const updated = await Product.findByIdAndUpdate(id, update, { new: true });
     if (!updated) return res.status(404).json({ ok: false, error: "Product not found" });
+
+    if (
+      update.cardBgUrl !== undefined ||
+      update.cardDuckUrl !== undefined ||
+      update.classCardDuck !== undefined ||
+      update.categoryKey !== undefined
+    ) {
+      try {
+        const { refreshCardImageUrl } = await import("../../lib/crm/cardComposite.js");
+        await refreshCardImageUrl(updated, { kind: "product" });
+      } catch (bakeErr) {
+        console.warn("PATCH /admin/products bake card:", bakeErr?.message || bakeErr);
+      }
+    }
 
     return res.json({ ok: true, product: updated });
   } catch (e) {

@@ -2,6 +2,7 @@ import React from "react";
 import likedIcon from "../assets/likedIcon.webp";
 import buyIcon from "../assets/buyIcon.webp";
 import { t } from "../utils/i18n";
+import { getBakedCardImageUrl, hasBakedCardImage } from "../lib/cardMedia.js";
 
 const ProductCard = React.memo(function ProductCard({
   product,
@@ -9,16 +10,28 @@ const ProductCard = React.memo(function ProductCard({
   onToggleFavorite,
   onOpenCheckout,
 }) {
+  const baked = hasBakedCardImage(product);
+
   return (
     <div className="productCard">
-      <div
-        className="productCardBg"
-        style={{
-          backgroundImage: `url(${product.cardBgUrl || ""})`,
-        }}
-      />
+      {baked ? (
+        <img
+          className="productCardBg productCardBg--baked"
+          src={getBakedCardImageUrl(product)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <div
+          className="productCardBg"
+          style={{
+            backgroundImage: `url(${product.cardBgUrl || ""})`,
+          }}
+        />
+      )}
 
-      {product.cardDuckUrl ? (
+      {!baked && product.cardDuckUrl ? (
         <img
           className={`productCardDuck ${product.classCardDuck || ""}`}
           src={product.cardDuckUrl}

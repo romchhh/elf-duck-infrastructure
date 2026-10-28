@@ -73,7 +73,11 @@ const productSchema = new mongoose.Schema(
     // media URLs
     cardBgUrl: { type: String, default: "" },
     cardDuckUrl: { type: String, default: "" },
+    /** Готове фото картки (фон+утка в одному WebP) — для швидкого рендеру в мініапп */
+    cardImageUrl: { type: String, default: "" },
     orderImgUrl: { type: String, default: "" },
+    /** Hero на сторінці товару: фон+утка одним WebP (пріоритет над orderImgUrl) */
+    orderImageUrl: { type: String, default: "" },
 
     // UI configuration
     classCardDuck: { type: String, default: "" },

@@ -14,12 +14,28 @@ import {
   translitRuToLat,
 } from "../../lib/server/helpers/chunk12.js";
 import { saveCatalogMediaBuffer } from "../../lib/crm/catalogMediaStorage.js";
+import {
+  optimizeUploadBuffer,
+  refreshCardImageUrl,
+} from "../../lib/crm/cardComposite.js";
 
 const router = express.Router();
 
 function invalidateCatalogCache() {
   cacheInvalidate("categories:");
   cacheInvalidate("products:");
+}
+
+const MEDIA_FIELDS = new Set([
+  "cardBgUrl",
+  "cardDuckUrl",
+  "classCardDuck",
+  "showOverlay",
+  "categoryKey",
+]);
+
+function mediaChanged(update = {}) {
+  return Object.keys(update).some((k) => MEDIA_FIELDS.has(k));
 }
 
 router.get("/catalog/categories", async (req, res) => {
@@ -61,6 +77,7 @@ router.post("/catalog/categories", async (req, res) => {
       sortOrder: Number(b.sortOrder || 0),
     });
 
+    await refreshCardImageUrl(created, { kind: "category" });
     invalidateCatalogCache();
     return res.json({ ok: true, category: created });
   } catch (e) {
@@ -107,6 +124,10 @@ router.patch("/catalog/categories/:id", async (req, res) => {
     const cat = await Category.findByIdAndUpdate(id, update, { new: true });
     if (!cat) {
       return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+    }
+
+    if (mediaChanged(update)) {
+      await refreshCardImageUrl(cat, { kind: "category" });
     }
 
     invalidateCatalogCache();
@@ -211,6 +232,7 @@ router.post("/catalog/products", async (req, res) => {
       flavors: Array.isArray(b.flavors) ? b.flavors : [],
     });
 
+    await refreshCardImageUrl(created, { kind: "product" });
     invalidateCatalogCache();
     return res.json({ ok: true, product: created });
   } catch (e) {
@@ -254,6 +276,10 @@ router.patch("/catalog/products/:id", async (req, res) => {
     const updated = await Product.findByIdAndUpdate(id, update, { new: true });
     if (!updated) {
       return res.status(404).json({ ok: false, error: "NOT_FOUND" });
+    }
+
+    if (mediaChanged(update)) {
+      await refreshCardImageUrl(updated, { kind: "product" });
     }
 
     invalidateCatalogCache();
@@ -385,15 +411,27 @@ router.post(
         return res.status(400).json({ ok: false, error: "UNSUPPORTED_TYPE" });
       }
 
-      const buffer = Buffer.from(match[2].replace(/\s+/g, ""), "base64");
+      let buffer = Buffer.from(match[2].replace(/\s+/g, ""), "base64");
       if (buffer.length <= 0 || buffer.length > CRM_PUSH_MEDIA_MAX_BYTES) {
         return res.status(400).json({ ok: false, error: "FILE_TOO_LARGE" });
+      }
+
+      let outType = contentType;
+      try {
+        const optimized = await optimizeUploadBuffer(buffer, contentType);
+        buffer = optimized.buffer;
+        outType = optimized.contentType || contentType;
+      } catch {
+        /* keep original */
       }
 
       let photoPreviewUrl = "";
 
       try {
-        const saved = await saveCatalogMediaBuffer({ buffer, contentType });
+        const saved = await saveCatalogMediaBuffer({
+          buffer,
+          contentType: outType,
+        });
         photoPreviewUrl = String(saved?.url || "").trim();
       } catch (diskErr) {
         console.warn(

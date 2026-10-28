@@ -345,6 +345,10 @@ function CategoryEditorDialog({ open, onOpenChange, initial, onSaved }) {
               <ImageUrlField label="Фон" value={form.cardBgUrl} onChange={(v) => set({ cardBgUrl: v })} compact />
               <ImageUrlField label="Утка" value={form.cardDuckUrl} onChange={(v) => set({ cardDuckUrl: v })} compact />
             </div>
+            <p className="text-[11px] text-muted-2">
+              Після збереження фон і утка зливаються в одне WebP (`cardImageUrl`) для швидшої
+              загрузки в мініапп.
+            </p>
 
             <Field label="Плашка">
               <Input value={form.badgeText} onChange={(e) => set({ badgeText: e.target.value })} />
@@ -515,6 +519,11 @@ function ProductEditorDialog({ open, onOpenChange, initial, categories, onSaved 
               <ImageUrlField label="Фон" value={form.cardBgUrl} onChange={(v) => set({ cardBgUrl: v })} compact />
               <ImageUrlField label="Утка" value={form.cardDuckUrl} onChange={(v) => set({ cardDuckUrl: v })} compact />
             </div>
+            <p className="text-[11px] text-muted-2">
+              Після збереження фон і утка зливаються в одне WebP для картки
+              каталогу (`cardImageUrl`). Сторінка товару лишає окрему
+              «Картинку заказа» з її пропорціями.
+            </p>
             <ImageUrlField label="Картинка заказа" value={form.orderImgUrl} onChange={(v) => set({ orderImgUrl: v })} compact />
 
             <Section label="Бейдж">

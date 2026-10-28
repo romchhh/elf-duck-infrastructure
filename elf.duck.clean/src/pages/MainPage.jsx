@@ -108,6 +108,11 @@ import {
   t,
 
 } from "../utils/i18n";
+import {
+  getBakedCardImageUrl,
+  getProductHeroUrl,
+  hasBakedCardImage,
+} from "../lib/cardMedia.js";
 
 const MainPageProductCard = React.memo(function MainPageProductCard({
   product,
@@ -122,6 +127,8 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 }) {
   const compactDuck = isCompactCatalogDuck(product);
   const cartridgeDuck = isCartridgesCategory(product);
+  const bakedUrl = getBakedCardImageUrl(product);
+  const useBaked = hasBakedCardImage(product);
 
   return (
     <div
@@ -134,27 +141,40 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
     >
       <div className="cardBg" />
 
-      {product.cardBgUrl ? (
+      {useBaked ? (
         <img
-          src={product.cardBgUrl}
-          className={product.classCardBg || "cardImageFull"}
+          src={bakedUrl}
+          className="cardImageFull cardImageFull--baked"
           alt=""
           loading={eager ? "eager" : "lazy"}
           decoding="async"
           fetchpriority={eager ? "high" : "low"}
         />
-      ) : null}
+      ) : (
+        <>
+          {product.cardBgUrl ? (
+            <img
+              src={product.cardBgUrl}
+              className={product.classCardBg || "cardImageFull"}
+              alt=""
+              loading={eager ? "eager" : "lazy"}
+              decoding="async"
+              fetchpriority={eager ? "high" : "low"}
+            />
+          ) : null}
 
-      {product.cardDuckUrl ? (
-        <img
-          src={product.cardDuckUrl}
-          className={product.classCardDuck || "cardImageLeft"}
-          alt=""
-          loading={eager ? "eager" : "lazy"}
-          decoding="async"
-          fetchpriority={eager ? "high" : "low"}
-        />
-      ) : null}
+          {product.cardDuckUrl ? (
+            <img
+              src={product.cardDuckUrl}
+              className={product.classCardDuck || "cardImageLeft"}
+              alt=""
+              loading={eager ? "eager" : "lazy"}
+              decoding="async"
+              fetchpriority={eager ? "high" : "low"}
+            />
+          ) : null}
+        </>
+      )}
 
       <div className="productTop">
         <div className="productTitle">
@@ -180,7 +200,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
         <button
           className="actionButton cart"
           onPointerDown={() => {
-            preloadImage(product.orderImgUrl);
+            preloadImage(getProductHeroUrl(product));
           }}
           onClick={(e) => {
             e.preventDefault();
@@ -222,6 +242,11 @@ const MainPage = () => {
   const preloadProductVisuals = useCallback((product) => {
     if (!product) return;
 
+    const hero = getProductHeroUrl(product);
+    if (hero) {
+      preloadImages([hero]);
+      return;
+    }
     preloadImages([
       product?.cardBgUrl,
       product?.cardDuckUrl,
@@ -1782,6 +1807,15 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     }
   };
 
+  const scrollToGiveawayCatalog = useCallback(() => {
+    switchCatalog("all");
+    window.setTimeout(() => {
+      document
+        .getElementById("giveaway-catalog-target")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  }, []);
+
   /* ================= NAVIGATION ================= */
 
   const navigate = useNavigate();
@@ -1790,16 +1824,27 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     if (location.state?.openCatalogView === "all") {
       setCatalogView("all");
 
-    const nextFilter = location.state?.categoryFilter
-      ? {
-          key: String(location.state.categoryFilter.key || "").trim(),
-          title: getCategoryTitle(location.state.categoryFilter),
-        }
-      : null;
+      const nextFilter = location.state?.categoryFilter
+        ? {
+            key: String(location.state.categoryFilter.key || "").trim(),
+            title: getCategoryTitle(location.state.categoryFilter),
+          }
+        : null;
 
       setActiveCategoryFilter(nextFilter?.key ? nextFilter : null);
     }
-  }, [location.state]);
+
+    if (!location.state?.scrollToCatalog) return undefined;
+
+    const timer = window.setTimeout(() => {
+      document.getElementById("giveaway-catalog-target")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [location.state, location.key]);
 
   useEffect(() => {
     if (!location.state?.autoOpenProductModal) return;
@@ -2238,7 +2283,9 @@ const productSnapshot = {
   title2: String(activeProduct?.title2 || ""),
   cardBgUrl: String(activeProduct?.cardBgUrl || ""),
   cardDuckUrl: String(activeProduct?.cardDuckUrl || ""),
+  cardImageUrl: String(activeProduct?.cardImageUrl || ""),
   orderImgUrl: String(activeProduct?.orderImgUrl || ""),
+  orderImageUrl: String(activeProduct?.orderImageUrl || ""),
   classCardDuck: String(activeProduct?.classCardDuck || ""),
   newBadge: String(activeProduct?.newBadge || ""),
 };
@@ -4026,7 +4073,7 @@ navigate("/cart");
               <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
                 {showGiveawayBanner ? (
                   <div className="bannerSlide giveawayBannerSlide">
-                    <GiveawayBannerSlide />
+                    <GiveawayBannerSlide onGoToCatalog={scrollToGiveawayCatalog} />
                   </div>
                 ) : null}
                 {banners.map((src, i) => (
@@ -4122,7 +4169,10 @@ navigate("/cart");
             </div>
           )}
 
-          <div className={`sectionTitle reveal delay-3 ${mounted ? "visible" : ""}`}>
+          <div
+            id="giveaway-catalog-target"
+            className={`sectionTitle reveal delay-3 ${mounted ? "visible" : ""}`}
+          >
             <span className="sectionLine" />
             <span className="sectionText">{activeCategoryFilter?.title || t("Наш каталог", "Nasz katalog")}</span>
             <span className="sectionLine" />
@@ -4250,32 +4300,40 @@ navigate("/cart");
                   >
                     <div className="cardBg" />
 
-                    {/* фон-картинка */}
-                    {c.cardBgUrl && (
+                    {hasBakedCardImage(c) ? (
                       <img
-                        src={c.cardBgUrl}
-                        className="cardImageFull"
+                        src={getBakedCardImageUrl(c)}
+                        className="cardImageFull cardImageFull--baked"
                         alt=""
                         loading={idx < 4 ? "eager" : "lazy"}
                         decoding="async"
                         fetchpriority={idx < 4 ? "high" : "low"}
                       />
+                    ) : (
+                      <>
+                        {c.cardBgUrl ? (
+                          <img
+                            src={c.cardBgUrl}
+                            className="cardImageFull"
+                            alt=""
+                            loading={idx < 4 ? "eager" : "lazy"}
+                            decoding="async"
+                            fetchpriority={idx < 4 ? "high" : "low"}
+                          />
+                        ) : null}
+                        {c.cardDuckUrl ? (
+                          <img
+                            src={c.cardDuckUrl}
+                            className={c.classCardDuck || "cardImageLeft"}
+                            alt=""
+                            loading={idx < 4 ? "eager" : "lazy"}
+                            decoding="async"
+                            fetchpriority={idx < 4 ? "high" : "low"}
+                          />
+                        ) : null}
+                        {c.showOverlay ? <div className="cardOverlay" /> : null}
+                      </>
                     )}
-
-                    {/* персонаж */}
-                    {c.cardDuckUrl && (
-                      <img
-                        src={c.cardDuckUrl}
-                        className={c.classCardDuck || "cardImageLeft"}
-                        alt=""
-                        loading={idx < 4 ? "eager" : "lazy"}
-                        decoding="async"
-                        fetchpriority={idx < 4 ? "high" : "low"}
-                      />
-                    )}
-
-                    {/* overlay опционально */}
-                    {c.showOverlay && <div className="cardOverlay" />}
 
                     <div className="cardContent">
                       {c.badgeText ? (
@@ -4539,7 +4597,7 @@ navigate("/cart");
 
                       <div className="checkoutHero">
                         <img
-                          src={activeProduct.orderImgUrl}
+                          src={getProductHeroUrl(activeProduct)}
                           className="checkoutHeroImg"
                           decoding="async"
                           loading="lazy"
