@@ -26,8 +26,8 @@ import crmRouter from "../../../routes/crm.js";
 import { formatOrderFlavorCharacteristicLabel } from "../../orderFlavorLabel.js";
 import {
   buildAlmostReadyClientMessage,
+  buildPayOrderWebAppKeyboard,
   getClientAppLanguage,
-  payOrderButtonText,
 } from "../../telegram/clientOrderMessages.js";
 
 const APP_URL = String(
@@ -899,20 +899,10 @@ try {
         orderNo: order.orderNo,
         amountText: managerAmountText,
       });
-      const clientReplyMarkup = {
-        inline_keyboard: [
-          [
-            {
-              text: payOrderButtonText(clientLang),
-              web_app: {
-                url: `${APP_URL}/cart?orderId=${encodeURIComponent(
-                  String(order?._id || "")
-                )}`,
-              },
-            },
-          ],
-        ],
-      };
+      const clientReplyMarkup = buildPayOrderWebAppKeyboard(
+        clientLang,
+        order?._id
+      );
 
 if (!skipClientNotification) {
   const clientNotifyContext = { order };
@@ -2075,12 +2065,7 @@ export async function sendClientOrderCreatedInfo(order) {
   try {
     if (!order?.userTelegramId || !getActiveUserBots().length) return;
 
-    const webAppBaseUrl = String(process.env.WEBAPP_URL || "")
-      .trim()
-      .replace(/\/$/, "");
-
     const orderNo = String(order.orderNo || "").trim();
-    const orderLink = webAppBaseUrl ? `${webAppBaseUrl}/orders` : null;
 
     const point = await resolveOrderNotificationPoint(order).catch(() => null);
     const pickupPoint = order?.pickupPointId
@@ -2109,17 +2094,9 @@ export async function sendClientOrderCreatedInfo(order) {
       disable_web_page_preview: true,
     };
 
-    if (orderLink) {
-      extra.reply_markup = {
-        inline_keyboard: [
-          [
-            {
-              text: payOrderButtonText(clientLang),
-              web_app: { url: orderLink },
-            },
-          ],
-        ],
-      };
+    const payKeyboard = buildPayOrderWebAppKeyboard(clientLang, order?._id);
+    if (payKeyboard) {
+      extra.reply_markup = payKeyboard;
     }
 
     const preferredBotIndex = Number(order?.shopBotIndex);

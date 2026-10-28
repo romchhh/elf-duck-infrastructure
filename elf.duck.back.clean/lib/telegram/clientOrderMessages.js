@@ -47,6 +47,52 @@ export function payOrderButtonText(lang) {
   return pickClientCopy(lang, "💳 Перейти к оплате", "💳 Przejdź do płatności");
 }
 
+export function openCartButtonText(lang) {
+  return pickClientCopy(lang, "🛒 Открыть корзину", "🛒 Otwórz koszyk");
+}
+
+/** Базовий URL мініапп без trailing slash. */
+export function getClientWebAppBaseUrl() {
+  return String(process.env.WEBAPP_URL || process.env.APP_URL || "")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
+/**
+ * Deep-link у мініапп: сторінка замовлень з авто-відкриттям оплати.
+ * Fallback — /cart, якщо немає orderId.
+ */
+export function buildClientPayOrderWebAppUrl(orderId = "") {
+  const base = getClientWebAppBaseUrl();
+  if (!base) return "";
+  const id = String(orderId || "").trim();
+  if (id) {
+    return `${base}/orders?payOrderId=${encodeURIComponent(id)}`;
+  }
+  return `${base}/cart`;
+}
+
+export function buildClientCartWebAppUrl() {
+  const base = getClientWebAppBaseUrl();
+  return base ? `${base}/cart` : "";
+}
+
+/** Inline web_app кнопка «Перейти к оплате». */
+export function buildPayOrderWebAppKeyboard(lang, orderId) {
+  const url = buildClientPayOrderWebAppUrl(orderId);
+  if (!url) return undefined;
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: payOrderButtonText(lang),
+          web_app: { url },
+        },
+      ],
+    ],
+  };
+}
+
 export function trackParcelButtonText(lang) {
   return pickClientCopy(lang, "📦 Отследить посылку", "📦 Śledź przesyłkę");
 }

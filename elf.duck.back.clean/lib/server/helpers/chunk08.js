@@ -24,6 +24,7 @@ import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import crmRouter from "../../../routes/crm.js";
 import {
+  buildPayOrderWebAppKeyboard,
   buildUnpaidPaymentReminderClientMessage,
   getClientAppLanguage,
 } from "../../telegram/clientOrderMessages.js";
@@ -558,6 +559,10 @@ export async function processOrdersWithoutPaymentConfirm() {
           orderNo: freshOrder?.orderNo || "—",
           urgent: shouldSendNineMinuteReminder,
         });
+        const reminderReplyMarkup = buildPayOrderWebAppKeyboard(
+          clientLang,
+          freshOrder?._id
+        );
 
         /*
          * Сначала отправляем.
@@ -599,6 +604,9 @@ export async function processOrdersWithoutPaymentConfirm() {
               {
                 parse_mode: "HTML",
                 disable_web_page_preview: true,
+                ...(reminderReplyMarkup
+                  ? { reply_markup: reminderReplyMarkup }
+                  : {}),
               }
             ),
           {

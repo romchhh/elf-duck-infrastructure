@@ -3,6 +3,7 @@ import React, {
   useEffect,
   useRef,
   useMemo,
+  useCallback,
   useDeferredValue,
   startTransition,
 } from "react";
@@ -30,7 +31,7 @@ const API_URL =
   "https://elfduck-api.telebots.site";
 
 import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
-import { isTestAppMode } from "../utils/appMode";
+import { isTestAppMode, appPath } from "../utils/appMode";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
 import { resolveZabkaMapsUrl } from "../utils/blikCheckoutHints.js";
 import menuIcon from "../assets/menuIcon.webp";
@@ -486,9 +487,15 @@ useEffect(() => {
     }, [location.state?.seedOrder]);
 
     useEffect(() => {
+        const queryPayOrderId = String(
+            new URLSearchParams(location.search).get("payOrderId") ||
+                new URLSearchParams(location.search).get("orderId") ||
+                ""
+        ).trim();
         const orderId = String(
             location.state?.openPaymentOrderId ||
             location.state?.justCreatedOrderId ||
+            queryPayOrderId ||
             ""
         ).trim();
 
@@ -513,6 +520,7 @@ useEffect(() => {
         location.state?.openPaymentOrderId,
         location.state?.justCreatedOrderId,
         location.state?.seedOrder,
+        location.search,
         orders,
         navigate,
         location.pathname,
@@ -1867,6 +1875,12 @@ useEffect(() => {
     const banners = getHomeBanners(language);
     const showGiveawayBanner = isTestAppMode();
     const bannerSlideCount = banners.length + (showGiveawayBanner ? 1 : 0);
+
+    const goToCatalogFromGiveaway = useCallback(() => {
+      navigate(appPath("/"), {
+        state: { openCatalogView: "all", scrollToCatalog: true },
+      });
+    }, [navigate]);
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -3241,7 +3255,7 @@ useEffect(() => {
                             <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
                             {showGiveawayBanner ? (
                               <div className="bannerSlide giveawayBannerSlide">
-                                <GiveawayBannerSlide />
+                                <GiveawayBannerSlide onGoToCatalog={goToCatalogFromGiveaway} />
                               </div>
                             ) : null}
                             {banners.map((src, i) => (
