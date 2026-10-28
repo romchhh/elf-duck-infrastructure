@@ -1,0 +1,142 @@
+.giveawayBannerRoot {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 132px;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.giveawayBannerBg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.giveawayBannerOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 10px 12px 12px;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.05) 35%,
+    rgba(0, 0, 0, 0.55) 100%
+  );
+}
+
+.giveawayInfoBtn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.giveawayBannerActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.giveawayPrimaryBtn {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #111;
+  background: #d6ff4a;
+}
+
+.giveawayPrimaryBtn:disabled {
+  opacity: 0.55;
+}
+
+.giveawayStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.giveawayMetaLine {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.giveawayModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.giveawayModal {
+  width: min(420px, 100%);
+  max-height: min(80vh, 640px);
+  overflow: auto;
+  border-radius: 16px;
+  background: #151515;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 16px;
+  color: #fff;
+}
+
+.giveawayModal h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.giveawayRulesText {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0 0 12px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.giveawayWinnersList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.giveawayWinnerRow {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 8px;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.bannerSlide.giveawayBannerSlide {
+  cursor: default;
+}

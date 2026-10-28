@@ -5,11 +5,7 @@ import deliveryBanner from "../assets/deliveryBanner.webp";
 import { getCurrentLanguage } from "./i18n";
 
 /**
- * Карусель головної, як раніше:
- * 1. Реферальна програма
- * 2. Поповнення асортименту
- * 3. Доставка від 200 zł
- * Польські файли розіграшу / HELLODUCK сюди не входять.
+ * Карусель головної (банер розіграшу — окремий слайд у test-режимі).
  */
 export function getHomeBanners(language = getCurrentLanguage()) {
   const isPl = language === "pl";

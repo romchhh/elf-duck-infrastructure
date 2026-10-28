@@ -20,6 +20,7 @@ import catalogRouter from "./catalog.js";
 import promoCodesRouter from "./promoCodes.js";
 import pushAutomationsRouter from "./pushAutomations.js";
 import smartPricingRouter from "./smartPricing.js";
+import giveawayRouter from "./giveaway.js";
 
 const router = express.Router();
 
@@ -44,5 +45,6 @@ router.use(inventoryRouter);
 router.use(catalogRouter);
 router.use(promoCodesRouter);
 router.use(smartPricingRouter);
+router.use(giveawayRouter);
 
 export default router;

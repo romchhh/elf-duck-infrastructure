@@ -9,7 +9,7 @@ import Order from "../../models/Order.js";
 import BroadcastCampaign from "../../models/BroadcastCampaign.js";
 import { getServerContext } from "../server/context.js";
 import { setUserBots, bot, userBots } from "../server/botRegistry.js";
-import { getTelegramBotTokens } from "./botTokens.js";
+import { getTelegramBotTokens, getTestBotToken } from "./botTokens.js";
 import { createShopBotClient } from "./shopBotClient.js";
 import { setShopBotUsername } from "./shopBotReferralLink.js";
 import { getStartBannerUrl } from "../config/rootConfig.js";
@@ -3466,4 +3466,10 @@ return instructionMessage;
 } else {
   console.warn("⚠️ TELEGRAM_BOT_TOKEN(S) not set — bot disabled");
 }
+
+  const testBotToken = getTestBotToken();
+  if (testBotToken) {
+    const { launchTestShopBot } = await import("./testShopBot.js");
+    launchTestShopBot(testBotToken);
+  }
 }

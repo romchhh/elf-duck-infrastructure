@@ -310,6 +310,9 @@ export async function applyOrderCashback(order) {
     cashbackAppliedAt: 1,
     cashbackZl: 1,
     userTelegramId: 1,
+    payment: 1,
+    completedAt: 1,
+    shippedAt: 1,
   });
 
   if (!freshOrder) return { applied: false, cashbackZl: 0, percent: 0 };
@@ -317,6 +320,11 @@ export async function applyOrderCashback(order) {
     freshOrder.userTelegramId,
     freshOrder
   );
+
+  const { isBlikOrderPayment } = await import("../../giveaway/payment.js");
+  if (isBlikOrderPayment(freshOrder)) {
+    return { applied: false, cashbackZl: 0, percent: 0, skippedReason: "BLIK" };
+  }
 
   // защита от повторного начисления
   if (freshOrder.cashbackAppliedAt) {
@@ -1408,6 +1416,15 @@ export async function changePickupOrderStatusByManager(
   await applyOrderCashback(fresh);
 
   const completedOrder = await Order.findById(fresh._id);
+
+  try {
+    const { tryAddGiveawayEntryForOrder } = await import(
+      "../../giveaway/service.js"
+    );
+    await tryAddGiveawayEntryForOrder(completedOrder);
+  } catch (giveawayErr) {
+    console.error("giveaway entry (pickup complete) error:", giveawayErr);
+  }
 
   try {
     const { ensureGoogleSheetAssortmentForFulfilledOrder } = await import(

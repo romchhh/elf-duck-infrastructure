@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <path fill="#D6FF4A" d="M8 18.5c0-2.5 2-4.5 4.5-4.5h39c2.5 0 4.5 2 4.5 4.5v7.2a6.2 6.2 0 0 0 0 12.6v7.2c0 2.5-2 4.5-4.5 4.5h-39c-2.5 0-4.5-2-4.5-4.5v-7.2a6.2 6.2 0 0 0 0-12.6V18.5Z"/>
-  <path stroke="#111" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3.2 3.4" d="M24 16.5v31"/>
-  <circle cx="40.5" cy="27" r="2.1" fill="#111"/>
-  <circle cx="47.5" cy="27" r="2.1" fill="#111"/>
-  <circle cx="40.5" cy="34.5" r="2.1" fill="#111"/>
-  <circle cx="47.5" cy="34.5" r="2.1" fill="#111"/>
+  <path fill="#E6E6E6" d="M8 18.5c0-2.5 2-4.5 4.5-4.5h39c2.5 0 4.5 2 4.5 4.5v7.2a6.2 6.2 0 0 0 0 12.6v7.2c0 2.5-2 4.5-4.5 4.5h-39c-2.5 0-4.5-2-4.5-4.5v-7.2a6.2 6.2 0 0 0 0-12.6V18.5Z"/>
+  <path stroke="#8A8A8A" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="3.2 3.4" d="M24 16.5v31"/>
+  <circle cx="40.5" cy="27" r="2.1" fill="#5C5C5C"/>
+  <circle cx="47.5" cy="27" r="2.1" fill="#5C5C5C"/>
+  <circle cx="40.5" cy="34.5" r="2.1" fill="#5C5C5C"/>
+  <circle cx="47.5" cy="34.5" r="2.1" fill="#5C5C5C"/>
 </svg>

@@ -361,6 +361,15 @@ export async function completeInpostShipment(
     await applyOrderCashback(order);
 
     try {
+      const { tryAddGiveawayEntryForOrder } = await import(
+        "../../giveaway/service.js"
+      );
+      await tryAddGiveawayEntryForOrder(order);
+    } catch (giveawayErr) {
+      console.error("giveaway entry (inpost) error:", giveawayErr);
+    }
+
+    try {
       const { maybeTriggerFirstPurchaseAutomation } = await import(
         "../../crm/pushAutomations.js"
       );

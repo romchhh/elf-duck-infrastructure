@@ -2469,8 +2469,6 @@ const confirmCreateTpl = () => {
         </div>
       </div>
 
-      <PushAutomationsPanel templates={templates} />
-
       {/* TEMPLATES */}
 
       <div className="rounded-2xl surface-card p-2">
@@ -2483,7 +2481,7 @@ const confirmCreateTpl = () => {
             · {templates.length}
           </span>
           <span className="text-[11px] text-muted-2">
-            — нажмите строку, чтобы применить
+            — нажмите строку для рассылки или привязки к авто-событию ниже
           </span>
         </div>
 
@@ -2625,6 +2623,8 @@ const confirmCreateTpl = () => {
           }
         />
       </div>
+
+      <PushAutomationsPanel templates={templates} />
 
       {/* CAMPAIGNS */}
 
@@ -3355,117 +3355,186 @@ function PushPromoCreator({ onCreated, messageTexts = [] }) {
   );
 }
 
-const AUTO_FORMAT = [
-  { label: 'B', tip: 'Жирный *текст*', before: '*', after: '*' },
-  { label: 'I', tip: 'Курсив _текст_', before: '_', after: '_' },
-  { label: 'спойлер', tip: 'Спойлер ||текст||', before: '||', after: '||' },
-  { label: '`', tip: 'Код', before: '`', after: '`' },
-  { label: '🔗', tip: 'Посилання', before: '[текст](', after: 'https://)' },
-  { label: 'U', tip: 'Подчёркнутый __текст__', before: '__', after: '__' },
-  { label: 'S', tip: 'Зачёркнутый ~~текст~~', before: '~~', after: '~~' },
-  { label: '❝', tip: 'Цитата', before: '> ', after: '' },
+const PUSH_AUTOMATION_EVENTS = [
+  {
+    trigger: 'first_purchase',
+    label: 'Первая покупка',
+    delayMode: 'minutes',
+    hint: '0 — сразу после выполнения заказа. 1440 = 1 день.',
+  },
+  {
+    trigger: 'lead_followup',
+    label: 'Лид без покупки',
+    delayMode: 'days',
+    hint: 'Отсчёт с первого захода в миниапп. Если клиент успеет купить — сообщение не уйдёт.',
+  },
+  {
+    trigger: 'cashback_expiring',
+    label: 'Кэшбек скоро сгорит',
+    delayMode: 'none',
+    hint: 'Один раз за 5 дней до сгорания. В шаблоне: {amount}, {days}, {date}.',
+  },
 ];
 
-function formatSelection(value, start, end, before, after) {
-  const selected = value.slice(start, end) || 'текст';
-  const chunk =
-    before === '> '
-      ? selected
-          .split('\n')
-          .map((line) => `> ${line}`)
-          .join('\n')
-      : `${before}${selected}${after}`;
+function normalizeAutomationButtons(buttons = []) {
+  return (Array.isArray(buttons) ? buttons : []).map((btn) => ({
+    text: String(btn?.text || ''),
+    kind: btn?.kind === 'url' ? 'url' : 'web_app',
+    path: String(btn?.path || '/'),
+    url: String(btn?.url || ''),
+  }));
+}
+
+function buildAutomationMessageFromTemplate(template, templateId) {
+  if (!template) return null;
+
+  const lang =
+    String(template.language || '').trim().toLowerCase() === 'pl' ? 'pl' : 'ru';
+  const text = String(template.text || template.preview || '').trim();
+  const textPl = lang === 'pl' ? text : String(template.textPl || '').trim();
+  const textRu = lang === 'ru' ? text : String(template.textRu || '').trim();
+  const promoCodes = extractPromoCodesFromTexts([
+    textPl,
+    textRu,
+    template.title,
+    template.name,
+  ]);
+
   return {
-    next: value.slice(0, start) + chunk + value.slice(end),
-    cursor: start + chunk.length,
+    title: String(template.title || template.name || '').trim(),
+    text: textPl || textRu || text,
+    textPl,
+    textRu,
+    defaultLanguage: 'ru',
+    promo: promoCodes[0] || '',
+    buttons: normalizeAutomationButtons(template.buttons),
+    templateId: String(templateId || template.id || '').trim(),
+    photoUrl: String(template.photoUrl || template.photoPreviewUrl || '').trim(),
+    photoFileId: String(template.photoFileId || '').trim(),
   };
 }
 
-function AutomationCard({
-  trigger,
-  heading,
-  description,
-  delayMode,
-  row,
-  templates,
-  isLoading,
-}) {
-  const textRef = useRef(null);
-  const [enabled, setEnabled] = useState(false);
-  const [delayMinutes, setDelayMinutes] = useState(
-    delayMode === 'days' ? '2880' : '0'
+function automationMessageHasContent(message) {
+  if (!message) return false;
+  return Boolean(
+    String(message.title || '').trim() ||
+      String(message.text || '').trim() ||
+      String(message.textPl || '').trim() ||
+      String(message.textRu || '').trim() ||
+      String(message.promo || '').trim()
   );
-  const [title, setTitle] = useState('');
-  const [textPl, setTextPl] = useState('');
-  const [textRu, setTextRu] = useState('');
-  const [autoLang, setAutoLang] = useState('ru');
-  const [promo, setPromo] = useState('');
-  const [buttons, setButtons] = useState([]);
-  const [templateId, setTemplateId] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('');
-  const [photoFileId, setPhotoFileId] = useState('');
-  const [dirty, setDirty] = useState(false);
-  const autoText = autoLang === 'pl' ? textPl : textRu;
+}
 
-  const setAutoText = (value) => {
-    const next = typeof value === 'function' ? value(autoText) : value;
-    if (autoLang === 'pl') setTextPl(next);
-    else setTextRu(next);
+function defaultDelayMinutesForEvent(event, row) {
+  if (row?.updatedAt) {
+    return Math.max(0, Number(row.delayMinutes || 0));
+  }
+  if (event.delayMode === 'days') return 2880;
+  return 0;
+}
+
+function PushAutomationsPanel({ templates = [] }) {
+  const draftsRef = useRef({});
+  const [activeTrigger, setActiveTrigger] = useState('first_purchase');
+  const [enabled, setEnabled] = useState(false);
+  const [delayMinutes, setDelayMinutes] = useState('0');
+  const [templateId, setTemplateId] = useState('');
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['crm-push-automations'],
+    queryFn: () => crmFetch('/crm/push/automations'),
+    staleTime: 30_000,
+  });
+
+  const activeEvent =
+    PUSH_AUTOMATION_EVENTS.find((item) => item.trigger === activeTrigger) ||
+    PUSH_AUTOMATION_EVENTS[0];
+  const activeRow = data?.automations?.[activeTrigger];
+
+  const persistDraft = () => {
+    draftsRef.current[activeTrigger] = {
+      enabled,
+      delayMinutes,
+      templateId,
+    };
+  };
+
+  const loadTrigger = (trigger, row, event) => {
+    const draft = draftsRef.current[trigger];
+    if (draft) {
+      setEnabled(draft.enabled === true);
+      setDelayMinutes(String(draft.delayMinutes ?? '0'));
+      setTemplateId(String(draft.templateId || ''));
+      return;
+    }
+
+    setEnabled(row?.enabled === true);
+    setDelayMinutes(String(defaultDelayMinutesForEvent(event, row)));
+    setTemplateId(String(row?.message?.templateId || ''));
   };
 
   useEffect(() => {
-    if (!row || dirty) return;
-    setEnabled(row.enabled === true);
-    const savedDelay = Number(row.delayMinutes || 0);
-    setDelayMinutes(
-      String(
-        row.updatedAt
-          ? savedDelay
-          : delayMode === 'days'
-            ? 2880
-            : savedDelay
-      )
-    );
-    setTitle(String(row.message?.title || ''));
-    const savedPl = String(row.message?.textPl || '');
-    const savedRu = String(row.message?.textRu || '');
-    const legacy = String(row.message?.text || '');
-    setTextPl(savedPl);
-    setTextRu(savedRu || (!savedPl ? legacy : ''));
-    setPromo(String(row.message?.promo || ''));
-    setButtons(Array.isArray(row.message?.buttons) ? row.message.buttons : []);
-    setTemplateId(String(row.message?.templateId || ''));
-    setPhotoUrl(String(row.message?.photoUrl || ''));
-    setPhotoFileId(String(row.message?.photoFileId || ''));
-  }, [row, dirty, delayMode]);
+    if (isLoading) return;
+    if (draftsRef.current[activeTrigger]) return;
+    const event =
+      PUSH_AUTOMATION_EVENTS.find((item) => item.trigger === activeTrigger) ||
+      PUSH_AUTOMATION_EVENTS[0];
+    loadTrigger(activeTrigger, activeRow, event);
+  }, [activeTrigger, isLoading]);
+
+  const selectedTemplate = (templates || []).find(
+    (item) => item.id === templateId
+  );
+  const previewMessage = useMemo(() => {
+    if (selectedTemplate) {
+      return buildAutomationMessageFromTemplate(selectedTemplate, templateId);
+    }
+    if (automationMessageHasContent(activeRow?.message)) {
+      return activeRow.message;
+    }
+    return null;
+  }, [selectedTemplate, templateId, activeRow?.message]);
+
+  const previewLang =
+    String(previewMessage?.textPl || '').trim() &&
+    !String(previewMessage?.textRu || '').trim()
+      ? 'pl'
+      : 'ru';
+  const previewText =
+    previewLang === 'pl'
+      ? String(previewMessage?.textPl || previewMessage?.text || '')
+      : String(previewMessage?.textRu || previewMessage?.text || '');
+  const previewButtons = normalizeAutomationButtons(previewMessage?.buttons);
+  const delayDays = Math.round((Number(delayMinutes || 0) / 1440) * 10) / 10;
 
   const queryClient = useQueryClient();
   const saveMutation = useMutation({
-    mutationFn: () =>
-      crmFetch(`/crm/push/automations/${trigger}`, {
+    mutationFn: () => {
+      const template = (templates || []).find((item) => item.id === templateId);
+      const message =
+        buildAutomationMessageFromTemplate(template, templateId) ||
+        (automationMessageHasContent(activeRow?.message)
+          ? activeRow.message
+          : null);
+
+      if (!message) {
+        throw new Error('Выберите шаблон из списка выше');
+      }
+
+      return crmFetch(`/crm/push/automations/${activeTrigger}`, {
         method: 'PUT',
         body: JSON.stringify({
           enabled,
           delayMinutes: Number(delayMinutes || 0),
-          message: {
-            title: title.trim(),
-            text: textPl.trim() || textRu.trim(),
-            textPl: textPl.trim(),
-            textRu: textRu.trim(),
-            defaultLanguage: 'ru',
-            promo: promo.trim(),
-            buttons,
-            templateId,
-            photoUrl,
-            photoFileId,
-          },
+          message,
         }),
-      }),
+      });
+    },
     onSuccess: async () => {
+      delete draftsRef.current[activeTrigger];
       await queryClient.invalidateQueries({
         queryKey: ['crm-push-automations'],
       });
-      setDirty(false);
       toast({ title: 'Авторассылка сохранена' });
     },
     onError: (error) => {
@@ -3477,69 +3546,32 @@ function AutomationCard({
     },
   });
 
-  const applyTemplate = (id) => {
-    const template = (templates || []).find((item) => item.id === id);
-    if (!template) return;
-    const lang =
-      String(template.language || '').trim().toLowerCase() === 'pl'
-        ? 'pl'
-        : 'ru';
-    const text = String(template.text || template.preview || '');
-    if (lang === 'pl') setTextPl(text);
-    else setTextRu(text);
-    setAutoLang(lang);
-    if (Array.isArray(template.buttons) && template.buttons.length) {
-      setButtons(
-        template.buttons.map((btn) => ({
-          text: String(btn?.text || ''),
-          kind: btn?.kind === 'url' ? 'url' : 'web_app',
-          path: String(btn?.path || '/'),
-          url: String(btn?.url || ''),
-        }))
-      );
-    }
-    setPhotoUrl(String(template.photoUrl || template.photoPreviewUrl || ''));
-    setPhotoFileId(String(template.photoFileId || ''));
-    setTemplateId(id);
-    setDirty(true);
+  const switchTrigger = (trigger) => {
+    if (trigger === activeTrigger) return;
+    persistDraft();
+    setActiveTrigger(trigger);
   };
 
-  const insertFormat = (before, after) => {
-    const el = textRef.current;
-    setAutoText((current) => {
-      const value = String(current || '');
-      const start = el?.selectionStart ?? value.length;
-      const end = el?.selectionEnd ?? value.length;
-      const { next, cursor } = formatSelection(value, start, end, before, after);
-      requestAnimationFrame(() => {
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(cursor, cursor);
-      });
-      return next;
-    });
-    setDirty(true);
-  };
-
-  const delayDays = Math.round((Number(delayMinutes || 0) / 1440) * 10) / 10;
+  const canSave =
+    Boolean(templateId && selectedTemplate) ||
+    automationMessageHasContent(activeRow?.message);
 
   return (
     <div className="rounded-2xl surface-card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-heading text-[14px] font-semibold text-foreground">
-            {heading}
+            Автоматическая рассылка
           </h3>
           <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-            {description}
+            Сначала сохраните шаблон в блоке выше, затем выберите событие и
+            привяжите шаблон. Текст заново вводить не нужно — только задержку и
+            вкл/выкл.
           </p>
         </div>
         <Chip
           active={enabled}
-          onClick={() => {
-            setEnabled((value) => !value);
-            setDirty(true);
-          }}
+          onClick={() => setEnabled((value) => !value)}
         >
           {enabled ? 'Включено' : 'Выключено'}
         </Chip>
@@ -3548,291 +3580,169 @@ function AutomationCard({
       {isLoading ? (
         <p className="mt-4 text-[12px] text-muted-2">Загрузка…</p>
       ) : (
-        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-          <div className="space-y-3">
-            <Field label="Шаблон">
-              <select
-                defaultValue=""
-                onChange={(event) => {
-                  const id = event.target.value;
-                  event.target.value = '';
-                  if (id) applyTemplate(id);
-                }}
-                className="input-base"
-              >
-                <option value="">Вставить готовый шаблон…</option>
-                {(templates || []).map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {String(template.language || 'ru').toUpperCase()} ·{' '}
-                    {template.name || template.title || 'Без названия'}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-[11px] text-muted-2">
-                Текст, кнопки и фото шаблона подставятся в язык шаблона. Второй
-                язык можно дописать вручную.
-              </p>
-            </Field>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Field label="Заголовок">
-                <input
-                  value={title}
-                  onChange={(event) => {
-                    setTitle(event.target.value);
-                    setDirty(true);
-                  }}
-                  className="input-base"
-                  placeholder="Заголовок"
-                />
-              </Field>
-              <Field label="Промокод">
-                <input
-                  value={promo}
-                  onChange={(event) => {
-                    setPromo(event.target.value);
-                    setDirty(true);
-                  }}
-                  className="input-base"
-                  placeholder="NOWY15"
-                />
-              </Field>
+        <div className="mt-4 space-y-4">
+          <Field label="Событие">
+            <div className="flex flex-wrap gap-2">
+              {PUSH_AUTOMATION_EVENTS.map((event) => (
+                <button
+                  key={event.trigger}
+                  type="button"
+                  onClick={() => switchTrigger(event.trigger)}
+                  className={cn(
+                    'rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors',
+                    activeTrigger === event.trigger
+                      ? 'border-[hsl(255_100%_68%/0.5)] bg-[hsl(255_100%_68%/0.1)] text-foreground'
+                      : 'border-border text-muted-2 hover:text-foreground'
+                  )}
+                >
+                  {event.label}
+                </button>
+              ))}
             </div>
+          </Field>
 
-            <Field label={autoLang === 'pl' ? 'Текст (PL)' : 'Текст (RU)'}>
-              <div className="mb-1.5 inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
-                {[
-                  { key: 'pl', label: 'PL', filled: Boolean(textPl.trim()) },
-                  { key: 'ru', label: 'RU', filled: Boolean(textRu.trim()) },
-                ].map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => setAutoLang(item.key)}
-                    className={cn(
-                      'rounded-md px-2.5 py-1 text-[11px] font-medium',
-                      autoLang === item.key
-                        ? 'bg-[hsl(255_100%_68%/0.18)] text-foreground'
-                        : 'text-muted-2'
-                    )}
-                  >
-                    {item.label}
-                    {item.filled ? ' ✓' : ''}
-                  </button>
-                ))}
-              </div>
-              <div className="mb-1.5 flex flex-wrap gap-1">
-                {AUTO_FORMAT.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    title={item.tip}
-                    onClick={() => insertFormat(item.before, item.after)}
-                    className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-border px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-              <textarea
-                ref={textRef}
-                value={autoText}
-                onChange={(event) => {
-                  setAutoText(event.target.value);
-                  setDirty(true);
-                }}
-                rows={6}
-                className="input-base resize-none font-mono text-[12px]"
-                placeholder="*Новинка* и она _очень_ крутая"
-              />
-              <p className="mt-1 text-[11px] text-muted-2">
-                *жирный* _курсив_ __подчёркнутый__ ~~зачёркнутый~~ ||спойлер||
-                строка с {'>'} — цитата. Можно и HTML: {'<b>'}, {'<i>'},{' '}
-                {'<blockquote>'}, {'<tg-spoiler>'}.
-              </p>
-            </Field>
-
-            {delayMode === 'none' ? (
-              <p className="text-[11px] leading-relaxed text-muted-2">
-                Один раз, когда до сгорания остаётся 5 дней. Если сервер в этот
-                день молчал — уйдёт при следующей проверке, пока кэшбек ещё не
-                сгорел. В тексте можно вставить {'{amount}'} — сумма, {'{days}'}{' '}
-                — сколько дней, {'{date}'} — дата. Новая порция кэшбека получит
-                своё сообщение.
-              </p>
-            ) : delayMode === 'days' ? (
-              <Field label="Через сколько дней">
-                <div className="flex flex-wrap items-center gap-2">
-                  {[1, 2].map((days) => (
-                    <button
-                      key={days}
-                      type="button"
-                      onClick={() => {
-                        setDelayMinutes(String(days * 1440));
-                        setDirty(true);
-                      }}
-                      className={cn(
-                        'rounded-lg border px-3 py-1.5 text-[12px]',
-                        Number(delayMinutes) === days * 1440
-                          ? 'border-[hsl(255_100%_68%/0.5)] text-foreground'
-                          : 'border-border text-muted-2'
-                      )}
-                    >
-                      {days} {days === 1 ? 'день' : 'дня'}
-                    </button>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
+            <div className="space-y-3">
+              <Field label="Шаблон">
+                <select
+                  value={templateId}
+                  onChange={(event) => setTemplateId(event.target.value)}
+                  className="input-base"
+                >
+                  <option value="">Выберите сохранённый шаблон…</option>
+                  {(templates || []).map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {String(template.language || 'ru').toUpperCase()} ·{' '}
+                      {template.name || template.title || 'Без названия'}
+                    </option>
                   ))}
+                </select>
+                {!templates.length ? (
+                  <p className="mt-1 text-[11px] text-amber-200/80">
+                    Нет шаблонов — создайте текст в форме рассылки и нажмите
+                    «Создать шаблон».
+                  </p>
+                ) : null}
+              </Field>
+
+              {activeEvent.delayMode === 'none' ? (
+                <p className="text-[11px] leading-relaxed text-muted-2">
+                  {activeEvent.hint}
+                </p>
+              ) : activeEvent.delayMode === 'days' ? (
+                <Field label="Задержка отправки">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {[1, 2].map((days) => (
+                      <button
+                        key={days}
+                        type="button"
+                        onClick={() =>
+                          setDelayMinutes(String(days * 1440))
+                        }
+                        className={cn(
+                          'rounded-lg border px-3 py-1.5 text-[12px]',
+                          Number(delayMinutes) === days * 1440
+                            ? 'border-[hsl(255_100%_68%/0.5)] text-foreground'
+                            : 'border-border text-muted-2'
+                        )}
+                      >
+                        {days} {days === 1 ? 'день' : 'дня'}
+                      </button>
+                    ))}
+                    <input
+                      value={
+                        Number.isFinite(delayDays) ? String(delayDays) : '2'
+                      }
+                      onChange={(event) => {
+                        const days = Math.min(
+                          14,
+                          Math.max(0, Number(event.target.value || 0))
+                        );
+                        setDelayMinutes(String(Math.round(days * 1440)));
+                      }}
+                      type="number"
+                      min="0"
+                      max="14"
+                      step="1"
+                      className="input-base w-24"
+                    />
+                  </div>
+                  <p className="mt-1 text-[11px] text-muted-2">
+                    {activeEvent.hint}
+                  </p>
+                </Field>
+              ) : (
+                <Field label="Задержка отправки (мин)">
                   <input
-                    value={Number.isFinite(delayDays) ? String(delayDays) : '2'}
-                    onChange={(event) => {
-                      const days = Math.min(
-                        14,
-                        Math.max(0, Number(event.target.value || 0))
-                      );
-                      setDelayMinutes(String(Math.round(days * 1440)));
-                      setDirty(true);
-                    }}
+                    value={delayMinutes}
+                    onChange={(event) => setDelayMinutes(event.target.value)}
                     type="number"
                     min="0"
-                    max="14"
-                    step="1"
-                    className="input-base w-24"
+                    max="20160"
+                    className="input-base max-w-[160px]"
                   />
-                </div>
-                <p className="mt-1 text-[11px] text-muted-2">
-                  Отсчёт с первого захода лида в миниапп. Если успеет купить —
-                  сообщение не уйдёт. Каждому лиду один раз.
-                </p>
-              </Field>
-            ) : (
-              <Field label="Задержка (мин)">
-                <input
-                  value={delayMinutes}
-                  onChange={(event) => {
-                    setDelayMinutes(event.target.value);
-                    setDirty(true);
-                  }}
-                  type="number"
-                  min="0"
-                  max="20160"
-                  className="input-base"
-                />
-                <p className="mt-1 text-[11px] text-muted-2">
-                  0 — сразу после выполнения заказа. 1440 = 1 день, 2880 = 2 дня.
-                </p>
-              </Field>
-            )}
+                  <p className="mt-1 text-[11px] text-muted-2">
+                    {activeEvent.hint}
+                  </p>
+                </Field>
+              )}
 
-            {buttons.some((btn) => btn.text) ? (
               <p className="text-[11px] text-muted-2">
-                Кнопки: {buttons.map((btn) => btn.text).filter(Boolean).join(' · ')}
+                История: «Авто · первая покупка», «Авто · лиды», «Авто · кэшбек
+                сгорает». Язык клиента — PL или RU из шаблона.
               </p>
-            ) : null}
-          </div>
+            </div>
 
-          <div>
-            <p className="text-[11px] uppercase tracking-wider text-muted-2">
-              Как увидит клиент
-            </p>
-            <div className="mt-2 rounded-xl bg-[hsl(234_22%_11%)] p-3">
-              {title.trim() ? (
-                <div className="mb-1 text-[12px] font-semibold text-foreground">
-                  {title.trim()}
-                </div>
-              ) : null}
-              <div
-                className={PUSH_PREVIEW_CLASS}
-                dangerouslySetInnerHTML={{
-                  __html: renderPushPreviewHtml(
-                    autoText || 'Текст сообщения'
-                  ),
-                }}
-              />
-              {promo.trim() ? (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  🎁 Промокод: <code>{promo.trim()}</code>
-                </p>
-              ) : null}
-              {buttons.filter((btn) => btn.text).map((btn, index) => (
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-muted-2">
+                Превью
+              </p>
+              <div className="mt-2 rounded-xl bg-[hsl(234_22%_11%)] p-3">
+                {previewMessage?.title ? (
+                  <div className="mb-1 text-[12px] font-semibold text-foreground">
+                    {previewMessage.title}
+                  </div>
+                ) : null}
                 <div
-                  key={`${btn.text}-${index}`}
-                  className="mt-1 rounded-md border border-[hsl(255_100%_68%/0.35)] px-2 py-1 text-center text-[10px] font-medium text-[hsl(255_100%_75%)]"
-                >
-                  {btn.text}
-                </div>
-              ))}
+                  className={PUSH_PREVIEW_CLASS}
+                  dangerouslySetInnerHTML={{
+                    __html: renderPushPreviewHtml(
+                      previewText ||
+                        (templateId
+                          ? 'Выберите другой шаблон'
+                          : 'Выберите шаблон')
+                    ),
+                  }}
+                />
+                {previewMessage?.promo ? (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Промокод: <code>{previewMessage.promo}</code>
+                  </p>
+                ) : null}
+                {previewButtons
+                  .filter((btn) => btn.text)
+                  .map((btn, index) => (
+                    <div
+                      key={`${btn.text}-${index}`}
+                      className="mt-1 rounded-md border border-[hsl(255_100%_68%/0.35)] px-2 py-1 text-center text-[10px] font-medium text-[hsl(255_100%_75%)]"
+                    >
+                      {btn.text}
+                    </div>
+                  ))}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      <div className="mt-4">
-        <PushPromoCreator
-          messageTexts={[promo, textPl, textRu, title]}
-          onCreated={(code) => {
-            if (code) {
-              setPromo(code);
-              setDirty(true);
-            }
-          }}
-        />
-      </div>
-
       <button
         type="button"
         onClick={() => saveMutation.mutate()}
-        disabled={
-          saveMutation.isPending ||
-          (!title.trim() && !textPl.trim() && !textRu.trim() && !promo.trim())
-        }
+        disabled={saveMutation.isPending || !canSave}
         className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-gradient-to-r from-[hsl(255_100%_68%)] to-[hsl(280_90%_60%)] px-4 text-[12px] font-medium text-white disabled:opacity-50"
       >
-        {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить авторассылку'}
+        {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить для события'}
       </button>
-    </div>
-  );
-}
-
-function PushAutomationsPanel({ templates = [] }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['crm-push-automations'],
-    queryFn: () => crmFetch('/crm/push/automations'),
-    staleTime: 30_000,
-  });
-
-  return (
-    <div className="space-y-4">
-      <p className="text-[12px] leading-relaxed text-muted-foreground">
-        Каждая автоотправка попадает в историю рассылок: «Авто · первая покупка»,
-        «Авто · лиды» и «Авто · кэшбек сгорает». Клиент получает текст своей мови
-        (PL или RU).
-      </p>
-      <AutomationCard
-        trigger="first_purchase"
-        heading="После первой покупки"
-        description="Бот шлёт офер, когда заказ выполнен. Вставьте шаблон — текст, кнопки и фото подставятся сами."
-        delayMode="minutes"
-        row={data?.automations?.first_purchase}
-        templates={templates}
-        isLoading={isLoading}
-      />
-      <AutomationCard
-        trigger="lead_followup"
-        heading="Лиды без покупки"
-        description="Один раз тем, кто открыл магазин и ещё ничего не купил. Удобно поставить 1 или 2 дня."
-        delayMode="days"
-        row={data?.automations?.lead_followup}
-        templates={templates}
-        isLoading={isLoading}
-      />
-      <AutomationCard
-        trigger="cashback_expiring"
-        heading="Кэшбек скоро сгорит"
-        description="Вместо старого напоминания бота. Включите и напишите текст — он уйдёт за 5 дней до сгорания, на языке клиента."
-        delayMode="none"
-        row={data?.automations?.cashback_expiring}
-        templates={templates}
-        isLoading={isLoading}
-      />
     </div>
   );
 }

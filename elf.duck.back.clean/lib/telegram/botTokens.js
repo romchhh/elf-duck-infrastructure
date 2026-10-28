@@ -16,3 +16,10 @@ export function getTelegramBotTokens() {
 
   return tokens;
 }
+
+/** Окремий тестовий бот для /testbotadmin (не додається до основного polling-списку). */
+export function getTestBotToken() {
+  return String(
+    process.env.TELEGRAM_TEST_BOT_TOKEN || process.env.TEST_BOT_TOKEN || ""
+  ).trim();
+}

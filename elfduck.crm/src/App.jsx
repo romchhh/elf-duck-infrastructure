@@ -26,6 +26,7 @@ import Products from "@/pages/Products";
 import Locations from "@/pages/Locations";
 import Stock from "@/pages/Stock";
 import Catalog from "@/pages/Catalog";
+import Giveaway from "@/pages/Giveaway";
 
 function AppRoutes() {
   return (
@@ -48,6 +49,7 @@ function AppRoutes() {
         <Route path="/marketing/partners" element={<Partners />} />
         <Route path="/marketing/cashback" element={<Cashback />} />
         <Route path="/marketing/promo-codes" element={<PromoCodes />} />
+        <Route path="/marketing/giveaway" element={<Giveaway />} />
         <Route path="/marketing/push" element={<Push />} />
 
         <Route path="/analytics/products" element={<Products />} />

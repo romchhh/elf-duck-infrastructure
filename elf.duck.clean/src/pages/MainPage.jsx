@@ -62,6 +62,8 @@ import logo from "../assets/logo3.webp";
 import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
 import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
+import { isTestAppMode } from "../utils/appMode";
+import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
 import categoriesIcon from "../assets/categoriesIcon.webp";
 import allItemsIcon from "../assets/allItemsIcon.webp";    
   
@@ -1647,6 +1649,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
   /* ================= BANNER DOTS SECTION ================= */
 
   const banners = getHomeBanners();
+  const showGiveawayBanner = isTestAppMode();
+  const bannerSlideCount = banners.length + (showGiveawayBanner ? 1 : 0);
   
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -1680,14 +1684,14 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
       let idx = Math.round(raw);
       // Clamp to valid range to avoid a transient "no active dot" state
-      idx = Math.max(0, Math.min(banners.length - 1, idx));
+      idx = Math.max(0, Math.min(bannerSlideCount - 1, idx));
 
       setActiveBannerIndex((prev) => (prev === idx ? prev : idx));
     });
   };
 
   const bannersVisible = !activeOrderLoading;
-  useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
+  useBannerAutoplay(bannerScrollRef, bannerSlideCount, activeBannerIndex, {
     intervalMs: 5000,
     enabled: bannersVisible,
   });
@@ -4020,6 +4024,11 @@ navigate("/cart");
           {!activeOrderLoading && (
             <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
               <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
+                {showGiveawayBanner ? (
+                  <div className="bannerSlide giveawayBannerSlide">
+                    <GiveawayBannerSlide />
+                  </div>
+                ) : null}
                 {banners.map((src, i) => (
                   <div
                     key={i}
@@ -4046,7 +4055,7 @@ navigate("/cart");
               </div>
 
               <div className="bannerPagination" role="tablist" aria-label="Banners">
-                {banners.map((_, i) => (
+                {Array.from({ length: bannerSlideCount }).map((_, i) => (
                   <button
                     key={i}
                     type="button"

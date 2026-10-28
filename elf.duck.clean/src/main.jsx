@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import { UserProvider } from "./UserContext.jsx";
 import { applyDesktopLayoutClass } from "./utils/desktopLayout.js";
+import { detectAppBasename } from "./utils/appMode.js";
 import {
   applyPlatformPerfClasses,
   subscribePlatformPerf,
@@ -24,11 +25,13 @@ if (!rootElement) {
   console.log("✅ Найден `#root` в `index.html`");
 }
 
+const routerBasename = detectAppBasename();
+
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <UserProvider> 
-      <BrowserRouter>
+    <UserProvider>
+      <BrowserRouter basename={routerBasename || undefined}>
         <App />
       </BrowserRouter>
     </UserProvider>

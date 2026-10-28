@@ -30,6 +30,9 @@ const API_URL =
   "https://elfduck-api.telebots.site";
 
 import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
+import { isTestAppMode } from "../utils/appMode";
+import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
+import { resolveZabkaMapsUrl } from "../utils/blikCheckoutHints.js";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
   
@@ -1862,6 +1865,8 @@ useEffect(() => {
     /* ================= BANNER DOTS SECTION ================= */
 
     const banners = getHomeBanners(language);
+    const showGiveawayBanner = isTestAppMode();
+    const bannerSlideCount = banners.length + (showGiveawayBanner ? 1 : 0);
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -1895,13 +1900,13 @@ useEffect(() => {
 
         let idx = Math.round(raw);
         // Clamp to valid range to avoid a transient "no active dot" state
-        idx = Math.max(0, Math.min(banners.length - 1, idx));
+        idx = Math.max(0, Math.min(bannerSlideCount - 1, idx));
 
         setActiveBannerIndex((prev) => (prev === idx ? prev : idx));
     });
     };
 
-    useBannerAutoplay(bannerScrollRef, banners.length, activeBannerIndex, {
+    useBannerAutoplay(bannerScrollRef, bannerSlideCount, activeBannerIndex, {
       intervalMs: 5000,
       enabled: !isPaymentOpen,
     });
@@ -2658,6 +2663,43 @@ useEffect(() => {
 
                     {paymentDetailsVisible && paymentMethod !== "cash" && (
                     <>
+                        {paymentMethod === "blik" && isTestAppMode() ? (
+                          <div className="paymentBlikGiveawaySheet" role="note">
+                            <div className="paymentBlikGiveawayBannerSlot">
+                              {t("Баннер", "Baner")}
+                            </div>
+                            <p className="paymentBlikGiveawayText">
+                              {t(
+                                `Будем вам очень благодарны, если вы выберете оплату наличными 🙏
+
+💡 Наличные можно снять в магазине Żabka рядом с точкой самовывоза.`,
+                                `Będziemy bardzo wdzięczni, jeśli wybierzesz płatność gotówką 🙏
+
+💡 Gotówkę możesz wypłacić w sklepie Żabka obok punktu odbioru.`
+                              )}
+                            </p>
+                            <a
+                              className="paymentBlikZabkaLink"
+                              href={resolveZabkaMapsUrl(
+                                getOrderPickupPoint(activePaymentOrder)?.key,
+                                getOrderPickupPoint(activePaymentOrder)?.address
+                              )}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {t(
+                                "📍 Ближайшая Żabka на Google Maps",
+                                "📍 Najbliższa Żabka w Google Maps"
+                              )}
+                            </a>
+                            <p className="paymentBlikGiveawayNotice">
+                              {t(
+                                "Обратите внимание: при оплате через BLIK кэшбэк за заказ не начисляется, а заказ не участвует в ежемесячном розыгрыше 2 000 zł.",
+                                "Uwaga: przy płatności BLIK nie naliczamy cashbacku, a zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł."
+                              )}
+                            </p>
+                          </div>
+                        ) : null}
                         <div className="paymentHintText">
                         {t("Вы можете быстро скопировать реквизиты", "Możesz szybko skopiować dane")}
                         <br />
@@ -3197,6 +3239,11 @@ useEffect(() => {
 
                         <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
                             <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
+                            {showGiveawayBanner ? (
+                              <div className="bannerSlide giveawayBannerSlide">
+                                <GiveawayBannerSlide />
+                              </div>
+                            ) : null}
                             {banners.map((src, i) => (
                                 <div
                                 key={i}
@@ -3216,7 +3263,7 @@ useEffect(() => {
                             </div>
 
                             <div className="bannerPagination" role="tablist" aria-label="Banners">
-                                {banners.map((_, i) => (
+                                {Array.from({ length: bannerSlideCount }).map((_, i) => (
                                   <button
                                     key={i}
                                     type="button"

@@ -2000,11 +2000,55 @@ button.paymentCashbackField {
   flex-shrink: 0;
 }
 
+.paymentBlikGiveawaySheet {
+  margin: 10px 0 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.paymentBlikGiveawayBannerSlot {
+  min-height: 56px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 10px;
+}
+
+.paymentBlikGiveawayText {
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0 0 10px;
+}
+
+.paymentBlikZabkaLink {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8dffb0;
+  margin-bottom: 10px;
+  text-decoration: underline;
+}
+
+.paymentBlikGiveawayNotice {
+  font-size: 11px;
+  line-height: 1.4;
+  color: rgba(255, 210, 120, 0.95);
+  margin: 0;
+}
+
 .paymentPerkIcon {
   width: 22px;
   height: 22px;
   object-fit: contain;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+  opacity: 0.88;
 }
 
 .paymentPerkIconTicket {

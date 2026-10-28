@@ -16,6 +16,10 @@ const meta = {
     title: 'Промокоды',
     subtitle: 'Статистика и управление промокодами',
   },
+  '/marketing/giveaway': {
+    title: 'Розыгрыш 2 000 zł',
+    subtitle: 'Участники, итоги, начисление и уведомления',
+  },
   '/marketing/push': { title: 'Push-рассылки', subtitle: 'Создание и аналитика кампаний' },
   '/analytics/products': { title: 'Аналитика товаров', subtitle: 'Выручка и динамика продаж (не каталог)' },
   '/analytics/locations': { title: 'Точки', subtitle: 'Сравнение точек продаж' },
