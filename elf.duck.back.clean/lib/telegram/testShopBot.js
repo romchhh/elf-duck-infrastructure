@@ -1,4 +1,4 @@
-import { Telegraf, Markup } from "telegraf";
+import { Markup } from "telegraf";
 import User from "../../models/User.js";
 import { normalizeAppLanguage } from "../crm/userLanguage.js";
 import {
@@ -9,7 +9,7 @@ import {
 
 const WEBAPP_URL = String(process.env.WEBAPP_URL || process.env.APP_URL || "").trim();
 
-function isTestBotAdmin(telegramId) {
+export function isGiveawayTestAdmin(telegramId) {
   const id = String(telegramId || "").trim();
   if (!id) return false;
 
@@ -40,7 +40,7 @@ export function buildTestMiniAppUrl(refCode = "") {
   }
 }
 
-async function openTestMiniApp(ctx) {
+export async function replyGiveawayTestMiniApp(ctx) {
   const tgId = String(ctx.from?.id || "").trim();
   if (!tgId) {
     await ctx.reply("Не удалось определить Telegram ID.");
@@ -52,7 +52,7 @@ async function openTestMiniApp(ctx) {
     return;
   }
 
-  let me = await User.findOne({ telegramId: tgId }).lean();
+  const me = await User.findOne({ telegramId: tgId }).lean();
   const startLang =
     normalizeAppLanguage(me?.language) ||
     normalizeAppLanguage(ctx.from?.language_code) ||
@@ -80,50 +80,27 @@ async function openTestMiniApp(ctx) {
   ]);
 
   await ctx.reply(
-    `${caption}\n\n🧪 Тестовая версия магазина (/test). Основной бот и клиенты не затронуты.`,
+    `${caption}\n\n🧪 Тестовая миниапп (розыгрыш): /test — только для админов, клиенты видят обычный магазин через /start.`,
     keyboard
   );
 }
 
-/**
- * Окремий polling-бот для розіграшів: команда /testbotadmin → мініапп на /test.
- * Не входить у userBots, щоб не дублювати сповіщення по замовленнях.
- */
-export function launchTestShopBot(token) {
-  const trimmed = String(token || "").trim();
-  if (!trimmed) return null;
+/** /testbotadmin и /test в основном боте магазина */
+export async function handleGiveawayTestAdminCommand(ctx) {
+  if (!isGiveawayTestAdmin(ctx.from?.id)) {
+    await ctx.reply("Команда только для администраторов CRM (ADMIN_IDS / SUPER_ADMIN_IDS).");
+    return;
+  }
+  await replyGiveawayTestMiniApp(ctx);
+}
 
-  const testBot = new Telegraf(trimmed);
-
-  testBot.command("testbotadmin", async (ctx) => {
-    try {
-      if (!isTestBotAdmin(ctx.from?.id)) {
-        await ctx.reply("Команда только для администраторов CRM.");
-        return;
-      }
-      await openTestMiniApp(ctx);
-    } catch (error) {
-      console.error("[test-bot] testbotadmin error:", error);
-      const errLang =
-        normalizeAppLanguage(ctx.from?.language_code) || "ru";
-      await ctx.reply(botStartErrorText(errLang)).catch(() => {});
-    }
-  });
-
-  testBot
-    .launch()
-    .then(async () => {
-      const me = await testBot.telegram.getMe();
-      console.log(
-        `✅ Test shop bot launched @${me.username} (/testbotadmin → /test)`
-      );
-    })
-    .catch((error) => {
-      console.error("❌ test bot launch error:", error);
-    });
-
-  process.once("SIGINT", () => testBot.stop("SIGINT"));
-  process.once("SIGTERM", () => testBot.stop("SIGTERM"));
-
-  return testBot;
+export async function handleGiveawayTestAdminCommandSafe(ctx) {
+  try {
+    await handleGiveawayTestAdminCommand(ctx);
+  } catch (error) {
+    console.error("[bot] giveaway test command error:", error);
+    const errLang =
+      normalizeAppLanguage(ctx.from?.language_code) || "ru";
+    await ctx.reply(botStartErrorText(errLang)).catch(() => {});
+  }
 }

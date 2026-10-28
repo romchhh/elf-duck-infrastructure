@@ -9,8 +9,12 @@ import Order from "../../models/Order.js";
 import BroadcastCampaign from "../../models/BroadcastCampaign.js";
 import { getServerContext } from "../server/context.js";
 import { setUserBots, bot, userBots } from "../server/botRegistry.js";
-import { getTelegramBotTokens, getTestBotToken } from "./botTokens.js";
-import { createShopBotClient } from "./shopBotClient.js";
+import { getTelegramBotTokens } from "./botTokens.js";
+import { handleGiveawayTestAdminCommandSafe } from "./testShopBot.js";
+import {
+  getActiveUserBots,
+  sendViaUserShopBot,
+} from "./clientBotDelivery.js";
 import { setShopBotUsername } from "./shopBotReferralLink.js";
 import { getStartBannerUrl } from "../config/rootConfig.js";
 import {
@@ -258,7 +262,7 @@ app.locals.runCrmBroadcastCampaign =
       );
     }
 
-    if (!bot) {
+    if (!getActiveUserBots().length) {
       throw new Error(
         "BOT_DISABLED"
       );
@@ -498,55 +502,31 @@ if (!messageText) {
 }
 
 // file_id надёжнее URL (CDN/прокси могут отвалиться mid-campaign)
-if (photoFileId) {
-  await bot.telegram
-    .sendPhoto(
-      telegramId,
-      photoFileId,
-      {
-        caption: messageText,
-        parse_mode: "HTML",
-        ...(replyMarkup
-          ? { reply_markup: replyMarkup }
-          : {}),
-      }
-    );
-} else if (photoUrl) {
-  await bot.telegram
-    .sendPhoto(
+await sendViaUserShopBot(telegramId, (clientBot) => {
+  if (photoFileId) {
+    return clientBot.telegram.sendPhoto(telegramId, photoFileId, {
+      caption: messageText,
+      parse_mode: "HTML",
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    });
+  }
+  if (photoUrl) {
+    return clientBot.telegram.sendPhoto(
       telegramId,
       { url: photoUrl },
       {
         caption: messageText,
         parse_mode: "HTML",
-        ...(replyMarkup
-          ? { reply_markup: replyMarkup }
-          : {}),
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }
     );
-} else {
-  await bot.telegram
-    .sendMessage(
-      telegramId,
-
-      messageText,
-
-      {
-        parse_mode:
-          "HTML",
-
-        disable_web_page_preview:
-          true,
-
-        ...(replyMarkup
-          ? {
-              reply_markup:
-                replyMarkup,
-            }
-          : {}),
-      }
-    );
-}
+  }
+  return clientBot.telegram.sendMessage(telegramId, messageText, {
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+  });
+});
 
               sentTelegramIds.add(
 
@@ -1086,6 +1066,8 @@ if (photoFileId) {
       } catch {}
     }
   });
+
+  activeBot.command(["testbotadmin", "test"], handleGiveawayTestAdminCommandSafe);
 
   async function notifyPickupClientAfterManagerPaymentStatus(
     order,
@@ -3466,10 +3448,4 @@ return instructionMessage;
 } else {
   console.warn("⚠️ TELEGRAM_BOT_TOKEN(S) not set — bot disabled");
 }
-
-  const testBotToken = getTestBotToken();
-  if (testBotToken) {
-    const { launchTestShopBot } = await import("./testShopBot.js");
-    launchTestShopBot(testBotToken);
-  }
 }

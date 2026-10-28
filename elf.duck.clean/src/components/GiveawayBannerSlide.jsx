@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import giveawayBannerPl from "../assets/giveawayBannerPl.png";
-import giveawayBannerUk from "../assets/giveawayBannerUk.png";
+import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
+import giveawayBannerPl from "../assets/giveawayBannerPl.webp";
+import giveawayBannerUk from "../assets/giveawayBannerUk.webp";
+import { appPath } from "../utils/appMode.js";
 import { getCurrentLanguage, t } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
 import "../styles/GiveawayBanner.css";
@@ -18,7 +21,39 @@ function formatCountdown(ms) {
   return `${days}d ${hours}h ${minutes}m`;
 }
 
-export default function GiveawayBannerSlide() {
+function GiveawayModal({ open, onClose, title, children }) {
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      className="giveawayModalBackdrop"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        className="giveawayModal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="giveawayModalTitle"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 id="giveawayModalTitle">{title}</h3>
+        {children}
+        <button
+          type="button"
+          className="giveawayPrimaryBtn giveawayModalCloseBtn"
+          onClick={onClose}
+        >
+          OK
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+export default function GiveawayBannerSlide({ onGoToCatalog }) {
+  const navigate = useNavigate();
   const lang = getCurrentLanguage();
   const bg = lang === "pl" ? giveawayBannerPl : giveawayBannerUk;
   const [state, setState] = useState(null);
@@ -56,6 +91,16 @@ export default function GiveawayBannerSlide() {
     [phase, state?.status]
   );
 
+  const goToCatalog = useCallback(() => {
+    if (typeof onGoToCatalog === "function") {
+      onGoToCatalog();
+      return;
+    }
+    navigate(appPath("/"), {
+      state: { openCatalogView: "all", scrollToCatalog: true },
+    });
+  }, [navigate, onGoToCatalog]);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -78,6 +123,15 @@ export default function GiveawayBannerSlide() {
     const id = window.setInterval(() => setTick(Date.now()), 60000);
     return () => window.clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!rulesOpen && !winnersOpen) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [rulesOpen, winnersOpen]);
 
   const countdownLabel = useMemo(() => {
     if (!deadlineAt) return "—";
@@ -112,93 +166,117 @@ export default function GiveawayBannerSlide() {
     }
   };
 
+  const handleBannerActivate = async (event) => {
+    if (event.target.closest(".giveawayInfoBtn")) return;
+    if (event.target.closest("button")) return;
+
+    haptic.heavy();
+
+    if (
+      !showResults &&
+      !participated &&
+      state?.participationOpen &&
+      !loading
+    ) {
+      await participate();
+    }
+
+    goToCatalog();
+  };
+
   const rulesText =
     lang === "pl" ? state?.rulesPl || state?.rules : state?.rulesRu || state?.rules;
 
   return (
-    <div className="giveawayBannerRoot">
-      <img src={bg} alt="" className="giveawayBannerBg" />
-      <div className="giveawayBannerOverlay">
-        <button
-          type="button"
-          className="giveawayInfoBtn"
-          aria-label={t("Правила", "Zasady")}
-          onClick={() => setRulesOpen(true)}
-        >
-          i
-        </button>
-
-        <div className="giveawayBannerActions">
-          {showResults ? (
-            <>
-              <button
-                type="button"
-                className="giveawayPrimaryBtn"
-                onClick={() => setWinnersOpen(true)}
-              >
-                {t("Победители", "Zwycięzcy")}
-              </button>
-              <div className="giveawayMetaLine">
-                {t("До нового розыгрыша", "Do nowego konkursu")}: {countdownLabel}
-              </div>
-            </>
-          ) : participated ? (
-            <div className="giveawayStats">
-              <span>
-                {t("Ваши покупки", "Twoje zakupy")}: {state?.myEntries ?? 0}
-              </span>
-              <span>
-                {t("Участников", "Uczestników")}: {state?.participantsCount ?? 0}
-              </span>
+    <>
+      <div
+        className={`giveawayBannerRoot giveawayBannerRoot--actionable${loading ? " giveawayBannerRoot--loading" : ""}`}
+        onClick={handleBannerActivate}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleBannerActivate(e);
+          }
+        }}
+      >
+        <img src={bg} alt="" className="giveawayBannerBg" draggable={false} />
+        <div className="giveawayBannerOverlay">
+          <div className="giveawayBannerFooter">
+            <div className="giveawayBannerActions">
+              {showResults ? (
+                <>
+                  <button
+                    type="button"
+                    className="giveawayPrimaryBtn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWinnersOpen(true);
+                    }}
+                  >
+                    {t("Победители", "Zwycięzcy")}
+                  </button>
+                  <div className="giveawayMetaLine">
+                    {t("До нового розыгрыша", "Do nowego konkursu")}:{" "}
+                    {countdownLabel}
+                  </div>
+                </>
+              ) : participated ? (
+                <div className="giveawayStats">
+                  <span>
+                    {t("Ваши покупки", "Twoje zakupy")}: {state?.myEntries ?? 0}
+                  </span>
+                  <span>
+                    {t("Участников", "Uczestników")}:{" "}
+                    {state?.participantsCount ?? 0}
+                  </span>
+                </div>
+              ) : null}
             </div>
-          ) : (
+
             <button
               type="button"
-              className="giveawayPrimaryBtn"
-              disabled={loading || !state?.participationOpen}
-              onClick={participate}
+              className="giveawayInfoBtn"
+              aria-label={t("Правила", "Zasady")}
+              onClick={(e) => {
+                e.stopPropagation();
+                setRulesOpen(true);
+              }}
             >
-              {loading
-                ? t("…", "…")
-                : t("Участвовать", "Weź udział")}
+              i
             </button>
-          )}
+          </div>
         </div>
       </div>
 
-      {rulesOpen ? (
-        <div className="giveawayModalBackdrop" onClick={() => setRulesOpen(false)}>
-          <div className="giveawayModal" onClick={(e) => e.stopPropagation()}>
-            <h3>{t("Правила розыгрыша", "Zasady konkursu")}</h3>
-            <pre className="giveawayRulesText">{rulesText || "…"}</pre>
-            <button type="button" className="giveawayPrimaryBtn" onClick={() => setRulesOpen(false)}>
-              OK
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <GiveawayModal
+        open={rulesOpen}
+        onClose={() => setRulesOpen(false)}
+        title={t("Правила розыгрыша", "Zasady konkursu")}
+      >
+        <pre className="giveawayRulesText">{rulesText || "…"}</pre>
+      </GiveawayModal>
 
-      {winnersOpen ? (
-        <div className="giveawayModalBackdrop" onClick={() => setWinnersOpen(false)}>
-          <div className="giveawayModal" onClick={(e) => e.stopPropagation()}>
-            <h3>{t("Победители", "Zwycięzcy")}</h3>
-            <div className="giveawayWinnersList">
-              {(state?.winners || []).map((row) => (
-                <div key={row.place} className="giveawayWinnerRow">
-                  <span>#{row.place}</span>
-                  <span>
-                    {row.username ? `@${row.username}` : row.firstName || row.telegramId}
-                  </span>
-                  <span>{row.amountZl} zł</span>
-                </div>
-              ))}
+      <GiveawayModal
+        open={winnersOpen}
+        onClose={() => setWinnersOpen(false)}
+        title={t("Победители", "Zwycięzcy")}
+      >
+        <div className="giveawayWinnersList">
+          {(state?.winners || []).map((row) => (
+            <div key={row.place} className="giveawayWinnerRow">
+              <span>#{row.place}</span>
+              <span>
+                {row.username
+                  ? `@${row.username}`
+                  : row.firstName || row.telegramId}
+              </span>
+              <span>{row.amountZl} zł</span>
             </div>
-            <button type="button" className="giveawayPrimaryBtn" onClick={() => setWinnersOpen(false)}>
-              OK
-            </button>
-          </div>
+          ))}
         </div>
-      ) : null}
-    </div>
+      </GiveawayModal>
+    </>
   );
 }

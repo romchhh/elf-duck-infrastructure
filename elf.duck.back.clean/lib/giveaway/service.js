@@ -8,9 +8,15 @@ import {
   msUntilNextGiveawayMonth,
   resolveGiveawayUiPhase,
 } from "./schedule.js";
+export { getActiveGiveawayMonthKey };
 import { prizeAmountForPlace, GIVEAWAY_RULES_PL, GIVEAWAY_RULES_RU } from "./config.js";
 import { isBlikOrderPayment } from "./payment.js";
 import { recalcUserCashbackBalanceFromLedger } from "../cashback/manualAdmin.js";
+import {
+  computeGiveawayMonthRevenue,
+  loadGiveawayOrderEconomicsMap,
+  sumNetForParticipantEntries,
+} from "./economics.js";
 
 export const GIVEAWAY_MONTHS = "crm_giveaway_months";
 export const GIVEAWAY_PARTICIPANTS = "crm_giveaway_participants";
@@ -230,29 +236,77 @@ export async function tryAddGiveawayEntryForOrder(order) {
 }
 
 export async function listWinners(monthKey) {
+  const key = String(monthKey || "").trim();
   const rows = await winnersCol()
-    .find({ monthKey })
+    .find({ monthKey: key })
     .sort({ place: 1 })
     .toArray();
 
   if (!rows.length) return [];
 
-  const tgIds = [...new Set(rows.map((r) => r.telegramId))];
+  const tgIds = [...new Set(rows.map((r) => String(r.telegramId || "").trim()))];
   const users = await User.find({ telegramId: { $in: tgIds } })
-    .select({ telegramId: 1, username: 1, firstName: 1 })
+    .select({ telegramId: 1, username: 1, firstName: 1, lastName: 1 })
     .lean();
   const userMap = new Map(users.map((u) => [String(u.telegramId), u]));
 
+  const entryStats = await entriesCol()
+    .aggregate([
+      { $match: { monthKey: key, telegramId: { $in: tgIds } } },
+      {
+        $group: {
+          _id: "$telegramId",
+          entriesCount: { $sum: 1 },
+          testEntriesCount: {
+            $sum: {
+              $cond: [{ $ifNull: ["$isTestEntry", false] }, 1, 0],
+            },
+          },
+        },
+      },
+    ])
+    .toArray();
+  const statsMap = new Map(
+    entryStats.map((row) => [
+      String(row._id),
+      {
+        entriesCount: row.entriesCount || 0,
+        testEntriesCount: row.testEntriesCount || 0,
+      },
+    ])
+  );
+
+  const participantRows = await participantsCol()
+    .find({ monthKey: key, telegramId: { $in: tgIds } })
+    .toArray();
+  const joinedMap = new Map(
+    participantRows.map((p) => [String(p.telegramId), p.joinedAt || null])
+  );
+  const testSeedMap = new Map(
+    participantRows.map((p) => [String(p.telegramId), Boolean(p.testSeed)])
+  );
+
   return rows.map((row) => {
-    const user = userMap.get(String(row.telegramId)) || {};
+    const tg = String(row.telegramId || "").trim();
+    const user = userMap.get(tg) || {};
+    const stats = statsMap.get(tg) || {
+      entriesCount: 0,
+      testEntriesCount: 0,
+    };
     return {
       place: row.place,
       amountZl: row.amountZl,
-      telegramId: row.telegramId,
+      telegramId: tg,
       username: user.username || "",
       firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      entriesCount: stats.entriesCount,
+      testEntriesCount: stats.testEntriesCount,
+      joinedAt: joinedMap.get(tg) || null,
+      winningOrderId: String(row.orderId || ""),
       creditedAt: row.creditedAt || null,
       notifiedAt: row.notifiedAt || null,
+      testSeed: testSeedMap.get(tg) || false,
     };
   });
 }
@@ -309,20 +363,115 @@ export async function getGiveawayPublicState({
   };
 }
 
+export async function listGiveawayParticipantsAdmin(monthKey) {
+  const key = String(monthKey || "").trim();
+  if (!key) return [];
+
+  const participants = await participantsCol()
+    .find({ monthKey: key })
+    .sort({ joinedAt: -1 })
+    .toArray();
+
+  const entryStats = await entriesCol()
+    .aggregate([
+      { $match: { monthKey: key } },
+      {
+        $group: {
+          _id: "$telegramId",
+          entriesCount: { $sum: 1 },
+          testEntriesCount: {
+            $sum: { $cond: [{ $ifNull: ["$isTestEntry", false] }, 1, 0] },
+          },
+        },
+      },
+    ])
+    .toArray();
+
+  const statsMap = new Map(
+    entryStats.map((row) => [
+      String(row._id),
+      {
+        entriesCount: row.entriesCount || 0,
+        testEntriesCount: row.testEntriesCount || 0,
+      },
+    ])
+  );
+
+  const tgIds = participants.map((p) => String(p.telegramId));
+  const users = tgIds.length
+    ? await User.find({ telegramId: { $in: tgIds } })
+        .select({ telegramId: 1, username: 1, firstName: 1, lastName: 1 })
+        .lean()
+    : [];
+  const userMap = new Map(users.map((u) => [String(u.telegramId), u]));
+
+  return participants.map((p) => {
+    const tg = String(p.telegramId);
+    const user = userMap.get(tg) || {};
+    const stats = statsMap.get(tg) || {
+      entriesCount: 0,
+      testEntriesCount: 0,
+    };
+    return {
+      telegramId: tg,
+      username: user.username || "",
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      joinedAt: p.joinedAt || null,
+      testSeed: Boolean(p.testSeed),
+      entriesCount: stats.entriesCount,
+      testEntriesCount: stats.testEntriesCount,
+    };
+  });
+}
+
 export async function getGiveawayAdminState(monthKey = getActiveGiveawayMonthKey()) {
-  const month = await ensureGiveawayMonth(monthKey);
-  const [participantsCount, entriesCount, winners] = await Promise.all([
-    countParticipants(monthKey),
-    countEntries(monthKey),
-    listWinners(monthKey),
-  ]);
+  const key = String(monthKey || getActiveGiveawayMonthKey()).trim();
+  const month = await ensureGiveawayMonth(key);
+  const useRevenueSnapshot =
+    month?.revenueSnapshot &&
+    month.status &&
+    month.status !== "open";
+  const [participantsCount, entriesCount, winners, participants, revenueLive, allEntries] =
+    await Promise.all([
+      countParticipants(key),
+      countEntries(key),
+      listWinners(key),
+      listGiveawayParticipantsAdmin(key),
+      useRevenueSnapshot
+        ? Promise.resolve(null)
+        : computeGiveawayMonthRevenue(key),
+      entriesCol().find({ monthKey: key }).toArray(),
+    ]);
+
+  const revenue = useRevenueSnapshot ? month.revenueSnapshot : revenueLive;
+
+  const economicsMap = await loadGiveawayOrderEconomicsMap(
+    allEntries.map((row) => row.orderId)
+  );
+
+  const enrichWithEconomics = (row) => {
+    const tg = String(row.telegramId || "").trim();
+    const userEntries = allEntries.filter(
+      (entry) => String(entry.telegramId || "").trim() === tg
+    );
+    const econ = sumNetForParticipantEntries(userEntries, economicsMap);
+    return {
+      ...row,
+      ordersCount: econ.ordersCount,
+      netEarnedZl: econ.netEarnedZl,
+    };
+  };
 
   return {
     month,
     phase: resolveGiveawayUiPhase(month),
     participantsCount,
     entriesCount,
-    winners,
+    winners: winners.map(enrichWithEconomics),
+    participants: participants.map(enrichWithEconomics),
+    revenue,
+    revenueFixedAtDraw: Boolean(useRevenueSnapshot),
     prizePreview: winners.length
       ? winners.reduce((s, w) => s + Number(w.amountZl || 0), 0)
       : 0,
@@ -373,6 +522,7 @@ export async function runGiveawayDraw(monthKey, adminMeta = {}) {
   }));
 
   await winnersCol().insertMany(winnerDocs);
+  const revenueSnapshot = await computeGiveawayMonthRevenue(monthKey);
   await monthsCol().updateOne(
     { monthKey },
     {
@@ -381,6 +531,7 @@ export async function runGiveawayDraw(monthKey, adminMeta = {}) {
         drawnAt: now,
         updatedAt: now,
         drawnBy: String(adminMeta?.adminId || adminMeta?.username || "crm"),
+        revenueSnapshot,
       },
     }
   );
@@ -452,8 +603,10 @@ export async function creditGiveawayWinners(monthKey) {
 }
 
 export async function notifyGiveawayWinners(monthKey) {
-  const { bot } = await import("../server/botRegistry.js");
-  if (!bot?.telegram) throw new Error("BOT_UNAVAILABLE");
+  const { getActiveUserBots, sendClientTelegramMessage } = await import(
+    "../telegram/clientBotDelivery.js"
+  );
+  if (!getActiveUserBots().length) throw new Error("BOT_UNAVAILABLE");
 
   const month = await monthsCol().findOne({ monthKey });
   if (!month) throw new Error("MONTH_NOT_FOUND");
@@ -490,7 +643,7 @@ export async function notifyGiveawayWinners(monthKey) {
     const text = template.replace("{amount}", String(row.amountZl));
 
     try {
-      await bot.telegram.sendMessage(tg, text);
+      await sendClientTelegramMessage(tg, text);
       await winnersCol().updateOne(
         { _id: row._id },
         { $set: { notifiedAt: now } }
@@ -511,4 +664,172 @@ export async function notifyGiveawayWinners(monthKey) {
 
 export async function listGiveawayMonths(limit = 12) {
   return monthsCol().find({}).sort({ monthKey: -1 }).limit(limit).toArray();
+}
+
+export async function listGiveawayMonthsSummary(limit = 24) {
+  const rows = await monthsCol()
+    .find({})
+    .sort({ monthKey: -1 })
+    .limit(limit)
+    .toArray();
+
+  return Promise.all(
+    rows.map(async (month) => {
+      const key = month.monthKey;
+      const winnersCount = await winnersCol().countDocuments({ monthKey: key });
+      const revenue =
+        month.revenueSnapshot && month.status && month.status !== "open"
+          ? month.revenueSnapshot
+          : await computeGiveawayMonthRevenue(key);
+      return {
+        monthKey: key,
+        status: month.status || "open",
+        drawnAt: month.drawnAt || null,
+        creditedAt: month.creditedAt || null,
+        notifiedAt: month.notifiedAt || null,
+        participantsCount: await countParticipants(key),
+        entriesCount: await countEntries(key),
+        winnersCount,
+        ordersCount: revenue.ordersCount,
+        netEarnedZl: revenue.netEarnedZl,
+      };
+    })
+  );
+}
+
+/**
+ * Скидає результати місяця: переможці, статуси, snapshot виручки.
+ * Якщо призи вже нараховано — прибирає ledger `giveaway_prize` за цим monthKey і перераховує баланс.
+ * Учасників і entries не чіпає.
+ */
+export async function resetGiveawayMonthResults(monthKey) {
+  const key = String(monthKey || getActiveGiveawayMonthKey()).trim();
+  if (!key) throw new Error("INVALID_MONTH_KEY");
+
+  await ensureGiveawayMonth(key);
+  const winners = await winnersCol().find({ monthKey: key }).toArray();
+  const creditedTelegramIds = [
+    ...new Set(
+      winners
+        .filter((row) => row.creditedAt)
+        .map((row) => String(row.telegramId || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  let ledgerRemoved = 0;
+  for (const tg of creditedTelegramIds) {
+    const user = await User.findOne({ telegramId: tg });
+    if (!user) continue;
+    const before = Array.isArray(user.cashbackLedger) ? user.cashbackLedger.length : 0;
+    user.cashbackLedger = (user.cashbackLedger || []).filter((entry) => {
+      if (String(entry?.source || "") !== "giveaway_prize") return true;
+      return String(entry?.giveawayMonthKey || "") !== key;
+    });
+    ledgerRemoved += Math.max(0, before - user.cashbackLedger.length);
+    recalcUserCashbackBalanceFromLedger(user);
+    await user.save();
+  }
+
+  const winnersDeleted = await winnersCol().deleteMany({ monthKey: key });
+  const now = new Date();
+  await monthsCol().updateOne(
+    { monthKey: key },
+    {
+      $set: {
+        status: "open",
+        drawnAt: null,
+        creditedAt: null,
+        notifiedAt: null,
+        drawnBy: null,
+        updatedAt: now,
+      },
+      $unset: { revenueSnapshot: "" },
+    }
+  );
+
+  return {
+    monthKey: key,
+    winnersRemoved: winnersDeleted.deletedCount || 0,
+    cashbackLedgerRemoved: ledgerRemoved,
+    participantsCount: await countParticipants(key),
+    entriesCount: await countEntries(key),
+  };
+}
+
+/**
+ * Тестові учасники без реальних замовлень (orderId synthetic, isTestEntry).
+ * Лише для CRM / scripts, поки month.status === "open".
+ */
+export async function seedGiveawayTestParticipants(
+  monthKey,
+  telegramIds,
+  { entriesPerUser = 1 } = {}
+) {
+  const key = String(monthKey || getActiveGiveawayMonthKey()).trim();
+  if (!key) throw new Error("INVALID_MONTH_KEY");
+
+  const ids = [
+    ...new Set(
+      (Array.isArray(telegramIds) ? telegramIds : [telegramIds])
+        .map((id) => String(id || "").trim())
+        .filter(Boolean)
+    ),
+  ];
+  if (!ids.length) throw new Error("TELEGRAM_IDS_REQUIRED");
+
+  const month = await ensureGiveawayMonth(key);
+  if (String(month.status || "") !== "open") {
+    throw new Error("GIVEAWAY_NOT_OPEN");
+  }
+
+  const perUser = Math.min(10, Math.max(1, Number(entriesPerUser) || 1));
+  const now = new Date();
+  const users = [];
+
+  for (const tg of ids) {
+    let participantAdded = false;
+    try {
+      await participantsCol().insertOne({
+        monthKey: key,
+        telegramId: tg,
+        joinedAt: now,
+        testSeed: true,
+      });
+      participantAdded = true;
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+    }
+
+    let entriesAdded = 0;
+    for (let i = 0; i < perUser; i += 1) {
+      const orderId = `giveaway-test:${key}:${tg}:${i + 1}`;
+      try {
+        await entriesCol().insertOne({
+          monthKey: key,
+          telegramId: tg,
+          orderId,
+          createdAt: now,
+          isTestEntry: true,
+        });
+        entriesAdded += 1;
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+      }
+    }
+
+    users.push({
+      telegramId: tg,
+      participantAdded,
+      entriesAdded,
+      entriesTotal: await countUserEntries(key, tg),
+    });
+  }
+
+  return {
+    monthKey: key,
+    participantsCount: await countParticipants(key),
+    entriesCount: await countEntries(key),
+    users,
+  };
 }

@@ -3,11 +3,13 @@ import { requireCrmPushAdmin } from "./deps.js";
 import {
   creditGiveawayWinners,
   ensureGiveawayIndexes,
+  ensureGiveawayMonth,
   getActiveGiveawayMonthKey,
   getGiveawayAdminState,
-  listGiveawayMonths,
+  listGiveawayMonthsSummary,
   notifyGiveawayWinners,
   runGiveawayDraw,
+  seedGiveawayTestParticipants,
 } from "../../lib/giveaway/service.js";
 
 const router = express.Router();
@@ -31,7 +33,9 @@ function requireConfirm(req, expectedPhrase) {
 router.get("/giveaway/months", requireCrmPushAdmin, async (_req, res) => {
   try {
     await ensureGiveawayIndexes();
-    const months = await listGiveawayMonths(24);
+    const activeKey = getActiveGiveawayMonthKey();
+    await ensureGiveawayMonth(activeKey);
+    const months = await listGiveawayMonthsSummary(36);
     return res.json({ ok: true, months });
   } catch (error) {
     console.error("GET /crm/giveaway/months error:", error);
@@ -144,6 +148,53 @@ router.post(
       }
       console.error("POST /crm/giveaway notify error:", error);
       return res.status(500).json({ ok: false, error: "GIVEAWAY_NOTIFY_FAILED" });
+    }
+  }
+);
+
+router.post(
+  "/giveaway/:monthKey/seed-test",
+  requireCrmPushAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      if (!requireConfirm(req, "ТЕСТОВІ УЧАСНИКИ")) {
+        return res.status(400).json({
+          ok: false,
+          error: "CONFIRM_PHRASE_REQUIRED",
+          hint: 'confirmPhrase: "ТЕСТОВІ УЧАСНИКИ"',
+        });
+      }
+
+      await ensureGiveawayIndexes();
+      const monthKey = resolveMonthKey(req);
+      const rawIds = req.body?.telegramIds;
+      const telegramIds = Array.isArray(rawIds)
+        ? rawIds
+        : String(rawIds || "")
+            .split(/[,;\s]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+
+      const entriesPerUser = Number(req.body?.entriesPerUser || 1);
+      const result = await seedGiveawayTestParticipants(
+        monthKey,
+        telegramIds,
+        { entriesPerUser }
+      );
+      const state = await getGiveawayAdminState(monthKey);
+      return res.json({ ok: true, result, ...state });
+    } catch (error) {
+      const code = String(error?.message || "");
+      if (
+        code === "GIVEAWAY_NOT_OPEN" ||
+        code === "TELEGRAM_IDS_REQUIRED" ||
+        code === "INVALID_MONTH_KEY"
+      ) {
+        return res.status(400).json({ ok: false, error: code });
+      }
+      console.error("POST /crm/giveaway seed-test error:", error);
+      return res.status(500).json({ ok: false, error: "GIVEAWAY_SEED_FAILED" });
     }
   }
 );
