@@ -3,14 +3,26 @@ import { api } from "../api.js";
 let BROADCAST_TEMPLATES = [];
 
 export const loadBroadcastTemplates = async () => {
-  try {
-    const data = await api("/admin/broadcast/templates");
+  const attempts = 8;
+  let lastError = null;
 
-    BROADCAST_TEMPLATES = Array.isArray(data.templates) ? data.templates : [];
-  } catch (e) {
-    console.error("loadBroadcastTemplates:", e);
-    BROADCAST_TEMPLATES = [];
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const data = await api("/admin/broadcast/templates");
+      BROADCAST_TEMPLATES = Array.isArray(data.templates) ? data.templates : [];
+      return;
+    } catch (e) {
+      lastError = e;
+      const refused =
+        e?.cause?.code === "ECONNREFUSED" ||
+        /fetch failed|ECONNREFUSED/i.test(String(e?.message || e));
+      if (!refused || attempt === attempts) break;
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
   }
+
+  console.error("loadBroadcastTemplates:", lastError);
+  BROADCAST_TEMPLATES = [];
 };
 
 export const getBroadcastTemplateById = (id) =>
