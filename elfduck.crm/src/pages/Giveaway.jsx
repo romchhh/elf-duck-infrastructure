@@ -91,6 +91,7 @@ export default function Giveaway() {
   const [creditPhrase, setCreditPhrase] = useState("");
   const [notifyPhrase, setNotifyPhrase] = useState("");
   const [settingsDraft, setSettingsDraft] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const {
     data: monthsData,
@@ -309,6 +310,7 @@ export default function Giveaway() {
                 type="button"
                 onClick={() => {
                   setParticipantQuery("");
+                  setSettingsOpen(false);
                   setSelectedMonthKey(row.monthKey);
                 }}
                 className="group flex w-full items-center gap-4 rounded-2xl border border-border bg-[hsl(232_26%_6%)] p-4 text-left transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:bg-[hsl(255_100%_68%/0.06)]"
@@ -417,25 +419,32 @@ export default function Giveaway() {
 
           {settingsDraft ? (
             <div className="rounded-2xl surface-card p-4 space-y-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
+              <button
+                type="button"
+                className="flex w-full items-start justify-between gap-3 text-left"
+                onClick={() => setSettingsOpen((open) => !open)}
+                aria-expanded={settingsOpen}
+              >
                 <div>
                   <h3 className="text-[14px] font-semibold">
                     Настройки розыгрыша
                   </h3>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
-                    Количество победителей и суммы призов по местам. Менять
-                    можно только пока месяц в статусе «Приём участников».
+                    {settingsOpen
+                      ? "Количество победителей и суммы призов по местам. Менять можно только пока месяц в статусе «Приём участников»."
+                      : `Призовой фонд ${formatZl(draftPrizePool)} · победителей ${draftWinnerCount}`}
                   </p>
                 </div>
-                <div className="text-right text-[12px] text-muted-foreground">
-                  Призовой фонд:{" "}
-                  <b className="text-foreground">{formatZl(draftPrizePool)}</b>
-                  <div className="text-[11px] text-muted-2">
-                    Победителей: {draftWinnerCount}
-                  </div>
-                </div>
-              </div>
+                <ChevronRight
+                  className={cn(
+                    "mt-0.5 h-4 w-4 shrink-0 text-muted-2 transition-transform",
+                    settingsOpen && "rotate-90"
+                  )}
+                />
+              </button>
 
+              {settingsOpen ? (
+              <>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-[12px]">
                   <span className="mb-1 block text-muted-2">
@@ -634,6 +643,8 @@ export default function Giveaway() {
                   После проведения розыгрыша настройки только для просмотра.
                 </p>
               )}
+              </>
+              ) : null}
             </div>
           ) : null}
 
