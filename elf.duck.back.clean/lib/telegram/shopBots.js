@@ -926,10 +926,12 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
       }
     };
 
-    // Будь-яка приватна дія в старому боті → «переїхали» + лінк на нового.
+    // Особисті чати старого бота → «переїхали». Групи замовлень обробляють кнопки далі.
     activeBot.use(async (ctx, next) => {
-      const chatType = String(ctx.chat?.type || ctx.callbackQuery?.message?.chat?.type || "");
-      if (chatType && chatType !== "private") {
+      const chatType = String(
+        ctx.chat?.type || ctx.callbackQuery?.message?.chat?.type || ""
+      );
+      if (chatType !== "private") {
         return next();
       }
       if (!ctx.from?.id) {
@@ -943,9 +945,8 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
   if (!isPrimaryShopBotIndex(shopBotIndex)) {
     registerLegacyShopBotMovedHandlers(activeBot);
     console.log(
-      `[bot] Legacy shop bot index=${shopBotIndex} → migration-only (primary=@${getPrimaryShopBotUsername()})`
+      `[bot] Legacy shop bot index=${shopBotIndex} → private chats show migration notice; group order buttons stay active (primary=@${getPrimaryShopBotUsername()})`
     );
-    return;
   }
 
   activeBot.use(handleManagerClientMessageText);

@@ -52,6 +52,18 @@ services:
       mongo:
         condition: service_healthy
         required: false
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 25s
 
   shop:
     build:
@@ -162,7 +174,8 @@ services:
       ADMIN_IDS: ${ADMIN_IDS:-}
       SUPER_ADMIN_IDS: ${SUPER_ADMIN_IDS:-}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   mongo_data:

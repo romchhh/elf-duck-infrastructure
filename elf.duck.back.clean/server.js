@@ -368,6 +368,14 @@ await bootstrapShopTelegramBots(app);
 
 startServerIntervals();
 
+app.get("/health", (_req, res) => {
+  const mongoReady = mongoose.connection.readyState === 1;
+  return res.status(mongoReady ? 200 : 503).json({
+    ok: mongoReady,
+    mongo: mongoReady ? "up" : "down",
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);

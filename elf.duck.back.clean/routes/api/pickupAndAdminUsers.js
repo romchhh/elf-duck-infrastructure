@@ -5,6 +5,7 @@ import {
   deductManualCashbackFromUser,
 } from "../../lib/cashback/manualAdmin.js";
 import {
+  CASHBACK_USER_NOT_FOUND_MESSAGE,
   findCashbackUserByQuery,
   normalizeCashbackUsername,
 } from "../../lib/cashback/findUser.js";
@@ -134,7 +135,11 @@ app.get("/admin/users/cashback/by-username", async (req, res) => {
     const user = userDoc?.toObject ? userDoc.toObject() : userDoc;
 
     if (!user) {
-      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+      return res.status(404).json({
+        ok: false,
+        error: "USER_NOT_FOUND",
+        message: CASHBACK_USER_NOT_FOUND_MESSAGE,
+      });
     }
 
     const ledger = Array.isArray(user.cashbackLedger) ? user.cashbackLedger : [];
@@ -186,7 +191,11 @@ app.post("/admin/users/cashback/deduct-by-username", async (req, res) => {
 
     const user = await findCashbackUserByQuery(username);
     if (!user) {
-      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+      return res.status(404).json({
+        ok: false,
+        error: "USER_NOT_FOUND",
+        message: CASHBACK_USER_NOT_FOUND_MESSAGE,
+      });
     }
 
     const result = await deductManualCashbackFromUser(user, amountZl, {
@@ -237,7 +246,11 @@ app.post("/admin/users/cashback/grant-by-username", async (req, res) => {
 
     const user = await findCashbackUserByQuery(username);
     if (!user) {
-      return res.status(404).json({ ok: false, error: "USER_NOT_FOUND" });
+      return res.status(404).json({
+        ok: false,
+        error: "USER_NOT_FOUND",
+        message: CASHBACK_USER_NOT_FOUND_MESSAGE,
+      });
     }
 
     const result = await grantManualCashbackToUser(user, amountZl, {
