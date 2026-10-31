@@ -895,6 +895,18 @@ export async function processDailyPointStats() {
           });
         } else if (reconcileResult?.matched) {
           console.log("[STOCK RECONCILE][MATCH]", { pointKey, dayKey });
+        } else if (reconcileResult?.skipped) {
+          console.warn("[STOCK RECONCILE][SKIP]", {
+            pointKey,
+            dayKey,
+            reason: reconcileResult.reason,
+          });
+        } else if (reconcileResult?.ok === false) {
+          console.error("[STOCK RECONCILE][FAIL]", {
+            pointKey,
+            dayKey,
+            reason: reconcileResult.reason,
+          });
         }
       } catch (reconcileError) {
         console.error(

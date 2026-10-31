@@ -575,6 +575,17 @@ useEffect(() => {
             return;
         }
 
+        if (Number(activeOrderTotal || 0) < 100) {
+            setPaymentPromoHint({
+                type: "error",
+                message: t(
+                    "Промокод действует только для заказов от 100 zł.",
+                    "Kod promocyjny działa tylko dla zamówień od 100 zł."
+                ),
+            });
+            return;
+        }
+
         setPaymentPromoSubmitting(true);
         setPaymentPromoHint(null);
 
@@ -625,7 +636,12 @@ useEffect(() => {
                                       "Лимит активаций промокода исчерпан.",
                                       "Limit aktywacji kodu został wyczerpany."
                                   )
-                                : errorCode === "ORDER_ALREADY_FULLY_COVERED"
+                                : errorCode === "PROMO_MIN_ORDER_TOTAL"
+                                  ? t(
+                                        "Промокод действует только для заказов от 100 zł.",
+                                        "Kod promocyjny działa tylko dla zamówień od 100 zł."
+                                    )
+                                  : errorCode === "ORDER_ALREADY_FULLY_COVERED"
                                   ? t(
                                         "Заказ уже полностью покрыт.",
                                         "Zamówienie jest już w pełni pokryte."
@@ -2428,6 +2444,7 @@ useEffect(() => {
                     </button>
 
                     {paymentMethod === "blik" &&
+                      isTestAppMode() &&
                       !shouldHideBlikTransferHint(activePaymentOrder) && (
                     <div className="paymentBlikNotice" role="note">
                         <div className="paymentBlikNoticeTitle">
@@ -2465,7 +2482,8 @@ useEffect(() => {
                             } ${paymentPromoOpen ? "is-open" : ""}`}
                             disabled={
                                 Boolean(promoCodeApplied && promoDiscountZl > 0) ||
-                                cashbackFullyPaid
+                                cashbackFullyPaid ||
+                                Number(activeOrderTotal || 0) < 100
                             }
                             aria-expanded={
                                 promoCodeApplied && promoDiscountZl > 0

@@ -117,26 +117,9 @@ export function resolveShopBotIndexFromRequest(req) {
   return null;
 }
 
-export async function resolveShopBotIndexForReferral(req, user) {
-  const bots = getActiveUserBots();
-  const fromReq = req ? resolveShopBotIndexFromRequest(req) : null;
-
-  if (
-    fromReq != null &&
-    fromReq >= 0 &&
-    fromReq < bots.length
-  ) {
-    return fromReq;
-  }
-
-  if (user?.shopBotKnown) {
-    const idx = Number(user.shopBotIndex);
-    if (Number.isFinite(idx) && idx >= 0 && idx < bots.length) {
-      return idx;
-    }
-  }
-
-  return resolveShopBotIndexForTelegramId(user?.telegramId);
+export async function resolveShopBotIndexForReferral(_req, _user) {
+  // Рефералки завжди на primary (@elfduck_store_bot).
+  return resolveShopBotIndexForTelegramId();
 }
 
 export async function resolveShopBotIndexForOrder(order, req = null) {

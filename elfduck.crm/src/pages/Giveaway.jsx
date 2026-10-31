@@ -64,6 +64,25 @@ function StatusPill({ status }) {
   );
 }
 
+const DEFAULT_TIERS = [
+  { fromPlace: 1, toPlace: 5, amountZl: 150 },
+  { fromPlace: 6, toPlace: 10, amountZl: 100 },
+  { fromPlace: 11, toPlace: 25, amountZl: 50 },
+];
+
+function tiersPrizeSum(winnerCount, tiers) {
+  const count = Math.max(1, Number(winnerCount || 1));
+  let total = 0;
+  for (let place = 1; place <= count; place += 1) {
+    const tier = (tiers || []).find(
+      (row) =>
+        place >= Number(row.fromPlace || 0) && place <= Number(row.toPlace || 0)
+    );
+    total += Number(tier?.amountZl || 0);
+  }
+  return Number(total.toFixed(2));
+}
+
 export default function Giveaway() {
   const queryClient = useQueryClient();
   const [selectedMonthKey, setSelectedMonthKey] = useState(null);
@@ -71,6 +90,7 @@ export default function Giveaway() {
   const [drawPhrase, setDrawPhrase] = useState("");
   const [creditPhrase, setCreditPhrase] = useState("");
   const [notifyPhrase, setNotifyPhrase] = useState("");
+  const [settingsDraft, setSettingsDraft] = useState(null);
 
   const {
     data: monthsData,
@@ -101,6 +121,42 @@ export default function Giveaway() {
     await queryClient.invalidateQueries({ queryKey: ["crm-giveaway-months"] });
     await queryClient.invalidateQueries({ queryKey: ["crm-giveaway-current"] });
   };
+
+  React.useEffect(() => {
+    if (!selectedMonthKey || !data?.settings) return;
+    setSettingsDraft({
+      winnerCount: Number(data.settings.winnerCount || 25),
+      prizeTiers: (data.settings.prizeTiers || DEFAULT_TIERS).map((row) => ({
+        fromPlace: Number(row.fromPlace || 1),
+        toPlace: Number(row.toPlace || 1),
+        amountZl: Number(row.amountZl || 0),
+      })),
+      rulesRu: String(data.settings.rulesRu || ""),
+      rulesPl: String(data.settings.rulesPl || ""),
+    });
+  }, [selectedMonthKey, data?.settings, data?.month?.updatedAt]);
+
+  const settingsMutation = useMutation({
+    mutationFn: () =>
+      crmFetchJson(
+        `/crm/giveaway/${encodeURIComponent(selectedMonthKey)}/settings`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(settingsDraft || {}),
+        }
+      ),
+    onSuccess: async () => {
+      await invalidate();
+      toast({ title: "Настройки розыгрыша сохранены" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Не удалось сохранить настройки",
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const drawMutation = useMutation({
     mutationFn: () =>
@@ -180,6 +236,10 @@ export default function Giveaway() {
   const status = String(data?.month?.status || "open");
   const winners = data?.winners || [];
   const participants = data?.participants || [];
+  const settingsEditable = status === "open";
+  const draftWinnerCount = Number(settingsDraft?.winnerCount || 25);
+  const draftTiers = settingsDraft?.prizeTiers || DEFAULT_TIERS;
+  const draftPrizePool = tiersPrizeSum(draftWinnerCount, draftTiers);
 
   const filteredParticipants = useMemo(() => {
     const q = participantQuery.trim().toLowerCase();
@@ -346,7 +406,7 @@ export default function Giveaway() {
             <Metric label="Записей (покупок)" value={data?.entriesCount ?? 0} />
             <Metric
               label="Сумма призов"
-              value={`${prizeSum || data?.prizePreview || 0} zł`}
+              value={`${prizeSum || data?.prizePreview || draftPrizePool || 0} zł`}
             />
             <Metric
               label="Розыгрыш"
@@ -354,6 +414,228 @@ export default function Giveaway() {
               small
             />
           </div>
+
+          {settingsDraft ? (
+            <div className="rounded-2xl surface-card p-4 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-[14px] font-semibold">
+                    Настройки розыгрыша
+                  </h3>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
+                    Количество победителей и суммы призов по местам. Менять
+                    можно только пока месяц в статусе «Приём участников».
+                  </p>
+                </div>
+                <div className="text-right text-[12px] text-muted-foreground">
+                  Призовой фонд:{" "}
+                  <b className="text-foreground">{formatZl(draftPrizePool)}</b>
+                  <div className="text-[11px] text-muted-2">
+                    Победителей: {draftWinnerCount}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-[12px]">
+                  <span className="mb-1 block text-muted-2">
+                    Количество победителей
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={200}
+                    disabled={!settingsEditable || settingsMutation.isPending}
+                    value={draftWinnerCount}
+                    onChange={(e) =>
+                      setSettingsDraft((prev) => ({
+                        ...(prev || {}),
+                        winnerCount: Number(e.target.value || 1),
+                      }))
+                    }
+                    className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[13px]"
+                  />
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] text-muted-2">
+                    Призы по местам (диапазон → сумма zł)
+                  </span>
+                  {settingsEditable ? (
+                    <button
+                      type="button"
+                      className="text-[11px] text-[hsl(255_100%_75%)] hover:underline"
+                      onClick={() =>
+                        setSettingsDraft((prev) => ({
+                          ...(prev || {}),
+                          prizeTiers: [
+                            ...(prev?.prizeTiers || []),
+                            {
+                              fromPlace: draftWinnerCount,
+                              toPlace: draftWinnerCount,
+                              amountZl: 50,
+                            },
+                          ],
+                        }))
+                      }
+                    >
+                      + диапазон
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="space-y-2">
+                  {draftTiers.map((tier, index) => (
+                    <div
+                      key={`tier-${index}`}
+                      className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2"
+                    >
+                      <input
+                        type="number"
+                        min={1}
+                        disabled={!settingsEditable || settingsMutation.isPending}
+                        value={tier.fromPlace}
+                        onChange={(e) => {
+                          const value = Number(e.target.value || 1);
+                          setSettingsDraft((prev) => {
+                            const next = [...(prev?.prizeTiers || [])];
+                            next[index] = { ...next[index], fromPlace: value };
+                            return { ...(prev || {}), prizeTiers: next };
+                          });
+                        }}
+                        className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                        placeholder="с"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        disabled={!settingsEditable || settingsMutation.isPending}
+                        value={tier.toPlace}
+                        onChange={(e) => {
+                          const value = Number(e.target.value || 1);
+                          setSettingsDraft((prev) => {
+                            const next = [...(prev?.prizeTiers || [])];
+                            next[index] = { ...next[index], toPlace: value };
+                            return { ...(prev || {}), prizeTiers: next };
+                          });
+                        }}
+                        className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                        placeholder="по"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        disabled={!settingsEditable || settingsMutation.isPending}
+                        value={tier.amountZl}
+                        onChange={(e) => {
+                          const value = Number(e.target.value || 0);
+                          setSettingsDraft((prev) => {
+                            const next = [...(prev?.prizeTiers || [])];
+                            next[index] = { ...next[index], amountZl: value };
+                            return { ...(prev || {}), prizeTiers: next };
+                          });
+                        }}
+                        className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                        placeholder="zł"
+                      />
+                      {settingsEditable && draftTiers.length > 1 ? (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-border px-2 text-[11px] text-muted-2 hover:text-foreground"
+                          onClick={() =>
+                            setSettingsDraft((prev) => ({
+                              ...(prev || {}),
+                              prizeTiers: (prev?.prizeTiers || []).filter(
+                                (_row, i) => i !== index
+                              ),
+                            }))
+                          }
+                        >
+                          ×
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <label className="block text-[12px]">
+                  <span className="mb-1 block text-muted-2">
+                    Правила (RU), опционально
+                  </span>
+                  <textarea
+                    rows={4}
+                    disabled={!settingsEditable || settingsMutation.isPending}
+                    value={settingsDraft.rulesRu || ""}
+                    onChange={(e) =>
+                      setSettingsDraft((prev) => ({
+                        ...(prev || {}),
+                        rulesRu: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[12px] leading-relaxed"
+                    placeholder="Пусто = стандартные правила"
+                  />
+                </label>
+                <label className="block text-[12px]">
+                  <span className="mb-1 block text-muted-2">
+                    Правила (PL), опционально
+                  </span>
+                  <textarea
+                    rows={4}
+                    disabled={!settingsEditable || settingsMutation.isPending}
+                    value={settingsDraft.rulesPl || ""}
+                    onChange={(e) =>
+                      setSettingsDraft((prev) => ({
+                        ...(prev || {}),
+                        rulesPl: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[12px] leading-relaxed"
+                    placeholder="Puste = domyślne zasady"
+                  />
+                </label>
+              </div>
+
+              {settingsEditable ? (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={settingsMutation.isPending}
+                    onClick={() => settingsMutation.mutate()}
+                    className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
+                  >
+                    {settingsMutation.isPending ? "…" : "Сохранить настройки"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={settingsMutation.isPending}
+                    onClick={() =>
+                      setSettingsDraft({
+                        winnerCount: 25,
+                        prizeTiers: DEFAULT_TIERS.map((row) => ({ ...row })),
+                        rulesRu: "",
+                        rulesPl: "",
+                      })
+                    }
+                    className="rounded-lg border border-border px-4 py-2 text-[12px] text-muted-foreground hover:text-foreground"
+                  >
+                    Сбросить к 25 / 2000 zł
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted-2">
+                  После проведения розыгрыша настройки только для просмотра.
+                </p>
+              )}
+            </div>
+          ) : null}
 
           <div className="rounded-2xl surface-card p-4">
             <h3 className="text-[14px] font-semibold">

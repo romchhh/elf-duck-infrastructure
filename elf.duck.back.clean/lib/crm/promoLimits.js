@@ -3,7 +3,25 @@
  * - maxActivations: total uses across all clients (0 = unlimited)
  * - maxActivationsPerUser: uses per client (0 = unlimited, default 1)
  * Expiry (expiresAt) is independent of these limits.
+ * - min order total to apply a promo on an order: PROMO_MIN_ORDER_TOTAL_ZL (default 100)
  */
+
+/** Мінімальна сума замовлення (zł), щоб застосувати промокод. */
+export const PROMO_MIN_ORDER_TOTAL_ZL = Math.max(
+  0,
+  Number(process.env.PROMO_MIN_ORDER_TOTAL_ZL || 100) || 100
+);
+
+export function getPromoMinOrderTotalZl() {
+  return PROMO_MIN_ORDER_TOTAL_ZL;
+}
+
+/** Чи можна застосувати промокод до замовлення з таким totalZl. */
+export function isOrderTotalEligibleForPromo(orderTotalZl) {
+  const total = Number(orderTotalZl || 0);
+  if (!Number.isFinite(total)) return false;
+  return total + 1e-9 >= getPromoMinOrderTotalZl();
+}
 
 export function normalizePromoCodeValue(value) {
   return String(value || "")

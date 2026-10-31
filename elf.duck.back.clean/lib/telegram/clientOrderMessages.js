@@ -424,6 +424,39 @@ export function visitShopButtonText(lang) {
   return pickClientCopy(lang, "💨 Посетить магазин 🛍️", "💨 Odwiedź sklep 🛍️");
 }
 
+export function openNewShopBotButtonText(lang) {
+  return pickClientCopy(lang, "➡️ Перейти в новый бот", "➡️ Przejdź do nowego bota");
+}
+
+/** Старий бот: повідомлення про переїзд на @elfduck_store_bot. */
+export function buildShopBotMovedClientMessage({
+  lang = "ru",
+  newBotUsername = "elfduck_store_bot",
+} = {}) {
+  const username = String(newBotUsername || "elfduck_store_bot")
+    .replace(/^@/, "")
+    .trim();
+  const link = `https://t.me/${username}`;
+  if (lang === "pl") {
+    return [
+      "🚚 <b>Bot ELF DUCK przeniósł się!</b>",
+      "",
+      "Ten bot już nie obsługuje sklepu.",
+      `Korzystaj z nowego: <b>@${username}</b>`,
+      "",
+      link,
+    ].join("\n");
+  }
+  return [
+    "🚚 <b>Бот ELF DUCK переехал!</b>",
+    "",
+    "Этот бот больше не обслуживает магазин.",
+    `Пишите в новый: <b>@${username}</b>`,
+    "",
+    link,
+  ].join("\n");
+}
+
 export function botStartErrorText(lang) {
   return pickClientCopy(
     lang,

@@ -1,6 +1,7 @@
 import User from "../../models/User.js";
 import { getTelegramBotTokens } from "./botTokens.js";
 import { bot, userBots } from "../server/botRegistry.js";
+import { getPrimaryShopBotIndex } from "./shopBotPrimary.js";
 
 export function getActiveUserBots() {
   if (userBots.length) return userBots;
@@ -17,32 +18,16 @@ export function getShopBotByIndex(index) {
   return bots[0];
 }
 
-export async function resolveShopBotIndexForTelegramId(telegramId) {
-  const id = String(telegramId || "").trim();
-  if (!id || id.startsWith("guest_")) return 0;
-
-  const user = await User.findOne(
-    { telegramId: id },
-    { shopBotIndex: 1, shopBotKnown: 1 }
-  ).lean();
-
+/** Лише primary (@elfduck_store_bot) — для клієнтських повідомлень. */
+export function getClientDeliveryBots() {
   const bots = getActiveUserBots();
-  const idx = Number(user?.shopBotIndex);
+  if (!bots.length) return [];
+  const primary = getShopBotByIndex(getPrimaryShopBotIndex());
+  return primary ? [primary] : [bots[0]];
+}
 
-  if (
-    user?.shopBotKnown &&
-    Number.isFinite(idx) &&
-    idx >= 0 &&
-    idx < bots.length
-  ) {
-    return idx;
-  }
-
-  if (bots.length > 1) {
-    return bots.length - 1;
-  }
-
-  return 0;
+export async function resolveShopBotIndexForTelegramId(_telegramId) {
+  return getPrimaryShopBotIndex();
 }
 
 export function isUserChatUnavailableTelegramError(e) {
@@ -61,8 +46,7 @@ export function isUserChatUnavailableTelegramError(e) {
 }
 
 /**
- * Відправка клієнту через усі shop-боти (TELEGRAM_BOT_TOKEN + _2).
- * Успіх — якщо доставлено хоча б одним ботом.
+ * Відправка клієнту лише через primary shop-бот (@elfduck_store_bot).
  */
 export async function sendViaUserShopBot(telegramId, sendFn, options = {}) {
   const id = String(telegramId || "").trim();
@@ -75,87 +59,42 @@ export async function sendViaUserShopBot(telegramId, sendFn, options = {}) {
     throw new Error("NO_USER_BOT");
   }
 
-  const overrideIndex = Number(options.preferredBotIndex);
-  let preferredIndex =
-    Number.isFinite(overrideIndex) &&
-    overrideIndex >= 0 &&
-    overrideIndex < bots.length
-      ? overrideIndex
-      : await resolveShopBotIndexForTelegramId(id);
+  const preferredIndex = getPrimaryShopBotIndex();
+  const activeBot = getShopBotByIndex(preferredIndex) || bots[0];
+  const botIndex = getShopBotByIndex(preferredIndex) ? preferredIndex : 0;
 
-  const tryOrder = [
-    preferredIndex,
-    ...bots.map((_, i) => i).filter((i) => i !== preferredIndex),
-  ];
+  if (!activeBot) {
+    throw new Error("NO_USER_BOT");
+  }
 
-  const successes = [];
-  let lastUnavailable = null;
-  let lastHardError = null;
+  void options;
 
-  for (const idx of tryOrder) {
-    const activeBot = getShopBotByIndex(idx);
-    if (!activeBot) continue;
+  try {
+    const result = await sendFn(activeBot);
+    await User.updateOne(
+      { telegramId: id },
+      { $set: { shopBotIndex: botIndex, shopBotKnown: true } }
+    ).catch(() => {});
 
-    try {
-      const result = await sendFn(activeBot);
-      successes.push({ result, botIndex: idx });
-    } catch (e) {
-      if (isUserChatUnavailableTelegramError(e)) {
-        lastUnavailable = e;
-        continue;
-      }
-      lastHardError = e;
+    return {
+      result,
+      botIndex,
+      deliveredViaBots: 1,
+    };
+  } catch (e) {
+    if (!isUserChatUnavailableTelegramError(e)) {
       console.error(
-        `[bot][${idx}] client delivery failed`,
+        `[bot][${botIndex}] client delivery failed`,
         id,
         e?.response?.description || e?.message || e
       );
     }
+    throw e;
   }
-
-  if (!successes.length) {
-    throw lastHardError || lastUnavailable || new Error("SEND_FAILED");
-  }
-
-  const primary =
-    successes.find((item) => item.botIndex === preferredIndex) ||
-    successes[0];
-
-  if (primary.botIndex !== preferredIndex) {
-    preferredIndex = primary.botIndex;
-  }
-
-  await User.updateOne(
-    { telegramId: id },
-    { $set: { shopBotIndex: preferredIndex, shopBotKnown: true } }
-  ).catch(() => {});
-
-  return {
-    result: primary.result,
-    botIndex: primary.botIndex,
-    deliveredViaBots: successes.length,
-  };
 }
 
-export function getShopBotSendOptions(context = {}) {
-  const order = context?.order;
-  const user = context?.user;
-
-  if (order != null) {
-    const idx = Number(order.shopBotIndex);
-    if (Number.isFinite(idx) && idx >= 0) {
-      return { preferredBotIndex: idx };
-    }
-  }
-
-  if (user?.shopBotKnown) {
-    const idx = Number(user.shopBotIndex);
-    if (Number.isFinite(idx) && idx >= 0) {
-      return { preferredBotIndex: idx };
-    }
-  }
-
-  return {};
+export function getShopBotSendOptions(_context = {}) {
+  return { preferredBotIndex: getPrimaryShopBotIndex() };
 }
 
 export async function sendClientTelegramMessage(

@@ -10,6 +10,7 @@ import {
   notifyGiveawayWinners,
   runGiveawayDraw,
   seedGiveawayTestParticipants,
+  updateGiveawayMonthSettings,
 } from "../../lib/giveaway/service.js";
 
 const router = express.Router();
@@ -54,6 +55,33 @@ router.get("/giveaway/current", requireCrmPushAdmin, async (req, res) => {
     return res.status(500).json({ ok: false, error: "GIVEAWAY_LOAD_FAILED" });
   }
 });
+
+router.patch(
+  "/giveaway/:monthKey/settings",
+  requireCrmPushAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      await ensureGiveawayIndexes();
+      const monthKey = resolveMonthKey(req);
+      const body = req.body || {};
+      const state = await updateGiveawayMonthSettings(monthKey, {
+        winnerCount: body.winnerCount,
+        prizeTiers: body.prizeTiers,
+        rulesRu: body.rulesRu,
+        rulesPl: body.rulesPl,
+      });
+      return res.json({ ok: true, ...state });
+    } catch (error) {
+      const code = String(error?.message || "");
+      if (code === "GIVEAWAY_NOT_OPEN" || code === "INVALID_MONTH_KEY") {
+        return res.status(400).json({ ok: false, error: code });
+      }
+      console.error("PATCH /crm/giveaway settings error:", error);
+      return res.status(500).json({ ok: false, error: "GIVEAWAY_SETTINGS_FAILED" });
+    }
+  }
+);
 
 router.post(
   "/giveaway/:monthKey/draw",

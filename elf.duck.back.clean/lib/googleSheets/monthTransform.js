@@ -1,5 +1,16 @@
+export const REPORT_TAB_GRID_ROWS = 650;
+export const REPORT_TAB_GRID_COLS = 702; // A..ZZ
+
 const DAY_PAIR_ROW_STRIDE = 32;
 const DAY_BLOCK_STARTS = [0, 11];
+const MONTH_RIGHT_START_COL = 11;
+const MONTH_SOLD_COL = MONTH_RIGHT_START_COL + 3;
+const MONTH_TIER_COLS = [
+  MONTH_RIGHT_START_COL + 4,
+  MONTH_RIGHT_START_COL + 5,
+  MONTH_RIGHT_START_COL + 6,
+  MONTH_RIGHT_START_COL + 7,
+];
 const MODEL_LIST_MARKERS = new Set([
   "MODEL",
   "1500",
@@ -76,6 +87,129 @@ function zeroNumericCell(cell) {
   return 0;
 }
 
+function ensureCell(out, rowIndex, colIndex) {
+  if (!out[rowIndex]) out[rowIndex] = [];
+}
+
+function clearCell(out, rowIndex, colIndex) {
+  ensureCell(out, rowIndex, colIndex);
+  out[rowIndex][colIndex] = "";
+}
+
+function isModelDataRowLabel(label) {
+  const text = String(label || "").trim();
+  if (!text) return false;
+  if (MODEL_LIST_MARKERS.has(text)) return false;
+  if (/^model$/i.test(text)) return false;
+  if (/^касса$/i.test(text)) return false;
+  if (/^зарплата$/i.test(text)) return false;
+  if (/^итого$/i.test(text)) return false;
+  return true;
+}
+
+export function padReportValuesGrid(
+  rows,
+  rowCount = REPORT_TAB_GRID_ROWS,
+  colCount = REPORT_TAB_GRID_COLS
+) {
+  const maxRow = Math.max(rowCount, (rows || []).length);
+  let maxCol = colCount;
+
+  for (const row of rows || []) {
+    maxCol = Math.max(maxCol, row?.length || 0);
+  }
+
+  const out = [];
+
+  for (let r = 0; r < maxRow; r += 1) {
+    const src = rows?.[r] || [];
+    const line = [];
+
+    for (let c = 0; c < maxCol; c += 1) {
+      const value = src[c];
+      line.push(value === undefined || value === null ? "" : value);
+    }
+
+    out.push(line);
+  }
+
+  return out;
+}
+
+function resetMonthSummaryFormulaColumns(out, rangeLabel) {
+  let titleRow = -1;
+
+  for (let r = 480; r < out.length; r += 1) {
+    if (String(out[r]?.[MONTH_RIGHT_START_COL] || "").trim() === rangeLabel) {
+      titleRow = r;
+      break;
+    }
+  }
+
+  if (titleRow < 0) return;
+
+  for (let r = titleRow + 2; r < out.length; r += 1) {
+    const leftLabel = String(out[r]?.[0] || "").trim();
+    const rightLabel = String(out[r]?.[MONTH_RIGHT_START_COL] || "").trim();
+
+    if (
+      String(out[r]?.[0] || "").trim() === "MODEL" &&
+      String(out[r]?.[1] || "").includes("ПРОДАЖ")
+    ) {
+      break;
+    }
+
+    if (/^итого$/i.test(rightLabel)) {
+      for (let c = 0; c < (out[r] || []).length; c += 1) {
+        if (c === 0 || c === MONTH_RIGHT_START_COL) continue;
+        const label = String(out[r]?.[c] || "").trim();
+        if (MODEL_LIST_MARKERS.has(label) || /^model$/i.test(label)) continue;
+        if (MONTH_TIER_COLS.includes(c)) {
+          out[r][c] = 0;
+          continue;
+        }
+        if (isNumericish(out[r]?.[c])) out[r][c] = zeroNumericCell(out[r][c]);
+      }
+      break;
+    }
+
+    if (/^касса$/i.test(leftLabel) || /^касса$/i.test(rightLabel)) {
+      for (let c = 1; c <= 9; c += 1) {
+        if (c === 8) {
+          out[r][c] = 0;
+          continue;
+        }
+        clearCell(out, r, c);
+      }
+      for (const c of [MONTH_SOLD_COL, ...MONTH_TIER_COLS, MONTH_RIGHT_START_COL + 8]) {
+        if (c === MONTH_RIGHT_START_COL + 8) {
+          out[r][c] = 0;
+          continue;
+        }
+        clearCell(out, r, c);
+      }
+      continue;
+    }
+
+    if (/^зарплата$/i.test(rightLabel)) {
+      clearCell(out, r, MONTH_RIGHT_START_COL + 1);
+      continue;
+    }
+
+    if (isModelDataRowLabel(leftLabel)) {
+      clearCell(out, r, 1);
+      clearCell(out, r, 2);
+    }
+
+    if (isModelDataRowLabel(rightLabel)) {
+      clearCell(out, r, MONTH_SOLD_COL);
+      for (const c of MONTH_TIER_COLS) {
+        out[r][c] = 0;
+      }
+    }
+  }
+}
+
 export function resetReportStatsInGrid(
   rows,
   targetYear,
@@ -97,24 +231,34 @@ export function resetReportStatsInGrid(
         const label = String(out[r]?.[blockStart] || "").trim();
         if (!label) continue;
         if (/^касса$/i.test(label)) {
-          for (let c = blockStart + 1; c <= blockStart + 9; c++) {
-            if (isNumericish(out[r][c])) out[r][c] = zeroNumericCell(out[r][c]);
+          for (let c = blockStart + 1; c <= blockStart + 7; c += 1) {
+            clearCell(out, r, c);
           }
+          out[r][blockStart + 8] = 0;
+          clearCell(out, r, blockStart + 9);
           continue;
         }
         if (/^зарплата$/i.test(label)) {
-          if (isNumericish(out[r]?.[blockStart + 1])) {
-            out[r][blockStart + 1] = "0,00 zł";
-          }
+          clearCell(out, r, blockStart + 1);
           continue;
         }
 
-        for (let c = blockStart + 1; c <= blockStart + 8; c++) {
-          if (isNumericish(out[r]?.[c])) out[r][c] = 0;
+        if (!isModelDataRowLabel(label)) continue;
+
+        clearCell(out, r, blockStart + 1);
+        clearCell(out, r, blockStart + 2);
+        clearCell(out, r, blockStart + 3);
+        for (let c = blockStart + 4; c <= blockStart + 7; c += 1) {
+          out[r][c] = 0;
+        }
+        if (isNumericish(out[r]?.[blockStart + 8])) {
+          out[r][blockStart + 8] = 0;
         }
       }
     }
   }
+
+  resetMonthSummaryFormulaColumns(out, rangeLabel);
 
   for (let r = 480; r < out.length; r++) {
     const row = out[r] || [];

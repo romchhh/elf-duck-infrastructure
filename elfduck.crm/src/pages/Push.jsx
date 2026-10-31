@@ -3421,8 +3421,66 @@ function automationMessageHasContent(message) {
       String(message.text || '').trim() ||
       String(message.textPl || '').trim() ||
       String(message.textRu || '').trim() ||
-      String(message.promo || '').trim()
+      String(message.promo || '').trim() ||
+      String(message.photoUrl || message.photoPreviewUrl || '').trim() ||
+      String(message.photoFileId || '').trim()
   );
+}
+
+function mergeAutomationMessageMedia(message, media = {}) {
+  if (!message) return null;
+
+  const photoUrl = String(
+    media.photoUrl || message.photoUrl || message.photoPreviewUrl || ''
+  ).trim();
+  const photoFileId = String(
+    media.photoFileId || message.photoFileId || ''
+  ).trim();
+
+  return {
+    ...message,
+    photoUrl,
+    photoFileId,
+  };
+}
+
+async function uploadCrmPushMediaFile(file) {
+  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowed.includes(file.type)) {
+    throw new Error('Можно загрузить JPG, PNG или WEBP');
+  }
+  if (file.size > 25 * 1024 * 1024) {
+    throw new Error('Максимум 25 МБ до сжатия');
+  }
+
+  const uploadFile = await compressImageForUpload(file, {
+    maxEdge: 1920,
+    maxBytes: 2.5 * 1024 * 1024,
+    quality: 0.85,
+  });
+
+  const formData = new FormData();
+  formData.append(
+    'file',
+    uploadFile,
+    uploadFile.name || file.name || 'push.jpg'
+  );
+
+  const data = await crmFetch('/crm/push/upload-media', {
+    method: 'POST',
+    body: formData,
+  });
+
+  const uploadedUrl = String(
+    data?.url || data?.photoPreviewUrl || ''
+  ).trim();
+
+  return {
+    uploadFile,
+    photoUrl: uploadedUrl,
+    photoFileId: String(data?.fileId || '').trim(),
+    previewUrl: uploadedUrl || URL.createObjectURL(uploadFile),
+  };
 }
 
 function defaultDelayMinutesForEvent(event, row) {
@@ -3439,6 +3497,10 @@ function PushAutomationsPanel({ templates = [] }) {
   const [enabled, setEnabled] = useState(false);
   const [delayMinutes, setDelayMinutes] = useState('0');
   const [templateId, setTemplateId] = useState('');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoFileId, setPhotoFileId] = useState('');
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState('');
+  const [mediaUploading, setMediaUploading] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['crm-push-automations'],
@@ -3456,7 +3518,19 @@ function PushAutomationsPanel({ templates = [] }) {
       enabled,
       delayMinutes,
       templateId,
+      photoUrl,
+      photoFileId,
+      mediaPreviewUrl,
     };
+  };
+
+  const resetAutomationMedia = () => {
+    if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(mediaPreviewUrl);
+    }
+    setPhotoUrl('');
+    setPhotoFileId('');
+    setMediaPreviewUrl('');
   };
 
   const loadTrigger = (trigger, row, event) => {
@@ -3465,35 +3539,53 @@ function PushAutomationsPanel({ templates = [] }) {
       setEnabled(draft.enabled === true);
       setDelayMinutes(String(draft.delayMinutes ?? '0'));
       setTemplateId(String(draft.templateId || ''));
+      setPhotoUrl(String(draft.photoUrl || ''));
+      setPhotoFileId(String(draft.photoFileId || ''));
+      setMediaPreviewUrl(String(draft.mediaPreviewUrl || draft.photoUrl || ''));
       return;
     }
 
     setEnabled(row?.enabled === true);
     setDelayMinutes(String(defaultDelayMinutesForEvent(event, row)));
     setTemplateId(String(row?.message?.templateId || ''));
+    const savedPhotoUrl = String(
+      row?.message?.photoUrl || row?.message?.photoPreviewUrl || ''
+    ).trim();
+    setPhotoUrl(savedPhotoUrl);
+    setPhotoFileId(String(row?.message?.photoFileId || '').trim());
+    setMediaPreviewUrl(savedPhotoUrl);
   };
 
   useEffect(() => {
     if (isLoading) return;
-    if (draftsRef.current[activeTrigger]) return;
     const event =
       PUSH_AUTOMATION_EVENTS.find((item) => item.trigger === activeTrigger) ||
       PUSH_AUTOMATION_EVENTS[0];
     loadTrigger(activeTrigger, activeRow, event);
-  }, [activeTrigger, isLoading]);
+  }, [activeTrigger, isLoading, activeRow]);
 
   const selectedTemplate = (templates || []).find(
     (item) => item.id === templateId
   );
   const previewMessage = useMemo(() => {
+    let base = null;
     if (selectedTemplate) {
-      return buildAutomationMessageFromTemplate(selectedTemplate, templateId);
+      base = buildAutomationMessageFromTemplate(selectedTemplate, templateId);
+    } else if (automationMessageHasContent(activeRow?.message)) {
+      base = activeRow.message;
     }
-    if (automationMessageHasContent(activeRow?.message)) {
-      return activeRow.message;
-    }
-    return null;
-  }, [selectedTemplate, templateId, activeRow?.message]);
+    return mergeAutomationMessageMedia(base, { photoUrl, photoFileId });
+  }, [
+    selectedTemplate,
+    templateId,
+    activeRow?.message,
+    photoUrl,
+    photoFileId,
+  ]);
+
+  const previewPhotoUrl =
+    mediaPreviewUrl ||
+    String(previewMessage?.photoUrl || previewMessage?.photoPreviewUrl || '').trim();
 
   const previewLang =
     String(previewMessage?.textPl || '').trim() &&
@@ -3511,14 +3603,18 @@ function PushAutomationsPanel({ templates = [] }) {
   const saveMutation = useMutation({
     mutationFn: () => {
       const template = (templates || []).find((item) => item.id === templateId);
-      const message =
+      const baseMessage =
         buildAutomationMessageFromTemplate(template, templateId) ||
         (automationMessageHasContent(activeRow?.message)
           ? activeRow.message
           : null);
+      const message = mergeAutomationMessageMedia(baseMessage, {
+        photoUrl,
+        photoFileId,
+      });
 
-      if (!message) {
-        throw new Error('Выберите шаблон из списка выше');
+      if (!automationMessageHasContent(message)) {
+        throw new Error('Выберите шаблон или добавьте фото с текстом');
       }
 
       return crmFetch(`/crm/push/automations/${activeTrigger}`, {
@@ -3554,7 +3650,34 @@ function PushAutomationsPanel({ templates = [] }) {
 
   const canSave =
     Boolean(templateId && selectedTemplate) ||
-    automationMessageHasContent(activeRow?.message);
+    automationMessageHasContent(activeRow?.message) ||
+    Boolean(String(photoUrl || photoFileId).trim());
+
+  const selectAutomationMedia = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setMediaUploading(true);
+    try {
+      const uploaded = await uploadCrmPushMediaFile(file);
+      if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(mediaPreviewUrl);
+      }
+      setPhotoUrl(uploaded.photoUrl);
+      setPhotoFileId(uploaded.photoFileId);
+      setMediaPreviewUrl(uploaded.previewUrl);
+      toast({ title: 'Фото добавлено к авторассылке' });
+    } catch (error) {
+      toast({
+        title: 'Не удалось загрузить фото',
+        description: error?.message || 'UPLOAD_FAILED',
+        variant: 'destructive',
+      });
+    } finally {
+      setMediaUploading(false);
+    }
+  };
 
   return (
     <div className="rounded-2xl surface-card p-5">
@@ -3564,9 +3687,8 @@ function PushAutomationsPanel({ templates = [] }) {
             Автоматическая рассылка
           </h3>
           <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-            Сначала сохраните шаблон в блоке выше, затем выберите событие и
-            привяжите шаблон. Текст заново вводить не нужно — только задержку и
-            вкл/выкл.
+            Привяжите шаблон из блока выше или добавьте фото прямо здесь.
+            Текст можно взять из шаблона — настройте задержку и вкл/выкл.
           </p>
         </div>
         <Chip
@@ -3623,6 +3745,58 @@ function PushAutomationsPanel({ templates = [] }) {
                     «Создать шаблон».
                   </p>
                 ) : null}
+              </Field>
+
+              <Field label="Фото (необязательно)">
+                <div className="space-y-2">
+                  <label
+                    className={cn(
+                      'inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground',
+                      mediaUploading && 'pointer-events-none opacity-50'
+                    )}
+                  >
+                    <Paperclip className="h-3.5 w-3.5" />
+                    {mediaUploading
+                      ? 'Загрузка…'
+                      : previewPhotoUrl
+                        ? 'Заменить фото'
+                        : 'Добавить фото'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={selectAutomationMedia}
+                      className="hidden"
+                    />
+                  </label>
+                  {previewPhotoUrl ? (
+                    <div className="flex items-start gap-3 rounded-lg border border-border-soft bg-[hsl(232_26%_6%)] p-2">
+                      <img
+                        src={previewPhotoUrl}
+                        alt="Фото авторассылки"
+                        className="h-16 w-16 shrink-0 rounded-md object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] text-muted-foreground">
+                          Отправится как фото с подписью из шаблона. Можно
+                          добавить фото и в самом шаблоне — здесь переопределяет
+                          его для этого события.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={resetAutomationMedia}
+                          className="mt-2 text-[11px] text-muted-2 hover:text-foreground"
+                        >
+                          Удалить фото
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-2">
+                      JPG, PNG или WEBP до 25 МБ (на сервер уходит сжатое
+                      изображение).
+                    </p>
+                  )}
+                </div>
               </Field>
 
               {activeEvent.delayMode === 'none' ? (
@@ -3698,6 +3872,13 @@ function PushAutomationsPanel({ templates = [] }) {
                 Превью
               </p>
               <div className="mt-2 rounded-xl bg-[hsl(234_22%_11%)] p-3">
+                {previewPhotoUrl ? (
+                  <img
+                    src={previewPhotoUrl}
+                    alt="Превью фото"
+                    className="mb-2 max-h-32 w-full rounded-lg object-cover"
+                  />
+                ) : null}
                 {previewMessage?.title ? (
                   <div className="mb-1 text-[12px] font-semibold text-foreground">
                     {previewMessage.title}

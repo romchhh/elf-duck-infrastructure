@@ -3,6 +3,8 @@ import {
   countUserPromoActivations,
   getPromoMaxActivations,
   getPromoMaxActivationsPerUser,
+  getPromoMinOrderTotalZl,
+  isOrderTotalEligibleForPromo,
   isPromoGlobalLimitReached,
   isPromoPerUserLimitReached,
 } from "../../lib/crm/promoLimits.js";
@@ -1574,6 +1576,16 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
       return res.status(409).json({ ok: false, error: "PROMO_ALREADY_ON_ORDER" });
     }
 
+    const orderTotalForPromo = Number(order.totalZl || 0);
+    if (!isOrderTotalEligibleForPromo(orderTotalForPromo)) {
+      return res.status(400).json({
+        ok: false,
+        error: "PROMO_MIN_ORDER_TOTAL",
+        minOrderTotalZl: getPromoMinOrderTotalZl(),
+        orderTotalZl: orderTotalForPromo,
+      });
+    }
+
     const promoCode = await getPromoCodeByCode(code);
 
     if (!promoCode || promoCode?.isActive !== true) {
@@ -1767,6 +1779,25 @@ app.post("/orders/:id/payment-check", async (req, res) => {
     const order = await Order.findOne({ _id: id, userTelegramId: telegramId });
     if (!order) {
       return res.status(404).json({ ok: false, error: "Order not found" });
+    }
+
+    const priorPaymentStatus = String(order?.payment?.status || "")
+      .trim()
+      .toLowerCase();
+    const priorManagerMessageId = Number(
+      String(order?.payment?.managerMessageId || "").trim()
+    );
+
+    if (
+      ["checking", "awaiting"].includes(priorPaymentStatus) &&
+      Number.isFinite(priorManagerMessageId) &&
+      priorManagerMessageId > 0
+    ) {
+      stopPaymentReminder(order._id);
+      return res.json({
+        ok: true,
+        order: order.toObject ? order.toObject() : order,
+      });
     }
 
     const point = await resolveOrderPaymentPoint(order);

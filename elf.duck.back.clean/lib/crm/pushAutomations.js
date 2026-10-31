@@ -118,7 +118,15 @@ export async function upsertPushAutomation(trigger, payload = {}) {
   }
 
   const message = normalizeMessage(payload?.message || {});
-  if (!message.title && !message.text && !message.promo) {
+  if (
+    !message.title &&
+    !message.text &&
+    !message.textPl &&
+    !message.textRu &&
+    !message.promo &&
+    !message.photoUrl &&
+    !message.photoFileId
+  ) {
     throw new Error("MESSAGE_REQUIRED");
   }
 
@@ -200,7 +208,9 @@ async function sendAutomationNow({
     !message.text &&
     !message.textPl &&
     !message.textRu &&
-    !message.promo
+    !message.promo &&
+    !message.photoUrl &&
+    !message.photoFileId
   ) {
     if (alreadyClaimed) {
       await sendsCollection().updateOne(

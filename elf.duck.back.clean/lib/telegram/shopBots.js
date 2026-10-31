@@ -26,14 +26,22 @@ import {
   buildCourierSoonClientMessage,
   buildInpostPaymentConfirmedClientMessage,
   buildPaymentConfirmedClientMessage,
+  buildShopBotMovedClientMessage,
   contactManagerButtonText,
   fallbackArrivalTime,
   fallbackDeliveryWindow,
   fallbackPickupPoint,
   getClientAppLanguage,
+  openNewShopBotButtonText,
   visitShopButtonText,
 } from "./clientOrderMessages.js";
 import { normalizeAppLanguage } from "../crm/userLanguage.js";
+import {
+  getPrimaryShopBotDeepLink,
+  getPrimaryShopBotIndex,
+  getPrimaryShopBotUsername,
+  isPrimaryShopBotIndex,
+} from "./shopBotPrimary.js";
 
 export async function bootstrapShopTelegramBots(app) {
   Object.assign(globalThis, getServerContext());
@@ -884,7 +892,62 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
     console.error("registerCrmBroadcastRunner failed:", error);
   }
 
+  const registerLegacyShopBotMovedHandlers = (activeBot) => {
+    const replyMoved = async (ctx) => {
+      try {
+        const lang =
+          (await getClientAppLanguage(ctx.from?.id, ctx.from?.language_code)) ||
+          "ru";
+        const username = getPrimaryShopBotUsername();
+        const text = buildShopBotMovedClientMessage({
+          lang,
+          newBotUsername: username,
+        });
+        const keyboard = Markup.inlineKeyboard([
+          [
+            Markup.button.url(
+              openNewShopBotButtonText(lang),
+              getPrimaryShopBotDeepLink()
+            ),
+          ],
+        ]);
+        if (ctx.callbackQuery) {
+          try {
+            await ctx.answerCbQuery();
+          } catch {}
+        }
+        await ctx.reply(text, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+          ...keyboard,
+        });
+      } catch (error) {
+        console.error("[bot] legacy moved reply failed:", error?.message || error);
+      }
+    };
+
+    // Будь-яка приватна дія в старому боті → «переїхали» + лінк на нового.
+    activeBot.use(async (ctx, next) => {
+      const chatType = String(ctx.chat?.type || ctx.callbackQuery?.message?.chat?.type || "");
+      if (chatType && chatType !== "private") {
+        return next();
+      }
+      if (!ctx.from?.id) {
+        return next();
+      }
+      await replyMoved(ctx);
+    });
+  };
+
   const registerUserBotHandlers = (activeBot, shopBotIndex = 0) => {
+  if (!isPrimaryShopBotIndex(shopBotIndex)) {
+    registerLegacyShopBotMovedHandlers(activeBot);
+    console.log(
+      `[bot] Legacy shop bot index=${shopBotIndex} → migration-only (primary=@${getPrimaryShopBotUsername()})`
+    );
+    return;
+  }
+
   activeBot.use(handleManagerClientMessageText);
 
   console.log(
@@ -3364,6 +3427,10 @@ return instructionMessage;
 
   };
 
+  console.log(
+    `[bot] Primary client bot index=${getPrimaryShopBotIndex()} (@${getPrimaryShopBotUsername()})`
+  );
+
   userBots.forEach((activeBot, botIndex) => {
     registerUserBotHandlers(activeBot, botIndex);
 
@@ -3374,7 +3441,7 @@ return instructionMessage;
         error: err?.response?.description || err?.message || err,
       });
 
-      if (ctx?.callbackQuery) {
+      if (ctx?.callbackQuery && isPrimaryShopBotIndex(botIndex)) {
         answerManagerCallbackQuery(
           ctx,
           "Внутренняя ошибка бота. Проверьте docker compose logs api",
@@ -3403,8 +3470,11 @@ return instructionMessage;
 
           const me = await activeBot.telegram.getMe();
           setShopBotUsername(botIndex, me.username);
+          const role = isPrimaryShopBotIndex(botIndex)
+            ? "primary-client"
+            : "legacy-migration";
           console.log(
-            `[bot] Launching polling as @${me.username} (id ${me.id}), pid=${process.pid}, db=${dbName}`
+            `[bot] Launching polling as @${me.username} (id ${me.id}, ${role}), pid=${process.pid}, db=${dbName}`
           );
 
           // launch() never resolves while polling — do not await in a serial loop

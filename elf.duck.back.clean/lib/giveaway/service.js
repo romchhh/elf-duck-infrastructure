@@ -9,7 +9,15 @@ import {
   resolveGiveawayUiPhase,
 } from "./schedule.js";
 export { getActiveGiveawayMonthKey };
-import { prizeAmountForPlace, GIVEAWAY_RULES_PL, GIVEAWAY_RULES_RU } from "./config.js";
+import {
+  prizeAmountForPlace,
+  resolveGiveawaySettings,
+  sumPrizePoolZl,
+  getDefaultGiveawaySettings,
+  normalizeGiveawaySettings,
+  GIVEAWAY_RULES_PL,
+  GIVEAWAY_RULES_RU,
+} from "./config.js";
 import { isBlikOrderPayment } from "./payment.js";
 import { recalcUserCashbackBalanceFromLedger } from "../cashback/manualAdmin.js";
 import {
@@ -58,7 +66,17 @@ export async function ensureGiveawayMonth(monthKey = getActiveGiveawayMonthKey()
 
   const now = new Date();
   const existing = await monthsCol().findOne({ monthKey: key });
-  if (existing) return existing;
+  if (existing) {
+    if (!existing.settings) {
+      const settings = getDefaultGiveawaySettings();
+      await monthsCol().updateOne(
+        { monthKey: key },
+        { $set: { settings, updatedAt: now } }
+      );
+      return { ...existing, settings };
+    }
+    return existing;
+  }
 
   const doc = {
     monthKey: key,
@@ -69,6 +87,7 @@ export async function ensureGiveawayMonth(monthKey = getActiveGiveawayMonthKey()
     creditedAt: null,
     notifiedAt: null,
     drawnBy: null,
+    settings: getDefaultGiveawaySettings(),
   };
 
   try {
@@ -338,24 +357,30 @@ export async function getGiveawayPublicState({
     (await User.findOne({ telegramId: tg }).select({ language: 1 }).lean())
       ?.language;
 
-  const rules =
-    String(userLang || "").toLowerCase() === "pl"
-      ? GIVEAWAY_RULES_PL
-      : GIVEAWAY_RULES_RU;
+  const settings = resolveGiveawaySettings(month);
+  const isPl = String(userLang || "").toLowerCase() === "pl";
+  const rules = isPl
+    ? settings.rulesPl || GIVEAWAY_RULES_PL
+    : settings.rulesRu || GIVEAWAY_RULES_RU;
 
   return {
     monthKey,
     phase,
     status: month.status,
     participationOpen: isGiveawayParticipationWindow(),
+    settings: {
+      winnerCount: settings.winnerCount,
+      prizeTiers: settings.prizeTiers,
+      prizePoolZl: sumPrizePoolZl(settings),
+    },
     participated,
     myEntries,
     participantsCount,
     entriesCount,
     winners,
     countdownMs: msUntilNextGiveawayMonth(),
-    rulesRu: GIVEAWAY_RULES_RU,
-    rulesPl: GIVEAWAY_RULES_PL,
+    rulesRu: settings.rulesRu || GIVEAWAY_RULES_RU,
+    rulesPl: settings.rulesPl || GIVEAWAY_RULES_PL,
     rules,
     drawnAt: month.drawnAt || null,
     creditedAt: month.creditedAt || null,
@@ -463,8 +488,15 @@ export async function getGiveawayAdminState(monthKey = getActiveGiveawayMonthKey
     };
   };
 
+  const settings = resolveGiveawaySettings(month);
+  const plannedPrizePoolZl = sumPrizePoolZl(settings);
+
   return {
-    month,
+    month: {
+      ...month,
+      settings,
+    },
+    settings,
     phase: resolveGiveawayUiPhase(month),
     participantsCount,
     entriesCount,
@@ -474,8 +506,33 @@ export async function getGiveawayAdminState(monthKey = getActiveGiveawayMonthKey
     revenueFixedAtDraw: Boolean(useRevenueSnapshot),
     prizePreview: winners.length
       ? winners.reduce((s, w) => s + Number(w.amountZl || 0), 0)
-      : 0,
+      : plannedPrizePoolZl,
+    plannedPrizePoolZl,
   };
+}
+
+/** Оновити налаштування місяця (лише поки status === open). */
+export async function updateGiveawayMonthSettings(monthKey, rawSettings = {}) {
+  const key = String(monthKey || "").trim();
+  if (!key) throw new Error("INVALID_MONTH_KEY");
+
+  const month = await ensureGiveawayMonth(key);
+  if (String(month.status || "") !== "open") {
+    throw new Error("GIVEAWAY_NOT_OPEN");
+  }
+
+  const settings = normalizeGiveawaySettings({
+    ...resolveGiveawaySettings(month),
+    ...rawSettings,
+  });
+
+  const now = new Date();
+  await monthsCol().updateOne(
+    { monthKey: key },
+    { $set: { settings, updatedAt: now } }
+  );
+
+  return getGiveawayAdminState(key);
 }
 
 function shuffleInPlace(arr) {
@@ -494,6 +551,9 @@ export async function runGiveawayDraw(monthKey, adminMeta = {}) {
   const entries = await entriesCol().find({ monthKey }).toArray();
   if (!entries.length) throw new Error("NO_ENTRIES");
 
+  const settings = resolveGiveawaySettings(month);
+  const winnerLimit = Math.max(1, Number(settings.winnerCount || 1));
+
   shuffleInPlace(entries);
   const picked = [];
   const usedUsers = new Set();
@@ -503,7 +563,7 @@ export async function runGiveawayDraw(monthKey, adminMeta = {}) {
     if (!tg || usedUsers.has(tg)) continue;
     picked.push(entry);
     usedUsers.add(tg);
-    if (picked.length >= 25) break;
+    if (picked.length >= winnerLimit) break;
   }
 
   if (!picked.length) throw new Error("NO_UNIQUE_WINNERS");
@@ -515,7 +575,7 @@ export async function runGiveawayDraw(monthKey, adminMeta = {}) {
     telegramId: String(entry.telegramId),
     orderId: String(entry.orderId || ""),
     entryId: String(entry._id),
-    amountZl: prizeAmountForPlace(index + 1),
+    amountZl: prizeAmountForPlace(index + 1, settings),
     createdAt: now,
     creditedAt: null,
     notifiedAt: null,

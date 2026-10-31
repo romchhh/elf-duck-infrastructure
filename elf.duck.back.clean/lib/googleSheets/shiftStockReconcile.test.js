@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
-import { buildShiftStockReconcile, splitShiftStockMessages } from "./shiftStockReconcile.js";
+import {
+  buildAssortmentSyncWarningLines,
+  buildShiftStockReconcile,
+  splitShiftStockMessages,
+} from "./shiftStockReconcile.js";
 
 function reportGrid() {
   const header = [
@@ -99,6 +103,130 @@ assert.match(
   less.message,
   /в ассортименте на 8 шт\. меньше\. Проверить!!!/
 );
+
+const staleStalo = buildShiftStockReconcile({
+  reportRows: [
+    ["29.10"],
+    ["MODEL", "БЫЛО", "СТАЛО", "ПРОДАНО"],
+    ["VOZOL PRIME", "50", "50", "1"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ VOZOL PRIME", "КОЛ-ВО"],
+    ["Mint", "50"],
+  ],
+  dayKey: "2026-10-29",
+});
+
+assert.equal(
+  staleStalo.mismatches.length,
+  1,
+  "stale Стало with Продано>0 should use Было−Продано"
+);
+assert.equal(staleStalo.mismatches[0].name, "VOZOL PRIME");
+assert.equal(staleStalo.mismatches[0].reportQty, 49);
+assert.equal(staleStalo.mismatches[0].assortmentQty, 50);
+assert.match(
+  staleStalo.message,
+  /в ассортименте на 1 шт\. больше\. Проверить!!!/
+);
+
+const updatedStaloMatches = buildShiftStockReconcile({
+  reportRows: [
+    ["29.10"],
+    ["MODEL", "БЫЛО", "СТАЛО", "ПРОДАНО"],
+    ["VOZOL PRIME", "50", "49", "1"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ VOZOL PRIME", "КОЛ-ВО"],
+    ["Mint", "49"],
+  ],
+  dayKey: "2026-10-29",
+});
+assert.equal(updatedStaloMatches.mismatches.length, 0);
+assert.equal(updatedStaloMatches.errors.length, 0);
+assert.equal(updatedStaloMatches.message, "");
+
+const updatedStaloAssortmentStuck = buildShiftStockReconcile({
+  reportRows: [
+    ["29.10"],
+    ["MODEL", "БЫЛО", "СТАЛО", "ПРОДАНО"],
+    ["VOZOL PRIME", "50", "49", "1"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ VOZOL PRIME", "КОЛ-ВО"],
+    ["Mint", "40"],
+    ["Ice", "10"],
+  ],
+  dayKey: "2026-10-29",
+});
+assert.equal(updatedStaloAssortmentStuck.mismatches.length, 1);
+assert.equal(updatedStaloAssortmentStuck.mismatches[0].reportQty, 49);
+assert.equal(updatedStaloAssortmentStuck.mismatches[0].assortmentQty, 50);
+assert.match(
+  updatedStaloAssortmentStuck.message,
+  /в ассортименте на 1 шт\. больше/
+);
+
+const noSalesKeepsStalo = buildShiftStockReconcile({
+  reportRows: [
+    ["29.10"],
+    ["MODEL", "БЫЛО", "СТАЛО", "ПРОДАНО"],
+    ["VOZOL PRIME", "50", "50", "0"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ VOZOL PRIME", "КОЛ-ВО"],
+    ["Mint", "50"],
+  ],
+  dayKey: "2026-10-29",
+});
+assert.equal(noSalesKeepsStalo.mismatches.length, 0);
+assert.equal(noSalesKeepsStalo.message, "");
+
+const deductedAssortmentWithStaleStalo = buildShiftStockReconcile({
+  reportRows: [
+    ["29.10"],
+    ["MODEL", "БЫЛО", "СТАЛО", "ПРОДАНО"],
+    ["VOZOL PRIME", "50", "50", "1"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ VOZOL PRIME", "КОЛ-ВО"],
+    ["Mint", "49"],
+  ],
+  dayKey: "2026-10-29",
+});
+assert.equal(deductedAssortmentWithStaleStalo.mismatches.length, 0);
+assert.equal(deductedAssortmentWithStaleStalo.message, "");
+
+const blankStaloUsesSold = buildShiftStockReconcile({
+  reportRows: [
+    ["29.10"],
+    ["MODEL", "БЫЛО", "СТАЛО", "ПРОДАНО"],
+    ["VOZOL PRIME", "12", "", "2"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ VOZOL PRIME", "КОЛ-ВО"],
+    ["Mint", "12"],
+  ],
+  dayKey: "2026-10-29",
+});
+assert.equal(blankStaloUsesSold.mismatches[0].reportQty, 10);
+assert.equal(blankStaloUsesSold.mismatches[0].assortmentQty, 12);
+assert.match(blankStaloUsesSold.message, /на 2 шт\. больше/);
+
+const syncWarnings = buildAssortmentSyncWarningLines({
+  pending: [{ orderNo: "ED-AAA" }, { orderNo: "ED-BBB" }],
+  failed: [{ orderNo: "ED-AAA" }],
+});
+assert.equal(syncWarnings.length, 2);
+assert.match(syncWarnings[0], /#ED-AAA, #ED-BBB/);
+assert.match(syncWarnings[1], /#ED-AAA/);
+assert.equal(buildAssortmentSyncWarningLines({}).length, 0);
 
 const missingDay = buildShiftStockReconcile({
   reportRows: [["01.10"], ["MODEL", "СТАЛО"], ["ELFLIQ", "1"]],

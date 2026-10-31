@@ -407,14 +407,121 @@ export function buildSafeFallbackManagerMarkup(
   );
 }
 
+const MANAGER_ORDER_NOTIFICATION_LOCK = "__sending__";
+
+function parseManagerTelegramMessageId(value) {
+  const numeric = Number(String(value || "").trim());
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+async function claimManagerOrderNotification(orderId) {
+  if (!orderId) return null;
+
+  return Order.findOneAndUpdate(
+    {
+      _id: orderId,
+      $or: [
+        { "payment.managerMessageId": { $exists: false } },
+        { "payment.managerMessageId": null },
+        { "payment.managerMessageId": "" },
+      ],
+    },
+    {
+      $set: {
+        "payment.managerMessageId": MANAGER_ORDER_NOTIFICATION_LOCK,
+      },
+    },
+    { new: true }
+  ).lean();
+}
+
+async function releaseManagerOrderNotificationLock(orderId) {
+  if (!orderId) return;
+
+  await Order.updateOne(
+    {
+      _id: orderId,
+      "payment.managerMessageId": MANAGER_ORDER_NOTIFICATION_LOCK,
+    },
+    {
+      $set: {
+        "payment.managerMessageId": "",
+      },
+    }
+  );
+}
+
+async function waitForManagerOrderNotificationMessage(orderId, maxWaitMs = 6000) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < maxWaitMs) {
+    const fresh = await Order.findById(orderId).lean();
+    const messageId = parseManagerTelegramMessageId(
+      fresh?.payment?.managerMessageId
+    );
+
+    if (messageId > 0) {
+      return fresh;
+    }
+
+    const raw = String(fresh?.payment?.managerMessageId || "").trim();
+    if (raw !== MANAGER_ORDER_NOTIFICATION_LOCK) {
+      return null;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return null;
+}
+
 export async function sendOrderCreatedNotification(order, options = {}) {
   const skipClientNotification =
   options?.skipClientNotification === true;
+  let notificationLockAcquired = false;
+  let notificationOrderId = null;
   try {
     if (!bot || !order) return;
 
+    notificationOrderId = order._id;
+
+    const existingManagerMessageId = parseManagerTelegramMessageId(
+      order?.payment?.managerMessageId
+    );
+    if (existingManagerMessageId > 0) {
+      await refreshManagerOrderMessage(order);
+      return;
+    }
+
+    const claimedOrder = await claimManagerOrderNotification(notificationOrderId);
+    if (!claimedOrder) {
+      const freshAfterWait = await waitForManagerOrderNotificationMessage(
+        notificationOrderId
+      );
+      if (freshAfterWait) {
+        await refreshManagerOrderMessage({
+          ...order,
+          ...freshAfterWait,
+          payment: freshAfterWait.payment,
+        });
+        return;
+      }
+
+      console.warn("[sendOrderCreatedNotification] duplicate send skipped", {
+        orderNo: String(order?.orderNo || ""),
+        orderId: String(notificationOrderId || ""),
+      });
+      return;
+    }
+
+    notificationLockAcquired = true;
+
     const point = await resolveOrderNotificationPoint(order);
-    if (!point?.notificationChatId) return;
+    if (!point?.notificationChatId) {
+      await releaseManagerOrderNotificationLock(notificationOrderId);
+      notificationLockAcquired = false;
+      return;
+    }
 
     const clientContact =
       await resolveManagerOrderClientContact(order);
@@ -880,6 +987,16 @@ try {
   }
 }
 
+if (!sent?.message_id) {
+  await releaseManagerOrderNotificationLock(notificationOrderId);
+  notificationLockAcquired = false;
+  console.error("sendOrderCreatedNotification manager message not sent", {
+    orderNo: String(order?.orderNo || ""),
+    orderId: String(notificationOrderId || ""),
+  });
+  return;
+}
+
     await Order.updateOne(
       { _id: order._id },
       {
@@ -889,6 +1006,7 @@ try {
         },
       }
     );
+    notificationLockAcquired = false;
 
     const safeTelegramId = String(order?.userTelegramId || "").trim();
 
@@ -965,6 +1083,16 @@ if (!skipClientNotification) {
 }
     }
   } catch (e) {
+    if (notificationLockAcquired && notificationOrderId) {
+      try {
+        await releaseManagerOrderNotificationLock(notificationOrderId);
+      } catch (releaseErr) {
+        console.error(
+          "sendOrderCreatedNotification release lock error:",
+          releaseErr
+        );
+      }
+    }
     console.error("sendOrderCreatedNotification error:", e);
   }
 }

@@ -53,6 +53,16 @@ export async function batchUpdateValues(spreadsheetId, data) {
   });
 }
 
+export async function clearSheetValues(spreadsheetId, rangeA1) {
+  const sheets = getSheetsApi();
+  if (!sheets) return null;
+
+  return sheets.spreadsheets.values.clear({
+    spreadsheetId,
+    range: rangeA1,
+  });
+}
+
 export async function getSpreadsheetMeta(spreadsheetId, fields) {
   const sheets = getSheetsApi();
   if (!sheets) return null;

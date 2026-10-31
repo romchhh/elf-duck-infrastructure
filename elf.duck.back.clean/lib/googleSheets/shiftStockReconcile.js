@@ -51,6 +51,73 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;");
 }
 
+function findDayColumnOffset(header, blockStart, wantedLabel) {
+  for (let offset = 0; offset < DAY_BLOCK_WIDTH; offset += 1) {
+    const label = String(header[blockStart + offset] || "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, "");
+    if (label === wantedLabel) return offset;
+  }
+  return -1;
+}
+
+function resolveReportModelDayStockQty(rows, rowIndex, block, header) {
+  const staloOffset = findDayColumnOffset(header, block.blockStart, "СТАЛО");
+  if (staloOffset < 0) {
+    return {
+      ok: false,
+      qty: 0,
+      reason: "не удалось прочитать количество в колонке «Стало».",
+    };
+  }
+
+  const byloOffset = findDayColumnOffset(header, block.blockStart, "БЫЛО");
+  const prodanoOffset = findDayColumnOffset(header, block.blockStart, "ПРОДАНО");
+
+  const staloParsed = readStrictSheetQty(
+    rows[rowIndex]?.[block.blockStart + staloOffset]
+  );
+  const byloParsed =
+    byloOffset >= 0
+      ? readStrictSheetQty(rows[rowIndex]?.[block.blockStart + byloOffset])
+      : { ok: false };
+  const prodanoParsed =
+    prodanoOffset >= 0
+      ? readStrictSheetQty(rows[rowIndex]?.[block.blockStart + prodanoOffset])
+      : { ok: false };
+
+  if (staloParsed.ok) {
+    let qty = staloParsed.qty;
+    if (
+      byloParsed.ok &&
+      prodanoParsed.ok &&
+      prodanoParsed.qty > 0 &&
+      qty === byloParsed.qty
+    ) {
+      const computed = byloParsed.qty - prodanoParsed.qty;
+      if (computed !== qty) {
+        qty = computed;
+      }
+    }
+    return { ok: true, qty, reason: "" };
+  }
+
+  if (byloParsed.ok && prodanoParsed.ok && prodanoParsed.qty > 0) {
+    return {
+      ok: true,
+      qty: byloParsed.qty - prodanoParsed.qty,
+      reason: "",
+    };
+  }
+
+  return {
+    ok: false,
+    qty: 0,
+    reason: "не удалось прочитать количество в колонке «Стало».",
+  };
+}
+
 export function listReportDayModelStock(rows, dayKey) {
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
   if (!dayHeader) {
@@ -73,17 +140,7 @@ export function listReportDayModelStock(rows, dayKey) {
   }
 
   const header = rows[block.headerRow] || [];
-  let staloOffset = -1;
-  for (let offset = 0; offset < DAY_BLOCK_WIDTH; offset += 1) {
-    const label = String(header[block.blockStart + offset] || "")
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, "");
-    if (label === "СТАЛО") {
-      staloOffset = offset;
-      break;
-    }
-  }
+  const staloOffset = findDayColumnOffset(header, block.blockStart, "СТАЛО");
 
   if (staloOffset < 0) {
     return {
@@ -98,8 +155,11 @@ export function listReportDayModelStock(rows, dayKey) {
   for (const rowIndex of listDayBlockModelRowIndexes(rows, block)) {
     const name = String(rows[rowIndex]?.[block.blockStart] || "").trim();
     if (!name) continue;
-    const parsed = readStrictSheetQty(
-      rows[rowIndex]?.[block.blockStart + staloOffset]
+    const parsed = resolveReportModelDayStockQty(
+      rows,
+      rowIndex,
+      block,
+      header
     );
     models.push({
       name,
@@ -107,7 +167,8 @@ export function listReportDayModelStock(rows, dayKey) {
       qty: parsed.qty,
       reason: parsed.ok
         ? ""
-        : "не удалось прочитать количество в колонке «Стало».",
+        : parsed.reason ||
+          "не удалось прочитать количество в колонке «Стало».",
     });
   }
 
@@ -385,6 +446,89 @@ async function waitForAssortmentWrites(point) {
   return assortmentWritesSettled(point);
 }
 
+async function listAssortmentSyncIssuesForShift(point, dayKey) {
+  const pointKey = String(point?.key || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+  if (isOrderAssortmentSyncDisabledForPointKey(pointKey)) {
+    return { pending: [], failed: [] };
+  }
+
+  const Order = (await import("../../models/Order.js")).default;
+  const { getOrderPointMatch } = await import("../server/helpers/chunk08.js");
+  const {
+    buildStatsOrdersMongoFilter,
+    orderBelongsToStatsDay,
+  } = await import("../server/helpers/orderStatsDay.js");
+
+  const since = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+  const orders = await Order.find(
+    buildStatsOrdersMongoFilter(getOrderPointMatch(point), since),
+    {
+      orderNo: 1,
+      status: 1,
+      completedAt: 1,
+      shippedAt: 1,
+      googleSheetSync: 1,
+    }
+  ).lean();
+
+  const dayOrders = orders.filter((order) =>
+    orderBelongsToStatsDay(order, dayKey)
+  );
+
+  const pending = dayOrders.filter(
+    (order) =>
+      !order?.googleSheetSync?.assortmentSyncDisabled &&
+      !order?.googleSheetSync?.appliedAt
+  );
+
+  const failed = dayOrders.filter((order) => {
+    const err = String(order?.googleSheetSync?.lastError || "").trim();
+    return (
+      err &&
+      !order?.googleSheetSync?.assortmentSyncDisabled &&
+      !order?.googleSheetSync?.appliedAt
+    );
+  });
+
+  return { pending, failed };
+}
+
+export function buildAssortmentSyncWarningLines(issues = {}) {
+  const lines = [];
+  const pending = Array.isArray(issues.pending) ? issues.pending : [];
+  const failed = Array.isArray(issues.failed) ? issues.failed : [];
+
+  if (pending.length) {
+    const sample = pending
+      .slice(0, 6)
+      .map((order) => `#${String(order?.orderNo || "").trim()}`)
+      .filter(Boolean)
+      .join(", ");
+    const tail =
+      pending.length > 6 ? ` и ещё ${pending.length - 6}` : "";
+    lines.push(
+      `⚠️ «Ассортимент» не записан по заказам: ${sample}${tail}. Проверьте sync-errors / retry-google-sheets-assortment.`
+    );
+  }
+
+  if (failed.length) {
+    const sample = failed
+      .slice(0, 4)
+      .map((order) => `#${String(order?.orderNo || "").trim()}`)
+      .filter(Boolean)
+      .join(", ");
+    const tail = failed.length > 4 ? ` и ещё ${failed.length - 4}` : "";
+    lines.push(
+      `⚠️ Ошибка записи в «Ассортимент» (отчёт мог обновиться): ${sample}${tail}.`
+    );
+  }
+
+  return lines;
+}
+
 /**
  * После смены: «Стало» отчёта за этот день против текущего ассортимента.
  * В канал статистики пишет только расхождения и ошибки. Остатки не меняет.
@@ -427,8 +571,14 @@ export async function publishShiftStockReconcile({
   }
 
   const settled = dryRun ? true : await waitForAssortmentWrites(point);
-  if (!settled) {
-    return { ok: false, skipped: true, reason: "ASSORTMENT_SYNC_PENDING" };
+  const syncIssues = dryRun
+    ? { pending: [], failed: [] }
+    : await listAssortmentSyncIssuesForShift(point, dayKey);
+  const syncWarnings = buildAssortmentSyncWarningLines(syncIssues);
+  if (!settled && !syncWarnings.length) {
+    syncWarnings.push(
+      "⚠️ Запись в «Ассортимент» ещё выполняется — сверка могла не увидеть расхождение."
+    );
   }
 
   const tabTitle = reportTabTitleForDayKey(dayKey);
@@ -467,7 +617,15 @@ export async function publishShiftStockReconcile({
     dayKey,
   });
 
-  const hasNews = result.mismatches.length > 0 || result.errors.length > 0;
+  const outboundMessage = [result.message, ...syncWarnings]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const hasNews =
+    result.mismatches.length > 0 ||
+    result.errors.length > 0 ||
+    syncWarnings.length > 0;
+
   if (!hasNews) {
     if (!dryRun) {
       await claimDailyStatsDispatch(dedupeKey, {
@@ -488,9 +646,10 @@ export async function publishShiftStockReconcile({
     return {
       ok: true,
       dryRun: true,
-      message: result.message,
+      message: outboundMessage,
       mismatches: result.mismatches.length,
       errors: result.errors.length,
+      syncWarnings: syncWarnings.length,
     };
   }
 
@@ -510,7 +669,7 @@ export async function publishShiftStockReconcile({
       await releaseDailyStatsDispatch(dedupeKey);
       return { ok: false, reason: "NO_BOT" };
     }
-    const parts = splitShiftStockMessages(result.message);
+    const parts = splitShiftStockMessages(outboundMessage);
     for (const part of parts) {
       await bot.telegram.sendMessage(chatId, part, {
         parse_mode: "HTML",

@@ -1,11 +1,16 @@
 import {
   batchUpdateValues,
+  clearSheetValues,
   escapeSheetTitle,
   getSheetsApi,
   readSheetValues,
 } from "./client.js";
 import {
+  lastDayOfMonth,
+  padReportValuesGrid,
   reportTabTitleForMonth,
+  REPORT_TAB_GRID_ROWS,
+  resetReportStatsInGrid,
   transformReportGridToNextMonth,
 } from "./monthTransform.js";
 
@@ -128,10 +133,18 @@ export async function createMonthReportTabFromPrevious({
     targetMonth,
   });
 
+  const denseValues = padReportValuesGrid(
+    transformed,
+    REPORT_TAB_GRID_ROWS
+  );
+  const gridRange = `${escapeSheetTitle(tgtTitle)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`;
+
+  await clearSheetValues(spreadsheetId, gridRange);
+
   await batchUpdateValues(spreadsheetId, [
     {
       range: `${escapeSheetTitle(tgtTitle)}!A1`,
-      values: transformed,
+      values: denseValues,
     },
   ]);
 
@@ -141,7 +154,62 @@ export async function createMonthReportTabFromPrevious({
     sourceTabTitle: srcTitle,
     targetTabTitle: tgtTitle,
     newSheetId,
-    rows: transformed.length,
+    rows: denseValues.length,
+  };
+}
+
+/**
+ * Перезаписує лист місяця лише значеннями (без формул) — для уже створених авто-вкладок.
+ */
+export async function rewriteMonthReportTabAsPlainValues({
+  spreadsheetId,
+  tabTitle,
+  year,
+  month,
+}) {
+  const sheets = getSheetsApi();
+  if (!sheets) return { ok: false, reason: "SHEETS_DISABLED" };
+
+  const title = String(tabTitle || "").trim();
+  if (!title) return { ok: false, reason: "TAB_TITLE_REQUIRED" };
+
+  const sheetId = await getSheetIdByTitle(spreadsheetId, title);
+  if (!sheetId) return { ok: false, reason: "TAB_NOT_FOUND", tabTitle: title };
+
+  const raw = await readSheetValues(
+    spreadsheetId,
+    `${escapeSheetTitle(title)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`
+  );
+
+  const y = Number(year);
+  const m = Number(month);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
+    return { ok: false, reason: "INVALID_YEAR_MONTH" };
+  }
+
+  const plain = resetReportStatsInGrid(
+    raw || [],
+    y,
+    m,
+    lastDayOfMonth(y, m)
+  );
+
+  const denseValues = padReportValuesGrid(plain, REPORT_TAB_GRID_ROWS);
+  const gridRange = `${escapeSheetTitle(title)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`;
+
+  await clearSheetValues(spreadsheetId, gridRange);
+  await batchUpdateValues(spreadsheetId, [
+    {
+      range: `${escapeSheetTitle(title)}!A1`,
+      values: denseValues,
+    },
+  ]);
+
+  return {
+    ok: true,
+    spreadsheetId,
+    tabTitle: title,
+    rows: denseValues.length,
   };
 }
 
