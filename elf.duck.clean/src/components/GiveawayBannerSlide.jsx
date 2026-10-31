@@ -167,7 +167,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog }) {
   };
 
   const handleBannerActivate = async (event) => {
-    if (event.target.closest(".giveawayInfoBtn")) return;
+    if (event.target.closest(".giveawayInfoHit")) return;
     if (event.target.closest("button")) return;
 
     haptic.heavy();
@@ -202,52 +202,46 @@ export default function GiveawayBannerSlide({ onGoToCatalog }) {
         }}
       >
         <img src={bg} alt="" className="giveawayBannerBg" draggable={false} />
-        <div className="giveawayBannerOverlay">
-          <div className="giveawayBannerFooter">
-            <div className="giveawayBannerActions">
-              {showResults ? (
-                <>
-                  <button
-                    type="button"
-                    className="giveawayPrimaryBtn"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setWinnersOpen(true);
-                    }}
-                  >
-                    {t("Победители", "Zwycięzcy")}
-                  </button>
-                  <div className="giveawayMetaLine">
-                    {t("До нового розыгрыша", "Do nowego konkursu")}:{" "}
-                    {countdownLabel}
-                  </div>
-                </>
-              ) : participated ? (
-                <div className="giveawayStats">
-                  <span>
-                    {t("Ваши покупки", "Twoje zakupy")}: {state?.myEntries ?? 0}
-                  </span>
-                  <span>
-                    {t("Участников", "Uczestników")}:{" "}
-                    {state?.participantsCount ?? 0}
-                  </span>
-                </div>
-              ) : null}
-            </div>
 
+        {showResults ? (
+          <div className="giveawayStatusChip">
             <button
               type="button"
-              className="giveawayInfoBtn"
-              aria-label={t("Правила", "Zasady")}
+              className="giveawayPrimaryBtn"
               onClick={(e) => {
                 e.stopPropagation();
-                setRulesOpen(true);
+                setWinnersOpen(true);
               }}
             >
-              i
+              {t("Победители", "Zwycięzcy")}
             </button>
+            <span className="giveawayStat">
+              {t("До нового розыгрыша", "Do nowego konkursu")}
+              <b>{countdownLabel}</b>
+            </span>
           </div>
-        </div>
+        ) : participated ? (
+          <div className="giveawayStatusChip">
+            <span className="giveawayStat">
+              {t("Ваши покупки", "Twoje zakupy")}
+              <b>{state?.myEntries ?? 0}</b>
+            </span>
+            <span className="giveawayStat">
+              {t("Участников", "Uczestników")}
+              <b>{state?.participantsCount ?? 0}</b>
+            </span>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          className="giveawayInfoHit"
+          aria-label={t("Правила", "Zasady")}
+          onClick={(e) => {
+            e.stopPropagation();
+            setRulesOpen(true);
+          }}
+        />
       </div>
 
       <GiveawayModal

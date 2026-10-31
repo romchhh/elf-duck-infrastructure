@@ -1,8 +1,7 @@
 .giveawayBannerRoot {
   position: relative;
   width: 100%;
-  height: 100%;
-  min-height: 132px;
+  aspect-ratio: 918 / 520;
   border-radius: inherit;
   overflow: hidden;
 }
@@ -11,46 +10,38 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center;
   display: block;
 }
 
-.giveawayBannerOverlay {
+/* Зона іконки «i» на самому фото. Окремої кнопки поверх немає. */
+.giveawayInfoHit {
   position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 10px 12px 12px;
-  /* легший градієнт — менше «важкого» шару поверх уже стисненого WebP */
-  background: linear-gradient(
-    180deg,
-    rgba(0, 0, 0, 0) 45%,
-    rgba(0, 0, 0, 0.42) 100%
-  );
-}
-
-.giveawayInfoBtn {
-  position: relative;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  background: rgba(0, 0, 0, 0.35);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1;
+  right: 2%;
+  bottom: 7%;
+  width: 14%;
+  height: 20%;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
-.giveawayBannerFooter {
+.giveawayStatusChip {
+  position: absolute;
+  left: 4%;
+  bottom: 27%;
+  z-index: 1;
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  max-width: 62%;
+  pointer-events: none;
 }
 
 .giveawayBannerRoot--actionable {
@@ -62,47 +53,51 @@
   pointer-events: none;
 }
 
-.giveawayBannerRoot--loading .giveawayInfoBtn {
+.giveawayBannerRoot--loading .giveawayInfoHit {
   pointer-events: auto;
 }
 
-.giveawayBannerActions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-}
-
 .giveawayPrimaryBtn {
+  pointer-events: auto;
   border: 0;
   border-radius: 999px;
-  padding: 8px 14px;
-  font-size: 12px;
+  padding: 7px 12px;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: #111;
-  background: #d6ff4a;
+  color: #1a1204;
+  background: #ffe14a;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .giveawayPrimaryBtn:disabled {
   opacity: 0.55;
 }
 
-.giveawayStats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 14px;
+.giveawayStat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(8, 8, 10, 0.82);
+  border: 1px solid rgba(255, 214, 64, 0.72);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-family: Unbounded-Medium, Muller, sans-serif;
   font-size: 11px;
   font-weight: 600;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  line-height: 1.2;
+  letter-spacing: 0.01em;
 }
 
-.giveawayMetaLine {
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
+.giveawayStat b {
+  color: #ffe14a;
+  font-weight: 700;
 }
 
 .giveawayModalBackdrop {
@@ -170,4 +165,5 @@
 
 .bannerSlide.giveawayBannerSlide {
   cursor: default;
+  border-color: rgba(255, 208, 64, 0.4);
 }
