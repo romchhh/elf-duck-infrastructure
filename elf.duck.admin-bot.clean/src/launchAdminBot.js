@@ -71,6 +71,14 @@ export async function launchAdminBot() {
     console.error("Telegram menu button setup error:", menuError);
   }
 
+  bot.catch((err, ctx) => {
+    console.error(
+      "[admin-bot] handler error:",
+      err?.message || err,
+      ctx?.callbackQuery?.data || ctx?.message?.text || ctx?.updateType || ""
+    );
+  });
+
   bot.command("menu", async (ctx) => {
     if (!isAdmin(ctx)) {
       return ctx.reply(accessDeniedReply(ctx), { parse_mode: "Markdown" });

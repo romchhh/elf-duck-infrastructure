@@ -24,7 +24,11 @@ import {
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
 import { mainMenu } from "./menu.js";
-import { defaultProductData, PRODUCT_LAYOUTS } from "./categoryProductDefs.js";
+import {
+  defaultProductData,
+  PRODUCT_BUILDER_STEPS,
+  PRODUCT_LAYOUTS,
+} from "./categoryProductDefs.js";
 import { askProductStep, nextProductStep } from "./productFlow.js";
 
 // =====================================================

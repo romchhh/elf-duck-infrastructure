@@ -659,11 +659,3 @@ export const nextFlavorStep = async (ctx) => {
   return askFlavorStep(ctx);
 };
 
-const productNavKeyboard = (stepIndex) => {
-  const backBtn = stepIndex > 0 ? Markup.button.callback("⬅️ Назад", "prod_builder_back") : null;
-  const cancelBtn = Markup.button.callback("✖️ Отмена", "prod_builder_cancel");
-  return backBtn
-    ? Markup.inlineKeyboard([[backBtn, cancelBtn]])
-    : Markup.inlineKeyboard([[cancelBtn]]);
-};
-

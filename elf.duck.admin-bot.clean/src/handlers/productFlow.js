@@ -24,6 +24,20 @@ import {
 import { translitRuToLat } from "../utils/translit.js";
 import { sendStepCard } from "../ui/sendStepCard.js";
 import { mainMenu } from "./menu.js";
+import {
+  PRODUCT_BUILDER_STEPS,
+  PRODUCT_STEP_IMAGES,
+  renderProductPreview,
+} from "./categoryProductDefs.js";
+
+const productNavKeyboard = (stepIndex) => {
+  const backBtn =
+    stepIndex > 0 ? Markup.button.callback("⬅️ Назад", "prod_builder_back") : null;
+  const cancelBtn = Markup.button.callback("✖️ Отмена", "prod_builder_cancel");
+  return backBtn
+    ? Markup.inlineKeyboard([[backBtn, cancelBtn]])
+    : Markup.inlineKeyboard([[cancelBtn]]);
+};
 
 // ===== ask user per product step =====
 export const askProductStep = async (ctx) => {
