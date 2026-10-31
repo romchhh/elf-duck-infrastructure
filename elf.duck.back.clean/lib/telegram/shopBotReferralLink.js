@@ -13,13 +13,16 @@ function parseEnvUsernames() {
 }
 
 function primaryUsernameFromEnv() {
-  return String(
-    process.env.TELEGRAM_PRIMARY_SHOP_BOT_USERNAME ||
-      process.env.TELEGRAM_BOT_USERNAME ||
-      "elfduck_store_bot"
-  )
+  const fromEnv = String(process.env.TELEGRAM_PRIMARY_SHOP_BOT_USERNAME || "")
     .replace(/^@/, "")
-    .trim() || "elfduck_store_bot";
+    .trim()
+    .toLowerCase();
+
+  if (!fromEnv || fromEnv === "elfduck_shop_bot") {
+    return "elfduck_store_bot";
+  }
+
+  return fromEnv;
 }
 
 export function setShopBotUsername(index, username) {
@@ -41,7 +44,11 @@ export function getShopBotUsername(index = 0) {
     return fromEnv[idx];
   }
 
-  return fromEnv[0] || primaryUsernameFromEnv();
+  if (idx === 0) {
+    return primaryUsernameFromEnv();
+  }
+
+  return "";
 }
 
 /**

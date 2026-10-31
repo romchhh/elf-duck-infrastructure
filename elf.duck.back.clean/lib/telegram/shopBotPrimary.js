@@ -3,16 +3,20 @@ import { getShopBotUsername } from "./shopBotReferralLink.js";
 
 /** Новий основний бот магазину — усі клієнтські повідомлення лише з нього. */
 export const DEFAULT_PRIMARY_SHOP_BOT_USERNAME = "elfduck_store_bot";
+/** Старий бот: лише текст «переїхали» і лінк на store. */
+export const LEGACY_SHOP_BOT_USERNAME = "elfduck_shop_bot";
 
 export function getPrimaryShopBotUsername() {
-  return String(
-    process.env.TELEGRAM_PRIMARY_SHOP_BOT_USERNAME ||
-      process.env.TELEGRAM_BOT_USERNAME ||
-      DEFAULT_PRIMARY_SHOP_BOT_USERNAME
-  )
+  const fromEnv = String(process.env.TELEGRAM_PRIMARY_SHOP_BOT_USERNAME || "")
     .replace(/^@/, "")
     .trim()
-    .toLowerCase() || DEFAULT_PRIMARY_SHOP_BOT_USERNAME;
+    .toLowerCase();
+
+  if (!fromEnv || fromEnv === LEGACY_SHOP_BOT_USERNAME) {
+    return DEFAULT_PRIMARY_SHOP_BOT_USERNAME;
+  }
+
+  return fromEnv;
 }
 
 export function getPrimaryShopBotDeepLink(startPayload = "") {
@@ -50,10 +54,12 @@ export function getPrimaryShopBotIndex() {
     if (username.includes("store")) return i;
   }
 
-  // Якщо primary ще не зматчений (getMe пізніше) і є ≥2 токени —
-  // за замовчуванням новий бот у TOKEN_2 (останній).
-  if (tokens.length > 1 && preferred.includes("store")) {
-    return tokens.length - 1;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const username = String(getShopBotUsername(i) || "")
+      .replace(/^@/, "")
+      .trim()
+      .toLowerCase();
+    if (username && username !== LEGACY_SHOP_BOT_USERNAME) return i;
   }
 
   return 0;

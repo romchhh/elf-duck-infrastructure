@@ -3427,6 +3427,21 @@ return instructionMessage;
 
   };
 
+  await Promise.all(
+    userBots.map(async (activeBot, botIndex) => {
+      try {
+        const me = await activeBot.telegram.getMe();
+        setShopBotUsername(botIndex, me?.username);
+      } catch (error) {
+        console.error(
+          "[bot] getMe before handlers failed:",
+          botIndex,
+          error?.message || error
+        );
+      }
+    })
+  );
+
   console.log(
     `[bot] Primary client bot index=${getPrimaryShopBotIndex()} (@${getPrimaryShopBotUsername()})`
   );
