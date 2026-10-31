@@ -221,7 +221,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog }) {
             </span>
           </div>
         ) : participated ? (
-          <div className="giveawayStatusChip">
+          <div className="giveawayStatusChip giveawayStatusChip--side">
             <span className="giveawayStat">
               {t("Ваши покупки", "Twoje zakupy")}
               <b>{state?.myEntries ?? 0}</b>
