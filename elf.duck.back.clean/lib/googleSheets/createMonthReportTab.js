@@ -3,11 +3,14 @@ import {
   clearSheetValues,
   escapeSheetTitle,
   getSheetsApi,
+  readSheetFormulas,
   readSheetValues,
 } from "./client.js";
 import {
+  isCellRefFormula,
   lastDayOfMonth,
   padReportValuesGrid,
+  prefixReportDateText,
   reportTabTitleForMonth,
   REPORT_TAB_GRID_ROWS,
   resetReportStatsInGrid,
@@ -66,17 +69,18 @@ export async function createMonthReportTabFromPrevious({
 
   const srcTitle =
     sourceTabTitle || reportTabTitleForMonth(sourceYear, sourceMonth);
+  let resolvedSourceTitle = srcTitle;
   const tgtTitle =
     targetTabTitle || reportTabTitleForMonth(targetYear, targetMonth);
 
-  let sourceId = await getSheetIdByTitle(spreadsheetId, srcTitle);
+  let sourceId = await getSheetIdByTitle(spreadsheetId, resolvedSourceTitle);
   if (!sourceId) {
     const fallback = await findLatestReportTabTitle(spreadsheetId);
     if (!fallback) {
-      return { ok: false, reason: "SOURCE_TAB_NOT_FOUND", sourceTabTitle: srcTitle };
+      return { ok: false, reason: "SOURCE_TAB_NOT_FOUND", sourceTabTitle: resolvedSourceTitle };
     }
     sourceId = await getSheetIdByTitle(spreadsheetId, fallback);
-    srcTitle = fallback;
+    resolvedSourceTitle = fallback;
   }
 
   const existingTargetId = await getSheetIdByTitle(spreadsheetId, tgtTitle);
@@ -117,27 +121,39 @@ export async function createMonthReportTabFromPrevious({
   const newSheetId =
     dup.data.replies?.[0]?.duplicateSheet?.properties?.sheetId ?? null;
 
-  const raw = await readSheetValues(
-    spreadsheetId,
-    `${escapeSheetTitle(tgtTitle)}!A1:ZZ650`
-  );
+  const gridRange = `${escapeSheetTitle(tgtTitle)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`;
+  const formulaRaw = await readSheetFormulas(spreadsheetId, gridRange);
+  const formatted = await readSheetValues(spreadsheetId, gridRange);
 
-  const parseTitle = srcTitle.match(/ОТЧЕТ 01\.(\d{2})\.(\d{4})/);
+  const seeded = (formulaRaw || []).map((row, rowIndex) => {
+    const line = [...(row || [])];
+    const shownRow = formatted?.[rowIndex] || [];
+    const width = Math.max(line.length, shownRow.length);
+    for (let col = 0; col < width; col += 1) {
+      if (isCellRefFormula(line[col])) continue;
+      const shown = String(shownRow[col] ?? "").trim();
+      if (/^\d{2}\.\d{2}(?:-\d{2}\.\d{2})?$/.test(shown)) line[col] = shown;
+    }
+    return line;
+  });
+
+  const parseTitle = resolvedSourceTitle.match(/ОТЧЕТ 01\.(\d{2})\.(\d{4})/);
   const sy = sourceYear || Number(parseTitle?.[2]);
   const sm = sourceMonth || Number(parseTitle?.[1]);
 
-  const transformed = transformReportGridToNextMonth(raw, {
-    sourceYear: sy,
-    sourceMonth: sm,
-    targetYear,
-    targetMonth,
-  });
+  const transformed = prefixReportDateText(
+    transformReportGridToNextMonth(seeded, {
+      sourceYear: sy,
+      sourceMonth: sm,
+      targetYear,
+      targetMonth,
+    })
+  );
 
   const denseValues = padReportValuesGrid(
     transformed,
     REPORT_TAB_GRID_ROWS
   );
-  const gridRange = `${escapeSheetTitle(tgtTitle)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`;
 
   await clearSheetValues(spreadsheetId, gridRange);
 
@@ -151,7 +167,7 @@ export async function createMonthReportTabFromPrevious({
   return {
     ok: true,
     spreadsheetId,
-    sourceTabTitle: srcTitle,
+    sourceTabTitle: resolvedSourceTitle,
     targetTabTitle: tgtTitle,
     newSheetId,
     rows: denseValues.length,
@@ -211,6 +227,60 @@ export async function rewriteMonthReportTabAsPlainValues({
     tabTitle: title,
     rows: denseValues.length,
   };
+}
+
+function colToA1(colIndex) {
+  let n = colIndex + 1;
+  let s = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/**
+ * Повертає на лист місяця формули СТАЛО / ПРОДАНО / КАССА з шаблону.
+ * Числа, які менеджер уже вписав (БЫЛО, 1шт…), не чіпає.
+ */
+export async function copyMissingCellRefFormulas({
+  templateSpreadsheetId,
+  templateTabTitle,
+  targetSpreadsheetId,
+  targetTabTitle,
+}) {
+  const template = await readSheetFormulas(
+    templateSpreadsheetId,
+    `${escapeSheetTitle(templateTabTitle)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`
+  );
+  const target = await readSheetFormulas(
+    targetSpreadsheetId,
+    `${escapeSheetTitle(targetTabTitle)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`
+  );
+  if (!template || !target) return { ok: false, reason: "SHEETS_DISABLED" };
+
+  const data = [];
+  for (let r = 0; r < template.length; r += 1) {
+    const row = template[r] || [];
+    for (let c = 0; c < row.length; c += 1) {
+      const src = String(row[c] ?? "").trim();
+      if (!isCellRefFormula(src)) continue;
+      const dst = String(target[r]?.[c] ?? "").trim();
+      if (dst === src) continue;
+      data.push({
+        range: `${escapeSheetTitle(targetTabTitle)}!${colToA1(c)}${r + 1}`,
+        values: [[src]],
+      });
+    }
+  }
+
+  const chunkSize = 800;
+  for (let i = 0; i < data.length; i += chunkSize) {
+    await batchUpdateValues(targetSpreadsheetId, data.slice(i, i + chunkSize));
+  }
+
+  return { ok: true, updated: data.length, targetTabTitle };
 }
 
 /** @deprecated use createMonthReportTabFromPrevious */

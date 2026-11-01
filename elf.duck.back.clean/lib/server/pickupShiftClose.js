@@ -30,6 +30,8 @@ import {
 
 const DONE_STATUSES = new Set(["completed", "done"]);
 const SKIP_SHIFT_STATUSES = new Set(["canceled", "annulled"]);
+const OPEN_SHIFT_STATUSES = new Set(["processing", "assembled"]);
+const SUBMITTED_PAYMENT_STATUSES = new Set(["checking", "awaiting", "paid"]);
 
 /** За скільки хвилин до кінця зміни слати «Завершение смены» (5–10 хв). */
 const SHIFT_CLOSE_REMINDER_LEAD_MINUTES = Math.min(
@@ -76,6 +78,29 @@ export function getPointShiftEndTime(point, dateLike = new Date()) {
   return getScheduleEndHHMM(rawSchedule) || "20:00";
 }
 
+function managerMessageIdOf(order) {
+  const raw = String(
+    order?.payment?.managerMessageId || order?.managerMessageId || ""
+  ).trim();
+  const id = Number(raw);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+}
+
+/**
+ * Чек зміни — лише те, що менеджер бачить у групі.
+ * Голий status=created без оплати і без повідомлення в чат не рахується:
+ * клієнт відкрив оформлення і не дійшов до точки.
+ */
+export function isPickupShiftOrder(order) {
+  const status = String(order?.status || "").trim().toLowerCase();
+  if (!status || SKIP_SHIFT_STATUSES.has(status)) return false;
+  if (DONE_STATUSES.has(status) || OPEN_SHIFT_STATUSES.has(status)) return true;
+  if (managerMessageIdOf(order) > 0) return true;
+
+  const paymentStatus = String(order?.payment?.status || "").trim().toLowerCase();
+  return SUBMITTED_PAYMENT_STATUSES.has(paymentStatus);
+}
+
 export async function countPickupShiftOrders(point, dayKey, dateLike = new Date()) {
   const bounds =
     dayKey === getWarsawDayKey(dateLike)
@@ -93,15 +118,27 @@ export async function countPickupShiftOrders(point, dayKey, dateLike = new Date(
       createdAt: { $gte: bounds.start, $lt: bounds.end },
       status: { $nin: Array.from(SKIP_SHIFT_STATUSES) },
     },
-    { status: 1 }
+    {
+      status: 1,
+      managerMessageId: 1,
+      "payment.status": 1,
+      "payment.managerMessageId": 1,
+    }
   ).lean();
 
-  const total = orders.length;
-  const done = orders.filter((o) =>
+  const counted = orders.filter(isPickupShiftOrder);
+  const total = counted.length;
+  const done = counted.filter((o) =>
     DONE_STATUSES.has(String(o?.status || "").trim().toLowerCase())
   ).length;
 
-  return { total, done, pending: Math.max(0, total - done), dayKey: bounds.dayKey };
+  return {
+    total,
+    done,
+    pending: Math.max(0, total - done),
+    skipped: orders.length - counted.length,
+    dayKey: bounds.dayKey,
+  };
 }
 
 async function loadStatsDayOrders(point, dayKey) {
@@ -386,6 +423,15 @@ export async function processPickupShiftCloseReminders(now = new Date()) {
     if (counts.total === 0 || counts.pending <= 0) {
       continue;
     }
+
+    console.log("[shiftClose] reminder counts", {
+      pointKey,
+      dayKey,
+      done: counts.done,
+      total: counts.total,
+      pending: counts.pending,
+      skippedUnsubmitted: counts.skipped,
+    });
 
     const claimed = await claimDailyStatsDispatch(reminderKey, {
       kind: "shift_close_reminder",

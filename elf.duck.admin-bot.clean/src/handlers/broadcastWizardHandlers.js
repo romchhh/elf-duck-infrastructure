@@ -777,7 +777,7 @@ bot.on("text", async (ctx, next) => {
           ua_card: {
             label: "Украинская карта",
             badge: "Перевод на карту",
-            defaultDetailsValue: "5395 4182 3356 7590",
+            defaultDetailsValue: "0000 0000 0000 0000",
           },
           cash: {
             label: "Наличные",

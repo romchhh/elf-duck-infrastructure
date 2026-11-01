@@ -603,8 +603,8 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
       title: "УКР. КАРТА",
       label: "Украинская карта",
       badge: "Перевод на карту",
-      defaultDetailsValue: "5395 4182 3356 7590",
-      example: "5395 4182 3356 7590",
+      defaultDetailsValue: "0000 0000 0000 0000",
+      example: "0000 0000 0000 0000",
     },
     cash: {
       title: "НАЛИЧНЫЕ",
@@ -647,7 +647,7 @@ bot.action(/pp_pay_prompt:(.+):(.+)/, async (ctx) => {
       "",
       currentMethodText,
       "",
-      `Что нужно отправить сейчас:`,
+      `Пример формата, не копируйте:`,
       `\`${promptMeta.example}\``,
     ].join("\n");
 

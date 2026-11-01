@@ -40,6 +40,20 @@ export async function readSheetValues(spreadsheetId, rangeA1) {
   return res.data.values || [];
 }
 
+export async function readSheetFormulas(spreadsheetId, rangeA1) {
+  const sheets = getSheetsApi();
+  if (!sheets) return null;
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: rangeA1,
+    majorDimension: "ROWS",
+    valueRenderOption: "FORMULA",
+  });
+
+  return res.data.values || [];
+}
+
 export async function batchUpdateValues(spreadsheetId, data) {
   const sheets = getSheetsApi();
   if (!sheets) return null;
