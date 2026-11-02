@@ -1,6 +1,6 @@
 import {
+  batchClearValues,
   batchUpdateValues,
-  clearSheetValues,
   escapeSheetTitle,
   getSheetsApi,
   readSheetFormulas,
@@ -8,12 +8,10 @@ import {
 } from "./client.js";
 import {
   isCellRefFormula,
-  lastDayOfMonth,
-  padReportValuesGrid,
+  isSheetFormula,
   prefixReportDateText,
   reportTabTitleForMonth,
   REPORT_TAB_GRID_ROWS,
-  resetReportStatsInGrid,
   transformReportGridToNextMonth,
 } from "./monthTransform.js";
 
@@ -130,7 +128,7 @@ export async function createMonthReportTabFromPrevious({
     const shownRow = formatted?.[rowIndex] || [];
     const width = Math.max(line.length, shownRow.length);
     for (let col = 0; col < width; col += 1) {
-      if (isCellRefFormula(line[col])) continue;
+      if (isSheetFormula(line[col])) continue;
       const shown = String(shownRow[col] ?? "").trim();
       if (/^\d{2}\.\d{2}(?:-\d{2}\.\d{2})?$/.test(shown)) line[col] = shown;
     }
@@ -150,19 +148,14 @@ export async function createMonthReportTabFromPrevious({
     })
   );
 
-  const denseValues = padReportValuesGrid(
+  const { updates, clears } = diffReportGridEdits(
+    formulaRaw || [],
     transformed,
-    REPORT_TAB_GRID_ROWS
+    tgtTitle
   );
 
-  await clearSheetValues(spreadsheetId, gridRange);
-
-  await batchUpdateValues(spreadsheetId, [
-    {
-      range: `${escapeSheetTitle(tgtTitle)}!A1`,
-      values: denseValues,
-    },
-  ]);
+  if (clears.length) await batchClearValues(spreadsheetId, clears);
+  if (updates.length) await batchUpdateValues(spreadsheetId, updates);
 
   return {
     ok: true,
@@ -170,62 +163,57 @@ export async function createMonthReportTabFromPrevious({
     sourceTabTitle: resolvedSourceTitle,
     targetTabTitle: tgtTitle,
     newSheetId,
-    rows: denseValues.length,
+    rows: transformed.length,
+    updatedCells: updates.length,
+    clearedCells: clears.length,
   };
 }
 
-/**
- * Перезаписує лист місяця лише значеннями (без формул) — для уже створених авто-вкладок.
- */
-export async function rewriteMonthReportTabAsPlainValues({
-  spreadsheetId,
-  tabTitle,
-  year,
-  month,
-}) {
-  const sheets = getSheetsApi();
-  if (!sheets) return { ok: false, reason: "SHEETS_DISABLED" };
+function cellText(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).trim();
+}
 
-  const title = String(tabTitle || "").trim();
-  if (!title) return { ok: false, reason: "TAB_TITLE_REQUIRED" };
+function isBlankInput(value) {
+  const text = cellText(value);
+  return text === "" || text === "0" || text === "0,00 zł" || text === "0.00";
+}
 
-  const sheetId = await getSheetIdByTitle(spreadsheetId, title);
-  if (!sheetId) return { ok: false, reason: "TAB_NOT_FOUND", tabTitle: title };
+/** Дати й порожні поля продажів. Формули не потрапляють у запис. */
+function diffReportGridEdits(originalRows, nextRows, tabTitle) {
+  const updates = [];
+  const clears = [];
+  const rowCount = Math.max(originalRows.length, nextRows.length);
 
-  const raw = await readSheetValues(
-    spreadsheetId,
-    `${escapeSheetTitle(title)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`
-  );
-
-  const y = Number(year);
-  const m = Number(month);
-  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) {
-    return { ok: false, reason: "INVALID_YEAR_MONTH" };
+  for (let r = 0; r < rowCount; r += 1) {
+    const original = originalRows[r] || [];
+    const next = nextRows[r] || [];
+    const width = Math.max(original.length, next.length);
+    for (let c = 0; c < width; c += 1) {
+      if (isSheetFormula(original[c]) || isSheetFormula(next[c])) continue;
+      const before = cellText(original[c]);
+      const after = cellText(next[c]);
+      if (before === after) continue;
+      const range = `${escapeSheetTitle(tabTitle)}!${colToA1(c)}${r + 1}`;
+      if (isBlankInput(after)) {
+        if (!isBlankInput(before)) clears.push(range);
+        continue;
+      }
+      updates.push({ range, values: [[next[c]]] });
+    }
   }
 
-  const plain = resetReportStatsInGrid(
-    raw || [],
-    y,
-    m,
-    lastDayOfMonth(y, m)
-  );
+  return { updates, clears };
+}
 
-  const denseValues = padReportValuesGrid(plain, REPORT_TAB_GRID_ROWS);
-  const gridRange = `${escapeSheetTitle(title)}!A1:ZZ${REPORT_TAB_GRID_ROWS}`;
-
-  await clearSheetValues(spreadsheetId, gridRange);
-  await batchUpdateValues(spreadsheetId, [
-    {
-      range: `${escapeSheetTitle(title)}!A1`,
-      values: denseValues,
-    },
-  ]);
-
+/**
+ * Раніше затирав формули всього листа. Формули лишаються в таблиці менеджерів.
+ */
+export async function rewriteMonthReportTabAsPlainValues() {
   return {
-    ok: true,
-    spreadsheetId,
-    tabTitle: title,
-    rows: denseValues.length,
+    ok: false,
+    skipped: true,
+    reason: "FORMULAS_OWNED_BY_SHEET",
   };
 }
 

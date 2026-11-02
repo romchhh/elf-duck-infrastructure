@@ -1,6 +1,8 @@
 import {
   batchUpdateValues,
+  clearSheetValues,
   escapeSheetTitle,
+  readSheetFormulas,
   readSheetValues,
 } from "./client.js";
 import {
@@ -28,6 +30,40 @@ export const MONTH_LEFT_COL = {
   bylo: 1,
   stalo: 2,
 };
+
+function isFormulaText(value) {
+  return String(value ?? "").trim().startsWith("=");
+}
+
+async function readEnteredCell(spreadsheetId, rangeA1) {
+  const rows = await readSheetFormulas(spreadsheetId, rangeA1);
+  return rows?.[0]?.[0] ?? "";
+}
+
+/**
+ * Пише лише число продажу або знижки.
+ * Формулу не чіпає. Нуль не записує: порожня клітинка лишається порожньою, а вже вписаний 0 стирається.
+ */
+async function writeSalesOrDiscountCell(spreadsheetId, rangeA1, nextNumber) {
+  const entered = await readEnteredCell(spreadsheetId, rangeA1);
+  if (isFormulaText(entered)) {
+    return { ok: true, skipped: true, reason: "FORMULA" };
+  }
+
+  const next = Number(nextNumber);
+  if (!Number.isFinite(next) || next === 0) {
+    if (String(entered ?? "").trim() === "") {
+      return { ok: true, skipped: true, reason: "EMPTY" };
+    }
+    await clearSheetValues(spreadsheetId, rangeA1);
+    return { ok: true, cleared: true };
+  }
+
+  await batchUpdateValues(spreadsheetId, [
+    { range: rangeA1, values: [[next]] },
+  ]);
+  return { ok: true, wrote: next };
+}
 
 function colToA1(colIndex) {
   let n = colIndex + 1;
@@ -279,9 +315,6 @@ const TIER_COL_OFFSET = {
   tier5: 7,
 };
 
-/** Денний блок: колонка «ПРОДАНО» (загальна кількість). */
-const DAY_SOLD_COL_OFFSET = 3;
-
 export async function loadMonthlyReport(spreadsheetId, tabTitle) {
   const range = `${escapeSheetTitle(tabTitle)}!A1:ZZ650`;
   return readSheetValues(spreadsheetId, range);
@@ -304,9 +337,8 @@ export async function applyMonthItogoDelta() {
 }
 
 /**
- * Денний рядок КАССА: лише загальна ПРОДАНО + СКИДКИ.
- * 1шт / 2шт / 3–4шт / 5шт+ у цьому рядку не пишемо (формули або порожньо).
- * КАССА zł — формула в таблиці.
+ * Денний рядок КАССА: лише СКИДКИ.
+ * ПРОДАНО, 1шт… і КАССА zł — формули таблиці, бот їх не пише.
  */
 export async function applyDayBlockTotalsDelta({
   spreadsheetId,
@@ -319,6 +351,7 @@ export async function applyDayBlockTotalsDelta({
   dryRun = false,
 }) {
   void kasaDeltaZl;
+  void soldUnitsDelta;
   void tierDeltas;
 
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
@@ -331,38 +364,21 @@ export async function applyDayBlockTotalsDelta({
   const kassaRow = findKassaRowInDayBlock(rows, block);
   if (kassaRow < 0) return { ok: false, reason: "DAY_KASSA_ROW_NOT_FOUND" };
 
-  const base = block.blockStart;
-  const updates = [];
-
-  const soldAdd = Number(soldUnitsDelta || 0);
-  if (soldAdd !== 0) {
-    const soldCol = base + DAY_SOLD_COL_OFFSET;
-    const prevSold = parseNumberCell(rows[kassaRow]?.[soldCol]);
-    updates.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(soldCol)}${kassaRow + 1}`,
-      values: [[Math.max(0, prevSold + soldAdd)]],
-    });
-  }
-
   const discAdd = Number(discountsDeltaZl || 0);
-  if (discAdd !== 0) {
-    const prevDisc = parseNumberCell(rows[kassaRow]?.[base + 8]);
-    updates.push({
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(base + 8)}${kassaRow + 1}`,
-      values: [[Math.max(0, Number((prevDisc + discAdd).toFixed(2)))]],
-    });
+  if (discAdd === 0) {
+    return { ok: true, skipped: true, kassaRow: kassaRow + 1, reason: "NO_DISCOUNT" };
   }
 
-  if (!updates.length) {
-    return { ok: true, skipped: true, kassaRow: kassaRow + 1 };
-  }
+  const prevDisc = parseNumberCell(rows[kassaRow]?.[block.blockStart + 8]);
+  const nextDisc = Math.max(0, Number((prevDisc + discAdd).toFixed(2)));
+  const range = `${escapeSheetTitle(tabTitle)}!${colToA1(block.blockStart + 8)}${kassaRow + 1}`;
 
   if (dryRun) {
-    return { ok: true, dryRun: true, kassaRow: kassaRow + 1, updates: updates.length };
+    return { ok: true, dryRun: true, kassaRow: kassaRow + 1, updates: nextDisc === 0 ? 0 : 1 };
   }
 
-  await batchUpdateValues(spreadsheetId, updates);
-  return { ok: true, updates: updates.length };
+  const written = await writeSalesOrDiscountCell(spreadsheetId, range, nextDisc);
+  return { ok: true, kassaRow: kassaRow + 1, updates: written.wrote ? 1 : 0, ...written };
 }
 
 /** Денна модель: лише колонка tier (1/2/3-4/5 шт). БЫЛО/СТАЛО/ПРОДАНО — формули. */
@@ -396,13 +412,7 @@ export async function applyReportModelDelta({
   const tierCol = blockStart + (TIER_COL_OFFSET[tierKey] ?? 4);
   const prevTier = parseNumberCell(rows[modelRow]?.[tierCol]);
   const nextTier = Math.max(0, prevTier + soldQty);
-
-  const updates = [
-    {
-      range: `${escapeSheetTitle(tabTitle)}!${colToA1(tierCol)}${modelRow + 1}`,
-      values: [[nextTier]],
-    },
-  ];
+  const range = `${escapeSheetTitle(tabTitle)}!${colToA1(tierCol)}${modelRow + 1}`;
 
   if (dryRun) {
     return {
@@ -417,7 +427,7 @@ export async function applyReportModelDelta({
     };
   }
 
-  await batchUpdateValues(spreadsheetId, updates);
+  await writeSalesOrDiscountCell(spreadsheetId, range, nextTier);
 
   if (!dryRun) {
     await recordPerOrderBotSheetIncrement({
@@ -438,9 +448,8 @@ export async function applyReportModelDelta({
 }
 
 /**
- * Вечірній sync дня: tiers по рядках моделей + у рядку КАССА лише
- * загальна ПРОДАНО + СКИДКИ (без 1шт/2шт/… внизу).
- * Не чіпає БЫЛО / СТАЛО / КАССА zł (формули в таблиці).
+ * Вечірній sync дня: лише колонки продажів (1шт / 2шт / 3–4шт / 5шт)
+ * і СКИДКИ в рядку КАССА. ПРОДАНО, БЫЛО, СТАЛО, КАССА zł — формули.
  */
 export async function writeDayBlockFromAggregates({
   spreadsheetId,
@@ -454,6 +463,7 @@ export async function writeDayBlockFromAggregates({
   dryRun = false,
 }) {
   void kasaTotalZl;
+  void soldUnitsTotal;
   void tierTotals;
 
   const dayHeader = warsawDayKeyToReportHeader(dayKey);
@@ -502,35 +512,13 @@ export async function writeDayBlockFromAggregates({
       if (delta <= 0) continue;
       data.push({
         range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + colOff)}${modelRow + 1}`,
-        values: [[Math.max(0, prev + delta)]],
+        values: [[prev + delta]],
       });
     }
   }
 
   const kassaRow = findKassaRowInDayBlock(rows, block);
   if (kassaRow >= 0) {
-    const mongoSold = Number(soldUnitsTotal || 0);
-    if (mongoSold > 0) {
-      const soldCol = blockStart + DAY_SOLD_COL_OFFSET;
-      const prevSold = parseNumberCell(rows[kassaRow]?.[soldCol]);
-
-      const { delta: soldDelta } = await computeBotSheetDelta({
-        spreadsheetId,
-        dayKey,
-        snapshotKey: dayKassaSnapshotKey("sold"),
-        mongoTotalQty: mongoSold,
-        prevCellQty: prevSold,
-        persist: !dryRun,
-      });
-
-      if (soldDelta > 0) {
-        data.push({
-          range: `${escapeSheetTitle(tabTitle)}!${colToA1(soldCol)}${kassaRow + 1}`,
-          values: [[Math.max(0, prevSold + soldDelta)]],
-        });
-      }
-    }
-
     const mongoDisc = Number(discounts || 0);
     if (mongoDisc > 0) {
       const prevDisc = parseNumberCell(rows[kassaRow]?.[blockStart + 8]);
@@ -545,10 +533,13 @@ export async function writeDayBlockFromAggregates({
       });
 
       if (discDelta > 0) {
-        data.push({
-          range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`,
-          values: [[Math.max(0, Number((prevDisc + discDelta).toFixed(2)))]],
-        });
+        const nextDisc = Number((prevDisc + discDelta).toFixed(2));
+        if (nextDisc > 0) {
+          data.push({
+            range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`,
+            values: [[nextDisc]],
+          });
+        }
       }
     }
   }
@@ -557,11 +548,26 @@ export async function writeDayBlockFromAggregates({
     return { ok: true, updates: 0, skipped: true, reason: "NOTHING_TO_WRITE" };
   }
 
-  if (dryRun) {
-    return { ok: true, dryRun: true, updates: data.length };
+  const safe = [];
+  for (const item of data) {
+    const next = Number(item.values?.[0]?.[0]);
+    if (!Number.isFinite(next) || next === 0) continue;
+    if (!dryRun) {
+      const entered = await readEnteredCell(spreadsheetId, item.range);
+      if (isFormulaText(entered)) continue;
+    }
+    safe.push(item);
   }
 
-  await batchUpdateValues(spreadsheetId, data);
+  if (!safe.length) {
+    return { ok: true, updates: 0, skipped: true, reason: "NOTHING_TO_WRITE" };
+  }
 
-  return { ok: true, updates: data.length, discounts };
+  if (dryRun) {
+    return { ok: true, dryRun: true, updates: safe.length };
+  }
+
+  await batchUpdateValues(spreadsheetId, safe);
+
+  return { ok: true, updates: safe.length, discounts };
 }

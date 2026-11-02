@@ -80,17 +80,15 @@ function isNumericish(cell) {
   return /^-?\d+([.,]\d+)?$/.test(raw.replace(/\s/g, ""));
 }
 
-/** Формула, яка посилається на клітинки (СТАЛО, ПРОДАНО, КАССА). Її не можна затирати числом. */
-export function isCellRefFormula(value) {
-  const s = String(value ?? "").trim();
-  return s.startsWith("=") && /[A-Z]{1,3}\d+/i.test(s);
+/** Будь-яка формула аркуша. Бот її не перезаписує. */
+export function isSheetFormula(value) {
+  return String(value ?? "").trim().startsWith("=");
 }
 
-function zeroNumericCell(cell) {
-  const s = String(cell ?? "").trim();
-  if (!s) return "";
-  if (/zl|zł/i.test(s)) return "0,00 zł";
-  return 0;
+/** Формула, яка посилається на клітинки (СТАЛО, ПРОДАНО, КАССА). */
+export function isCellRefFormula(value) {
+  const s = String(value ?? "").trim();
+  return isSheetFormula(s) && /[A-Z]{1,3}\d+/i.test(s);
 }
 
 function ensureCell(out, rowIndex, colIndex) {
@@ -99,14 +97,8 @@ function ensureCell(out, rowIndex, colIndex) {
 
 function clearCell(out, rowIndex, colIndex) {
   ensureCell(out, rowIndex, colIndex);
-  if (isCellRefFormula(out[rowIndex][colIndex])) return;
+  if (isSheetFormula(out[rowIndex][colIndex])) return;
   out[rowIndex][colIndex] = "";
-}
-
-function setStatCell(out, rowIndex, colIndex, value) {
-  ensureCell(out, rowIndex, colIndex);
-  if (isCellRefFormula(out[rowIndex][colIndex])) return;
-  out[rowIndex][colIndex] = value;
 }
 
 function isModelDataRowLabel(label) {
@@ -177,28 +169,18 @@ function resetMonthSummaryFormulaColumns(out, rangeLabel) {
         if (c === 0 || c === MONTH_RIGHT_START_COL) continue;
         const label = String(out[r]?.[c] || "").trim();
         if (MODEL_LIST_MARKERS.has(label) || /^model$/i.test(label)) continue;
-        if (MONTH_TIER_COLS.includes(c)) {
-          setStatCell(out, r, c, 0);
-          continue;
+        if (MONTH_TIER_COLS.includes(c) || isNumericish(out[r]?.[c])) {
+          clearCell(out, r, c);
         }
-        if (isNumericish(out[r]?.[c])) setStatCell(out, r, c, zeroNumericCell(out[r][c]));
       }
       break;
     }
 
     if (/^касса$/i.test(leftLabel) || /^касса$/i.test(rightLabel)) {
       for (let c = 1; c <= 9; c += 1) {
-        if (c === 8) {
-          setStatCell(out, r, c, 0);
-          continue;
-        }
         clearCell(out, r, c);
       }
       for (const c of [MONTH_SOLD_COL, ...MONTH_TIER_COLS, MONTH_RIGHT_START_COL + 8]) {
-        if (c === MONTH_RIGHT_START_COL + 8) {
-          setStatCell(out, r, c, 0);
-          continue;
-        }
         clearCell(out, r, c);
       }
       continue;
@@ -217,8 +199,9 @@ function resetMonthSummaryFormulaColumns(out, rangeLabel) {
     if (isModelDataRowLabel(rightLabel)) {
       clearCell(out, r, MONTH_SOLD_COL);
       for (const c of MONTH_TIER_COLS) {
-        setStatCell(out, r, c, 0);
+        clearCell(out, r, c);
       }
+      clearCell(out, r, MONTH_RIGHT_START_COL + 8);
     }
   }
 }
@@ -247,7 +230,7 @@ export function resetReportStatsInGrid(
           for (let c = blockStart + 1; c <= blockStart + 7; c += 1) {
             clearCell(out, r, c);
           }
-          setStatCell(out, r, blockStart + 8, 0);
+          clearCell(out, r, blockStart + 8);
           clearCell(out, r, blockStart + 9);
           continue;
         }
@@ -261,11 +244,8 @@ export function resetReportStatsInGrid(
         clearCell(out, r, blockStart + 1);
         clearCell(out, r, blockStart + 2);
         clearCell(out, r, blockStart + 3);
-        for (let c = blockStart + 4; c <= blockStart + 7; c += 1) {
-          setStatCell(out, r, c, 0);
-        }
-        if (isNumericish(out[r]?.[blockStart + 8])) {
-          setStatCell(out, r, blockStart + 8, 0);
+        for (let c = blockStart + 4; c <= blockStart + 8; c += 1) {
+          clearCell(out, r, c);
         }
       }
     }
@@ -287,7 +267,7 @@ export function resetReportStatsInGrid(
         if (c === 0 || c === 11) continue;
         const label = String(row[c] || "").trim();
         if (MODEL_LIST_MARKERS.has(label) || /^model$/i.test(label)) continue;
-        if (isNumericish(row[c])) setStatCell(out, r, c, zeroNumericCell(row[c]));
+        if (isNumericish(row[c])) clearCell(out, r, c);
       }
     }
 

@@ -77,6 +77,22 @@ export async function clearSheetValues(spreadsheetId, rangeA1) {
   });
 }
 
+export async function batchClearValues(spreadsheetId, ranges) {
+  const sheets = getSheetsApi();
+  const list = (ranges || []).filter(Boolean);
+  if (!sheets || !list.length) return null;
+
+  const chunkSize = 400;
+  for (let i = 0; i < list.length; i += chunkSize) {
+    await sheets.spreadsheets.values.batchClear({
+      spreadsheetId,
+      requestBody: { ranges: list.slice(i, i + chunkSize) },
+    });
+  }
+
+  return { cleared: list.length };
+}
+
 export async function getSpreadsheetMeta(spreadsheetId, fields) {
   const sheets = getSheetsApi();
   if (!sheets) return null;
