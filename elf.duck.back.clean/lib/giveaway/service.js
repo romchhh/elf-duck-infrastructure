@@ -893,11 +893,7 @@ export async function listGiveawayMonthsSummary(limit = 24) {
  * Якщо призи вже нараховано — прибирає ledger `giveaway_prize` за цим monthKey і перераховує баланс.
  * Учасників і entries не чіпає.
  */
-export async function resetGiveawayMonthResults(monthKey) {
-  const key = String(monthKey || getActiveGiveawayMonthKey()).trim();
-  if (!key) throw new Error("INVALID_MONTH_KEY");
-
-  await ensureGiveawayMonth(key);
+async function reverseGiveawayPrizeLedgerForMonth(key) {
   const winners = await winnersCol().find({ monthKey: key }).toArray();
   const creditedTelegramIds = [
     ...new Set(
@@ -922,6 +918,16 @@ export async function resetGiveawayMonthResults(monthKey) {
     await user.save();
   }
 
+  return { ledgerRemoved, winnersCount: winners.length };
+}
+
+export async function resetGiveawayMonthResults(monthKey) {
+  const key = String(monthKey || getActiveGiveawayMonthKey()).trim();
+  if (!key) throw new Error("INVALID_MONTH_KEY");
+
+  await ensureGiveawayMonth(key);
+  const { ledgerRemoved } = await reverseGiveawayPrizeLedgerForMonth(key);
+
   const winnersDeleted = await winnersCol().deleteMany({ monthKey: key });
   const now = new Date();
   await monthsCol().updateOne(
@@ -945,6 +951,52 @@ export async function resetGiveawayMonthResults(monthKey) {
     cashbackLedgerRemoved: ledgerRemoved,
     participantsCount: await countParticipants(key),
     entriesCount: await countEntries(key),
+  };
+}
+
+/**
+ * Повністю очищає розіграш місяця: учасники, записи, переможці, старт і результати.
+ * Налаштування призів і текст переможцям зберігаються.
+ */
+export async function clearGiveawayMonth(monthKey, { startAfter = false } = {}) {
+  const key = String(monthKey || getActiveGiveawayMonthKey()).trim();
+  if (!key) throw new Error("INVALID_MONTH_KEY");
+
+  await ensureGiveawayMonth(key);
+  const { ledgerRemoved } = await reverseGiveawayPrizeLedgerForMonth(key);
+
+  const participantsDeleted = await participantsCol().deleteMany({ monthKey: key });
+  const entriesDeleted = await entriesCol().deleteMany({ monthKey: key });
+  const winnersDeleted = await winnersCol().deleteMany({ monthKey: key });
+
+  const now = new Date();
+  await monthsCol().updateOne(
+    { monthKey: key },
+    {
+      $set: {
+        status: "open",
+        drawnAt: null,
+        creditedAt: null,
+        notifiedAt: null,
+        drawnBy: null,
+        updatedAt: now,
+        startedAt: null,
+      },
+      $unset: { revenueSnapshot: "" },
+    }
+  );
+
+  if (startAfter) {
+    await startGiveawayMonth(key);
+  }
+
+  return {
+    monthKey: key,
+    participantsRemoved: participantsDeleted.deletedCount || 0,
+    entriesRemoved: entriesDeleted.deletedCount || 0,
+    winnersRemoved: winnersDeleted.deletedCount || 0,
+    cashbackLedgerRemoved: ledgerRemoved,
+    startedAfterClear: Boolean(startAfter),
   };
 }
 

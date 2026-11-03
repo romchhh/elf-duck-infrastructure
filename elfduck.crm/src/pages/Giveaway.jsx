@@ -108,8 +108,10 @@ export default function Giveaway() {
   const [drawPhrase, setDrawPhrase] = useState("");
   const [creditPhrase, setCreditPhrase] = useState("");
   const [notifyPhrase, setNotifyPhrase] = useState("");
+  const [clearPhrase, setClearPhrase] = useState("");
   const [settingsDraft, setSettingsDraft] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [winnerMessageOpen, setWinnerMessageOpen] = useState(false);
   const [messageDraft, setMessageDraft] = useState(null);
   const [messageLang, setMessageLang] = useState("ru");
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -306,6 +308,38 @@ export default function Giveaway() {
     onError: (error) => {
       toast({
         title: "Не удалось сохранить сообщение",
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const clearMutation = useMutation({
+    mutationFn: (startAfter) =>
+      crmFetchJson(
+        `/crm/giveaway/${encodeURIComponent(selectedMonthKey)}/clear`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            confirmPhrase: clearPhrase,
+            startAfter: Boolean(startAfter),
+          }),
+        }
+      ),
+    onSuccess: async (payload) => {
+      setClearPhrase("");
+      await invalidate();
+      const r = payload?.result;
+      toast({
+        title: "Розыгрыш месяца очищен",
+        description: r
+          ? `Участников: −${r.participantsRemoved ?? 0}, записей: −${r.entriesRemoved ?? 0}${r.startedAfterClear ? " · конкурс запущен" : ""}`
+          : undefined,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Не удалось очистить",
         description: error?.message,
         variant: "destructive",
       });
@@ -593,6 +627,69 @@ export default function Giveaway() {
                 : "Начать конкурс"}
           </button>
         </div>
+
+        <div className="mt-4 border-t border-border/60 pt-4">
+          <p className="text-[12px] font-medium text-foreground">
+            Очистить розыгрыш месяца
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
+            Удалит всех участников, записи о покупках, победителей и сбросит
+            старт. Настройки призов и текст победителям останутся. Если призы
+            уже начислялись — записи кэшбека за этот месяц тоже снимутся.
+          </p>
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="block min-w-[220px] flex-1 text-[11px] text-muted-2">
+              Фраза подтверждения
+              <input
+                className="input-base mt-1 w-full font-mono text-[12px]"
+                placeholder="ОЧИСТИТЬ РОЗЫГРЫШ"
+                value={clearPhrase}
+                onChange={(e) => setClearPhrase(e.target.value)}
+                disabled={clearMutation.isPending}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={
+                clearMutation.isPending ||
+                clearPhrase.trim() !== "ОЧИСТИТЬ РОЗЫГРЫШ"
+              }
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Очистить весь розыгрыш этого месяца? Данные участников не восстановить."
+                  )
+                ) {
+                  return;
+                }
+                clearMutation.mutate(false);
+              }}
+              className="rounded-lg border border-red-400/40 px-4 py-2 text-[12px] text-red-200 hover:bg-red-400/10 disabled:opacity-40"
+            >
+              {clearMutation.isPending ? "…" : "Очистить"}
+            </button>
+            <button
+              type="button"
+              disabled={
+                clearMutation.isPending ||
+                clearPhrase.trim() !== "ОЧИСТИТЬ РОЗЫГРЫШ"
+              }
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Очистить месяц и сразу запустить конкурс заново?"
+                  )
+                ) {
+                  return;
+                }
+                clearMutation.mutate(true);
+              }}
+              className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
+            >
+              {clearMutation.isPending ? "…" : "Очистить и запустить"}
+            </button>
+          </div>
+        </div>
       </div>
 
       {detailLoading ? (
@@ -877,16 +974,37 @@ export default function Giveaway() {
 
           {messageDraft ? (
             <div className="rounded-2xl surface-card p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                className="flex w-full items-start justify-between gap-3 text-left"
+                onClick={() => setWinnerMessageOpen((open) => !open)}
+                aria-expanded={winnerMessageOpen}
+              >
                 <div>
                   <h3 className="text-[14px] font-semibold">
-                    Сообщение победителям
+                    Настройки приветственного сообщения
                   </h3>
-                  <p className="mt-1 text-[11px] text-muted-2">
-                    {"{amount}"} подставится суммой приза. *жирный* _курсив_
-                    __подчёркнутый__ ~~зачёркнутый~~
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
+                    {winnerMessageOpen
+                      ? "{amount} подставится суммой приза. Форматирование как в рассылке."
+                      : `${messageDraft.photoUrl ? "С фото · " : "Без фото · "}${(messageDraft.ru || DEFAULT_WINNER_MESSAGE_RU).slice(0, 72)}…`}
                   </p>
                 </div>
+                <ChevronRight
+                  className={cn(
+                    "mt-0.5 h-4 w-4 shrink-0 text-muted-2 transition-transform",
+                    winnerMessageOpen && "rotate-90"
+                  )}
+                />
+              </button>
+
+              {winnerMessageOpen ? (
+              <>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
+                <p className="text-[11px] text-muted-2">
+                  Сообщение победителям в Telegram после начисления приза.
+                  *жирный* _курсив_ __подчёркнутый__ ~~зачёркнутый~~
+                </p>
                 <div className="inline-flex rounded-lg border border-border p-0.5">
                   {[
                     { key: "ru", label: "RU" },
@@ -996,6 +1114,8 @@ export default function Giveaway() {
                   {messageMutation.isPending ? "…" : "Сохранить сообщение"}
                 </button>
               </div>
+              </>
+              ) : null}
             </div>
           ) : null}
 

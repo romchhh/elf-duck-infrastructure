@@ -1,6 +1,7 @@
 import express from "express";
 import { requireCrmPushAdmin } from "./deps.js";
 import {
+  clearGiveawayMonth,
   creditGiveawayWinners,
   ensureGiveawayIndexes,
   ensureGiveawayMonth,
@@ -135,6 +136,37 @@ router.post(
       }
       console.error("POST /crm/giveaway remove participant error:", error);
       return res.status(500).json({ ok: false, error: "GIVEAWAY_REMOVE_FAILED" });
+    }
+  }
+);
+
+router.post(
+  "/giveaway/:monthKey/clear",
+  requireCrmPushAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      if (!requireConfirm(req, "ОЧИСТИТЬ РОЗЫГРЫШ")) {
+        return res.status(400).json({
+          ok: false,
+          error: "CONFIRM_PHRASE_REQUIRED",
+          hint: 'Укажите confirmPhrase: "ОЧИСТИТЬ РОЗЫГРЫШ"',
+        });
+      }
+
+      await ensureGiveawayIndexes();
+      const monthKey = resolveMonthKey(req);
+      const startAfter = Boolean(req.body?.startAfter);
+      const result = await clearGiveawayMonth(monthKey, { startAfter });
+      const state = await getGiveawayAdminState(monthKey);
+      return res.json({ ok: true, result, ...state });
+    } catch (error) {
+      const code = String(error?.message || "");
+      if (code === "INVALID_MONTH_KEY" || code === "GIVEAWAY_NOT_OPEN") {
+        return res.status(400).json({ ok: false, error: code });
+      }
+      console.error("POST /crm/giveaway clear error:", error);
+      return res.status(500).json({ ok: false, error: "GIVEAWAY_CLEAR_FAILED" });
     }
   }
 );
