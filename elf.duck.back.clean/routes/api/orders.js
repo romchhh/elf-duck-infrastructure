@@ -1120,6 +1120,15 @@ app.post("/orders/:id/cancel", async (req, res) => {
       console.error("cancel releaseOrderPromoUse error:", promoErr);
     }
 
+    try {
+      const { revokeGiveawayEntryForOrder } = await import(
+        "../../lib/giveaway/service.js"
+      );
+      await revokeGiveawayEntryForOrder(freshOrderAfterRefund);
+    } catch (giveawayErr) {
+      console.error("cancel revokeGiveawayEntryForOrder error:", giveawayErr);
+    }
+
     await refreshManagerOrderMessage(freshOrderAfterRefund);
 
     try {

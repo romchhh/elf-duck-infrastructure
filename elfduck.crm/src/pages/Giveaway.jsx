@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronRight, RefreshCw, Users } from "lucide-react";
 import { crmFetchJson } from "@/lib/crmFetch";
+import { compressImageForUpload } from "@/lib/compressImage";
+import { renderPushPreviewHtml, PUSH_PREVIEW_CLASS } from "@/lib/pushPreviewHtml";
 import { toast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +52,22 @@ function formatZl(value) {
   return `${Number(value || 0).toFixed(2)} zł`;
 }
 
+const DEFAULT_WINNER_MESSAGE_RU =
+  "Поздравляем! Вы победили в нашей новой рубрике „ElfDuck раздаёт 2 000 zł“. Ваш выигрыш в размере {amount} zł уже начислен на баланс.";
+
+const DEFAULT_WINNER_MESSAGE_PL =
+  "Gratulacje! Wygrałeś w rubryce „ElfDuck rozdaje 2 000 zł”. Twoja wygrana {amount} zł została już dodana do salda cashbacku.";
+
+const MESSAGE_FORMATS = [
+  { label: "B", tip: "Жирный *текст*", before: "*", after: "*" },
+  { label: "I", tip: "Курсив _текст_", before: "_", after: "_" },
+  { label: "U", tip: "Подчёркнутый __текст__", before: "__", after: "__" },
+  { label: "S", tip: "Зачёркнутый ~~текст~~", before: "~~", after: "~~" },
+  { label: "спойлер", tip: "||текст||", before: "||", after: "||" },
+  { label: "`", tip: "Код", before: "`", after: "`" },
+  { label: "❝", tip: "Цитата", before: "> ", after: "" },
+];
+
 function StatusPill({ status }) {
   const key = String(status || "open");
   return (
@@ -92,6 +110,10 @@ export default function Giveaway() {
   const [notifyPhrase, setNotifyPhrase] = useState("");
   const [settingsDraft, setSettingsDraft] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [messageDraft, setMessageDraft] = useState(null);
+  const [messageLang, setMessageLang] = useState("ru");
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const messageRef = useRef(null);
 
   const {
     data: monthsData,
@@ -123,8 +145,12 @@ export default function Giveaway() {
     await queryClient.invalidateQueries({ queryKey: ["crm-giveaway-current"] });
   };
 
+  const settingsSyncKey = data?.settings
+    ? `${selectedMonthKey}:${String(data?.month?.updatedAt || "ready")}`
+    : "";
+
   React.useEffect(() => {
-    if (!selectedMonthKey || !data?.settings) return;
+    if (!settingsSyncKey || !data?.settings) return;
     setSettingsDraft({
       winnerCount: Number(data.settings.winnerCount || 25),
       prizeTiers: (data.settings.prizeTiers || DEFAULT_TIERS).map((row) => ({
@@ -135,7 +161,13 @@ export default function Giveaway() {
       rulesRu: String(data.settings.rulesRu || ""),
       rulesPl: String(data.settings.rulesPl || ""),
     });
-  }, [selectedMonthKey, data?.settings, data?.month?.updatedAt]);
+    setMessageDraft({
+      ru: String(data.settings.winnerMessageRu || DEFAULT_WINNER_MESSAGE_RU),
+      pl: String(data.settings.winnerMessagePl || DEFAULT_WINNER_MESSAGE_PL),
+      photoUrl: String(data.settings.winnerPhotoUrl || ""),
+      photoFileId: String(data.settings.winnerPhotoFileId || ""),
+    });
+  }, [settingsSyncKey]);
 
   const settingsMutation = useMutation({
     mutationFn: () =>
@@ -233,6 +265,131 @@ export default function Giveaway() {
       });
     },
   });
+
+  const startMutation = useMutation({
+    mutationFn: () =>
+      crmFetchJson(
+        `/crm/giveaway/${encodeURIComponent(selectedMonthKey)}/start`,
+        { method: "POST", body: JSON.stringify({}) }
+      ),
+    onSuccess: async () => {
+      await invalidate();
+      toast({ title: "Конкурс этого месяца запущен" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Не удалось начать конкурс",
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const messageMutation = useMutation({
+    mutationFn: () =>
+      crmFetchJson(
+        `/crm/giveaway/${encodeURIComponent(selectedMonthKey)}/settings`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            winnerMessageRu: messageDraft?.ru || "",
+            winnerMessagePl: messageDraft?.pl || "",
+            winnerPhotoUrl: messageDraft?.photoUrl || "",
+            winnerPhotoFileId: messageDraft?.photoFileId || "",
+          }),
+        }
+      ),
+    onSuccess: async () => {
+      await invalidate();
+      toast({ title: "Сообщение победителям сохранено" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Не удалось сохранить сообщение",
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const removeParticipantMutation = useMutation({
+    mutationFn: (telegramId) =>
+      crmFetchJson(
+        `/crm/giveaway/${encodeURIComponent(selectedMonthKey)}/participants/${encodeURIComponent(telegramId)}/remove`,
+        { method: "POST", body: JSON.stringify({}) }
+      ),
+    onSuccess: async () => {
+      await invalidate();
+      toast({ title: "Участник удалён из розыгрыша" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Не удалось удалить участника",
+        description:
+          error?.message === "WINNER_ALREADY_CREDITED"
+            ? "Приз уже начислен. Сначала разберитесь с кэшбеком."
+            : error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const insertMessageFormat = (before, after = before) => {
+    const el = messageRef.current;
+    setMessageDraft((current) => {
+      const field = messageLang === "pl" ? "pl" : "ru";
+      const value = String(current?.[field] || "");
+      const start = el?.selectionStart ?? value.length;
+      const end = el?.selectionEnd ?? value.length;
+      const selected = value.slice(start, end) || "текст";
+      const chunk =
+        before === "> "
+          ? selected
+              .split("\n")
+              .map((line) => `> ${line}`)
+              .join("\n")
+          : `${before}${selected}${after}`;
+      const next = value.slice(0, start) + chunk + value.slice(end);
+      const cursor = start + chunk.length;
+      requestAnimationFrame(() => {
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(cursor, cursor);
+      });
+      return { ...(current || {}), [field]: next };
+    });
+  };
+
+  const uploadWinnerPhoto = async (file) => {
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const uploadFile = await compressImageForUpload(file, {
+        maxEdge: 1920,
+        maxBytes: 2.5 * 1024 * 1024,
+        quality: 0.85,
+      });
+      const formData = new FormData();
+      formData.append("file", uploadFile, uploadFile.name || "winner.jpg");
+      const data = await crmFetchJson("/crm/push/upload-media", {
+        method: "POST",
+        body: formData,
+      });
+      setMessageDraft((current) => ({
+        ...(current || {}),
+        photoUrl: String(data?.url || data?.photoPreviewUrl || ""),
+        photoFileId: String(data?.fileId || ""),
+      }));
+    } catch (error) {
+      toast({
+        title: "Не удалось загрузить фото",
+        description: error?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
 
   const status = String(data?.month?.status || "open");
   const winners = data?.winners || [];
@@ -396,7 +553,46 @@ export default function Giveaway() {
 
       <div className="rounded-2xl border border-amber-400/25 bg-amber-400/10 p-4 text-[13px] leading-relaxed text-amber-100/90">
         Сначала «Провести розыгрыш», проверьте победителей, «Начислить призы»,
-        затем «Отправить победителям».
+        затем «Отправить победителям». В розыгрыш попадают только завершённые
+        заказы. Аннулированные и отменённые не считаются.
+      </div>
+
+      <div className="rounded-2xl surface-card p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-[14px] font-semibold">Старт конкурса</h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
+              {data?.month?.startedAt
+                ? `Конкурс запущен вручную: ${formatDateTime(data.month.startedAt)}. Участие открыто, пока месяц в статусе «Приём участников».`
+                : "С 1 по 25 число конкурс идёт по календарю. Кнопка открывает его в любой день этого месяца, не дожидаясь 1-го."}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={
+              status !== "open" ||
+              Boolean(data?.month?.startedAt) ||
+              startMutation.isPending
+            }
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "Начать конкурс этого месяца сейчас? Участники смогут нажать «Участвовать»."
+                )
+              ) {
+                return;
+              }
+              startMutation.mutate();
+            }}
+            className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
+          >
+            {data?.month?.startedAt
+              ? "Уже запущен"
+              : startMutation.isPending
+                ? "…"
+                : "Начать конкурс"}
+          </button>
+        </div>
       </div>
 
       {detailLoading ? (
@@ -679,6 +875,130 @@ export default function Giveaway() {
             </div>
           </div>
 
+          {messageDraft ? (
+            <div className="rounded-2xl surface-card p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-[14px] font-semibold">
+                    Сообщение победителям
+                  </h3>
+                  <p className="mt-1 text-[11px] text-muted-2">
+                    {"{amount}"} подставится суммой приза. *жирный* _курсив_
+                    __подчёркнутый__ ~~зачёркнутый~~
+                  </p>
+                </div>
+                <div className="inline-flex rounded-lg border border-border p-0.5">
+                  {[
+                    { key: "ru", label: "RU" },
+                    { key: "pl", label: "PL" },
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setMessageLang(item.key)}
+                      className={cn(
+                        "rounded-md px-2.5 py-1 text-[11px]",
+                        messageLang === item.key
+                          ? "bg-[hsl(255_100%_68%/0.18)] text-foreground"
+                          : "text-muted-2"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1">
+                {MESSAGE_FORMATS.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    title={item.tip}
+                    onClick={() => insertMessageFormat(item.before, item.after)}
+                    className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                ref={messageRef}
+                rows={5}
+                value={messageLang === "pl" ? messageDraft.pl : messageDraft.ru}
+                onChange={(e) =>
+                  setMessageDraft((current) => ({
+                    ...(current || {}),
+                    [messageLang === "pl" ? "pl" : "ru"]: e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border border-border bg-transparent px-3 py-2 font-mono text-[12px] leading-relaxed"
+              />
+
+              <div
+                className={PUSH_PREVIEW_CLASS}
+                dangerouslySetInnerHTML={{
+                  __html: renderPushPreviewHtml(
+                    (messageLang === "pl" ? messageDraft.pl : messageDraft.ru).replaceAll(
+                      "{amount}",
+                      "150"
+                    )
+                  ),
+                }}
+              />
+
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="cursor-pointer rounded-lg border border-border px-3 py-2 text-[12px]">
+                  {photoUploading ? "Загрузка…" : "Добавить фото"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    disabled={photoUploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      uploadWinnerPhoto(file);
+                    }}
+                  />
+                </label>
+                {messageDraft.photoUrl ? (
+                  <>
+                    <img
+                      src={messageDraft.photoUrl}
+                      alt=""
+                      className="h-14 w-14 rounded-lg object-cover"
+                    />
+                    <button
+                      type="button"
+                      className="text-[12px] text-muted-2 hover:text-foreground"
+                      onClick={() =>
+                        setMessageDraft((current) => ({
+                          ...(current || {}),
+                          photoUrl: "",
+                          photoFileId: "",
+                        }))
+                      }
+                    >
+                      Убрать фото
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-muted-2">Без фото</span>
+                )}
+                <button
+                  type="button"
+                  disabled={messageMutation.isPending}
+                  onClick={() => messageMutation.mutate()}
+                  className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
+                >
+                  {messageMutation.isPending ? "…" : "Сохранить сообщение"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 lg:grid-cols-3">
             <ActionCard
               title="1. Провести розыгрыш"
@@ -763,7 +1083,7 @@ export default function Giveaway() {
                       <th className="py-1 pr-3">Покупок</th>
                       <th className="py-1 pr-3">Выручка</th>
                       <th className="py-1 pr-3">Вступил</th>
-                      <th className="py-1">Примечание</th>
+                      <th className="py-1"> </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -805,9 +1125,31 @@ export default function Giveaway() {
                         </td>
                         <td className="py-2 pr-3 text-muted-foreground">
                           {formatDateTime(row.joinedAt)}
+                          {row.testSeed ? (
+                            <span className="ml-1 text-amber-200/80">тест</span>
+                          ) : null}
                         </td>
-                        <td className="py-2 text-muted-2">
-                          {row.testSeed ? "тест" : ""}
+                        <td className="py-2">
+                          <button
+                            type="button"
+                            className="text-[11px] text-red-300 hover:underline disabled:opacity-40"
+                            disabled={removeParticipantMutation.isPending}
+                            onClick={() => {
+                              const label = row.username
+                                ? `@${row.username}`
+                                : row.telegramId;
+                              if (
+                                !window.confirm(
+                                  `Удалить ${label} из розыгрыша? Его покупки тоже уберутся.`
+                                )
+                              ) {
+                                return;
+                              }
+                              removeParticipantMutation.mutate(row.telegramId);
+                            }}
+                          >
+                            Удалить
+                          </button>
                         </td>
                       </tr>
                     ))}

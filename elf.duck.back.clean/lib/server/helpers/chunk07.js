@@ -1327,6 +1327,13 @@ export async function changePickupOrderStatusByManager(
       console.error("cancel releaseOrderPromoUse error:", promoErr);
     }
 
+    try {
+      const { revokeGiveawayEntryForOrder } = await import("../../giveaway/service.js");
+      await revokeGiveawayEntryForOrder(fresh);
+    } catch (giveawayErr) {
+      console.error("cancel revokeGiveawayEntryForOrder error:", giveawayErr);
+    }
+
     return fresh;
   }
 
@@ -1672,6 +1679,13 @@ export async function annulOrderBecauseNoPaymentConfirm(order, options = {}) {
       await releaseOrderPromoUse(freshOrder);
     } catch (promoErr) {
       console.error("annul releaseOrderPromoUse error:", promoErr);
+    }
+
+    try {
+      const { revokeGiveawayEntryForOrder } = await import("../../giveaway/service.js");
+      await revokeGiveawayEntryForOrder(freshOrder);
+    } catch (giveawayErr) {
+      console.error("annul revokeGiveawayEntryForOrder error:", giveawayErr);
     }
 
     // Partial cashback can leave payment.method empty → timeout annul must still refund.

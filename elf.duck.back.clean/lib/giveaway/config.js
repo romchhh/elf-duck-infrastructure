@@ -14,6 +14,10 @@ export function getDefaultGiveawaySettings() {
     prizeTiers: DEFAULT_GIVEAWAY_PRIZE_TIERS.map((row) => ({ ...row })),
     rulesRu: "",
     rulesPl: "",
+    winnerMessageRu: "",
+    winnerMessagePl: "",
+    winnerPhotoUrl: "",
+    winnerPhotoFileId: "",
   };
 }
 
@@ -67,6 +71,10 @@ export function normalizeGiveawaySettings(raw = {}) {
     prizeTiers,
     rulesRu: String(raw?.rulesRu ?? "").trim(),
     rulesPl: String(raw?.rulesPl ?? "").trim(),
+    winnerMessageRu: String(raw?.winnerMessageRu ?? "").trim(),
+    winnerMessagePl: String(raw?.winnerMessagePl ?? "").trim(),
+    winnerPhotoUrl: String(raw?.winnerPhotoUrl ?? "").trim(),
+    winnerPhotoFileId: String(raw?.winnerPhotoFileId ?? "").trim(),
   };
 }
 

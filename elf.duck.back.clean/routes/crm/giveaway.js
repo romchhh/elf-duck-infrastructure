@@ -8,8 +8,10 @@ import {
   getGiveawayAdminState,
   listGiveawayMonthsSummary,
   notifyGiveawayWinners,
+  removeGiveawayParticipant,
   runGiveawayDraw,
   seedGiveawayTestParticipants,
+  startGiveawayMonth,
   updateGiveawayMonthSettings,
 } from "../../lib/giveaway/service.js";
 
@@ -70,6 +72,10 @@ router.patch(
         prizeTiers: body.prizeTiers,
         rulesRu: body.rulesRu,
         rulesPl: body.rulesPl,
+        winnerMessageRu: body.winnerMessageRu,
+        winnerMessagePl: body.winnerMessagePl,
+        winnerPhotoUrl: body.winnerPhotoUrl,
+        winnerPhotoFileId: body.winnerPhotoFileId,
       });
       return res.json({ ok: true, ...state });
     } catch (error) {
@@ -79,6 +85,56 @@ router.patch(
       }
       console.error("PATCH /crm/giveaway settings error:", error);
       return res.status(500).json({ ok: false, error: "GIVEAWAY_SETTINGS_FAILED" });
+    }
+  }
+);
+
+router.post(
+  "/giveaway/:monthKey/start",
+  requireCrmPushAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      await ensureGiveawayIndexes();
+      const monthKey = resolveMonthKey(req);
+      const state = await startGiveawayMonth(monthKey);
+      return res.json({ ok: true, ...state });
+    } catch (error) {
+      const code = String(error?.message || "");
+      if (code === "GIVEAWAY_NOT_OPEN" || code === "INVALID_MONTH_KEY") {
+        return res.status(400).json({ ok: false, error: code });
+      }
+      console.error("POST /crm/giveaway start error:", error);
+      return res.status(500).json({ ok: false, error: "GIVEAWAY_START_FAILED" });
+    }
+  }
+);
+
+router.post(
+  "/giveaway/:monthKey/participants/:telegramId/remove",
+  requireCrmPushAdmin,
+  express.json(),
+  async (req, res) => {
+    try {
+      await ensureGiveawayIndexes();
+      const monthKey = resolveMonthKey(req);
+      const result = await removeGiveawayParticipant(
+        monthKey,
+        req.params.telegramId
+      );
+      const state = await getGiveawayAdminState(monthKey);
+      return res.json({ ok: true, result, ...state });
+    } catch (error) {
+      const code = String(error?.message || "");
+      if (
+        code === "WINNER_ALREADY_CREDITED" ||
+        code === "TELEGRAM_ID_REQUIRED" ||
+        code === "INVALID_MONTH_KEY"
+      ) {
+        return res.status(400).json({ ok: false, error: code });
+      }
+      console.error("POST /crm/giveaway remove participant error:", error);
+      return res.status(500).json({ ok: false, error: "GIVEAWAY_REMOVE_FAILED" });
     }
   }
 );

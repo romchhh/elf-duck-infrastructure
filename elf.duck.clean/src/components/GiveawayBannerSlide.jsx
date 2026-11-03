@@ -1,27 +1,70 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import giveawayBannerPl from "../assets/giveawayBannerPl.webp";
-import giveawayBannerUk from "../assets/giveawayBannerUk.webp";
+import giveawayBanner from "../assets/giveawayBanner.webp";
 import { appPath } from "../utils/appMode.js";
 import { getCurrentLanguage, t } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
 import "../styles/GiveawayBanner.css";
+
+export const GIVEAWAY_TEST_PREVIEWS = ["join", "joined", "countdown"];
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_CRM_API_URL ||
   "http://localhost:3000";
 
-function formatCountdown(ms) {
-  const total = Math.max(0, Number(ms || 0));
-  const days = Math.floor(total / 86400000);
-  const hours = Math.floor((total % 86400000) / 3600000);
-  const minutes = Math.floor((total % 3600000) / 60000);
-  return `${days}d ${hours}h ${minutes}m`;
+function formatCountdown(ms, lang) {
+  const totalSec = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  const clock = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  if (days <= 0) return clock;
+  const dayMark = lang === "pl" ? "d" : "д";
+  return `${days}${dayMark} ${clock}`;
 }
 
-function GiveawayModal({ open, onClose, title, children }) {
+function msUntilNextContestStart(now = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Warsaw",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour12: false,
+  });
+  const map = {};
+  for (const part of fmt.formatToParts(now)) {
+    if (part.type !== "literal") map[part.type] = part.value;
+  }
+  let year = Number(map.year);
+  let month = Number(map.month) + 1;
+  if (month > 12) {
+    month = 1;
+    year += 1;
+  }
+  const stamp = `${year}-${String(month).padStart(2, "0")}-01T00:00:00`;
+  const plus1 = Date.parse(`${stamp}+01:00`);
+  const probe = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Warsaw",
+    day: "2-digit",
+    month: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(plus1));
+  const probeMap = {};
+  for (const part of probe) {
+    if (part.type !== "literal") probeMap[part.type] = part.value;
+  }
+  const target =
+    Number(probeMap.day) === 1 && Number(probeMap.month) === month
+      ? plus1
+      : Date.parse(`${stamp}+02:00`);
+  return Math.max(0, target - now.getTime());
+}
+
+function GiveawayRulesModal({ open, onClose, title, children }) {
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -52,15 +95,13 @@ function GiveawayModal({ open, onClose, title, children }) {
   );
 }
 
-export default function GiveawayBannerSlide({ onGoToCatalog }) {
+export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   const navigate = useNavigate();
   const lang = getCurrentLanguage();
-  const bg = lang === "pl" ? giveawayBannerPl : giveawayBannerUk;
   const [state, setState] = useState(null);
   const [deadlineAt, setDeadlineAt] = useState(null);
-  const [rulesOpen, setRulesOpen] = useState(false);
-  const [winnersOpen, setWinnersOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const [tick, setTick] = useState(Date.now());
 
   const load = useCallback(async () => {
@@ -82,14 +123,15 @@ export default function GiveawayBannerSlide({ onGoToCatalog }) {
 
   const phase = state?.phase || "active";
   const participated = Boolean(state?.participated);
-  const showResults = useMemo(
-    () =>
-      phase === "results" ||
-      state?.status === "drawn" ||
-      state?.status === "credited" ||
-      state?.status === "notified",
-    [phase, state?.status]
-  );
+  const participationOpen = state
+    ? Boolean(state.participationOpen) && phase === "active"
+    : false;
+  const liveMode = !participationOpen
+    ? "countdown"
+    : participated
+      ? "joined"
+      : "join";
+  const mode = preview || liveMode;
 
   const goToCatalog = useCallback(() => {
     if (typeof onGoToCatalog === "function") {
@@ -106,10 +148,10 @@ export default function GiveawayBannerSlide({ onGoToCatalog }) {
   }, [load]);
 
   useEffect(() => {
-    if (!participated || showResults) return undefined;
+    if (mode !== "joined") return undefined;
     const id = window.setInterval(load, 45_000);
     return () => window.clearInterval(id);
-  }, [load, participated, showResults]);
+  }, [load, mode]);
 
   useEffect(() => {
     const onVisible = () => {
@@ -120,23 +162,36 @@ export default function GiveawayBannerSlide({ onGoToCatalog }) {
   }, [load]);
 
   useEffect(() => {
-    const id = window.setInterval(() => setTick(Date.now()), 60000);
+    if (mode !== "countdown") return undefined;
+    const id = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
-    if (!rulesOpen && !winnersOpen) return undefined;
+    if (!rulesOpen) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [rulesOpen, winnersOpen]);
+  }, [rulesOpen]);
+
+  const rulesText =
+    lang === "pl"
+      ? state?.rulesPl || state?.rules
+      : state?.rulesRu || state?.rules;
 
   const countdownLabel = useMemo(() => {
-    if (!deadlineAt) return "—";
-    return formatCountdown(Math.max(0, deadlineAt - Date.now()));
-  }, [deadlineAt, tick]);
+    const remaining = deadlineAt
+      ? Math.max(0, deadlineAt - Date.now())
+      : msUntilNextContestStart(new Date(tick));
+    return formatCountdown(remaining, lang);
+  }, [deadlineAt, tick, lang]);
+
+  const orderCount =
+    mode === "joined" && preview && Number(state?.myEntries || 0) <= 0
+      ? 3
+      : Number(state?.myEntries || 0);
 
   const participate = async () => {
     if (loading) return;
@@ -166,111 +221,75 @@ export default function GiveawayBannerSlide({ onGoToCatalog }) {
     }
   };
 
-  const handleBannerActivate = async (event) => {
-    if (event.target.closest(".giveawayInfoHit")) return;
+  const handleBannerActivate = (event) => {
+    if (event.target.closest(".giveawayInfoBtn")) return;
     if (event.target.closest("button")) return;
-
+    if (preview) return;
     haptic.heavy();
-
-    if (
-      !showResults &&
-      !participated &&
-      state?.participationOpen &&
-      !loading
-    ) {
-      await participate();
-    }
-
     goToCatalog();
   };
 
-  const rulesText =
-    lang === "pl" ? state?.rulesPl || state?.rules : state?.rulesRu || state?.rules;
+  const openRules = (event) => {
+    event.stopPropagation();
+    haptic.light();
+    setRulesOpen(true);
+  };
 
   return (
     <>
-      <div
-        className={`giveawayBannerRoot giveawayBannerRoot--actionable${loading ? " giveawayBannerRoot--loading" : ""}`}
-        onClick={handleBannerActivate}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleBannerActivate(e);
-          }
-        }}
+    <div
+      className={`giveawayBannerRoot${loading ? " giveawayBannerRoot--loading" : ""}`}
+      onClick={handleBannerActivate}
+    >
+      <img src={giveawayBanner} alt="" className="giveawayBannerBg" draggable={false} />
+
+      <button
+        type="button"
+        className="giveawayInfoBtn"
+        aria-label={t("Правила конкурса", "Zasady konkursu")}
+        onClick={openRules}
       >
-        <img src={bg} alt="" className="giveawayBannerBg" draggable={false} />
+        <span className="giveawayInfoBtnGlyph" aria-hidden>
+          i
+        </span>
+      </button>
 
-        {showResults ? (
-          <div className="giveawayStatusChip">
-            <button
-              type="button"
-              className="giveawayPrimaryBtn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setWinnersOpen(true);
-              }}
-            >
-              {t("Победители", "Zwycięzcy")}
-            </button>
-            <span className="giveawayStat">
-              {t("До нового розыгрыша", "Do nowego konkursu")}
-              <b>{countdownLabel}</b>
+      <div className="giveawayCtaSlot">
+        {mode === "joined" ? (
+          <div className="giveawayCtaCard">
+            <span className="giveawayCtaLine">{t("Вы участвуете", "Bierzesz udział")}</span>
+            <span className="giveawayCtaLine">
+              {t("Заказов", "Zamówień")} <b>{orderCount}</b>
             </span>
           </div>
-        ) : participated ? (
-          <div className="giveawayStatusChip giveawayStatusChip--side">
-            <span className="giveawayStat">
-              {t("Ваши покупки", "Twoje zakupy")}
-              <b>{state?.myEntries ?? 0}</b>
-            </span>
-            <span className="giveawayStat">
-              {t("Участников", "Uczestników")}
-              <b>{state?.participantsCount ?? 0}</b>
-            </span>
+        ) : mode === "countdown" ? (
+          <div className="giveawayCtaCard">
+            <span className="giveawayCtaLine">{t("До старта", "Do startu")}</span>
+            <b className="giveawayCtaTime">{countdownLabel}</b>
           </div>
-        ) : null}
-
-        <button
-          type="button"
-          className="giveawayInfoHit"
-          aria-label={t("Правила", "Zasady")}
-          onClick={(e) => {
-            e.stopPropagation();
-            setRulesOpen(true);
-          }}
-        />
+        ) : (
+          <button
+            type="button"
+            className="giveawayJoinBtn"
+            disabled={loading}
+            onClick={(e) => {
+              e.stopPropagation();
+              participate();
+            }}
+          >
+            {t("Участвовать", "Weź udział")}
+          </button>
+        )}
       </div>
+    </div>
 
-      <GiveawayModal
-        open={rulesOpen}
-        onClose={() => setRulesOpen(false)}
-        title={t("Правила розыгрыша", "Zasady konkursu")}
-      >
-        <pre className="giveawayRulesText">{rulesText || "…"}</pre>
-      </GiveawayModal>
-
-      <GiveawayModal
-        open={winnersOpen}
-        onClose={() => setWinnersOpen(false)}
-        title={t("Победители", "Zwycięzcy")}
-      >
-        <div className="giveawayWinnersList">
-          {(state?.winners || []).map((row) => (
-            <div key={row.place} className="giveawayWinnerRow">
-              <span>#{row.place}</span>
-              <span>
-                {row.username
-                  ? `@${row.username}`
-                  : row.firstName || row.telegramId}
-              </span>
-              <span>{row.amountZl} zł</span>
-            </div>
-          ))}
-        </div>
-      </GiveawayModal>
+    <GiveawayRulesModal
+      open={rulesOpen}
+      onClose={() => setRulesOpen(false)}
+      title={t("Правила конкурса", "Zasady konkursu")}
+    >
+      <pre className="giveawayRulesText">{rulesText || "…"}</pre>
+    </GiveawayRulesModal>
     </>
   );
 }

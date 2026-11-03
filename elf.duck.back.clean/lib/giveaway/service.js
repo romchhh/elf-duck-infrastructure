@@ -17,7 +17,10 @@ import {
   normalizeGiveawaySettings,
   GIVEAWAY_RULES_PL,
   GIVEAWAY_RULES_RU,
+  GIVEAWAY_WINNER_MESSAGE_PL,
+  GIVEAWAY_WINNER_MESSAGE_RU,
 } from "./config.js";
+import { pushMarkdownToHtml } from "../crm/pushMessageFormat.js";
 import { isBlikOrderPayment } from "./payment.js";
 import { recalcUserCashbackBalanceFromLedger } from "../cashback/manualAdmin.js";
 import {
@@ -124,6 +127,28 @@ async function isParticipant(monthKey, telegramId) {
   return Boolean(row);
 }
 
+function isClosedGiveawayOrder(order) {
+  const status = String(order?.status || "").trim().toLowerCase();
+  return status === "canceled" || status === "annulled";
+}
+
+/** У розіграш потрапляють лише виконані замовлення: самовивіз/курʼєр completed, InPost shipped. */
+export function isCompletedGiveawayOrder(order) {
+  if (!order || isClosedGiveawayOrder(order)) return false;
+  const status = String(order?.status || "").trim().toLowerCase();
+  if (status === "completed" && order.completedAt) return true;
+  if (status === "shipped" && order.shippedAt) return true;
+  return false;
+}
+
+export function isGiveawayMonthLive(month, date = new Date()) {
+  if (!month) return false;
+  if (String(month.status || "open") !== "open") return false;
+  if (String(month.monthKey || "") !== getActiveGiveawayMonthKey(date)) return false;
+  if (month.startedAt) return true;
+  return isGiveawayParticipationWindow(date);
+}
+
 function orderCompletedInMonth(order, monthKey) {
   const at = order?.completedAt || order?.shippedAt || order?.paidAt;
   if (!at) return false;
@@ -147,6 +172,7 @@ export async function listQualifyingOrdersForUser(monthKey, telegramId) {
   })
     .select({
       _id: 1,
+      status: 1,
       userTelegramId: 1,
       payment: 1,
       completedAt: 1,
@@ -155,14 +181,15 @@ export async function listQualifyingOrdersForUser(monthKey, telegramId) {
     })
     .lean();
 
-  return orders.filter(
-    (order) =>
-      !isBlikOrderPayment(order) &&
-      orderCompletedInMonth(order, monthKey) &&
-      isGiveawayParticipationWindow(
-        new Date(order.completedAt || order.shippedAt || order.paidAt)
-      )
-  );
+  const month = await ensureGiveawayMonth(monthKey);
+  const manual = Boolean(month?.startedAt);
+
+  return orders.filter((order) => {
+    if (!isCompletedGiveawayOrder(order) || isBlikOrderPayment(order)) return false;
+    if (!orderCompletedInMonth(order, monthKey)) return false;
+    const at = new Date(order.completedAt || order.shippedAt || order.paidAt);
+    return manual || isGiveawayParticipationWindow(at);
+  });
 }
 
 export async function syncGiveawayEntriesForUser(monthKey, telegramId) {
@@ -172,6 +199,18 @@ export async function syncGiveawayEntriesForUser(monthKey, telegramId) {
   if (!(await isParticipant(monthKey, tg))) return { added: 0 };
 
   const orders = await listQualifyingOrdersForUser(monthKey, tg);
+  const qualifyingIds = new Set(orders.map((order) => String(order._id)));
+  const existing = await entriesCol()
+    .find({ monthKey, telegramId: tg })
+    .toArray();
+
+  for (const row of existing) {
+    const orderId = String(row.orderId || "");
+    if (orderId.startsWith("giveaway-test:")) continue;
+    if (qualifyingIds.has(orderId)) continue;
+    await entriesCol().deleteOne({ _id: row._id });
+  }
+
   let added = 0;
 
   for (const order of orders) {
@@ -198,11 +237,10 @@ export async function joinGiveaway(monthKey, telegramId) {
   const tg = String(telegramId || "").trim();
   if (!tg) throw new Error("TELEGRAM_ID_REQUIRED");
 
-  if (!isGiveawayParticipationWindow()) {
+  const month = await ensureGiveawayMonth(monthKey);
+  if (!isGiveawayMonthLive(month)) {
     throw new Error("GIVEAWAY_CLOSED");
   }
-
-  const month = await ensureGiveawayMonth(monthKey);
   if (String(month.status || "") !== "open") {
     throw new Error("GIVEAWAY_NOT_OPEN");
   }
@@ -223,7 +261,9 @@ export async function joinGiveaway(monthKey, telegramId) {
 }
 
 export async function tryAddGiveawayEntryForOrder(order) {
-  if (!order || isBlikOrderPayment(order)) return { added: false };
+  if (!isCompletedGiveawayOrder(order) || isBlikOrderPayment(order)) {
+    return { added: false };
+  }
 
   const tg = String(order.userTelegramId || "").trim();
   if (!tg) return { added: false };
@@ -232,10 +272,10 @@ export async function tryAddGiveawayEntryForOrder(order) {
     new Date(order.completedAt || order.shippedAt || Date.now())
   );
 
-  if (!isGiveawayParticipationWindow()) return { added: false };
   if (!orderCompletedInMonth(order, monthKey)) return { added: false };
 
   const month = await ensureGiveawayMonth(monthKey);
+  if (!isGiveawayMonthLive(month)) return { added: false };
   if (String(month.status || "") !== "open") return { added: false };
 
   if (!(await isParticipant(monthKey, tg))) return { added: false };
@@ -252,6 +292,14 @@ export async function tryAddGiveawayEntryForOrder(order) {
     if (error?.code === 11000) return { added: false };
     throw error;
   }
+}
+
+/** Анульоване або скасоване замовлення зникає з розіграшу. */
+export async function revokeGiveawayEntryForOrder(orderOrId) {
+  const orderId = String(orderOrId?._id || orderOrId || "").trim();
+  if (!orderId) return { removed: 0 };
+  const result = await entriesCol().deleteMany({ orderId });
+  return { removed: result.deletedCount || 0 };
 }
 
 export async function listWinners(monthKey) {
@@ -367,7 +415,7 @@ export async function getGiveawayPublicState({
     monthKey,
     phase,
     status: month.status,
-    participationOpen: isGiveawayParticipationWindow(),
+    participationOpen: isGiveawayMonthLive(month),
     settings: {
       winnerCount: settings.winnerCount,
       prizeTiers: settings.prizeTiers,
@@ -511,20 +559,37 @@ export async function getGiveawayAdminState(monthKey = getActiveGiveawayMonthKey
   };
 }
 
-/** Оновити налаштування місяця (лише поки status === open). */
+/** Оновити налаштування. Призи й правила — лише поки місяць open. Текст переможцям можна міняти завжди. */
 export async function updateGiveawayMonthSettings(monthKey, rawSettings = {}) {
   const key = String(monthKey || "").trim();
   if (!key) throw new Error("INVALID_MONTH_KEY");
 
   const month = await ensureGiveawayMonth(key);
-  if (String(month.status || "") !== "open") {
-    throw new Error("GIVEAWAY_NOT_OPEN");
+  const current = resolveGiveawaySettings(month);
+  const open = String(month.status || "") === "open";
+  const patch = { ...current };
+
+  if (open) {
+    if (rawSettings.winnerCount != null) patch.winnerCount = rawSettings.winnerCount;
+    if (rawSettings.prizeTiers) patch.prizeTiers = rawSettings.prizeTiers;
+    if (rawSettings.rulesRu !== undefined) patch.rulesRu = rawSettings.rulesRu;
+    if (rawSettings.rulesPl !== undefined) patch.rulesPl = rawSettings.rulesPl;
   }
 
-  const settings = normalizeGiveawaySettings({
-    ...resolveGiveawaySettings(month),
-    ...rawSettings,
-  });
+  if (rawSettings.winnerMessageRu !== undefined) {
+    patch.winnerMessageRu = rawSettings.winnerMessageRu;
+  }
+  if (rawSettings.winnerMessagePl !== undefined) {
+    patch.winnerMessagePl = rawSettings.winnerMessagePl;
+  }
+  if (rawSettings.winnerPhotoUrl !== undefined) {
+    patch.winnerPhotoUrl = rawSettings.winnerPhotoUrl;
+  }
+  if (rawSettings.winnerPhotoFileId !== undefined) {
+    patch.winnerPhotoFileId = rawSettings.winnerPhotoFileId;
+  }
+
+  const settings = normalizeGiveawaySettings(patch);
 
   const now = new Date();
   await monthsCol().updateOne(
@@ -533,6 +598,53 @@ export async function updateGiveawayMonthSettings(monthKey, rawSettings = {}) {
   );
 
   return getGiveawayAdminState(key);
+}
+
+export async function startGiveawayMonth(monthKey) {
+  const key = String(monthKey || "").trim();
+  if (!key) throw new Error("INVALID_MONTH_KEY");
+
+  const month = await ensureGiveawayMonth(key);
+  if (String(month.status || "") !== "open") {
+    throw new Error("GIVEAWAY_NOT_OPEN");
+  }
+  if (!month.startedAt) {
+    const now = new Date();
+    await monthsCol().updateOne(
+      { monthKey: key },
+      { $set: { startedAt: now, updatedAt: now } }
+    );
+  }
+
+  return getGiveawayAdminState(key);
+}
+
+export async function removeGiveawayParticipant(monthKey, telegramId) {
+  const key = String(monthKey || "").trim();
+  const tg = String(telegramId || "").trim();
+  if (!key) throw new Error("INVALID_MONTH_KEY");
+  if (!tg) throw new Error("TELEGRAM_ID_REQUIRED");
+
+  const winner = await winnersCol().findOne({ monthKey: key, telegramId: tg });
+  if (winner?.creditedAt) {
+    throw new Error("WINNER_ALREADY_CREDITED");
+  }
+
+  if (winner) {
+    await winnersCol().deleteOne({ _id: winner._id });
+  }
+
+  const entries = await entriesCol().deleteMany({ monthKey: key, telegramId: tg });
+  const participant = await participantsCol().deleteOne({
+    monthKey: key,
+    telegramId: tg,
+  });
+
+  return {
+    removed: participant.deletedCount || 0,
+    entriesRemoved: entries.deletedCount || 0,
+    winnerRemoved: Boolean(winner),
+  };
 }
 
 function shuffleInPlace(arr) {
@@ -663,9 +775,11 @@ export async function creditGiveawayWinners(monthKey) {
 }
 
 export async function notifyGiveawayWinners(monthKey) {
-  const { getActiveUserBots, sendClientTelegramMessage } = await import(
-    "../telegram/clientBotDelivery.js"
-  );
+  const {
+    getActiveUserBots,
+    sendClientTelegramMessage,
+    sendClientTelegramPhoto,
+  } = await import("../telegram/clientBotDelivery.js");
   if (!getActiveUserBots().length) throw new Error("BOT_UNAVAILABLE");
 
   const month = await monthsCol().findOne({ monthKey });
@@ -677,6 +791,7 @@ export async function notifyGiveawayWinners(monthKey) {
     throw new Error("CREDIT_REQUIRED_FIRST");
   }
 
+  const settings = resolveGiveawaySettings(month);
   const winners = await winnersCol().find({ monthKey }).sort({ place: 1 }).toArray();
   const users = await User.find({
     telegramId: { $in: winners.map((w) => String(w.telegramId)) },
@@ -697,13 +812,29 @@ export async function notifyGiveawayWinners(monthKey) {
       String(langMap.get(tg) || "ru").toLowerCase() === "pl" ? "pl" : "ru";
     const template =
       lang === "pl"
-        ? "Gratulacje! Wygrałeś w rubryce „ElfDuck rozdaje 2 000 zł”. Twoja wygrana {amount} zł została już dodana do salda cashbacku."
-        : "Поздравляем! Вы победили в нашей новой рубрике „ElfDuck раздаёт 2 000 zł“. Ваш выигрыш в размере {amount} zł уже начислен на баланс.";
+        ? settings.winnerMessagePl || GIVEAWAY_WINNER_MESSAGE_PL
+        : settings.winnerMessageRu || GIVEAWAY_WINNER_MESSAGE_RU;
 
-    const text = template.replace("{amount}", String(row.amountZl));
+    const html = pushMarkdownToHtml(
+      String(template).replaceAll("{amount}", String(row.amountZl ?? ""))
+    );
+    const photoFileId = settings.winnerPhotoFileId;
+    const photoUrl = settings.winnerPhotoUrl;
 
     try {
-      await sendClientTelegramMessage(tg, text);
+      if (photoFileId || photoUrl) {
+        const caption = html.length > 1000 ? html.slice(0, 1000) : html;
+        await sendClientTelegramPhoto(
+          tg,
+          photoFileId || { url: photoUrl },
+          { caption, parse_mode: "HTML" }
+        );
+        if (html.length > 1000) {
+          await sendClientTelegramMessage(tg, html, { parse_mode: "HTML" });
+        }
+      } else {
+        await sendClientTelegramMessage(tg, html, { parse_mode: "HTML" });
+      }
       await winnersCol().updateOne(
         { _id: row._id },
         { $set: { notifiedAt: now } }

@@ -32,7 +32,9 @@ const API_URL =
 
 import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
 import { isTestAppMode, appPath } from "../utils/appMode";
-import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
+import GiveawayBannerSlide, {
+  GIVEAWAY_TEST_PREVIEWS,
+} from "../components/GiveawayBannerSlide.jsx";
 import { resolveZabkaMapsUrl } from "../utils/blikCheckoutHints.js";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
@@ -1890,7 +1892,8 @@ useEffect(() => {
 
     const banners = getHomeBanners(language);
     const showGiveawayBanner = isTestAppMode();
-    const bannerSlideCount = banners.length + (showGiveawayBanner ? 1 : 0);
+    const giveawaySlides = showGiveawayBanner ? GIVEAWAY_TEST_PREVIEWS : [];
+    const bannerSlideCount = banners.length + giveawaySlides.length;
 
     const goToCatalogFromGiveaway = useCallback(() => {
       navigate(appPath("/"), {
@@ -2444,7 +2447,6 @@ useEffect(() => {
                     </button>
 
                     {paymentMethod === "blik" &&
-                      isTestAppMode() &&
                       !shouldHideBlikTransferHint(activePaymentOrder) && (
                     <div className="paymentBlikNotice" role="note">
                         <div className="paymentBlikNoticeTitle">
@@ -2695,11 +2697,8 @@ useEffect(() => {
 
                     {paymentDetailsVisible && paymentMethod !== "cash" && (
                     <>
-                        {paymentMethod === "blik" && isTestAppMode() ? (
+                        {paymentMethod === "blik" ? (
                           <div className="paymentBlikGiveawaySheet" role="note">
-                            <div className="paymentBlikGiveawayBannerSlot">
-                              {t("Баннер", "Baner")}
-                            </div>
                             <p className="paymentBlikGiveawayText">
                               {t(
                                 `Будем вам очень благодарны, если вы выберете оплату наличными 🙏
@@ -3271,11 +3270,14 @@ useEffect(() => {
 
                         <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
                             <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
-                            {showGiveawayBanner ? (
-                              <div className="bannerSlide giveawayBannerSlide">
-                                <GiveawayBannerSlide onGoToCatalog={goToCatalogFromGiveaway} />
+                            {giveawaySlides.map((preview) => (
+                              <div key={preview} className="bannerSlide giveawayBannerSlide">
+                                <GiveawayBannerSlide
+                                  preview={preview}
+                                  onGoToCatalog={goToCatalogFromGiveaway}
+                                />
                               </div>
-                            ) : null}
+                            ))}
                             {banners.map((src, i) => (
                                 <div
                                 key={i}

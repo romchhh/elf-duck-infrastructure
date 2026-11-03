@@ -1931,6 +1931,13 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
         console.error("mgr_pay_unpaid releaseOrderPromoUse error:", promoErr);
       }
 
+      try {
+        const { revokeGiveawayEntryForOrder } = await import("../giveaway/service.js");
+        await revokeGiveawayEntryForOrder(order);
+      } catch (giveawayErr) {
+        console.error("mgr_pay_unpaid revokeGiveawayEntryForOrder error:", giveawayErr);
+      }
+
       const freshUnpaidOrder = await Order.findById(order._id);
       if (!freshUnpaidOrder) {
         throw new Error("ORDER_NOT_FOUND_AFTER_UNPAID");

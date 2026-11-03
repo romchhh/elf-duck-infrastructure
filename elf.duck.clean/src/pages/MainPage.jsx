@@ -63,7 +63,9 @@ import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
 import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
 import { isTestAppMode } from "../utils/appMode";
-import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
+import GiveawayBannerSlide, {
+  GIVEAWAY_TEST_PREVIEWS,
+} from "../components/GiveawayBannerSlide.jsx";
 import categoriesIcon from "../assets/categoriesIcon.webp";
 import allItemsIcon from "../assets/allItemsIcon.webp";    
   
@@ -1675,7 +1677,8 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
   const banners = getHomeBanners();
   const showGiveawayBanner = isTestAppMode();
-  const bannerSlideCount = banners.length + (showGiveawayBanner ? 1 : 0);
+  const giveawaySlides = showGiveawayBanner ? GIVEAWAY_TEST_PREVIEWS : [];
+  const bannerSlideCount = banners.length + giveawaySlides.length;
   
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -4071,11 +4074,14 @@ navigate("/cart");
           {!activeOrderLoading && (
             <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
               <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
-                {showGiveawayBanner ? (
-                  <div className="bannerSlide giveawayBannerSlide">
-                    <GiveawayBannerSlide onGoToCatalog={scrollToGiveawayCatalog} />
+                {giveawaySlides.map((preview) => (
+                  <div key={preview} className="bannerSlide giveawayBannerSlide">
+                    <GiveawayBannerSlide
+                      preview={preview}
+                      onGoToCatalog={scrollToGiveawayCatalog}
+                    />
                   </div>
-                ) : null}
+                ))}
                 {banners.map((src, i) => (
                   <div
                     key={i}
