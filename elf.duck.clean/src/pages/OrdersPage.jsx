@@ -76,6 +76,9 @@ import blikIcon from "../assets/blikIcon.webp";
 import cryptoIcon from "../assets/cryptoIcon.webp";
 import uaCardIcon from "../assets/uaCardIcon.webp";
 import cashIcon from "../assets/cashIcon.webp";
+import CartInfoIcon from "../assets/CartInfoIcon.webp";
+import googlePinIcon from "../assets/googlePinIcon.webp";
+import percentIcon from "../assets/percentIcon.webp";
 import { getGuestOrders } from "../utils/guestLocalStore";
 
 
@@ -419,6 +422,7 @@ useEffect(() => {
     const [paymentPromoSubmitting, setPaymentPromoSubmitting] = useState(false);
     const [paymentPromoHint, setPaymentPromoHint] = useState(null);
     const [paymentPromoOpen, setPaymentPromoOpen] = useState(false);
+    const [paymentPromoMinGateOpen, setPaymentPromoMinGateOpen] = useState(false);
     const paymentPromoInputRef = useRef(null);
 
     const [cashAmountDraft, setCashAmountDraft] = useState("");
@@ -465,6 +469,7 @@ useEffect(() => {
         setPaymentPromoHint(null);
         setPaymentPromoSubmitting(false);
         setPaymentPromoOpen(false);
+        setPaymentPromoMinGateOpen(false);
         setCashbackDraft(
             Number(order?.payment?.cashbackAppliedZl || 0) > 0
                 ? String(Math.floor(Number(order.payment.cashbackAppliedZl)))
@@ -566,6 +571,7 @@ useEffect(() => {
         setPaymentPromoHint(null);
         setPaymentPromoSubmitting(false);
         setPaymentPromoOpen(false);
+        setPaymentPromoMinGateOpen(false);
         setIsPaymentOpen(false);
 
         setTimeout(() => {
@@ -727,6 +733,7 @@ useEffect(() => {
         if (cashbackFullyPaid) return;
         if (promoMinOrderBlocked) {
             haptic.light();
+            setPaymentPromoMinGateOpen((prev) => !prev);
             return;
         }
         haptic.light();
@@ -2463,11 +2470,13 @@ useEffect(() => {
                     )}
 
                     {paymentMethod === "blik" && !paymentDetailsVisible ? (
-                        <img
-                            src={paymentBlikPreferCashBannerSrc}
-                            className="paymentBlikPreferCashBanner"
-                            alt=""
-                        />
+                        <div className="paymentBlikPreferCashBannerWrap">
+                            <img
+                                src={paymentBlikPreferCashBannerSrc}
+                                className="paymentBlikPreferCashBanner"
+                                alt=""
+                            />
+                        </div>
                     ) : null}
 
                     <button
@@ -2489,10 +2498,17 @@ useEffect(() => {
                       !shouldHideBlikTransferHint(activePaymentOrder) && (
                     <div className="paymentBlikNotice" role="note">
                         <div className="paymentBlikNoticeTitle">
-                            {t(
-                                "⚠️ Важно при переводе BLIK",
-                                "⚠️ Ważne przy przelewie BLIK"
-                            )}
+                            <img
+                                src={CartInfoIcon}
+                                className="paymentBlikInlineIcon paymentBlikInlineIcon--warn"
+                                alt=""
+                            />
+                            <span>
+                                {t(
+                                    "Важно при переводе BLIK",
+                                    "Ważne przy przelewie BLIK"
+                                )}
+                            </span>
                         </div>
                         <div className="paymentBlikNoticeBody">
                             <div className="paymentBlikNoticeRow">
@@ -2520,8 +2536,10 @@ useEffect(() => {
                                 promoCodeApplied && promoDiscountZl > 0
                                     ? "is-applied"
                                     : ""
-                            } ${paymentPromoOpen ? "is-open" : ""} ${
-                                promoMinOrderBlocked ? "is-below-min" : ""
+                            } ${paymentPromoOpen || paymentPromoMinGateOpen ? "is-open" : ""} ${
+                                promoMinOrderBlocked && paymentPromoMinGateOpen
+                                    ? "is-below-min"
+                                    : ""
                             }`}
                             disabled={
                                 Boolean(promoCodeApplied && promoDiscountZl > 0) ||
@@ -2530,7 +2548,7 @@ useEffect(() => {
                             aria-expanded={
                                 promoCodeApplied && promoDiscountZl > 0
                                     ? undefined
-                                    : paymentPromoOpen
+                                    : paymentPromoOpen || paymentPromoMinGateOpen
                             }
                             onClick={togglePaymentPromoOpen}
                         >
@@ -2555,14 +2573,12 @@ useEffect(() => {
                                     <span className="paymentCashbackValue paymentPromoAppliedValue">
                                         {promoCodeApplied} −{formatMoney(promoDiscountZl)}
                                     </span>
-                                ) : promoMinOrderBlocked ? (
-                                    <span className="paymentPromoMinPct">
-                                        {promoMinProgressPct}%
-                                    </span>
                                 ) : (
                                     <span
                                         className={`paymentPromoChevron ${
-                                            paymentPromoOpen ? "is-open" : ""
+                                            paymentPromoOpen || paymentPromoMinGateOpen
+                                                ? "is-open"
+                                                : ""
                                         }`}
                                         aria-hidden
                                     />
@@ -2570,7 +2586,7 @@ useEffect(() => {
                             </span>
                         </button>
 
-                        {promoMinOrderBlocked ? (
+                        {promoMinOrderBlocked && paymentPromoMinGateOpen ? (
                             <div className="paymentPromoMinGate" role="status">
                                 <p className="paymentPromoMinGateTitle">
                                     {t(
@@ -2780,41 +2796,75 @@ useEffect(() => {
                     <>
                         {paymentMethod === "blik" ? (
                           <div className="paymentBlikGiveawaySheet" role="note">
-                            <img
-                              src={paymentBlikPreferCashBannerSrc}
-                              className="paymentBlikPreferCashBanner paymentBlikPreferCashBanner--inSheet"
-                              alt=""
-                            />
-                            <p className="paymentBlikGiveawayText">
-                              {t(
-                                `Будем вам очень благодарны, если вы выберете оплату наличными 🙏
-
-💡 Наличные можно снять в магазине Żabka рядом с точкой самовывоза.`,
-                                `Będziemy bardzo wdzięczni, jeśli wybierzesz płatność gotówką 🙏
-
-💡 Gotówkę możesz wypłacić w sklepie Żabka obok punktu odbioru.`
-                              )}
-                            </p>
-                            <a
-                              className="paymentBlikZabkaLink"
-                              href={resolveZabkaMapsUrl(
-                                getOrderPickupPoint(activePaymentOrder)?.key,
-                                getOrderPickupPoint(activePaymentOrder)?.address
-                              )}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {t(
-                                "📍 Ближайшая Żabka на Google Maps",
-                                "📍 Najbliższa Żabka w Google Maps"
-                              )}
-                            </a>
-                            <p className="paymentBlikGiveawayNotice">
-                              {t(
-                                "Обратите внимание: при оплате через BLIK кэшбэк за заказ не начисляется, а заказ не участвует в ежемесячном розыгрыше 2 000 zł.",
-                                "Uwaga: przy płatności BLIK nie naliczamy cashbacku, a zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł."
-                              )}
-                            </p>
+                            <div className="paymentBlikPreferCashBannerWrap paymentBlikPreferCashBannerWrap--inSheet">
+                              <img
+                                src={paymentBlikPreferCashBannerSrc}
+                                className="paymentBlikPreferCashBanner"
+                                alt=""
+                              />
+                            </div>
+                            <div className="paymentBlikGiveawayCopy">
+                              <p className="paymentBlikGiveawayLead">
+                                <img
+                                  src={cashIcon}
+                                  className="paymentBlikInlineIcon"
+                                  alt=""
+                                />
+                                <span>
+                                  {t(
+                                    "Будем вам очень благодарны, если вы выберете оплату наличными",
+                                    "Będziemy bardzo wdzięczni, jeśli wybierzesz płatność gotówką"
+                                  )}
+                                </span>
+                              </p>
+                              <p className="paymentBlikGiveawayTip">
+                                <img
+                                  src={CartInfoIcon}
+                                  className="paymentBlikInlineIcon"
+                                  alt=""
+                                />
+                                <span>
+                                  {t(
+                                    "Наличные можно снять в магазине Żabka рядом с точкой самовывоза.",
+                                    "Gotówkę możesz wypłacić w sklepie Żabka obok punktu odbioru."
+                                  )}
+                                </span>
+                              </p>
+                              <a
+                                className="paymentBlikGiveawayMapsBtn"
+                                href={resolveZabkaMapsUrl(
+                                  getOrderPickupPoint(activePaymentOrder)?.key,
+                                  getOrderPickupPoint(activePaymentOrder)?.address
+                                )}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                <img
+                                  src={googlePinIcon}
+                                  className="paymentBlikInlineIcon paymentBlikInlineIcon--pin"
+                                  alt=""
+                                />
+                                <span>
+                                  {t(
+                                    "Ближайшая Żabka на Google Maps",
+                                    "Najbliższa Żabka w Google Maps"
+                                  )}
+                                </span>
+                              </a>
+                              <p className="paymentBlikGiveawayNotice">
+                                <img
+                                  src={percentIcon}
+                                  className="paymentBlikInlineIcon paymentBlikInlineIcon--percent"
+                                  alt=""
+                                />
+                                <span>
+                                  {t(
+                                    "Обратите внимание: при оплате через BLIK кэшбэк за заказ не начисляется, а заказ не участвует в ежемесячном розыгрыше 2 000 zł.",
+                                    "Uwaga: przy płatności BLIK nie naliczamy cashbacku, a zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł."
+                                  )}
+                                </span>
+                              </p>
+                            </div>
                           </div>
                         ) : null}
                         <div className="paymentHintText">

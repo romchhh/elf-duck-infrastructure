@@ -16,6 +16,7 @@ import compression from "compression";
 import { getCatalogUploadDir } from "./lib/crm/catalogMediaStorage.js";
 import { getPushUploadDir } from "./lib/crm/pushMediaStorage.js";
 import { getGiveawayWinnerBannerDir } from "./lib/giveaway/winnerBannerMedia.js";
+import { getBlikPreferCashBannerDir } from "./lib/payments/blikPreferCashBannerMedia.js";
 
 import Product from "./models/Product.js";
 import Order from "./models/Order.js";
@@ -182,6 +183,16 @@ fs.mkdirSync(giveawayBannerDir, { recursive: true });
 app.use(
   "/giveaway-media",
   express.static(giveawayBannerDir, {
+    maxAge: "30d",
+    fallthrough: true,
+  })
+);
+
+const paymentMediaDir = getBlikPreferCashBannerDir();
+fs.mkdirSync(paymentMediaDir, { recursive: true });
+app.use(
+  "/payment-media",
+  express.static(paymentMediaDir, {
     maxAge: "30d",
     fallthrough: true,
   })

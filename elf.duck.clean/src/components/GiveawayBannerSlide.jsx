@@ -7,7 +7,7 @@ import { getCurrentLanguage, t } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
 import "../styles/GiveawayBanner.css";
 
-export const GIVEAWAY_TEST_PREVIEWS = ["join", "joined", "countdown"];
+export const GIVEAWAY_TEST_PREVIEWS = ["join", "joined", "countdown", "winners"];
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
@@ -23,8 +23,21 @@ function formatCountdown(ms, lang) {
   const pad = (n) => String(n).padStart(2, "0");
   const clock = `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   if (days <= 0) return clock;
-  const dayMark = lang === "pl" ? "d" : "д";
-  return `${days}${dayMark} ${clock}`;
+
+  if (lang === "pl") {
+    const dayWord =
+      days === 1 ? "dzień" : days >= 2 && days <= 4 ? "dni" : "dni";
+    return `${days} ${dayWord} ${clock}`;
+  }
+
+  const mod10 = days % 10;
+  const mod100 = days % 100;
+  let dayWord = "дней";
+  if (mod10 === 1 && mod100 !== 11) dayWord = "день";
+  else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    dayWord = "дня";
+  }
+  return `${days} ${dayWord} ${clock}`;
 }
 
 function msUntilNextContestStart(now = new Date()) {
@@ -64,7 +77,29 @@ function msUntilNextContestStart(now = new Date()) {
   return Math.max(0, target - now.getTime());
 }
 
-function GiveawayRulesModal({ open, onClose, title, children }) {
+function formatWinnerLabel(winner = {}) {
+  const username = String(winner.username || "").trim().replace(/^@/, "");
+  if (username) return `@${username}`;
+  const name = [winner.firstName, winner.lastName]
+    .map((p) => String(p || "").trim())
+    .filter(Boolean)
+    .join(" ");
+  if (name) return name;
+  const tg = String(winner.telegramId || "").trim();
+  if (tg.length >= 4) return `ID …${tg.slice(-4)}`;
+  return "—";
+}
+
+function formatAmountZl(value) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0 zł";
+  return `${n.toLocaleString("pl-PL", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })} zł`;
+}
+
+function GiveawayModalShell({ open, onClose, title, children }) {
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
@@ -102,6 +137,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   const [deadlineAt, setDeadlineAt] = useState(null);
   const [loading, setLoading] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [winnersOpen, setWinnersOpen] = useState(false);
   const [tick, setTick] = useState(Date.now());
 
   const load = useCallback(async () => {
@@ -123,14 +159,21 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
 
   const phase = state?.phase || "active";
   const participated = Boolean(state?.participated);
+  const winners = Array.isArray(state?.winners) ? state.winners : [];
   const participationOpen = state
     ? Boolean(state.participationOpen) && phase === "active"
     : false;
-  const liveMode = !participationOpen
-    ? "countdown"
-    : participated
-      ? "joined"
-      : "join";
+  const resultsReady =
+    phase === "results" ||
+    ["drawn", "credited", "notified"].includes(String(state?.status || ""));
+
+  const liveMode = resultsReady
+    ? "winners"
+    : !participationOpen
+      ? "countdown"
+      : participated
+        ? "joined"
+        : "join";
   const mode = preview || liveMode;
 
   const goToCatalog = useCallback(() => {
@@ -148,7 +191,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   }, [load]);
 
   useEffect(() => {
-    if (mode !== "joined") return undefined;
+    if (mode !== "joined" && mode !== "winners") return undefined;
     const id = window.setInterval(load, 45_000);
     return () => window.clearInterval(id);
   }, [load, mode]);
@@ -168,13 +211,13 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   }, [mode]);
 
   useEffect(() => {
-    if (!rulesOpen) return undefined;
+    if (!rulesOpen && !winnersOpen) return undefined;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [rulesOpen]);
+  }, [rulesOpen, winnersOpen]);
 
   const rulesText =
     lang === "pl"
@@ -192,6 +235,32 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
     mode === "joined" && preview && Number(state?.myEntries || 0) <= 0
       ? 3
       : Number(state?.myEntries || 0);
+
+  const displayWinners =
+    winners.length > 0
+      ? winners
+      : preview === "winners"
+        ? [
+            {
+              place: 1,
+              amountZl: 1000,
+              username: "winner_one",
+              firstName: "Alex",
+            },
+            {
+              place: 2,
+              amountZl: 600,
+              username: "winner_two",
+              firstName: "Kate",
+            },
+            {
+              place: 3,
+              amountZl: 400,
+              firstName: "Ivan",
+              lastName: "K.",
+            },
+          ]
+        : [];
 
   const participate = async () => {
     if (loading) return;
@@ -235,63 +304,126 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
     setRulesOpen(true);
   };
 
+  const openWinners = (event) => {
+    event.stopPropagation();
+    haptic.light();
+    setWinnersOpen(true);
+  };
+
   return (
     <>
-    <div
-      className={`giveawayBannerRoot${loading ? " giveawayBannerRoot--loading" : ""}`}
-      onClick={handleBannerActivate}
-    >
-      <img src={giveawayBanner} alt="" className="giveawayBannerBg" draggable={false} />
-
-      <button
-        type="button"
-        className="giveawayInfoBtn"
-        aria-label={t("Правила конкурса", "Zasady konkursu")}
-        onClick={openRules}
+      <div
+        className={`giveawayBannerRoot${
+          loading ? " giveawayBannerRoot--loading" : ""
+        }`}
+        onClick={handleBannerActivate}
       >
-        <span className="giveawayInfoBtnGlyph" aria-hidden>
-          i
-        </span>
-      </button>
+        <img
+          src={giveawayBanner}
+          alt=""
+          className="giveawayBannerBg"
+          draggable={false}
+        />
 
-      <div className="giveawayCtaSlot">
-        {mode === "joined" ? (
-          <div className="giveawayCtaCard giveawayCtaCard--joined">
-            <span className="giveawayCtaLine">{t("Вы участвуете", "Bierzesz udział")}</span>
-            <span className="giveawayCtaLine">
-              {t("Ваших заказов:", "Twoich zamówień:")} <b>{orderCount}</b>
-            </span>
-          </div>
-        ) : mode === "countdown" ? (
-          <div className="giveawayCtaCard giveawayCtaCard--countdown">
-            <span className="giveawayCtaLine giveawayCtaLine--white">
-              {t("До старта", "Do startu")}
-            </span>
-            <b className="giveawayCtaTime">{countdownLabel}</b>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="giveawayJoinBtn"
-            disabled={loading}
-            onClick={(e) => {
-              e.stopPropagation();
-              participate();
-            }}
-          >
-            {t("Участвовать", "Weź udział")}
-          </button>
-        )}
+        <button
+          type="button"
+          className="giveawayInfoBtn"
+          aria-label={t("Правила конкурса", "Zasady konkursu")}
+          onClick={openRules}
+        >
+          <span className="giveawayInfoBtnGlyph" aria-hidden>
+            i
+          </span>
+        </button>
+
+        <div className="giveawayCtaSlot">
+          {mode === "joined" ? (
+            <div className="giveawayCtaCard giveawayCtaCard--joined">
+              <span className="giveawayCtaLine giveawayCtaLine--joinedTop">
+                {t("Вы участвуете", "Bierzesz udział")}
+                <span className="giveawayCtaCheck" aria-hidden>
+                  ✔
+                </span>
+              </span>
+              <span className="giveawayCtaLine">
+                {t("Ваших заказов:", "Twoich zamówień:")}{" "}
+                <b>{orderCount}</b>
+              </span>
+            </div>
+          ) : mode === "countdown" ? (
+            <div className="giveawayCtaCard giveawayCtaCard--countdown">
+              <span className="giveawayCtaLine giveawayCtaLine--white">
+                {t("До старта", "Do startu")}
+              </span>
+              <b className="giveawayCtaTime">{countdownLabel}</b>
+            </div>
+          ) : mode === "winners" ? (
+            <button
+              type="button"
+              className="giveawayJoinBtn giveawayWinnersBtn"
+              onClick={openWinners}
+            >
+              {t("Победители", "Zwycięzcy")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="giveawayJoinBtn"
+              disabled={loading}
+              onClick={(e) => {
+                e.stopPropagation();
+                participate();
+              }}
+            >
+              {t("Участвовать", "Weź udział")}
+            </button>
+          )}
+        </div>
       </div>
-    </div>
 
-    <GiveawayRulesModal
-      open={rulesOpen}
-      onClose={() => setRulesOpen(false)}
-      title={t("Правила конкурса", "Zasady konkursu")}
-    >
-      <pre className="giveawayRulesText">{rulesText || "…"}</pre>
-    </GiveawayRulesModal>
+      <GiveawayModalShell
+        open={rulesOpen}
+        onClose={() => setRulesOpen(false)}
+        title={t("Правила конкурса", "Zasady konkursu")}
+      >
+        <pre className="giveawayRulesText">{rulesText || "…"}</pre>
+      </GiveawayModalShell>
+
+      <GiveawayModalShell
+        open={winnersOpen}
+        onClose={() => setWinnersOpen(false)}
+        title={t("Победители розыгрыша", "Zwycięzcy konkursu")}
+      >
+        {displayWinners.length ? (
+          <ol className="giveawayWinnersList">
+            {displayWinners.map((winner) => (
+              <li
+                key={`${winner.place}-${winner.telegramId || winner.username || winner.firstName}`}
+                className="giveawayWinnersItem"
+              >
+                <span className="giveawayWinnersPlace">
+                  {Number(winner.place) || "—"}
+                </span>
+                <span className="giveawayWinnersMeta">
+                  <span className="giveawayWinnersName">
+                    {formatWinnerLabel(winner)}
+                  </span>
+                  <span className="giveawayWinnersPrize">
+                    {formatAmountZl(winner.amountZl)}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="giveawayWinnersEmpty">
+            {t(
+              "Список победителей скоро появится.",
+              "Lista zwycięzców wkrótce się pojawi."
+            )}
+          </p>
+        )}
+      </GiveawayModalShell>
     </>
   );
 }

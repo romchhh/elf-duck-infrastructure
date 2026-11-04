@@ -11,8 +11,6 @@ import { fileURLToPath } from "url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "../..");
-const outDir = join(here, "../../elf.duck.clean/src/assets");
-
 function readArg(name, fallback) {
   const idx = process.argv.indexOf(name);
   if (idx >= 0 && process.argv[idx + 1]) {
@@ -23,16 +21,20 @@ function readArg(name, fallback) {
 
 const plSrc = readArg("--pl", join(repoRoot, "Frame 140.png"));
 const ruSrc = readArg("--ru", join(repoRoot, "Frame 141.png"));
+const shopOut = join(here, "../../elf.duck.clean/src/assets");
+const apiOut = join(here, "../assets/payment");
 
-async function convert(input, outputName) {
+async function convert(input, outputName, targetDir) {
   if (!existsSync(input)) {
     console.warn("skip (missing):", input);
     return;
   }
-  const output = join(outDir, outputName);
+  const output = join(targetDir, outputName);
   await sharp(input).webp({ quality: 85 }).toFile(output);
   console.log("wrote", output);
 }
 
-await convert(plSrc, "paymentBlikPreferCash-pl.webp");
-await convert(ruSrc, "paymentBlikPreferCash-ru.webp");
+await convert(plSrc, "paymentBlikPreferCash-pl.webp", shopOut);
+await convert(ruSrc, "paymentBlikPreferCash-ru.webp", shopOut);
+await convert(plSrc, "paymentBlikPreferCash-pl.webp", apiOut);
+await convert(ruSrc, "paymentBlikPreferCash-ru.webp", apiOut);

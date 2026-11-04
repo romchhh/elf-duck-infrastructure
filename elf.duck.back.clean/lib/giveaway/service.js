@@ -395,11 +395,20 @@ export async function getGiveawayPublicState({
     month.status === "credited" ||
     month.status === "notified";
 
-  const [participantsCount, entriesCount, winners] = await Promise.all([
+  const [participantsCount, entriesCount, winnersRaw] = await Promise.all([
     countParticipants(monthKey),
     countEntries(monthKey),
     showWinners ? listWinners(monthKey) : Promise.resolve([]),
   ]);
+
+  /** Публічний список без сирих telegramId. */
+  const winners = (winnersRaw || []).map((row) => ({
+    place: row.place,
+    amountZl: row.amountZl,
+    username: row.username || "",
+    firstName: row.firstName || "",
+    lastName: row.lastName || "",
+  }));
 
   const userLang =
     tg &&

@@ -13,6 +13,7 @@ import {
   reconcileUnsoldPromoUses,
   releaseOrderPromoUse,
 } from "../../lib/crm/promoOrderUse.js";
+import { sendClientBlikPaymentInstructions } from "../../lib/payments/blikClientTelegram.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -2001,6 +2002,15 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       }
 
     );
+
+    if (String(resolvedPaymentMethod || "").trim().toLowerCase() === "blik") {
+      try {
+        await sendClientBlikPaymentInstructions(order);
+      } catch (blikNotifyErr) {
+        console.error("payment-check sendClientBlikPaymentInstructions error:", blikNotifyErr);
+      }
+    }
+
     return res.json({ ok: true, order });
   } catch (e) {
     console.error("POST /orders/:id/payment-check error:", e);

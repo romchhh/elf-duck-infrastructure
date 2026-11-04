@@ -44,3 +44,33 @@ export const BLIK_CASH_PREFERENCE_RU = `Будем вам очень благо�
 export const BLIK_CASH_PREFERENCE_PL = `Będziemy bardzo wdzięczni, jeśli wybierzesz płatność gotówką 🙏
 
 💡 Gotówkę możesz wypłacić w sklepie Żabka obok punktu odbioru.`;
+
+/** Wola + курʼєр / InPost — без підказки Tytuł/Imię для BLIK (як у shop OrdersPage). */
+export function shouldHideBlikTransferHint(order = {}, point = null) {
+  const pointKey = String(point?.key || order?.pickupPointKey || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+
+  if (pointKey.includes("wola")) return true;
+
+  const deliveryType = String(order?.deliveryType || "").trim().toLowerCase();
+  const deliveryMethod = String(order?.deliveryMethod || "").trim().toLowerCase();
+  if (deliveryType === "delivery" || deliveryMethod === "courier" || deliveryMethod === "inpost") {
+    return true;
+  }
+
+  if (pointKey === "delivery" || pointKey === "delivery-2" || pointKey.startsWith("delivery")) {
+    return true;
+  }
+
+  return false;
+}
+
+export function getBlikRecipientFirstName(order = {}, point = null) {
+  const pointKey = String(point?.key || order?.pickupPointKey || "")
+    .trim()
+    .toLowerCase();
+  if (pointKey.includes("mokot")) return "Vitalii";
+  return "Dmytro";
+}
