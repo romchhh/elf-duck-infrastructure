@@ -355,7 +355,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
               </span>
               <span className="giveawayCtaLine">
                 {t("Ваших заказов:", "Twoich zamówień:")}{" "}
-                <b>{orderCount}</b>
+                <b className="giveawayCtaCount">{orderCount}</b>
               </span>
             </div>
           ) : mode === "countdown" ? (

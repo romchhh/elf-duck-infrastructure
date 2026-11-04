@@ -51,7 +51,7 @@
 }
 
 .giveawayCtaSlot--compact {
-  max-width: 46%;
+  max-width: 52%;
   bottom: 5.5%;
 }
 
@@ -115,20 +115,30 @@
 
 .giveawayCtaCard--joined,
 .giveawayCtaCard--countdown {
-  padding: 5px 9px;
-  gap: 1px;
-  border-radius: 11px;
+  box-sizing: border-box;
+  width: min(100%, clamp(162px, 44vw, 212px));
+  min-width: min(100%, clamp(162px, 44vw, 212px));
+  min-height: clamp(46px, 12.5vw, 54px);
+  padding: 7px 12px;
+  gap: 3px;
+  border-radius: 13px;
   border-width: 1.5px;
-  font-size: clamp(8px, 2.35vw, 10px);
-  line-height: 1.2;
+  font-size: clamp(9px, 2.55vw, 11px);
+  line-height: 1.22;
+  justify-content: center;
   box-shadow:
-    0 0 10px rgba(255, 210, 40, 0.2),
-    0 4px 12px rgba(0, 0, 0, 0.38);
+    0 0 12px rgba(255, 210, 40, 0.22),
+    0 5px 14px rgba(0, 0, 0, 0.38);
 }
 
 .giveawayCtaCard--joined b {
-  color: #ffffff;
   font-weight: 800;
+}
+
+.giveawayCtaCount {
+  color: #ffe14a;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .giveawayCtaLine--joinedTop {
@@ -139,21 +149,19 @@
 
 .giveawayCtaCard--joined .giveawayCtaLine {
   white-space: nowrap;
-  font-size: 0.95em;
 }
 
 .giveawayCtaCard--countdown .giveawayCtaLine--white {
   color: #ffffff;
   white-space: nowrap;
-  font-size: 0.95em;
 }
 
 .giveawayCtaCheck {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: clamp(11px, 3vw, 14px);
-  height: clamp(11px, 3vw, 14px);
+  width: clamp(12px, 3.2vw, 15px);
+  height: clamp(12px, 3.2vw, 15px);
   flex-shrink: 0;
 }
 
@@ -175,9 +183,9 @@
   color: #ffe14a;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  font-size: clamp(10px, 2.75vw, 12px);
+  font-size: clamp(11px, 3.05vw, 13px);
   letter-spacing: 0.01em;
-  line-height: 1.15;
+  line-height: 1.18;
   max-width: 100%;
 }
 
