@@ -77,6 +77,7 @@ const CART_AUTO_CLEAR_AFTER_MINUTES = Number(process.env.CART_AUTO_CLEAR_AFTER_M
 const CART_AUTO_CLEAR_INTERVAL_MS = Number(process.env.CART_AUTO_CLEAR_INTERVAL_MS || 60 * 1000);
 
 import { bot, userBots } from "../botRegistry.js";
+import { deleteOrderManagerTelegramCards } from "../../telegram/deleteGroupMessageWithShopBots.js";
 
 import * as __chunk00 from "./chunk00.js";
 import * as __chunk01 from "./chunk01.js";
@@ -1680,6 +1681,14 @@ export async function refreshManagerOrderMessage(order, options = {}) {
     };
 
     if (forceRepost) {
+      const del = await deleteOrderManagerTelegramCards(order).catch((error) => ({
+        anyDeleted: false,
+        error: error?.message || String(error),
+      }));
+      console.log("[repost] delete via all shop bots", {
+        orderNo: String(order?.orderNo || ""),
+        ...del,
+      });
       return publishFreshManagerOrderMessage();
     }
 

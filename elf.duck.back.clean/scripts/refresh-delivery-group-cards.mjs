@@ -10,6 +10,7 @@
  * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --dry-run
  * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --day 2026-11-04 --skip-delivered --apply
  * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --skip-order ED-XXXXXX --apply
+ * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --extra-msg -1003271120190:2091,-1003271120190:2077 --apply
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -26,9 +27,14 @@ if (!process.env.MONGODB_URI) {
 
 import Order from "../models/Order.js";
 import { bindApiGlobals } from "../routes/api/bindApiGlobals.js";
-import { setUserBots, refreshPrimaryShopBot, bot } from "../lib/server/botRegistry.js";
+import { setUserBots, refreshPrimaryShopBot } from "../lib/server/botRegistry.js";
+import {
+  collectManagerTelegramMessageRefs,
+  deleteGroupMessageWithAllShopBots,
+  deleteOrderManagerTelegramCards,
+} from "../lib/telegram/deleteGroupMessageWithShopBots.js";
 import { getTelegramBotTokens } from "../lib/telegram/botTokens.js";
-import { setShopBotUsername } from "../lib/telegram/shopBotReferralLink.js";
+import { setShopBotUsername, getShopBotUsername } from "../lib/telegram/shopBotReferralLink.js";
 import { getPrimaryShopBotIndex, getPrimaryShopBotUsername } from "../lib/telegram/shopBotPrimary.js";
 import { getWarsawDayKey } from "../lib/server/helpers/orderStatsDay.js";
 
@@ -61,20 +67,27 @@ if (!dryRun && !apply) {
   process.exit(1);
 }
 
-function managerMessageRefs(order) {
-  const refs = [];
-  const push = (chatId, messageId) => {
-    const cid = String(chatId || "").trim();
-    const mid = Number(String(messageId || "").trim());
-    if (!cid || !Number.isFinite(mid) || mid <= 0) return;
-    const key = `${cid}:${mid}`;
-    if (refs.some((r) => r.key === key)) return;
-    refs.push({ key, chatId: cid, messageId: mid });
-  };
-  push(order?.payment?.managerMessageChatId, order?.payment?.managerMessageId);
-  push(order?.managerMessageChatId, order?.managerMessageId);
-  return refs;
+function parseExtraMessageRefs(raw) {
+  return String(raw || "")
+    .split(/[,;\n]+/)
+    .map((chunk) => String(chunk || "").trim())
+    .filter(Boolean)
+    .map((chunk) => {
+      const [chatId, messageId] = chunk.split(":");
+      return {
+        chatId: String(chatId || "").trim(),
+        messageId: Number(String(messageId || "").trim()),
+      };
+    })
+    .filter(
+      (ref) =>
+        ref.chatId &&
+        Number.isFinite(ref.messageId) &&
+        ref.messageId > 0
+    );
 }
+
+const extraDeleteRefs = parseExtraMessageRefs(arg("--extra-msg"));
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -102,6 +115,10 @@ if (apply) {
   );
   refreshPrimaryShopBot();
   bindApiGlobals();
+  console.log(
+    "shop bots for delete:",
+    allBots.map((_, i) => `@${String(getShopBotUsername(i) || i).replace(/^@/, "")}`)
+  );
 }
 
 await mongoose.connect(process.env.MONGODB_URI);
@@ -157,7 +174,7 @@ console.log({
 
 for (let i = 0; i < plan.length; i += 1) {
   const { order, action } = plan[i];
-  const refs = managerMessageRefs(order);
+  const refs = collectManagerTelegramMessageRefs(order);
   console.log(
     `${i + 1}. #${order.orderNo} ${order.status} created=${order.createdAt?.toISOString?.() || order.createdAt} → ${action}`,
     refs.length
@@ -177,24 +194,15 @@ if (dryRun) {
 
 const { repostManagerOrderToGroup } = await import("../lib/server/helpers/chunk11.js");
 
-async function deleteKnownMessages(order) {
-  const refs = managerMessageRefs(order);
-  const outcomes = [];
-  for (const ref of refs) {
-    for (const tgBot of allBots.length ? allBots : bot ? [bot] : []) {
-      try {
-        await tgBot.telegram.deleteMessage(ref.chatId, ref.messageId);
-        outcomes.push({ ...ref, ok: true });
-      } catch (error) {
-        outcomes.push({
-          ...ref,
-          ok: false,
-          error: error?.response?.description || error?.message || String(error),
-        });
-      }
-    }
+if (extraDeleteRefs.length) {
+  console.log("\nExtra delete refs (--extra-msg):");
+  for (const ref of extraDeleteRefs) {
+    const result = await deleteGroupMessageWithAllShopBots(
+      ref.chatId,
+      ref.messageId
+    );
+    console.log(result);
   }
-  return outcomes;
 }
 
 for (const row of plan) {
@@ -202,9 +210,6 @@ for (const row of plan) {
 
   const label = String(row.order.orderNo || "");
   console.log("\n---", label, "---");
-
-  const del = await deleteKnownMessages(row.order);
-  console.log("delete", del);
 
   try {
     const fresh = await Order.findById(row.order._id);
