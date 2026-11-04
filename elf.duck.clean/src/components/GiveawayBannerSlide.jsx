@@ -6,6 +6,7 @@ import { appPath } from "../utils/appMode.js";
 import { getCurrentLanguage, t } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
 import "../styles/GiveawayBanner.css";
+import GiveawayRulesContent from "./GiveawayRulesContent.jsx";
 
 export const GIVEAWAY_TEST_PREVIEWS = ["join", "joined", "countdown", "winners"];
 
@@ -328,7 +329,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
         <button
           type="button"
           className="giveawayInfoBtn"
-          aria-label={t("Правила конкурса", "Zasady konkursu")}
+          aria-label={t("Правила розыгрыша", "Zasady losowania")}
           onClick={openRules}
         >
           <span className="giveawayInfoBtnGlyph" aria-hidden>
@@ -384,9 +385,9 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
       <GiveawayModalShell
         open={rulesOpen}
         onClose={() => setRulesOpen(false)}
-        title={t("Правила конкурса", "Zasady konkursu")}
+        title={t("Правила розыгрыша", "Zasady losowania")}
       >
-        <pre className="giveawayRulesText">{rulesText || "…"}</pre>
+        <GiveawayRulesContent rulesText={rulesText} />
       </GiveawayModalShell>
 
       <GiveawayModalShell

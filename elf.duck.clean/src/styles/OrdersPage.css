@@ -2084,90 +2084,115 @@ button.paymentCashbackField {
   gap: 10px;
 }
 
-.paymentBlikGiveawayLead,
-.paymentBlikGiveawayTip,
-.paymentBlikGiveawayNotice {
+.paymentBlikCopyRow {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  text-align: left;
+  gap: 10px;
 }
 
-.paymentBlikGiveawayLead span,
-.paymentBlikGiveawayTip span,
-.paymentBlikGiveawayNotice span {
+.paymentBlikCopyRow--notice {
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.paymentBlikCopyIconWrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.paymentBlikCopyIconWrap--cash {
+  background: rgba(40, 90, 55, 0.35);
+  border-color: rgba(141, 255, 176, 0.35);
+}
+
+.paymentBlikCopyIconWrap--pin {
+  background: rgba(40, 90, 55, 0.35);
+  border-color: rgba(141, 255, 176, 0.35);
+}
+
+.paymentBlikCopyIconWrap--accent {
+  background: rgba(90, 70, 20, 0.35);
+  border-color: rgba(255, 226, 154, 0.35);
+}
+
+.paymentBlikCopyIcon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.paymentBlikCopyBody {
   flex: 1;
   min-width: 0;
 }
 
-.paymentBlikGiveawayLead {
+.paymentBlikCopyTitle {
   margin: 0;
   font-family: Unbounded-Medium;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.4;
   color: #fff;
   letter-spacing: 0.01em;
 }
 
-.paymentBlikGiveawayLead .paymentBlikInlineIcon {
-  margin-top: 1px;
-}
-
-.paymentBlikGiveawayTip {
+.paymentBlikCopyText {
   margin: 0;
   font-family: Unbounded-Regular;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.45;
   color: rgba(255, 255, 255, 0.88);
 }
 
-.paymentBlikGiveawayTip .paymentBlikInlineIcon {
-  margin-top: 1px;
-  opacity: 0.92;
-}
-
-.paymentBlikGiveawayMapsBtn {
-  display: inline-flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(141, 255, 176, 0.55);
-  background: rgba(40, 90, 55, 0.45);
-  font-family: Unbounded-Medium;
-  font-size: 10px;
-  line-height: 1.25;
-  color: #8dffb0;
-  text-decoration: none;
-  letter-spacing: 0.02em;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.paymentBlikGiveawayMapsBtn span {
-  text-transform: uppercase;
-}
-
-.paymentBlikGiveawayMapsBtn:active {
-  transform: scale(0.98);
-  background: rgba(40, 90, 55, 0.62);
-}
-
-.paymentBlikGiveawayNotice {
+.paymentBlikCopyNotice {
   margin: 0;
-  padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
   font-family: Unbounded-Regular;
   font-size: 10px;
   line-height: 1.45;
   color: rgba(255, 226, 154, 0.95);
 }
 
-.paymentBlikGiveawayNotice .paymentBlikInlineIcon {
-  margin-top: 1px;
+.paymentBlikGiveawayMapsBtn {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  align-self: stretch;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px 0 0;
+  border-radius: 12px;
+  border: 1px solid rgba(141, 255, 176, 0.45);
+  background: rgba(40, 90, 55, 0.32);
+  font-family: Unbounded-Medium;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #8dffb0;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+.paymentBlikMapsLabel {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.paymentBlikGiveawayMapsBtn .paymentBlikCopyIconWrap {
+  margin-left: 6px;
+}
+
+.paymentBlikGiveawayMapsBtn:active {
+  transform: scale(0.99);
+  background: rgba(40, 90, 55, 0.48);
 }
 
 .paymentPerkIcon {

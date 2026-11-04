@@ -115,23 +115,23 @@ export function sumPrizePoolZl(settings = null) {
   return Number(total.toFixed(2));
 }
 
-export const GIVEAWAY_RULES_RU = `ElfDuck раздаёт 2 000 zł — ежемесячный розыгрыш.
+export const GIVEAWAY_RULES_RU = `Каждый месяц ELF DUCK раздаёт 2 000 zł среди 25 победителей.
 
-• Период: с 1-го по 25-е число каждого месяца.
-• 25-го объявляются 25 победителей (случайный выбор среди записей).
-• Одна оплаченная покупка = одна запись (сумма не важна).
-• Заказы, оплаченные через BLIK, не участвуют.
-• Призы: 1–5 места — 150 zł, 6–10 — 100 zł, 11–25 — 50 zł.
-• Выигрыш начисляется на баланс кэшбека.`;
+• Период участия — с 1-го по 25-е число каждого месяца.
+• 25-го числа случайным образом определяем 25 победителей.
+• Один оплаченный заказ = один шанс на победу. Сумма заказа не важна.
+• Заказы, оплаченные через BLIK, в розыгрыше не участвуют.
+• Призы: 1–5-е места — по 150 zł, 6–10-е — по 100 zł, 11–25-е — по 50 zł.
+• Выигрыш автоматически начисляется на ваш баланс.`;
 
-export const GIVEAWAY_RULES_PL = `ElfDuck rozdaje 2 000 zł — comiesięczny konkurs.
+export const GIVEAWAY_RULES_PL = `Co miesiąc ELF DUCK rozdaje 2 000 zł wśród 25 zwycięzców.
 
-• Okres: od 1. do 25. dnia każdego miesiąca.
-• 25. ogłaszamy 25 zwycięzców (losowanie wśród zgłoszeń).
-• Jedno opłacone zamówienie = jedno zgłoszenie.
-• Zamówienia opłacone BLIK-iem nie biorą udziału.
-• Nagrody: miejsca 1–5 — 150 zł, 6–10 — 100 zł, 11–25 — 50 zł.
-• Wygrana trafia na saldo cashbacku.`;
+• Okres udziału — od 1. do 25. dnia każdego miesiąca.
+• 25. dnia losujemy 25 zwycięzców.
+• Jedno opłacone zamówienie = jedna szansa na wygraną. Kwota zamówienia nie ma znaczenia.
+• Zamówienia opłacone BLIK-iem nie biorą udziału w losowaniu.
+• Nagrody: miejsca 1–5 — po 150 zł, 6–10 — po 100 zł, 11–25 — po 50 zł.
+• Wygrana jest automatycznie dodawana do Twojego salda.`;
 
 export const GIVEAWAY_WINNER_MESSAGE_RU =
   "Поздравляем! Вы победили в нашей новой рубрике „ElfDuck раздаёт 2 000 zł“. Ваш выигрыш в размере {amount} zł уже начислен на баланс.";

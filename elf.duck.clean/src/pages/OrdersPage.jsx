@@ -35,6 +35,7 @@ import { isTestAppMode, appPath } from "../utils/appMode";
 import GiveawayBannerSlide, {
   GIVEAWAY_TEST_PREVIEWS,
 } from "../components/GiveawayBannerSlide.jsx";
+import PaymentBlikPreferCashCopy from "../components/PaymentBlikPreferCashCopy.jsx";
 import { resolveZabkaMapsUrl } from "../utils/blikCheckoutHints.js";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
@@ -77,8 +78,6 @@ import cryptoIcon from "../assets/cryptoIcon.webp";
 import uaCardIcon from "../assets/uaCardIcon.webp";
 import cashIcon from "../assets/cashIcon.webp";
 import CartInfoIcon from "../assets/CartInfoIcon.webp";
-import googlePinIcon from "../assets/googlePinIcon.webp";
-import percentIcon from "../assets/percentIcon.webp";
 import { getGuestOrders } from "../utils/guestLocalStore";
 
 
@@ -2803,68 +2802,12 @@ useEffect(() => {
                                 alt=""
                               />
                             </div>
-                            <div className="paymentBlikGiveawayCopy">
-                              <p className="paymentBlikGiveawayLead">
-                                <img
-                                  src={cashIcon}
-                                  className="paymentBlikInlineIcon"
-                                  alt=""
-                                />
-                                <span>
-                                  {t(
-                                    "Будем вам очень благодарны, если вы выберете оплату наличными",
-                                    "Będziemy bardzo wdzięczni, jeśli wybierzesz płatność gotówką"
-                                  )}
-                                </span>
-                              </p>
-                              <p className="paymentBlikGiveawayTip">
-                                <img
-                                  src={CartInfoIcon}
-                                  className="paymentBlikInlineIcon"
-                                  alt=""
-                                />
-                                <span>
-                                  {t(
-                                    "Наличные можно снять в магазине Żabka рядом с точкой самовывоза.",
-                                    "Gotówkę możesz wypłacić w sklepie Żabka obok punktu odbioru."
-                                  )}
-                                </span>
-                              </p>
-                              <a
-                                className="paymentBlikGiveawayMapsBtn"
-                                href={resolveZabkaMapsUrl(
-                                  getOrderPickupPoint(activePaymentOrder)?.key,
-                                  getOrderPickupPoint(activePaymentOrder)?.address
-                                )}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                <img
-                                  src={googlePinIcon}
-                                  className="paymentBlikInlineIcon paymentBlikInlineIcon--pin"
-                                  alt=""
-                                />
-                                <span>
-                                  {t(
-                                    "Ближайшая Żabka на Google Maps",
-                                    "Najbliższa Żabka w Google Maps"
-                                  )}
-                                </span>
-                              </a>
-                              <p className="paymentBlikGiveawayNotice">
-                                <img
-                                  src={percentIcon}
-                                  className="paymentBlikInlineIcon paymentBlikInlineIcon--percent"
-                                  alt=""
-                                />
-                                <span>
-                                  {t(
-                                    "Обратите внимание: при оплате через BLIK кэшбэк за заказ не начисляется, а заказ не участвует в ежемесячном розыгрыше 2 000 zł.",
-                                    "Uwaga: przy płatności BLIK nie naliczamy cashbacku, a zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł."
-                                  )}
-                                </span>
-                              </p>
-                            </div>
+                            <PaymentBlikPreferCashCopy
+                              mapsHref={resolveZabkaMapsUrl(
+                                getOrderPickupPoint(activePaymentOrder)?.key,
+                                getOrderPickupPoint(activePaymentOrder)?.address
+                              )}
+                            />
                           </div>
                         ) : null}
                         <div className="paymentHintText">
