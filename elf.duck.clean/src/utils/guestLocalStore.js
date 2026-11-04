@@ -39,6 +39,7 @@ const emptyCart = () => ({
   checkoutDeliveryType: null,
   checkoutDeliveryMethod: null,
   courierAddress: null,
+  courierContactPhone: null,
   courierDistrict: null,
   deliveryFeeZl: 0,
   inpostDeliveryFeeZl: 0,

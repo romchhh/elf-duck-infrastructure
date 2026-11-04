@@ -3208,6 +3208,48 @@ body {
   align-items: center;
 }
 
+.courierPhoneLabel {
+  width: 100%;
+  margin: 0 0 8px;
+  font-family: Unbounded-Light;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+  color: rgba(255, 255, 255, 0.72);
+  text-align: left;
+}
+
+.courierPhoneRequired {
+  margin-left: 4px;
+  color: #ff7b7b;
+}
+
+.courierPhoneInput {
+  width: 100%;
+  margin: 0 0 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  padding: 14px 16px;
+  font-family: Unbounded-Light;
+  font-size: 13px;
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.courierPhoneInput::placeholder {
+  color: rgba(255, 255, 255, 0.38);
+  font-family: Unbounded-Light;
+  font-size: 12px;
+}
+
+.courierPhoneInput:focus {
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
 .orderCommentInput {
   width: 100%;
   min-height: 70px;

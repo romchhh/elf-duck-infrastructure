@@ -1958,6 +1958,7 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
 
           const deliveryDetails = [];
           if (!isInpost && order?.courierAddress) deliveryDetails.push(`📍 <b>Адрес:</b> ${escapeHtml(order.courierAddress)}`);
+          if (!isInpost && order?.courierContactPhone) deliveryDetails.push(`📞 <b>Телефон:</b> ${escapeHtml(order.courierContactPhone)}`);
           if (!isInpost && order?.deliveryTimeWindow) deliveryDetails.push(`🕒 <b>Время:</b> ${escapeHtml(order.deliveryTimeWindow)}`);
           if (isInpost && order?.inpostData?.lockerAddress) deliveryDetails.push(`📦 <b>Пачкомат:</b> ${escapeHtml(order.inpostData.lockerAddress)}`);
           if (isInpost && order?.inpostData?.fullName) deliveryDetails.push(`👤 <b>Получатель:</b> ${escapeHtml(order.inpostData.fullName)}`);

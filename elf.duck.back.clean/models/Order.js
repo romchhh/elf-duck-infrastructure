@@ -96,6 +96,7 @@ const orderSchema = new mongoose.Schema(
     },
 
     courierAddress: { type: String, default: null },
+    courierContactPhone: { type: String, default: null },
     courierDistrict: { type: String, default: null },
     deliveryFeeZl: { type: Number, default: 0 },
     courierUsername: { type: String, default: "" },

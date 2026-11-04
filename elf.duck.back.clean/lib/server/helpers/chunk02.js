@@ -444,6 +444,7 @@ export function normalizeGuestCartPayload(raw) {
     checkoutDeliveryType: c.checkoutDeliveryType ?? null,
     checkoutDeliveryMethod: c.checkoutDeliveryMethod ?? null,
     courierAddress: c.courierAddress ?? null,
+    courierContactPhone: String(c.courierContactPhone || "").trim().slice(0, 40) || null,
     courierDistrict: c.courierDistrict ?? null,
     deliveryFeeZl: Number(c.deliveryFeeZl || 0),
     inpostDeliveryFeeZl: Number(c.inpostDeliveryFeeZl || 0),

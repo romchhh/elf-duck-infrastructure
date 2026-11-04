@@ -105,8 +105,18 @@ export async function ensureGiveawayMonth(monthKey = getActiveGiveawayMonthKey()
   }
 }
 
+/** Учасники з ≥1 записом (замовленням) у розіграші — для CRM і публічної метрики. */
 async function countParticipants(monthKey) {
-  return participantsCol().countDocuments({ monthKey });
+  const key = String(monthKey || "").trim();
+  if (!key) return 0;
+  const rows = await entriesCol()
+    .aggregate([
+      { $match: { monthKey: key } },
+      { $group: { _id: "$telegramId" } },
+      { $count: "n" },
+    ])
+    .toArray();
+  return Number(rows[0]?.n || 0);
 }
 
 async function countEntries(monthKey) {
@@ -386,8 +396,10 @@ export async function getGiveawayPublicState({
   const month = await ensureGiveawayMonth(monthKey);
   const tg = String(telegramId || "").trim();
   const phase = resolveGiveawayUiPhase(month);
-  const participated = tg ? await isParticipant(monthKey, tg) : false;
+  const joined = tg ? await isParticipant(monthKey, tg) : false;
   const myEntries = tg ? await countUserEntries(monthKey, tg) : 0;
+  /** «Участвуете» лише якщо є хоча б одне кваліфікуюче замовлення. */
+  const participated = joined && myEntries > 0;
 
   const participationOpen = isGiveawayMonthLive(month);
   const showWinners =
@@ -441,6 +453,7 @@ export async function getGiveawayPublicState({
       prizeTiers: settings.prizeTiers,
       prizePoolZl: sumPrizePoolZl(settings),
     },
+    joined,
     participated,
     myEntries,
     participantsCount,
@@ -498,24 +511,26 @@ export async function listGiveawayParticipantsAdmin(monthKey) {
     : [];
   const userMap = new Map(users.map((u) => [String(u.telegramId), u]));
 
-  return participants.map((p) => {
-    const tg = String(p.telegramId);
-    const user = userMap.get(tg) || {};
-    const stats = statsMap.get(tg) || {
-      entriesCount: 0,
-      testEntriesCount: 0,
-    };
-    return {
-      telegramId: tg,
-      username: user.username || "",
-      firstName: user.firstName || "",
-      lastName: user.lastName || "",
-      joinedAt: p.joinedAt || null,
-      testSeed: Boolean(p.testSeed),
-      entriesCount: stats.entriesCount,
-      testEntriesCount: stats.testEntriesCount,
-    };
-  });
+  return participants
+    .map((p) => {
+      const tg = String(p.telegramId);
+      const user = userMap.get(tg) || {};
+      const stats = statsMap.get(tg) || {
+        entriesCount: 0,
+        testEntriesCount: 0,
+      };
+      return {
+        telegramId: tg,
+        username: user.username || "",
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        joinedAt: p.joinedAt || null,
+        testSeed: Boolean(p.testSeed),
+        entriesCount: stats.entriesCount,
+        testEntriesCount: stats.testEntriesCount,
+      };
+    })
+    .filter((row) => Number(row.entriesCount || 0) > 0);
 }
 
 export async function getGiveawayAdminState(monthKey = getActiveGiveawayMonthKey()) {

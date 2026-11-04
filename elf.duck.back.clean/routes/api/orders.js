@@ -136,6 +136,17 @@ app.post("/orders/confirm", async (req, res) => {
         });
       }
 
+      const courierPhoneDigits = String(
+        req.body?.courierContactPhone ?? cart?.courierContactPhone ?? ""
+      ).replace(/\D/g, "");
+      if (courierPhoneDigits.length < 9) {
+        return res.status(400).json({
+          ok: false,
+          field: "courierContactPhone",
+          error: "Для доставки курьером нужно указать контактный номер телефона.",
+        });
+      }
+
       if (!String(cart?.deliveryTimeWindow || "").trim()) {
         return res.status(400).json({
           ok: false,
@@ -914,6 +925,14 @@ app.post("/orders/confirm", async (req, res) => {
 
         .slice(0, 500) || null,
       courierAddress: cart.courierAddress ?? null,
+      courierContactPhone:
+        deliveryType === "delivery" && deliveryMethod === "courier"
+          ? String(
+              req.body?.courierContactPhone ?? cart?.courierContactPhone ?? ""
+            )
+              .trim()
+              .slice(0, 40) || null
+          : null,
       inpostData: cart.inpostData ?? {},
 
       courierDistrict:
@@ -1335,6 +1354,8 @@ app.post("/orders/repeat", async (req, res) => {
         checkoutPickupPointId: orig.pickupPointId || null,
         arrivalTime: orig.deliveryType === "pickup" ? null : (orig.arrivalTime ?? null),
         courierAddress: orig.courierAddress ?? null,
+        courierContactPhone: orig.courierContactPhone ?? null,
+        comment: orig.comment ?? null,
         inpostData: orig.inpostData ?? {
           fullName: null,
           phone: null,

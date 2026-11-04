@@ -176,6 +176,11 @@ app.put("/cart", async (req, res) => {
           ? null
           : String(b.courierAddress || "").trim();
 
+      const courierContactPhone =
+        b.courierContactPhone === null || b.courierContactPhone === undefined
+          ? null
+          : String(b.courierContactPhone || "").trim().slice(0, 40) || null;
+
       const arrivalTime =
         b.arrivalTime === null || b.arrivalTime === undefined
           ? null
@@ -490,6 +495,7 @@ const inpostPricing =
               },
 
           courierAddress,
+          courierContactPhone,
           inpostData,
           arrivalTime,
           deliveryTimeWindow,

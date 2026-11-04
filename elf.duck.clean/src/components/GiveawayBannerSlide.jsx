@@ -168,7 +168,11 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   }, [preview, applyState]);
 
   const phase = state?.phase || "active";
-  const participated = Boolean(state?.participated);
+  const myEntriesLive = Number(state?.myEntries || 0);
+  const joined = Boolean(state?.joined) || Boolean(state?.participated);
+  /** Активна участь — лише з ≥1 замовленням (не показуємо «Вы участвуете» при 0). */
+  const participated =
+    Boolean(state?.participated) && myEntriesLive > 0;
   const winners = Array.isArray(state?.winners) ? state.winners : [];
   const participationOpen = state
     ? Boolean(state.participationOpen) && phase === "active"
@@ -183,7 +187,9 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
       ? "countdown"
       : participated
         ? "joined"
-        : "join";
+        : joined
+          ? "needOrder"
+          : "join";
   const mode = preview || liveMode;
 
   const goToCatalog = useCallback(() => {
@@ -368,6 +374,18 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
               onClick={openWinners}
             >
               {t("ПОБЕДИТЕЛИ", "ZWYCIĘZCY")}
+            </button>
+          ) : mode === "needOrder" ? (
+            <button
+              type="button"
+              className="giveawayJoinBtn"
+              onClick={(e) => {
+                e.stopPropagation();
+                haptic.heavy();
+                goToCatalog();
+              }}
+            >
+              {t("Сделайте заказ", "Złóż zamówienie")}
             </button>
           ) : (
             <button

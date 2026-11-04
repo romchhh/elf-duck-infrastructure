@@ -640,6 +640,7 @@ export async function sendOrderCreatedNotification(order, options = {}) {
 
     if (String(order?.deliveryType || "") === "delivery" && String(order?.deliveryMethod || "") === "courier") {
       if (order?.courierAddress) lines.push(`📍 <b>Адрес доставки:</b> ${escapeHtml(order.courierAddress)}`);
+      if (order?.courierContactPhone) lines.push(`📞 <b>Телефон:</b> ${escapeHtml(order.courierContactPhone)}`);
       if (order?.courierDistrict) lines.push(`🌍 <b>Район:</b> ${escapeHtml(order.courierDistrict)}`);
       if (Number(order?.deliveryFeeZl || 0) > 0) lines.push(`🚚 <b>Стоимость доставки:</b> ${Number(order.deliveryFeeZl || 0).toFixed(2)} PLN`);
       if (order?.deliveryTimeWindow) lines.push(`🕒 <b>Временной промежуток:</b> ${escapeHtml(order.deliveryTimeWindow)}`);
@@ -1322,6 +1323,9 @@ export async function refreshManagerOrderMessage(order, options = {}) {
       if (order.courierAddress) {
         lines.push(`📍 <b>Адрес доставки:</b> ${escapeHtml(order.courierAddress)}`);
       }
+      if (order.courierContactPhone) {
+        lines.push(`📞 <b>Телефон:</b> ${escapeHtml(order.courierContactPhone)}`);
+      }
       if (order.courierDistrict) {
         lines.push(`🌍 <b>Район:</b> ${escapeHtml(order.courierDistrict)}`);
       }
@@ -1654,15 +1658,50 @@ export async function refreshManagerOrderMessage(order, options = {}) {
         return { ok: false, reason: "NO_CHAT" };
       }
 
-      const recreated = await bot.telegram.sendMessage(
-        fallbackChatId,
-        text,
-        {
+      const sendFresh = async (safeReplyMarkup) =>
+        bot.telegram.sendMessage(fallbackChatId, text, {
           parse_mode: "HTML",
           disable_web_page_preview: true,
-          reply_markup: replyMarkup,
+          reply_markup: safeReplyMarkup,
+        });
+
+      let recreated = null;
+      try {
+        recreated = await sendFresh(replyMarkup);
+      } catch (error) {
+        if (!isTelegramUserButtonError(error)) {
+          throw error;
         }
-      );
+
+        const clientUsername = normalizeTelegramUsername(
+          clientContact.username || user?.username || ""
+        );
+
+        if (clientUsername) {
+          try {
+            recreated = await sendFresh(
+              replaceTelegramUserButtonWithUsername(
+                replyMarkup,
+                clientUsername
+              )
+            );
+          } catch (usernameError) {
+            if (!isTelegramUserButtonError(usernameError)) {
+              throw usernameError;
+            }
+          }
+        }
+
+        if (!recreated) {
+          recreated = await sendFresh(
+            buildSafeFallbackManagerMarkup(replyMarkup, order)
+          );
+        }
+      }
+
+      if (!recreated?.message_id) {
+        return { ok: false, reason: "SEND_FAILED" };
+      }
 
       order.managerMessageChatId = fallbackChatId;
       order.managerMessageId = recreated.message_id;

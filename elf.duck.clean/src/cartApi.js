@@ -44,6 +44,10 @@ function buildLocalCartFromSave(
       extra.courierAddress !== undefined
         ? extra.courierAddress
         : current.courierAddress,
+    courierContactPhone:
+      extra.courierContactPhone !== undefined
+        ? extra.courierContactPhone
+        : current.courierContactPhone,
     courierDistrict:
       extra.courierDistrict !== undefined
         ? extra.courierDistrict

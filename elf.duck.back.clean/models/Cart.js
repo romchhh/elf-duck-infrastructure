@@ -86,6 +86,8 @@ const cartSchema = new mongoose.Schema(
     },
 
     courierAddress: { type: String, default: null },
+    /** Контактний телефон клієнта для курʼєрської доставки (обовʼязковий). */
+    courierContactPhone: { type: String, default: null },
 
     inpostData: {
       fullName: { type: String, default: null },

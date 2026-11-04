@@ -662,6 +662,10 @@ const CartPage = () => {
   const [deliveryTimeWindow, setDeliveryTimeWindow] = useState("");
   const [orderComment, setOrderComment] = useState("");
   const normalizedOrderComment = String(orderComment || "").slice(0, 500);
+  const [courierContactPhone, setCourierContactPhone] = useState("");
+  const normalizedCourierContactPhone = sanitizePhone(
+    String(courierContactPhone || "").trim()
+  ).slice(0, 40);
 
   const [deliveryType, setDeliveryType] = useState("");
 
@@ -673,9 +677,12 @@ const CartPage = () => {
     deliveryMethod === "courier";
 
   const orderDetailsComment = String(orderFromState?.comment || "").trim();
+  const orderDetailsCourierPhone = String(
+    orderFromState?.courierContactPhone || ""
+  ).trim();
 
   const shouldShowOrderDetailsCommentBlock =
-    isOrderDetailsMode && orderDetailsComment;
+    isOrderDetailsMode && (orderDetailsComment || orderDetailsCourierPhone);
 
   const [savedCourierDistrict, setSavedCourierDistrict] = useState("");
   const [savedDeliveryFeeZl, setSavedDeliveryFeeZl] = useState(0);
@@ -1564,6 +1571,15 @@ useEffect(() => {
           setCourierAddress(String(cart?.courierAddress || ""));
           setDeliveryTimeWindow(String(cart?.deliveryTimeWindow || ""));
           setOrderComment(String(cart?.comment || "").slice(0, 500));
+          setCourierContactPhone(
+            sanitizePhone(
+              String(
+                cart?.courierContactPhone ||
+                  (isGuestBrowser ? guestProfileForm?.phone : "") ||
+                  ""
+              )
+            ).slice(0, 40)
+          );
           setArrivalTime(cart?.arrivalTime || "");
           if (cart?.inpostData) {
             setInpostForm({
@@ -1617,6 +1633,11 @@ useEffect(() => {
         if (pending.checkoutDeliveryType) setDeliveryType(pending.checkoutDeliveryType);
         if (pending.checkoutDeliveryMethod) setDeliveryMethod(pending.checkoutDeliveryMethod);
         if (typeof pending.courierAddress === "string") setCourierAddress(pending.courierAddress);
+        if (typeof pending.courierContactPhone === "string") {
+          setCourierContactPhone(
+            sanitizePhone(pending.courierContactPhone).slice(0, 40)
+          );
+        }
         if (typeof pending.arrivalTime === "string") setArrivalTime(pending.arrivalTime);
         if (typeof pending.deliveryTimeWindow === "string") setDeliveryTimeWindow(pending.deliveryTimeWindow);
         if (pending.inpostData) {
@@ -1659,6 +1680,9 @@ useEffect(() => {
           setIsCalculatingDelivery(false);
           setDeliveryTimeWindow(String(cart?.deliveryTimeWindow || ""));
           setOrderComment(String(cart?.comment || "").slice(0, 500));
+          setCourierContactPhone(
+            sanitizePhone(String(cart?.courierContactPhone || "")).slice(0, 40)
+          );
           setSavedCourierDistrict(loadedCourierDistrict);
           setSavedDeliveryFeeZl(loadedDeliveryFeeZl);
           setSavedCartData(cart || null);
@@ -1686,6 +1710,9 @@ useEffect(() => {
         setReferralFirstOrderDiscount(referralDiscount);
         setArrivalTime(cart?.arrivalTime || "");
         setOrderComment(String(cart?.comment || "").slice(0, 500));
+        setCourierContactPhone(
+          sanitizePhone(String(cart?.courierContactPhone || "")).slice(0, 40)
+        );
         syncedCartQtyRef.current = sumCartQty(Array.isArray(cart?.items) ? cart.items : []);
 
         const lockedType =
@@ -1747,6 +1774,7 @@ useEffect(() => {
               arrivalTime,
               deliveryTimeWindow,
               comment: normalizedOrderComment,
+              courierContactPhone: normalizedCourierContactPhone || null,
             }
           );
 
@@ -1813,7 +1841,7 @@ useEffect(() => {
     }, 200);
 
     return () => clearTimeout(t);
-  }, [cartItems, checkoutPickupPointId, deliveryType, deliveryMethod, courierAddress, inpostForm, arrivalTime, deliveryTimeWindow, user?.telegramId, isGuestBrowser, isOrderDetailsMode, cartHydrated]);
+  }, [cartItems, checkoutPickupPointId, deliveryType, deliveryMethod, courierAddress, courierContactPhone, inpostForm, arrivalTime, deliveryTimeWindow, orderComment, user?.telegramId, isGuestBrowser, isOrderDetailsMode, cartHydrated]);
 
 
   /* ================= SIDE MENU STATE ================= */
@@ -2041,6 +2069,7 @@ const incQty = (key) => {
           arrivalTime,
           deliveryTimeWindow,
           comment: normalizedOrderComment,
+          courierContactPhone: normalizedCourierContactPhone || null,
         }
       );
 
@@ -2473,6 +2502,7 @@ const saveAddress = async () => {
                 arrivalTime,
                 deliveryTimeWindow,
                 comment: normalizedOrderComment,
+                courierContactPhone: normalizedCourierContactPhone || null,
               }
             );
 
@@ -3186,6 +3216,7 @@ const trySwitchCheckout = ({ nextType, nextMethod, nextPickupPointId, targetLabe
     arrivalTime,
     deliveryTimeWindow,
     comment: normalizedOrderComment,
+    courierContactPhone: normalizedCourierContactPhone || null,
   });
 
   const resolveGuestContactForOrder = () => {
@@ -3198,7 +3229,9 @@ const trySwitchCheckout = ({ nextType, nextMethod, nextPickupPointId, targetLabe
     }
     return {
       fullName: String(guestProfileForm.fullName || "").trim(),
-      phone: String(guestProfileForm.phone || "").trim(),
+      phone: String(
+        guestProfileForm.phone || normalizedCourierContactPhone || ""
+      ).trim(),
       email: String(guestProfileForm.email || "").trim(),
     };
   };
@@ -3394,6 +3427,12 @@ const trySwitchCheckout = ({ nextType, nextMethod, nextPickupPointId, targetLabe
           checkoutPickupPointId: draft.checkoutPickupPointId ?? null,
           arrivalTime: draft.arrivalTime ?? null,
           courierAddress: draft.courierAddress ?? null,
+          courierContactPhone:
+            String(
+              draft.courierContactPhone || normalizedCourierContactPhone || ""
+            )
+              .trim()
+              .slice(0, 40) || null,
           comment: String(draft.comment || draft.orderComment || normalizedOrderComment || "").slice(0, 500),
           inpostData: draft.inpostData ?? {
             fullName: null,
@@ -5587,10 +5626,41 @@ if (pointBlob.includes("srodmiescie")) {
                         <div className="sectionCartTitle orderCommentTitle">
                           <div className="sectionCartLine" />
                           <div className="sectionCartText">
-                            {t("Комментарий к заказу", "Komentarz do zamówienia")}
+                            {t("Примечание", "Uwagi")}
                           </div>
                           <div className="sectionCartLine" />
                         </div>
+
+                        <label className="courierPhoneLabel" htmlFor="courier-contact-phone">
+                          {t("Контактный телефон", "Telefon kontaktowy")}
+                          <span className="courierPhoneRequired">*</span>
+                        </label>
+                        <input
+                          id="courier-contact-phone"
+                          type="tel"
+                          inputMode="tel"
+                          autoComplete="tel"
+                          className="courierPhoneInput"
+                          value={normalizedCourierContactPhone}
+                          maxLength={40}
+                          placeholder={t(
+                            "Обязательно: номер для связи с курьером",
+                            "Wymagane: numer do kontaktu z kurierem"
+                          )}
+                          onChange={(e) => {
+                            const nextPhone = sanitizePhone(e.target.value).slice(
+                              0,
+                              40
+                            );
+                            setCourierContactPhone(nextPhone);
+                            if (isGuestBrowser) {
+                              setGuestProfileForm((prev) => ({
+                                ...prev,
+                                phone: nextPhone,
+                              }));
+                            }
+                          }}
+                        />
 
                         <textarea
                           className="orderCommentInput"
@@ -5598,8 +5668,8 @@ if (pointBlob.includes("srodmiescie")) {
                           maxLength={500}
                           rows={4}
                           placeholder={t(
-                            "Комментарий может вмещать до 500 символов",
-                            "Komentarz może mieć do 500 znaków"
+                            "Комментарий к заказу (необязательно, до 500 символов)",
+                            "Komentarz do zamówienia (opcjonalnie, do 500 znaków)"
                           )}
                           onChange={(e) => setOrderComment(String(e.target.value || "").slice(0, 500))}
                         />
@@ -5615,14 +5685,22 @@ if (pointBlob.includes("srodmiescie")) {
                         <div className="sectionCartTitle orderCommentTitle">
                           <div className="sectionCartLine" />
                           <div className="sectionCartText">
-                            {t("Комментарий к заказу", "Komentarz do zamówienia")}
+                            {t("Примечание", "Uwagi")}
                           </div>
                           <div className="sectionCartLine" />
                         </div>
 
-                        <div className="orderCommentReadonly">
-                          {orderDetailsComment}
-                        </div>
+                        {orderDetailsCourierPhone ? (
+                          <div className="orderCommentReadonly">
+                            {t("Телефон", "Telefon")}: {orderDetailsCourierPhone}
+                          </div>
+                        ) : null}
+
+                        {orderDetailsComment ? (
+                          <div className="orderCommentReadonly">
+                            {orderDetailsComment}
+                          </div>
+                        ) : null}
                       </div>
                     )}
 
@@ -5716,6 +5794,20 @@ if (pointBlob.includes("srodmiescie")) {
                             showTelegramWarning(
                               t("⚠️ Не заполнены данные", "⚠️ Dane nie zostały uzupełnione"),
                               t("Для доставки курьером нужно заполнить адрес доставки.", "Aby skorzystać z dostawy kurierem, trzeba podać adres dostawy.")
+                            );
+                            return;
+                          }
+
+                          const phoneDigits = String(
+                            normalizedCourierContactPhone || ""
+                          ).replace(/\D/g, "");
+                          if (phoneDigits.length < 9) {
+                            showTelegramWarning(
+                              t("⚠️ Не заполнены данные", "⚠️ Dane nie zostały uzupełnione"),
+                              t(
+                                "Для доставки курьером нужно указать контактный номер телефона.",
+                                "Aby skorzystać z dostawy kurierem, trzeba podać kontaktowy numer telefonu."
+                              )
                             );
                             return;
                           }
@@ -5882,6 +5974,8 @@ if (pointBlob.includes("srodmiescie")) {
                                 arrivalTime,
                                 deliveryTimeWindow,
                                 comment: normalizedOrderComment,
+                                courierContactPhone:
+                                  normalizedCourierContactPhone || null,
                               }
                             );
                             syncData = {
@@ -5920,6 +6014,8 @@ if (pointBlob.includes("srodmiescie")) {
                               arrivalTime,
                               deliveryTimeWindow,
                               comment: normalizedOrderComment,
+                              courierContactPhone:
+                                normalizedCourierContactPhone || null,
                             }),
                           });
                           syncData = await syncRes.json().catch(() => ({}));
@@ -5945,6 +6041,17 @@ if (pointBlob.includes("srodmiescie")) {
                             showTelegramWarning(
                               t("⚠️ Не заполнены данные", "⚠️ Dane nie zostały uzupełnione"),
                               t("Для доставки курьером нужно заполнить адрес доставки.", "Aby skorzystać z dostawy kurierem, trzeba podać adres dostawy.")
+                            );
+                            return;
+                          }
+
+                          if (field === "courierContactPhone") {
+                            showTelegramWarning(
+                              t("⚠️ Не заполнены данные", "⚠️ Dane nie zostały uzupełnione"),
+                              t(
+                                "Для доставки курьером нужно указать контактный номер телефона.",
+                                "Aby skorzystać z dostawy kurierem, trzeba podać kontaktowy numer telefonu."
+                              )
                             );
                             return;
                           }
@@ -6060,6 +6167,17 @@ if (pointBlob.includes("srodmiescie")) {
                             showTelegramWarning(
                               t("⚠️ Не заполнены данные", "⚠️ Dane nie zostały uzupełnione"),
                               t("Для доставки курьером нужно заполнить адрес доставки.", "Aby skorzystać z dostawy kurierem, trzeba podać adres dostawy.")
+                            );
+                            return;
+                          }
+
+                          if (field === "courierContactPhone") {
+                            showTelegramWarning(
+                              t("⚠️ Не заполнены данные", "⚠️ Dane nie zostały uzupełnione"),
+                              t(
+                                "Для доставки курьером нужно указать контактный номер телефона.",
+                                "Aby skorzystać z dostawy kurierem, trzeba podać kontaktowy numer telefonu."
+                              )
                             );
                             return;
                           }

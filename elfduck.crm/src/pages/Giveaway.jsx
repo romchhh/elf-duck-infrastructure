@@ -1207,8 +1207,8 @@ export default function Giveaway() {
             </div>
             {!participants.length ? (
               <p className="mt-3 text-[12px] text-muted-2">
-                Пока никто не нажал «Участвовать» в миниапп и нет тестовых
-                записей.
+                Пока нет участников с заказами в розыгрыше (нужно ≥1
+                покупка после «Участвовать»).
               </p>
             ) : (
               <div className="mt-3 overflow-x-auto">
