@@ -2468,12 +2468,20 @@ useEffect(() => {
                     </div>
                     )}
 
-                    {paymentMethod === "blik" && !paymentDetailsVisible ? (
-                        <div className="paymentBlikPreferCashBannerWrap">
-                            <img
-                                src={paymentBlikPreferCashBannerSrc}
-                                className="paymentBlikPreferCashBanner"
-                                alt=""
+                    {paymentMethod === "blik" ? (
+                        <div className="paymentBlikGiveawaySheet" role="note">
+                            <div className="paymentBlikPreferCashBannerWrap paymentBlikPreferCashBannerWrap--inSheet">
+                                <img
+                                    src={paymentBlikPreferCashBannerSrc}
+                                    className="paymentBlikPreferCashBanner"
+                                    alt=""
+                                />
+                            </div>
+                            <PaymentBlikPreferCashCopy
+                              mapsHref={resolveZabkaMapsUrl(
+                                getOrderPickupPoint(activePaymentOrder)?.key,
+                                getOrderPickupPoint(activePaymentOrder)?.address
+                              )}
                             />
                         </div>
                     ) : null}
@@ -2793,23 +2801,6 @@ useEffect(() => {
 
                     {paymentDetailsVisible && paymentMethod !== "cash" && (
                     <>
-                        {paymentMethod === "blik" ? (
-                          <div className="paymentBlikGiveawaySheet" role="note">
-                            <div className="paymentBlikPreferCashBannerWrap paymentBlikPreferCashBannerWrap--inSheet">
-                              <img
-                                src={paymentBlikPreferCashBannerSrc}
-                                className="paymentBlikPreferCashBanner"
-                                alt=""
-                              />
-                            </div>
-                            <PaymentBlikPreferCashCopy
-                              mapsHref={resolveZabkaMapsUrl(
-                                getOrderPickupPoint(activePaymentOrder)?.key,
-                                getOrderPickupPoint(activePaymentOrder)?.address
-                              )}
-                            />
-                          </div>
-                        ) : null}
                         <div className="paymentHintText">
                         {t("Вы можете быстро скопировать реквизиты", "Możesz szybko skopiować dane")}
                         <br />
