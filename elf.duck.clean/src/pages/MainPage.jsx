@@ -23,6 +23,8 @@ import { hexToRgbTriplet } from "../lib/flavorGradients.js";
 import {
   isCartridgesCategory,
   isCompactCatalogDuck,
+  productMatchesCategoryKey,
+  resolveCatalogCategoryKey,
 } from "../lib/productCategories.js";
 import {
   orderProductsForTwoColumnGrid,
@@ -1729,7 +1731,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
   const location = useLocation();
   const initialCategoryFilter = location.state?.categoryFilter
     ? {
-        key: String(location.state.categoryFilter.key || "").trim(),
+        key: resolveCatalogCategoryKey(location.state.categoryFilter),
         title: getCategoryTitle(location.state.categoryFilter),
       }
     : null;
@@ -1829,7 +1831,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
       const nextFilter = location.state?.categoryFilter
         ? {
-            key: String(location.state.categoryFilter.key || "").trim(),
+            key: resolveCatalogCategoryKey(location.state.categoryFilter),
             title: getCategoryTitle(location.state.categoryFilter),
           }
         : null;
@@ -3230,9 +3232,8 @@ navigate("/cart");
 
   const visibleProducts = useMemo(() => {
     if (!activeCategoryFilter?.key) return products;
-    const filterKey = String(activeCategoryFilter.key || "").trim();
-    return products.filter(
-      (p) => String(p?.categoryKey || "").trim() === filterKey
+    return products.filter((p) =>
+      productMatchesCategoryKey(p, activeCategoryFilter.key)
     );
   }, [products, activeCategoryFilter?.key]);
 
@@ -3256,7 +3257,7 @@ navigate("/cart");
       });
     };
 
-    return products.filter(productMatchesQuery);
+    return visibleProducts.filter(productMatchesQuery);
     })();
 
     return orderProductsForTwoColumnGrid(baseList, 2);
@@ -4200,6 +4201,7 @@ navigate("/cart");
               className={`catalogButton ${catalogView === "all" ? "primary" : ""}`}
               onClick={() => {
                 haptic.heavy();
+                setActiveCategoryFilter(null);
                 switchCatalog("all");
               }}
             >
@@ -4297,8 +4299,10 @@ navigate("/cart");
                     className="categoryCard"
                     onClick={() => {
                       haptic.heavy();
+                      setCatalogSearchQuery("");
+                      const filterKey = resolveCatalogCategoryKey(c);
                       setActiveCategoryFilter({
-                        key: String(c.key || "").trim(),
+                        key: filterKey,
                         title: getCategoryTitle(c),
                       });
                       switchCatalog("all");
@@ -4361,14 +4365,28 @@ navigate("/cart");
             )}
 
 
-            {catalogView === "all" && (
+            {catalogView === "all" &&
+              (!productsLoading || products.length > 0) && (
               <div
                 key={`${catalogView}__${activeCategoryFilter?.key || "all"}`}
                 className={`categoriesGrid productsGrid ${!initialEnterPlayed ? "initial-enter" : ""}`}
               >
-                {displayedProducts.length === 0 && catalogSearchNorm && (
+                {displayedProducts.length === 0 && !productsLoading && (
                   <p className="catalogEmptyHint" role="status">
-                    {t("Ничего не найдено. Попробуйте другое название или вкус.", "Nic nie znaleziono. Spróbuj innej nazwy lub smaku.")}
+                    {catalogSearchNorm
+                      ? t(
+                          "Ничего не найдено. Попробуйте другое название или вкус.",
+                          "Nic nie znaleziono. Spróbuj innej nazwy lub smaku."
+                        )
+                      : activeCategoryFilter?.key
+                        ? t(
+                            "В этой категории пока нет товаров.",
+                            "W tej kategorii nie ma jeszcze produktów."
+                          )
+                        : t(
+                            "Товары скоро появятся.",
+                            "Produkty wkrótce się pojawią."
+                          )}
                   </p>
                 )}
                 {displayedProducts.map((product, idx) => (
