@@ -3737,13 +3737,15 @@ useEffect(() => {
                       </button>
                     </div>
 
-                    <button
-                      type="button"
-                      className="orderCardComplaintBtn"
-                      onClick={() => openComplaintForOrder(o)}
-                    >
-                      {t("Оставить жалобу", "Zgłoś skargę")}
-                    </button>
+                    <div className="orderCardComplaintRow">
+                      <button
+                        type="button"
+                        className="orderCardComplaintBtn"
+                        onClick={() => openComplaintForOrder(o)}
+                      >
+                        {t("Оставить жалобу", "Zgłoś skargę")}
+                      </button>
+                    </div>
                   </div>
 
                     {showNotifyBlock && (

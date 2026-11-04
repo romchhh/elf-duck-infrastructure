@@ -220,17 +220,43 @@
   cursor: default;
 }
 
-.orderCardComplaintBtn {
+.orderCardComplaintRow {
+  position: relative;
+  z-index: 2;
   width: 100%;
   margin-top: 10px;
-  border: 0;
+}
+
+.orderCardComplaintBtn {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 11px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-family: Unbounded-Regular, Muller, sans-serif;
   font-size: 10px;
-  background: rgba(217, 217, 217, 0.4);
-  color: #fff;
+  letter-spacing: 0.02em;
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.98);
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+.orderCardComplaintBtn:hover,
+.orderCardComplaintBtn:focus-visible {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+  outline: none;
 }
 
 .managerComplaintBtn {
@@ -252,7 +278,12 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.orderCardComplaintBtn:active,
+.orderCardComplaintBtn:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.26);
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
 .managerComplaintBtn:active {
   transform: scale(0.97);
 }
