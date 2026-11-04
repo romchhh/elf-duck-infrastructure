@@ -16,6 +16,16 @@ export function getHomeBanners(language = getCurrentLanguage()) {
   ];
 }
 
+/** Усі варіанти картинок каруселі (для Cache API / preload). */
+export function getAllHomeBannerAssetUrls() {
+  return [
+    referralBannerRu,
+    referralBannerPl,
+    assortmentRestockBanner,
+    deliveryBanner,
+  ];
+}
+
 export function isReferralBanner(src) {
   return src === referralBannerRu || src === referralBannerPl;
 }

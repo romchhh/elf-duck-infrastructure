@@ -9,12 +9,16 @@ import {
   applyPlatformPerfClasses,
   subscribePlatformPerf,
 } from "./utils/platformPerf.js";
+import { warmBannerImageCache } from "./utils/bannerImageCache.js";
 import "./styles/androidPerf.css";
 import "./styles/iosPerf.css";
 
 applyDesktopLayoutClass();
 applyPlatformPerfClasses();
 subscribePlatformPerf();
+
+/** Прогрів банерів каруселі в Cache API якомога раніше. */
+warmBannerImageCache();
 
 console.log("🚀 React загружается...");
 

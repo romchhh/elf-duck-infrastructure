@@ -34,7 +34,8 @@ import {
 
 } from "../utils/i18n";
 
-import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
+import { isReferralBanner } from "../utils/homeBanners";
+import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
 import buyIcon from "../assets/buyIcon.webp";
@@ -280,7 +281,7 @@ const FavoritePage = () => {
 
     /* ================= BANNER DOTS SECTION ================= */
 
-    const banners = getHomeBanners(language);
+    const { banners, sources: bannerSources } = useCachedHomeBanners(language);
 
     const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
@@ -716,18 +717,25 @@ const FavoritePage = () => {
             <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
               {banners.map((src, i) => (
                 <div
-                  key={i}
+                  key={`${bannerSources[i] || src}-${i}`}
                   className="bannerSlide"
                   onClick={() => {
                     haptic.heavy();
 
-                    if (isReferralBanner(src)) {
+                    if (isReferralBanner(bannerSources[i])) {
                         navigate("/referral");
                         return;
                     }
                   }}
                 >
-                  <img src={src} alt={`Banner ${i + 1}`} className="bannerImage" />
+                  <img
+                    src={src}
+                    alt={`Banner ${i + 1}`}
+                    className="bannerImage"
+                    loading="eager"
+                    decoding="async"
+                    fetchpriority={i === 0 ? "high" : "auto"}
+                  />
                 </div>
               ))}
             </div>

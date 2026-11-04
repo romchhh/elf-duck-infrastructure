@@ -31,7 +31,8 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   "https://elfduck-api.telebots.site";
 
-import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
+import { isReferralBanner } from "../utils/homeBanners";
+import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import { appPath } from "../utils/appMode";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
 import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
@@ -1931,7 +1932,7 @@ useEffect(() => {
 
     /* ================= BANNER DOTS SECTION ================= */
 
-    const banners = getHomeBanners(language);
+    const { banners, sources: bannerSources } = useCachedHomeBanners(language);
     const { carouselSlides: giveawaySlides } = useGiveawayPublic();
     const bannerSlideCount = banners.length + giveawaySlides.length;
 
@@ -3375,18 +3376,25 @@ useEffect(() => {
                             ))}
                             {banners.map((src, i) => (
                                 <div
-                                key={i}
+                                key={`${bannerSources[i] || src}-${i}`}
                                 className="bannerSlide"
                                 onClick={() => {
                                     haptic.heavy();
 
-                                    if (isReferralBanner(src)) {
+                                    if (isReferralBanner(bannerSources[i])) {
                                         navigate("/referral");
                                         return;
                                     }
                                 }}
                                 >
-                                <img src={src} alt={`Banner ${i + 1}`} className="bannerImage" />
+                                <img
+                                  src={src}
+                                  alt={`Banner ${i + 1}`}
+                                  className="bannerImage"
+                                  loading="eager"
+                                  decoding="async"
+                                  fetchpriority={i === 0 ? "high" : "auto"}
+                                />
                                 </div>
                             ))}
                             </div>

@@ -63,7 +63,8 @@ import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
 import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
-import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
+import { isReferralBanner } from "../utils/homeBanners";
+import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
 import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
 import categoriesIcon from "../assets/categoriesIcon.webp";
@@ -1675,7 +1676,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
 
   /* ================= BANNER DOTS SECTION ================= */
 
-  const banners = getHomeBanners();
+  const { banners, sources: bannerSources } = useCachedHomeBanners();
   const { carouselSlides: giveawaySlides } = useGiveawayPublic();
   const bannerSlideCount = banners.length + giveawaySlides.length;
   
@@ -1717,10 +1718,9 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     });
   };
 
-  const bannersVisible = !activeOrderLoading;
   useBannerAutoplay(bannerScrollRef, bannerSlideCount, activeBannerIndex, {
     intervalMs: 5000,
-    enabled: bannersVisible,
+    enabled: true,
   });
 
   /* ================= CATALOG VIEW STATE ================= */
@@ -4069,8 +4069,7 @@ navigate("/cart");
             </div>
           )}
 
-          {!activeOrderLoading && (
-            <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
+          <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
               <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
                 {giveawaySlides.map(({ key, preview }) => (
                   <div key={key} className="bannerSlide giveawayBannerSlide">
@@ -4082,12 +4081,12 @@ navigate("/cart");
                 ))}
                 {banners.map((src, i) => (
                   <div
-                    key={i}
+                    key={`${bannerSources[i] || src}-${i}`}
                     className="bannerSlide"
                     onClick={() => {
                       haptic.heavy();
 
-                      if (isReferralBanner(src)) {
+                      if (isReferralBanner(bannerSources[i])) {
                         navigate("/referral");
                         return;
                       }
@@ -4097,9 +4096,9 @@ navigate("/cart");
                       src={src}
                       alt={`Banner ${i + 1}`}
                       className="bannerImage"
-                      loading={i === 0 ? "eager" : "lazy"}
+                      loading="eager"
                       decoding="async"
-                      fetchpriority={i === 0 ? "high" : "low"}
+                      fetchpriority={i === 0 ? "high" : "auto"}
                     />
                   </div>
                 ))}
@@ -4121,7 +4120,6 @@ navigate("/cart");
                 ))}
               </div>
             </div>
-          )}
 
           {showActiveOrderArrivalBlock && (
               <div className="mainActiveOrderArrivalCard"

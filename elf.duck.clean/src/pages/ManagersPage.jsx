@@ -23,7 +23,8 @@ import logo from "../assets/logo3.webp";
 import zlotyIcon from "../assets/zlotyIcon.webp";
 import telegramIcon from "../assets/telegramIcon.webp";
 import supportIcon from "../assets/supportIcon.webp";
-import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
+import { isReferralBanner } from "../utils/homeBanners";
+import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import pickupIcon from "../assets/pickupIcon.webp";
 import deliveryIcon from "../assets/deliveryIcon.webp";
 import managerTgIcon from "../assets/managerTgIcon.webp";
@@ -59,7 +60,7 @@ const ManagersPage = () => {
   const [complaintOpen, setComplaintOpen] = useState(false);
   const [complaintPickupPoint, setComplaintPickupPoint] = useState(null);
 
-  const banners = getHomeBanners();
+  const { banners, sources: bannerSources } = useCachedHomeBanners();
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 
   useEffect(() => {
@@ -827,18 +828,25 @@ const ManagersPage = () => {
             <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
               {banners.map((src, i) => (
                 <div
-                  key={i}
+                  key={`${bannerSources[i] || src}-${i}`}
                   className="bannerSlide"
                   onClick={() => {
                     haptic.heavy();
 
-                    if (isReferralBanner(src)) {
+                    if (isReferralBanner(bannerSources[i])) {
                       navigate("/referral");
                       return;
                     }
                   }}
                 >
-                  <img src={src} alt={`Banner ${i + 1}`} className="bannerImage" />
+                  <img
+                    src={src}
+                    alt={`Banner ${i + 1}`}
+                    className="bannerImage"
+                    loading="eager"
+                    decoding="async"
+                    fetchpriority={i === 0 ? "high" : "auto"}
+                  />
                 </div>
               ))}
             </div>

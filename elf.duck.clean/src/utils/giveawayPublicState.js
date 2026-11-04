@@ -4,6 +4,8 @@ const API_URL =
   "http://localhost:3000";
 
 const CACHE_TTL_MS = 30_000;
+const SESSION_TTL_MS = 5 * 60_000;
+const SESSION_KEY = "elfduck_giveaway_current_v1";
 
 /** @type {{ data: object | null, fetchedAt: number }} */
 let cache = { data: null, fetchedAt: 0 };
@@ -16,6 +18,38 @@ function telegramHeaders() {
   return {
     "x-telegram-init-data": window?.Telegram?.WebApp?.initData || "",
   };
+}
+
+function readSessionCache() {
+  try {
+    if (typeof sessionStorage === "undefined") return null;
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.data?.ok) return null;
+    const at = Number(parsed.at || 0);
+    if (!at || Date.now() - at > SESSION_TTL_MS) return null;
+    return { data: parsed.data, fetchedAt: at };
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCache(data) {
+  try {
+    if (typeof sessionStorage === "undefined" || !data?.ok) return;
+    sessionStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ at: Date.now(), data })
+    );
+  } catch {
+    // quota / private mode
+  }
+}
+
+const sessionHit = readSessionCache();
+if (sessionHit) {
+  cache = sessionHit;
 }
 
 export function resolveGiveawayBannerVisible(data) {
@@ -37,6 +71,7 @@ export function getGiveawayCache() {
 export function setGiveawayCache(data) {
   if (!data?.ok) return;
   cache = { data, fetchedAt: Date.now() };
+  writeSessionCache(data);
   for (const listener of listeners) {
     listener(data);
   }

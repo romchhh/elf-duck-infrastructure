@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import giveawayBanner from "../assets/giveawayBanner.webp";
 import doneIcon from "../assets/doneIcon.webp";
 import { appPath } from "../utils/appMode.js";
 import { getCurrentLanguage, t } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
+import { getCachedGiveawayBannerSrc } from "../utils/bannerImageCache.js";
 import "../styles/GiveawayBanner.css";
 import GiveawayRulesContent from "./GiveawayRulesContent.jsx";
 
@@ -320,10 +320,12 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
         onClick={handleBannerActivate}
       >
         <img
-          src={giveawayBanner}
+          src={getCachedGiveawayBannerSrc()}
           alt=""
           className="giveawayBannerBg"
           draggable={false}
+          decoding="async"
+          fetchpriority="high"
         />
 
         <button
