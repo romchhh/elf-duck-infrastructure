@@ -1097,10 +1097,11 @@ if (!skipClientNotification) {
   }
 }
 
-export async function refreshManagerOrderMessage(order) {
+export async function refreshManagerOrderMessage(order, options = {}) {
   try {
     if (!bot || !order) return { ok: false, reason: "NO_BOT_OR_ORDER" };
-    
+
+    const forceRepost = options?.forceRepost === true;
 
     const point = await resolveOrderNotificationPoint(order);
     const chatId = String(order?.payment?.managerMessageChatId || point?.notificationChatId || "").trim();
@@ -1124,7 +1125,7 @@ export async function refreshManagerOrderMessage(order) {
       0
     );
 
-    if (!messageChatId || !messageId) {
+    if (!forceRepost && (!messageChatId || !messageId)) {
       return { ok: false, reason: "NO_MANAGER_MESSAGE" };
     }
 
@@ -1637,6 +1638,51 @@ export async function refreshManagerOrderMessage(order) {
       clientContact.contactUrl
     );
 
+    const publishFreshManagerOrderMessage = async () => {
+      const targetPoint =
+        point || (await resolveOrderNotificationPoint(order));
+      const fallbackChatId = String(
+        targetPoint?.notificationChatId ||
+          targetPoint?.ordersChatId ||
+          messageChatId ||
+          chatId ||
+          ""
+      ).trim();
+
+      if (!fallbackChatId) {
+        return { ok: false, reason: "NO_CHAT" };
+      }
+
+      const recreated = await bot.telegram.sendMessage(
+        fallbackChatId,
+        text,
+        {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+          reply_markup: replyMarkup,
+        }
+      );
+
+      order.managerMessageChatId = fallbackChatId;
+      order.managerMessageId = recreated.message_id;
+      order.payment = order.payment || {};
+      order.payment.managerMessageChatId = fallbackChatId;
+      order.payment.managerMessageId = String(recreated.message_id || "");
+
+      await order.save();
+
+      return {
+        ok: true,
+        chatId: fallbackChatId,
+        messageId: recreated.message_id,
+        reposted: true,
+      };
+    };
+
+    if (forceRepost) {
+      return publishFreshManagerOrderMessage();
+    }
+
     const clientUsername =
   normalizeTelegramUsername(
     clientContact.username || user?.username || ""
@@ -2111,27 +2157,7 @@ try {
     throw editErr;
   }
 
-  const recreated =
-    await bot.telegram.sendMessage(
-      fallbackChatId,
-      text,
-      {
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-        reply_markup: replyMarkup,
-      }
-    );
-
-  order.managerMessageChatId = fallbackChatId;
-  order.managerMessageId = recreated.message_id;
-
-  order.payment = order.payment || {};
-  order.payment.managerMessageChatId = fallbackChatId;
-  order.payment.managerMessageId = recreated.message_id;
-
-  await order.save();
-
-  return { ok: true };
+  return publishFreshManagerOrderMessage();
 }
 
       if (
@@ -2187,6 +2213,26 @@ try {
     console.error("refreshManagerOrderMessage error:", e);
     return { ok: false, reason: "EDIT_FAILED" };
   }
+}
+
+/** Нова картка замовлення в групі точки (@elfduck_store_bot), без редагування старого повідомлення. */
+export async function repostManagerOrderToGroup(orderRef) {
+  const raw = String(orderRef?._id || orderRef?.orderNo || orderRef || "").trim();
+  if (!raw) return { ok: false, reason: "NO_REF" };
+
+  let order = null;
+  if (orderRef?._id || /^[a-f0-9]{24}$/i.test(raw)) {
+    order = await Order.findById(orderRef?._id || raw);
+  }
+  if (!order) {
+    const orderNo = raw.replace(/^#/, "").toUpperCase();
+    order = await Order.findOne({
+      orderNo: new RegExp(`^${orderNo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i"),
+    });
+  }
+  if (!order) return { ok: false, reason: "NOT_FOUND", ref: raw };
+
+  return refreshManagerOrderMessage(order, { forceRepost: true });
 }
 
 export async function sendClientOrderCreatedInfo(order) {
