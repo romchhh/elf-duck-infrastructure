@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import giveawayBanner from "../assets/giveawayBanner.webp";
+import doneIcon from "../assets/doneIcon.webp";
 import { appPath } from "../utils/appMode.js";
 import { getCurrentLanguage, t } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
@@ -343,7 +344,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
               <span className="giveawayCtaLine giveawayCtaLine--joinedTop">
                 {t("Вы участвуете", "Bierzesz udział")}
                 <span className="giveawayCtaCheck" aria-hidden>
-                  ✔
+                  <img src={doneIcon} className="giveawayCtaCheckIcon" alt="" />
                 </span>
               </span>
               <span className="giveawayCtaLine">
@@ -364,7 +365,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
               className="giveawayJoinBtn giveawayWinnersBtn"
               onClick={openWinners}
             >
-              {t("Победители", "Zwycięzcy")}
+              {t("ПОБЕДИТЕЛИ", "ZWYCIĘZCY")}
             </button>
           ) : (
             <button

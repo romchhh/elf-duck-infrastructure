@@ -4,8 +4,6 @@
   aspect-ratio: 918 / 520;
   border-radius: inherit;
   overflow: hidden;
-  container-type: size;
-  container-name: giveaway-banner;
 }
 
 .giveawayBannerBg {
@@ -18,30 +16,26 @@
 
 .giveawayInfoBtn {
   position: absolute;
-  right: 4.2cqw;
-  bottom: 31cqh;
+  right: 3.8%;
+  bottom: 28%;
   z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 9.2cqw;
-  height: 9.2cqw;
-  min-width: 26px;
-  min-height: 26px;
-  max-width: 38px;
-  max-height: 38px;
+  width: clamp(34px, 10vw, 42px);
+  height: clamp(34px, 10vw, 42px);
   padding: 0;
-  border: 1.5px solid rgba(255, 225, 74, 0.95);
+  border: 2px solid rgba(255, 225, 74, 0.95);
   border-radius: 50%;
   background: rgba(8, 8, 10, 0.78);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
 .giveawayInfoBtnGlyph {
   font-family: Unbounded-Medium, Muller, sans-serif;
-  font-size: 3.6cqw;
+  font-size: clamp(15px, 4.2vw, 19px);
   font-weight: 800;
   font-style: italic;
   line-height: 1;
@@ -50,27 +44,26 @@
 
 .giveawayCtaSlot {
   position: absolute;
-  left: 4.8cqw;
-  bottom: 6.5cqh;
+  left: 4.2%;
+  bottom: 7%;
   z-index: 2;
-  max-width: 44cqw;
-  min-width: 0;
+  max-width: 58%;
 }
 
 .giveawayJoinBtn {
   border: 0;
   border-radius: 999px;
-  padding: 1.05cqw 2.15cqw;
+  padding: 11px 22px;
   font-family: Unbounded-Medium, Muller, sans-serif;
-  font-size: 1.52cqw;
+  font-size: clamp(12px, 3.4vw, 15px);
   font-weight: 800;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #0a0a0a;
   background: linear-gradient(180deg, #ffe95a 0%, #ffd012 100%);
   box-shadow:
-    0 0 10px rgba(255, 210, 40, 0.45),
-    0 5px 12px rgba(0, 0, 0, 0.35);
+    0 0 18px rgba(255, 210, 40, 0.55),
+    0 8px 18px rgba(0, 0, 0, 0.4);
   cursor: pointer;
   line-height: 1.15;
   white-space: nowrap;
@@ -87,27 +80,27 @@
 }
 
 .giveawayWinnersBtn {
-  max-width: 100%;
+  min-width: min(100%, 168px);
 }
 
 .giveawayCtaCard {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.35cqh;
+  gap: 3px;
   width: max-content;
   max-width: 100%;
-  padding: 0.95cqw 1.35cqw;
-  border-radius: 1.55cqw;
+  padding: 9px 14px;
+  border-radius: 16px;
   background: rgba(6, 6, 8, 0.92);
-  border: 1.5px solid #ffe14a;
+  border: 2px solid #ffe14a;
   box-shadow:
-    0 0 10px rgba(255, 210, 40, 0.22),
-    0 5px 12px rgba(0, 0, 0, 0.4);
+    0 0 14px rgba(255, 210, 40, 0.28),
+    0 8px 18px rgba(0, 0, 0, 0.45);
   font-family: Unbounded-Medium, Muller, sans-serif;
-  font-size: 1.2cqw;
+  font-size: clamp(10px, 2.9vw, 12px);
   font-weight: 700;
-  line-height: 1.22;
+  line-height: 1.25;
   letter-spacing: 0.01em;
 }
 
@@ -123,7 +116,7 @@
 .giveawayCtaLine--joinedTop {
   display: inline-flex;
   align-items: center;
-  gap: 0.45cqw;
+  gap: 6px;
 }
 
 .giveawayCtaCard--joined .giveawayCtaLine {
@@ -139,10 +132,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #8dffb0;
-  font-size: 1.05em;
-  line-height: 1;
+  width: clamp(14px, 3.8vw, 17px);
+  height: clamp(14px, 3.8vw, 17px);
   flex-shrink: 0;
+}
+
+.giveawayCtaCheckIcon {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
 }
 
 .giveawayCtaLine {
@@ -156,45 +155,10 @@
   color: #ffe14a;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-  font-size: 1.35cqw;
-  letter-spacing: 0.01em;
-  line-height: 1.18;
+  font-size: clamp(12px, 3.4vw, 14px);
+  letter-spacing: 0.02em;
+  line-height: 1.2;
   max-width: 100%;
-  white-space: nowrap;
-}
-
-@supports not (width: 1cqw) {
-  .giveawayCtaSlot {
-    left: 4.6%;
-    bottom: 6%;
-    max-width: 46%;
-  }
-
-  .giveawayInfoBtn {
-    right: 3.5%;
-    bottom: 30%;
-    width: 36px;
-    height: 36px;
-  }
-
-  .giveawayInfoBtnGlyph {
-    font-size: 16px;
-  }
-
-  .giveawayJoinBtn {
-    font-size: 13px;
-    padding: 8px 15px;
-  }
-
-  .giveawayCtaCard {
-    font-size: 11px;
-    padding: 8px 12px;
-    border-radius: 14px;
-  }
-
-  .giveawayCtaTime {
-    font-size: 12px;
-  }
 }
 
 .giveawayBannerRoot--loading {
