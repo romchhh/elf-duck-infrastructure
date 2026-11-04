@@ -338,7 +338,13 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
           </span>
         </button>
 
-        <div className="giveawayCtaSlot">
+        <div
+          className={`giveawayCtaSlot${
+            mode === "joined" || mode === "countdown"
+              ? " giveawayCtaSlot--compact"
+              : ""
+          }`}
+        >
           {mode === "joined" ? (
             <div className="giveawayCtaCard giveawayCtaCard--joined">
               <span className="giveawayCtaLine giveawayCtaLine--joinedTop">
