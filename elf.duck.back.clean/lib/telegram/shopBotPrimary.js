@@ -62,6 +62,11 @@ export function getPrimaryShopBotIndex() {
     if (username && username !== LEGACY_SHOP_BOT_USERNAME) return i;
   }
 
+  if (tokens.length === 1) return 0;
+
+  console.warn(
+    "[bot] Primary shop bot index unclear — set TELEGRAM_BOT_USERNAMES=elfduck_store_bot,elfduck_shop_bot in token order"
+  );
   return 0;
 }
 

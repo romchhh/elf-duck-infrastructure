@@ -1,15 +1,30 @@
+import { getTelegramBotTokens } from "./botTokens.js";
+
 const usernamesByIndex = [];
 
-function parseEnvUsernames() {
-  return String(
-    process.env.TELEGRAM_BOT_USERNAMES ||
-      process.env.TELEGRAM_BOT_USERNAME ||
-      process.env.TELEGRAM_PRIMARY_SHOP_BOT_USERNAME ||
-      "elfduck_store_bot"
-  )
+function splitUsernameList(raw) {
+  return String(raw || "")
     .split(/[,;\n]+/)
     .map((row) => String(row || "").replace(/^@/, "").trim())
     .filter(Boolean);
+}
+
+/** Лише TELEGRAM_BOT_USERNAMES — порядок = порядок TELEGRAM_BOT_TOKEN / _2. */
+export function getExplicitBotUsernamesFromEnv() {
+  const raw = process.env.TELEGRAM_BOT_USERNAMES;
+  if (!String(raw || "").trim()) return null;
+  return splitUsernameList(raw);
+}
+
+function parseEnvUsernames() {
+  const explicit = getExplicitBotUsernamesFromEnv();
+  if (explicit?.length) return explicit;
+
+  return splitUsernameList(
+    process.env.TELEGRAM_BOT_USERNAME ||
+      process.env.TELEGRAM_PRIMARY_SHOP_BOT_USERNAME ||
+      "elfduck_store_bot"
+  );
 }
 
 function primaryUsernameFromEnv() {
@@ -39,13 +54,19 @@ export function getShopBotUsername(index = 0) {
     Number.isFinite(idx) && idx >= 0 ? usernamesByIndex[idx] : "";
   if (fromCache) return fromCache;
 
-  const fromEnv = parseEnvUsernames();
-  if (Number.isFinite(idx) && idx >= 0 && fromEnv[idx]) {
-    return fromEnv[idx];
+  const explicit = getExplicitBotUsernamesFromEnv();
+  if (explicit && Number.isFinite(idx) && idx >= 0 && explicit[idx]) {
+    return explicit[idx];
   }
 
-  if (idx === 0) {
-    return primaryUsernameFromEnv();
+  const tokenCount = getTelegramBotTokens().length;
+  const fromEnv = parseEnvUsernames();
+  if (tokenCount === 1 && idx === 0) {
+    return fromEnv[0] || primaryUsernameFromEnv();
+  }
+
+  if (tokenCount === 1 && Number.isFinite(idx) && idx >= 0 && fromEnv[idx]) {
+    return fromEnv[idx];
   }
 
   return "";

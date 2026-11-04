@@ -21,7 +21,7 @@ import {
   getShopBotByIndex,
   sendViaUserShopBot,
 } from "./clientBotDelivery.js";
-import { setShopBotUsername, getShopBotUsername } from "./shopBotReferralLink.js";
+import { setShopBotUsername, getShopBotUsername, getExplicitBotUsernamesFromEnv } from "./shopBotReferralLink.js";
 import { getStartBannerUrl } from "../config/rootConfig.js";
 import {
   botStartErrorText,
@@ -47,6 +47,7 @@ import {
   getPrimaryShopBotIndex,
   getPrimaryShopBotUsername,
   isPrimaryShopBotIndex,
+  LEGACY_SHOP_BOT_USERNAME,
 } from "./shopBotPrimary.js";
 
 export async function bootstrapShopTelegramBots(app) {
@@ -138,6 +139,11 @@ const START_BANNER_URL = getStartBannerUrl();
 if (TG_BOT_TOKENS.length) {
   const __botInstances = TG_BOT_TOKENS.map((token) => new Telegraf(token));
   setUserBots(__botInstances);
+  if (TG_BOT_TOKENS.length > 1 && !getExplicitBotUsernamesFromEnv()?.length) {
+    console.warn(
+      "[bot] Два токени без TELEGRAM_BOT_USERNAMES — додайте в .env (порядок як токени): elfduck_store_bot,elfduck_shop_bot"
+    );
+  }
   console.log(
     `[bot] Configured ${userBots.length} user bot token(s) for polling`
   );
@@ -1043,10 +1049,13 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
       if (!chatType || chatType === "private") {
         return;
       }
-      const username = getPrimaryShopBotUsername();
+      const storeBot = getPrimaryShopBotUsername();
+      const legacyBot = LEGACY_SHOP_BOT_USERNAME;
       try {
         await ctx.answerCbQuery(
-          `Кнопки замовлень і статистики тепер у @${username}`,
+          `Кнопки на этом сообщении от @${legacyBot} больше не работают. ` +
+            `Нажимайте кнопки на новых карточках от @${storeBot} ` +
+            `(добавление @${storeBot} в группу не переносит старые сообщения).`,
           { show_alert: true }
         );
       } catch {}
@@ -3579,6 +3588,17 @@ return instructionMessage;
 
   refreshPrimaryShopBot();
 
+  const primaryIdx = getPrimaryShopBotIndex();
+  const primaryAt = String(getShopBotUsername(primaryIdx) || "")
+    .replace(/^@/, "")
+    .toLowerCase();
+  const primaryExpected = getPrimaryShopBotUsername();
+  if (primaryAt && primaryAt !== primaryExpected) {
+    console.error(
+      `[bot] Primary token mismatch: bot[${primaryIdx}]=@${primaryAt}, expected @${primaryExpected} — fix TELEGRAM_BOT_USERNAMES / token order`
+    );
+  }
+
   console.log(
     `[bot] Primary shop bot index=${getPrimaryShopBotIndex()} (@${getPrimaryShopBotUsername()}) — client DMs, order groups, stats groups`
   );
@@ -3622,6 +3642,7 @@ return instructionMessage;
 
           const me = await activeBot.telegram.getMe();
           setShopBotUsername(botIndex, me.username);
+          refreshPrimaryShopBot();
           const role = isPrimaryShopBotIndex(botIndex)
             ? "primary-client"
             : "legacy-migration";
