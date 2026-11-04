@@ -221,6 +221,26 @@ const broadcastCampaignSchema =
         type: [String],
         default: [],
       },
+
+      /** @elfduck_store_bot — бот, через який іде розсилка */
+      deliveryBotUsername: {
+        type: String,
+        default: "",
+      },
+
+      deliveryLog: {
+        type: [
+          {
+            telegramId: { type: String, default: "" },
+            username: { type: String, default: "" },
+            botUsername: { type: String, default: "" },
+            ok: { type: Boolean, default: false },
+            error: { type: String, default: "" },
+            at: { type: Date, default: null },
+          },
+        ],
+        default: [],
+      },
     },
     {
       timestamps: true,

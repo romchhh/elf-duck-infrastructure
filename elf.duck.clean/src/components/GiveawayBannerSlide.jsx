@@ -256,15 +256,17 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
 
       <div className="giveawayCtaSlot">
         {mode === "joined" ? (
-          <div className="giveawayCtaCard">
+          <div className="giveawayCtaCard giveawayCtaCard--joined">
             <span className="giveawayCtaLine">{t("Вы участвуете", "Bierzesz udział")}</span>
             <span className="giveawayCtaLine">
-              {t("Заказов", "Zamówień")} <b>{orderCount}</b>
+              {t("Ваших заказов:", "Twoich zamówień:")} <b>{orderCount}</b>
             </span>
           </div>
         ) : mode === "countdown" ? (
-          <div className="giveawayCtaCard">
-            <span className="giveawayCtaLine">{t("До старта", "Do startu")}</span>
+          <div className="giveawayCtaCard giveawayCtaCard--countdown">
+            <span className="giveawayCtaLine giveawayCtaLine--white">
+              {t("До старта", "Do startu")}
+            </span>
             <b className="giveawayCtaTime">{countdownLabel}</b>
           </div>
         ) : (

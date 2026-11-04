@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronRight, RefreshCw, Users } from "lucide-react";
-import { crmFetchJson } from "@/lib/crmFetch";
+import { crmFetchJson, CRM_API_URL } from "@/lib/crmFetch";
 import { compressImageForUpload } from "@/lib/compressImage";
 import { renderPushPreviewHtml, PUSH_PREVIEW_CLASS } from "@/lib/pushPreviewHtml";
 import { toast } from "@/components/ui/use-toast";
@@ -57,6 +57,12 @@ const DEFAULT_WINNER_MESSAGE_RU =
 
 const DEFAULT_WINNER_MESSAGE_PL =
   "Gratulacje! Wygrałeś w rubryce „ElfDuck rozdaje 2 000 zł”. Twoja wygrana {amount} zł została już dodana do salda cashbacku.";
+
+function defaultWinnerBannerUrl(lang) {
+  if (!CRM_API_URL) return "";
+  const suffix = lang === "pl" ? "pl" : "ru";
+  return `${CRM_API_URL}/giveaway-media/giveaway-winner-${suffix}.webp`;
+}
 
 const MESSAGE_FORMATS = [
   { label: "B", tip: "Жирный *текст*", before: "*", after: "*" },
@@ -987,7 +993,7 @@ export default function Giveaway() {
                   <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
                     {winnerMessageOpen
                       ? "{amount} подставится суммой приза. Форматирование как в рассылке."
-                      : `${messageDraft.photoUrl ? "С фото · " : "Без фото · "}${(messageDraft.ru || DEFAULT_WINNER_MESSAGE_RU).slice(0, 72)}…`}
+                      : `${messageDraft.photoUrl ? "Своё фото · " : "Стандартный баннер · "}${(messageDraft.ru || DEFAULT_WINNER_MESSAGE_RU).slice(0, 72)}…`}
                   </p>
                 </div>
                 <ChevronRight
@@ -1066,9 +1072,25 @@ export default function Giveaway() {
                 }}
               />
 
+              <div className="rounded-xl border border-border/70 bg-black/20 p-2">
+                <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-2">
+                  {messageDraft.photoUrl
+                    ? "Загруженное фото"
+                    : `Баннер по умолчанию (${messageLang === "pl" ? "PL" : "RU"})`}
+                </p>
+                <img
+                  src={
+                    messageDraft.photoUrl ||
+                    defaultWinnerBannerUrl(messageLang)
+                  }
+                  alt=""
+                  className="max-h-32 w-full rounded-lg object-contain"
+                />
+              </div>
+
               <div className="flex flex-wrap items-center gap-3">
                 <label className="cursor-pointer rounded-lg border border-border px-3 py-2 text-[12px]">
-                  {photoUploading ? "Загрузка…" : "Добавить фото"}
+                  {photoUploading ? "Загрузка…" : "Заменить фото"}
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
@@ -1082,28 +1104,23 @@ export default function Giveaway() {
                   />
                 </label>
                 {messageDraft.photoUrl ? (
-                  <>
-                    <img
-                      src={messageDraft.photoUrl}
-                      alt=""
-                      className="h-14 w-14 rounded-lg object-cover"
-                    />
-                    <button
-                      type="button"
-                      className="text-[12px] text-muted-2 hover:text-foreground"
-                      onClick={() =>
-                        setMessageDraft((current) => ({
-                          ...(current || {}),
-                          photoUrl: "",
-                          photoFileId: "",
-                        }))
-                      }
-                    >
-                      Убрать фото
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    className="text-[12px] text-muted-2 hover:text-foreground"
+                    onClick={() =>
+                      setMessageDraft((current) => ({
+                        ...(current || {}),
+                        photoUrl: "",
+                        photoFileId: "",
+                      }))
+                    }
+                  >
+                    Снова стандартный баннер
+                  </button>
                 ) : (
-                  <span className="text-[11px] text-muted-2">Без фото</span>
+                  <span className="text-[11px] text-muted-2">
+                    Свой файл перекроет RU/PL баннер
+                  </span>
                 )}
                 <button
                   type="button"

@@ -2,6 +2,7 @@ import User from "../../models/User.js";
 import { getTelegramBotTokens } from "./botTokens.js";
 import { bot, userBots } from "../server/botRegistry.js";
 import { getPrimaryShopBotIndex } from "./shopBotPrimary.js";
+import { getShopBotUsername } from "./shopBotReferralLink.js";
 
 export function getActiveUserBots() {
   if (userBots.length) return userBots;
@@ -79,6 +80,7 @@ export async function sendViaUserShopBot(telegramId, sendFn, options = {}) {
     return {
       result,
       botIndex,
+      botUsername: String(getShopBotUsername(botIndex) || "").replace(/^@/, ""),
       deliveredViaBots: 1,
     };
   } catch (e) {

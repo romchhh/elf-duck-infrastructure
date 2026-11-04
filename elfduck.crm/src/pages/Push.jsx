@@ -68,6 +68,7 @@ function CampaignMobileRow({
   r,
   onDelete,
   deleting,
+  onShowDelivery,
 }) {
   return (
     <div className="relative rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-3.5 pt-8">
@@ -118,15 +119,28 @@ function CampaignMobileRow({
               })(),
             },
             {
-              label: 'Разослано',
+              label: 'Аудитория',
               value: num(r.recipients),
             },
             {
-              label: 'Получено',
+              label: 'Доставлено',
               value: num(r.sent),
+            },
+            {
+              label: 'Ошибки',
+              value: num(r.failed),
             },
           ]}
         />
+
+        <button
+          type="button"
+          className="mt-2 text-[11px] text-[hsl(255_100%_75%)] hover:underline"
+          onClick={() => onShowDelivery?.(r)}
+        >
+          Лог доставки
+          {r.deliveryBotUsername ? ` · @${r.deliveryBotUsername}` : ''}
+        </button>
 
         <div className="mt-2.5">
           <MetricGrid
@@ -359,6 +373,8 @@ const [
     setCampPage,
   ] = useState(1);
 
+  const [deliveryDetailId, setDeliveryDetailId] = useState(null);
+
   const {
     sortKey: campSortKey,
     sortDirection: campSortDirection,
@@ -558,6 +574,27 @@ onSuccess: (data) => {
     campaignsData
       ?.campaigns ||
     [];
+
+  const {
+    data: deliveryDetailData,
+    isLoading: deliveryDetailLoading,
+  } = useQuery({
+    queryKey: ['crm-push-campaign-detail', deliveryDetailId],
+    queryFn: () =>
+      crmFetch(
+        `/crm/push/campaigns/${encodeURIComponent(deliveryDetailId)}`
+      ),
+    enabled: Boolean(deliveryDetailId),
+  });
+
+  const deliveryDetail =
+    deliveryDetailData?.campaign || null;
+
+  const openDeliveryLog = (row) => {
+    const id = String(row?.id || '').trim();
+    if (!id) return;
+    setDeliveryDetailId(id);
+  };
 
   /*
    * AUDIENCE PAYLOAD
@@ -1293,9 +1330,9 @@ const deleteTemplate =
 
           toast({
             title: 'Рассылка запущена',
-            description: `Получателей: ${
+            description: `Бот: @elfduck_store_bot · в аудитории: ${
               data?.campaign?.recipients ?? recipients
-            }. Форма очищена для следующей рассылки.`,
+            }. Итог — в «Лог доставки» в истории.`,
           });
         },
 
@@ -1720,12 +1757,21 @@ const confirmCreateTpl = () => {
 
       render: (r) => (
         <div className="min-w-0">
-          <div className="truncate font-medium text-foreground">
+          <button
+            type="button"
+            className="truncate text-left font-medium text-foreground hover:text-[hsl(255_100%_75%)]"
+            onClick={() => openDeliveryLog(r)}
+          >
             {r.name}
-          </div>
+          </button>
           {r.promo ? (
             <div className="truncate text-[11px] text-muted-2">
               {r.promo}
+            </div>
+          ) : null}
+          {r.deliveryBotUsername ? (
+            <div className="truncate text-[10px] text-muted-2">
+              @{r.deliveryBotUsername}
             </div>
           ) : null}
         </div>
@@ -1760,12 +1806,12 @@ const confirmCreateTpl = () => {
 
     {
       key: 'recipients',
-      header: 'Разослано',
+      header: 'Аудитория',
       align: 'right',
       render: (r) => (
         <span
           className="text-muted-foreground"
-          title="Размер аудитории при запуске"
+          title="Сколько человек в выборке при запуске"
         >
           {num(r.recipients)}
         </span>
@@ -1774,15 +1820,39 @@ const confirmCreateTpl = () => {
 
     {
       key: 'sent',
-      header: 'Получено',
+      header: 'Доставлено',
       align: 'right',
       render: (r) => (
         <span
-          className="text-muted-foreground"
+          className={
+            Number(r.sent || 0) > 0
+              ? 'text-emerald-300/90'
+              : 'text-muted-foreground'
+          }
           title="Успешно доставлено в Telegram"
         >
           {num(r.sent)}
         </span>
+      ),
+    },
+
+    {
+      key: 'failed',
+      header: 'Ошибки',
+      align: 'right',
+      render: (r) => (
+        <button
+          type="button"
+          className={
+            Number(r.failed || 0) > 0
+              ? 'text-red-300 hover:underline'
+              : 'text-muted-foreground'
+          }
+          title="Не доставлено — откройте лог"
+          onClick={() => openDeliveryLog(r)}
+        >
+          {num(r.failed)}
+        </button>
       ),
     },
 
@@ -2687,6 +2757,7 @@ const confirmCreateTpl = () => {
                 r={r}
                 onDelete={deleteCampaign}
                 deleting={deleteCampaignMutation.isPending}
+                onShowDelivery={openDeliveryLog}
               />
             )
           )}
@@ -2712,6 +2783,115 @@ const confirmCreateTpl = () => {
       </div>
 
       {/* AUTH MODAL */}
+
+      <Dialog
+        open={Boolean(deliveryDetailId)}
+        onOpenChange={(open) => {
+          if (!open) setDeliveryDetailId(null);
+        }}
+      >
+        <DialogContent className="max-w-lg w-[calc(100%-1.5rem)] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Лог доставки</DialogTitle>
+          </DialogHeader>
+
+          {deliveryDetailLoading ? (
+            <p className="text-[12px] text-muted-2">Загрузка…</p>
+          ) : deliveryDetail ? (
+            <div className="space-y-3 text-[12px]">
+              <p className="text-muted-2">
+                <span className="text-foreground">{deliveryDetail.name}</span>
+                {' · '}
+                бот{' '}
+                <span className="font-mono text-[hsl(255_100%_75%)]">
+                  @{deliveryDetail.deliveryBotUsername || 'elfduck_store_bot'}
+                </span>
+                {' · '}
+                доставлено {num(deliveryDetail.sent)} / аудитория{' '}
+                {num(deliveryDetail.recipients)}
+                {Number(deliveryDetail.failed || 0) > 0 ? (
+                  <span className="text-red-300">
+                    {' '}
+                    · ошибок {num(deliveryDetail.failed)}
+                  </span>
+                ) : null}
+              </p>
+
+              {Array.isArray(deliveryDetail.deliveryLog) &&
+              deliveryDetail.deliveryLog.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full text-left text-[11px]">
+                    <thead>
+                      <tr className="border-b border-border text-muted-2">
+                        <th className="px-2 py-1.5">Клиент</th>
+                        <th className="px-2 py-1.5">Бот</th>
+                        <th className="px-2 py-1.5">Итог</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deliveryDetail.deliveryLog.map((row, index) => (
+                        <tr
+                          key={`${row.telegramId}-${index}`}
+                          className="border-b border-border/60 align-top"
+                        >
+                          <td className="px-2 py-1.5">
+                            {row.username ? `@${row.username}` : row.telegramId}
+                            <div className="font-mono text-[10px] text-muted-2">
+                              {row.telegramId}
+                            </div>
+                          </td>
+                          <td className="px-2 py-1.5 font-mono">
+                            @{row.botUsername || deliveryDetail.deliveryBotUsername || 'elfduck_store_bot'}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {row.ok ? (
+                              <span className="text-emerald-300">OK</span>
+                            ) : (
+                              <span className="text-red-300">
+                                {row.error || 'ошибка'}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-muted-2">
+                    Подробный лог появится после деплоя обновления API. Старые
+                    кампании: смотрите lastErrors ниже.
+                  </p>
+                  {(deliveryDetail.lastErrors || []).map((line) => (
+                    <pre
+                      key={line}
+                      className="whitespace-pre-wrap rounded bg-black/30 p-2 text-[11px] text-red-200/90"
+                    >
+                      {line}
+                    </pre>
+                  ))}
+                  {!deliveryDetail.lastErrors?.length ? (
+                    <p className="text-muted-2">Нет записей об ошибках.</p>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-[12px] text-muted-2">Кампания не найдена.</p>
+          )}
+
+          <DialogFooter>
+            <button
+              type="button"
+              className="rounded-lg border border-border px-3 py-1.5 text-[12px]"
+              onClick={() => setDeliveryDetailId(null)}
+            >
+              Закрыть
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={

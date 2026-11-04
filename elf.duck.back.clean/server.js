@@ -15,6 +15,7 @@ import cors from "cors";
 import compression from "compression";
 import { getCatalogUploadDir } from "./lib/crm/catalogMediaStorage.js";
 import { getPushUploadDir } from "./lib/crm/pushMediaStorage.js";
+import { getGiveawayWinnerBannerDir } from "./lib/giveaway/winnerBannerMedia.js";
 
 import Product from "./models/Product.js";
 import Order from "./models/Order.js";
@@ -172,6 +173,16 @@ app.use(
   "/push-media",
   express.static(pushUploadDir, {
     maxAge: "7d",
+    fallthrough: true,
+  })
+);
+
+const giveawayBannerDir = getGiveawayWinnerBannerDir();
+fs.mkdirSync(giveawayBannerDir, { recursive: true });
+app.use(
+  "/giveaway-media",
+  express.static(giveawayBannerDir, {
+    maxAge: "30d",
     fallthrough: true,
   })
 );

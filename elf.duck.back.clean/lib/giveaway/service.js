@@ -21,6 +21,7 @@ import {
   GIVEAWAY_WINNER_MESSAGE_RU,
 } from "./config.js";
 import { pushMarkdownToHtml } from "../crm/pushMessageFormat.js";
+import { getDefaultGiveawayWinnerBannerUrl } from "./winnerBannerMedia.js";
 import { isBlikOrderPayment } from "./payment.js";
 import { recalcUserCashbackBalanceFromLedger } from "../cashback/manualAdmin.js";
 import {
@@ -818,8 +819,11 @@ export async function notifyGiveawayWinners(monthKey) {
     const html = pushMarkdownToHtml(
       String(template).replaceAll("{amount}", String(row.amountZl ?? ""))
     );
-    const photoFileId = settings.winnerPhotoFileId;
-    const photoUrl = settings.winnerPhotoUrl;
+    let photoFileId = settings.winnerPhotoFileId;
+    let photoUrl = settings.winnerPhotoUrl;
+    if (!photoFileId && !photoUrl) {
+      photoUrl = getDefaultGiveawayWinnerBannerUrl(lang);
+    }
 
     try {
       if (photoFileId || photoUrl) {

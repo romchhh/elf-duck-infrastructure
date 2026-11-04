@@ -13,9 +13,10 @@ import { getTelegramBotTokens } from "./botTokens.js";
 import { handleGiveawayTestAdminCommandSafe } from "./testShopBot.js";
 import {
   getActiveUserBots,
+  getShopBotByIndex,
   sendViaUserShopBot,
 } from "./clientBotDelivery.js";
-import { setShopBotUsername } from "./shopBotReferralLink.js";
+import { setShopBotUsername, getShopBotUsername } from "./shopBotReferralLink.js";
 import { getStartBannerUrl } from "../config/rootConfig.js";
 import {
   botStartErrorText,
@@ -141,7 +142,12 @@ if (TG_BOT_TOKENS.length) {
     buffer,
     contentType,
   }) => {
-    if (!bot) {
+    const uploadBot =
+      getShopBotByIndex(getPrimaryShopBotIndex()) ||
+      getActiveUserBots()[0] ||
+      bot;
+
+    if (!uploadBot) {
       throw new Error(
         "BOT_DISABLED"
       );
@@ -180,7 +186,7 @@ if (TG_BOT_TOKENS.length) {
           : "jpg";
 
     const sent =
-      await bot.telegram.sendPhoto(
+      await uploadBot.telegram.sendPhoto(
         adminChatId,
         {
           source: buffer,
@@ -210,7 +216,7 @@ if (TG_BOT_TOKENS.length) {
     }
 
     const fileLink =
-  await bot.telegram
+  await uploadBot.telegram
     .getFileLink(
       fileId
     );
@@ -221,7 +227,7 @@ const photoPreviewUrl =
   ).trim();
 
     try {
-      await bot.telegram
+      await uploadBot.telegram
         .deleteMessage(
           adminChatId,
           sent.message_id
@@ -233,6 +239,31 @@ return {
   photoPreviewUrl,
 };
   };
+
+function formatPushSendError(error) {
+  const description = String(
+    error?.response?.description ||
+      error?.message ||
+      error ||
+      "SEND_FAILED"
+  );
+  const lower = description.toLowerCase();
+
+  if (lower.includes("chat not found")) {
+    return `${description} — нет диалога с @elfduck_store_bot (клиент должен нажать Start в новом боте)`;
+  }
+  if (lower.includes("bot was blocked")) {
+    return `${description} — пользователь заблокировал бота`;
+  }
+  if (lower.includes("user is deactivated")) {
+    return `${description} — аккаунт Telegram деактивирован`;
+  }
+  if (lower.includes("wrong file identifier") || lower.includes("file_id")) {
+    return `${description} — file_id от другого бота, загрузите фото заново`;
+  }
+
+  return description;
+}
 
 app.locals.runCrmBroadcastCampaign =
   async ({
@@ -418,6 +449,38 @@ app.locals.runCrmBroadcastCampaign =
           )
         : [];
 
+    let deliveryLog = Array.isArray(campaign?.deliveryLog)
+      ? campaign.deliveryLog.slice(-500)
+      : [];
+
+    const primaryBotUsername = String(
+      getShopBotUsername(getPrimaryShopBotIndex()) ||
+        getPrimaryShopBotUsername()
+    )
+      .replace(/^@/, "")
+      .trim();
+
+    const usernameByTelegramId = new Map();
+    if (pendingTelegramIds.length > 0) {
+      const profileRows = await User.find({
+        telegramId: { $in: pendingTelegramIds },
+      })
+        .select({ telegramId: 1, username: 1 })
+        .lean();
+      for (const row of profileRows) {
+        const id = String(row?.telegramId || "").trim();
+        if (!id) continue;
+        usernameByTelegramId.set(
+          id,
+          String(row?.username || "").trim()
+        );
+      }
+    }
+
+    console.log(
+      `[CRM push] campaign=${safeCampaignId} bot=@${primaryBotUsername} pending=${pendingTelegramIds.length}`
+    );
+
     /*
      * Если всех уже обработали,
      * просто закрываем кампанию.
@@ -465,6 +528,9 @@ app.locals.runCrmBroadcastCampaign =
 
       finishedAt:
         null,
+
+      deliveryBotUsername:
+        primaryBotUsername,
     };
 
     /*
@@ -510,7 +576,7 @@ if (!messageText) {
 }
 
 // file_id надёжнее URL (CDN/прокси могут отвалиться mid-campaign)
-await sendViaUserShopBot(telegramId, (clientBot) => {
+const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
   if (photoFileId) {
     return clientBot.telegram.sendPhoto(telegramId, photoFileId, {
       caption: messageText,
@@ -536,6 +602,17 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
   });
 });
 
+              deliveryLog.push({
+                telegramId,
+                username: usernameByTelegramId.get(telegramId) || "",
+                botUsername:
+                  sendResult?.botUsername || primaryBotUsername,
+                ok: true,
+                error: "",
+                at: new Date(),
+              });
+              deliveryLog = deliveryLog.slice(-500);
+
               sentTelegramIds.add(
 
                 telegramId
@@ -547,13 +624,7 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
               failed += 1;
 
               const description =
-                String(
-                  error?.response
-                    ?.description ||
-                    error?.message ||
-                    error ||
-                    "SEND_FAILED"
-                );
+                formatPushSendError(error);
 
               const lower =
                 description
@@ -577,8 +648,22 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
                 blocked += 1;
               }
 
+              deliveryLog.push({
+                telegramId,
+                username: usernameByTelegramId.get(telegramId) || "",
+                botUsername: primaryBotUsername,
+                ok: false,
+                error: description,
+                at: new Date(),
+              });
+              deliveryLog = deliveryLog.slice(-500);
+
+              console.error(
+                `[CRM push] fail campaign=${safeCampaignId} tg=${telegramId} @${usernameByTelegramId.get(telegramId) || "?"} bot=@${primaryBotUsername} ${description}`
+              );
+
               lastErrors.push(
-                `${telegramId}: ${description}`
+                `${telegramId}${usernameByTelegramId.get(telegramId) ? ` @${usernameByTelegramId.get(telegramId)}` : ""}: ${description}`
               );
 
               lastErrors =
@@ -641,6 +726,11 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
                           sentTelegramIds
                         ),
 
+                      deliveryBotUsername:
+                        primaryBotUsername,
+
+                      deliveryLog,
+
                       lastErrors,
                     },
                   }
@@ -678,6 +768,16 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
                       processedTelegramIds
                     ),
 
+                  sentTelegramIds:
+                    Array.from(
+                      sentTelegramIds
+                    ),
+
+                  deliveryBotUsername:
+                    primaryBotUsername,
+
+                  deliveryLog,
+
                   lastErrors,
 
                   finishedAt:
@@ -685,6 +785,10 @@ await sendViaUserShopBot(telegramId, (clientBot) => {
                 },
               }
             );
+
+          console.log(
+            `[CRM push] done campaign=${safeCampaignId} bot=@${primaryBotUsername} sent=${sent} failed=${failed} blocked=${blocked}`
+          );
         } catch (error) {
           const description =
             String(

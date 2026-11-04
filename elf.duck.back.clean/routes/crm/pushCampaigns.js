@@ -315,6 +315,16 @@ router.get(
             createdAt:
               row?.createdAt ||
               null,
+
+            deliveryBotUsername: String(row?.deliveryBotUsername || "").trim(),
+
+            lastErrors: Array.isArray(row?.lastErrors)
+              ? row.lastErrors.slice(-10)
+              : [],
+
+            deliveryLogCount: Array.isArray(row?.deliveryLog)
+              ? row.deliveryLog.length
+              : 0,
           })),
       });
     } catch (error) {
@@ -332,6 +342,61 @@ router.get(
             error?.message ||
             "CRM_PUSH_CAMPAIGNS_FAILED",
         });
+    }
+  }
+);
+
+router.get(
+  "/push/campaigns/:id",
+  requireCrmPushAdmin,
+  async (req, res) => {
+    try {
+      const id = String(req.params?.id || "").trim();
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "CAMPAIGN_ID_REQUIRED",
+        });
+      }
+
+      const row = await BroadcastCampaign.findById(id).lean();
+      if (!row) {
+        return res.status(404).json({
+          ok: false,
+          error: "CAMPAIGN_NOT_FOUND",
+        });
+      }
+
+      return res.json({
+        ok: true,
+        campaign: {
+          id: String(row._id),
+          name: String(row.name || "Рассылка"),
+          status: String(row.status || "queued"),
+          audience: String(row.audience || "all"),
+          filters: row.filters || {},
+          message: row.message || {},
+          recipients: Number(row.recipients || 0),
+          processed: Number(row.processed || 0),
+          sent: Number(row.sent || 0),
+          failed: Number(row.failed || 0),
+          blocked: Number(row.blocked || 0),
+          deliveryBotUsername: String(row.deliveryBotUsername || "").trim(),
+          recipientTelegramIds: row.recipientTelegramIds || [],
+          sentTelegramIds: row.sentTelegramIds || [],
+          lastErrors: row.lastErrors || [],
+          deliveryLog: row.deliveryLog || [],
+          startedAt: row.startedAt || null,
+          finishedAt: row.finishedAt || null,
+          createdAt: row.createdAt || null,
+        },
+      });
+    } catch (error) {
+      console.error("GET /crm/push/campaigns/:id error:", error);
+      return res.status(500).json({
+        ok: false,
+        error: "CRM_PUSH_CAMPAIGN_LOAD_FAILED",
+      });
     }
   }
 );

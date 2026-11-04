@@ -49,7 +49,5 @@ async function downscaleWebp(name) {
   );
 }
 
-await pngToWebp("giveawayBannerPl");
-await pngToWebp("giveawayBannerUk");
 await downscaleWebp("deliveryBanner");
-console.log("Done.");
+console.log("Done. Winner banners: node scripts/import-giveaway-winner-banners.mjs");
