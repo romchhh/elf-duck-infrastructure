@@ -186,17 +186,24 @@ export async function submitCustomerComplaint({
       disable_web_page_preview: true,
     });
 
-    for (let i = 0; i < parsedImages.length; i += 1) {
-      const img = parsedImages[i];
+    if (parsedImages.length === 1) {
       await bot.telegram.sendPhoto(
         chatId,
-        { source: img.buffer, filename: img.filename },
-        {
-          caption:
-            parsedImages.length > 1
-              ? `Скрин ${i + 1}/${parsedImages.length}`
-              : "Скрин к жалобе",
-        }
+        { source: parsedImages[0].buffer, filename: parsedImages[0].filename },
+        { caption: "Скрин к жалобе" }
+      );
+    } else if (parsedImages.length > 1) {
+      await bot.telegram.sendMediaGroup(
+        chatId,
+        parsedImages.map((img, index) => ({
+          type: "photo",
+          media: { source: img.buffer, filename: img.filename },
+          ...(index === 0
+            ? {
+                caption: `Скрины к жалобе (${parsedImages.length})`,
+              }
+            : {}),
+        }))
       );
     }
 

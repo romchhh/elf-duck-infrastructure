@@ -82,13 +82,24 @@
 }
 
 .managerCardButtons {
-  width: fit-content;
+  width: min(100%, 268px);
   max-width: 75%;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+.managerCardButtons .managerActionBtn,
+.managerCardButtons .managerComplaintBtn {
+  width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+}
+
+.managerCardButtons .managerComplaintBtn {
+  justify-content: center;
 }
 
 .managerActionBtn {
