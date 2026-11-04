@@ -398,8 +398,12 @@ export async function getGiveawayPublicState({
   const phase = resolveGiveawayUiPhase(month);
   const joined = tg ? await isParticipant(monthKey, tg) : false;
   const myEntries = tg ? await countUserEntries(monthKey, tg) : 0;
-  /** «Участвуете» лише якщо є хоча б одне кваліфікуюче замовлення. */
-  const participated = joined && myEntries > 0;
+  /**
+   * participated = натиснув «Участвовать» (сумісність зі старим клієнтом).
+   * activelyParticipating = є ≥1 замовлення → банер «Вы участвуете».
+   */
+  const participated = joined;
+  const activelyParticipating = joined && myEntries > 0;
 
   const participationOpen = isGiveawayMonthLive(month);
   const showWinners =
@@ -455,6 +459,7 @@ export async function getGiveawayPublicState({
     },
     joined,
     participated,
+    activelyParticipating,
     myEntries,
     participantsCount,
     entriesCount,

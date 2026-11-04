@@ -1814,7 +1814,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     window.setTimeout(() => {
       document
         .getElementById("giveaway-catalog-target")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }, 100);
   }, []);
 
@@ -1841,7 +1841,7 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     const timer = window.setTimeout(() => {
       document.getElementById("giveaway-catalog-target")?.scrollIntoView({
         behavior: "smooth",
-        block: "start",
+        block: "nearest",
       });
     }, 180);
 

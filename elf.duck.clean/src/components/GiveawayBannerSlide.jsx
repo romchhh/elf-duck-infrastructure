@@ -169,25 +169,28 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
 
   const phase = state?.phase || "active";
   const myEntriesLive = Number(state?.myEntries || 0);
-  const joined = Boolean(state?.joined) || Boolean(state?.participated);
-  /** Активна участь — лише з ≥1 замовленням (не показуємо «Вы участвуете» при 0). */
-  const participated =
-    Boolean(state?.participated) && myEntriesLive > 0;
+  /** Натиснув «Участвовать» (joined або legacy participated). */
+  const hasJoined =
+    Boolean(state?.joined) || Boolean(state?.participated);
+  /** «Вы участвуете» — лише з ≥1 замовленням. */
+  const activelyParticipating =
+    myEntriesLive > 0 &&
+    (Boolean(state?.activelyParticipating) || hasJoined);
   const winners = Array.isArray(state?.winners) ? state.winners : [];
   const participationOpen = state
     ? Boolean(state.participationOpen) && phase === "active"
-    : false;
+    : true;
   const resultsReady =
     phase === "results" ||
     ["drawn", "credited", "notified"].includes(String(state?.status || ""));
 
   const liveMode = resultsReady
     ? "winners"
-    : !participationOpen
+    : state && !participationOpen
       ? "countdown"
-      : participated
+      : activelyParticipating
         ? "joined"
-        : joined
+        : hasJoined
           ? "needOrder"
           : "join";
   const mode = preview || liveMode;
@@ -222,15 +225,6 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
     const id = window.setInterval(() => setTick(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [mode]);
-
-  useEffect(() => {
-    if (!rulesOpen && !winnersOpen) return undefined;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, [rulesOpen, winnersOpen]);
 
   const rulesText =
     lang === "pl"
@@ -275,7 +269,9 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
           ]
         : [];
 
-  const participate = async () => {
+  const participate = async (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
     if (loading || preview) return;
     setLoading(true);
     try {
@@ -297,7 +293,8 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   const handleBannerActivate = (event) => {
     if (event.target.closest(".giveawayInfoBtn")) return;
     if (event.target.closest("button")) return;
-    if (preview) return;
+    if (event.target.closest(".giveawayCtaSlot")) return;
+    if (preview || loading) return;
     haptic.heavy();
     goToCatalog();
   };
@@ -346,6 +343,8 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
               ? " giveawayCtaSlot--compact"
               : ""
           }`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
         >
           {mode === "joined" ? (
             <div className="giveawayCtaCard giveawayCtaCard--joined">
@@ -371,6 +370,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
             <button
               type="button"
               className="giveawayJoinBtn giveawayWinnersBtn"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={openWinners}
             >
               {t("ПОБЕДИТЕЛИ", "ZWYCIĘZCY")}
@@ -379,7 +379,9 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
             <button
               type="button"
               className="giveawayJoinBtn"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 haptic.heavy();
                 goToCatalog();
@@ -392,12 +394,12 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
               type="button"
               className="giveawayJoinBtn"
               disabled={loading}
-              onClick={(e) => {
-                e.stopPropagation();
-                participate();
-              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={participate}
             >
-              {t("Участвовать", "Weź udział")}
+              {loading
+                ? t("Секунду…", "Chwila…")
+                : t("Участвовать", "Weź udział")}
             </button>
           )}
         </div>

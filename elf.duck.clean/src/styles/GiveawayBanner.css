@@ -48,6 +48,9 @@
   bottom: 7%;
   z-index: 2;
   max-width: 58%;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .giveawayCtaSlot--compact {
@@ -73,7 +76,10 @@
   line-height: 1.15;
   white-space: nowrap;
   max-width: 100%;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .giveawayJoinBtn:disabled {
@@ -219,7 +225,8 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
-  touch-action: manipulation;
+  touch-action: none;
+  overscroll-behavior: none;
 }
 
 .giveawayModal {
