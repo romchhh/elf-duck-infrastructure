@@ -69,6 +69,8 @@ import paymentBlikIMG from "../assets/paymentBlikIMG.webp";
 import paymentCryptoIMG from "../assets/paymentCryptoIMG.webp";
 import paymentUaCardIMG from "../assets/paymentUaCardIMG.webp";
 import paymentCashIMG from "../assets/paymentCashIMG.webp";
+import paymentBlikPreferCashPl from "../assets/paymentBlikPreferCash-pl.webp";
+import paymentBlikPreferCashRu from "../assets/paymentBlikPreferCash-ru.webp";
 
 import blikIcon from "../assets/blikIcon.webp";
 import cryptoIcon from "../assets/cryptoIcon.webp";
@@ -172,6 +174,9 @@ const isMokotowOrderPoint = (order = {}) => {
   if (key.includes("mokot")) return true;
   return getOrderVisualBlob(order).includes("mokot");
 };
+
+/** Мінімальна сума замовлення для промокоду (sync з PROMO_MIN_ORDER_TOTAL_ZL на API). */
+const PROMO_MIN_ORDER_TOTAL_ZL = 100;
 
 /** Wola + доставка (курʼєр / InPost) — без підказки Tytuł/Imię для BLIK. */
 const shouldHideBlikTransferHint = (order = {}) => {
@@ -335,6 +340,25 @@ useEffect(() => {
     const cashbackFullyPaid =
         Boolean(activePaymentOrder?.payment?.cashbackFullyPaid) ||
         (activeOrderTotal > 0 && cashbackRemainingToPayZl <= 0 && (cashbackAppliedZl > 0 || promoDiscountZl > 0));
+
+    const promoMeetsMinOrderTotal = activeOrderTotal >= PROMO_MIN_ORDER_TOTAL_ZL;
+    const promoMinOrderBlocked =
+        !promoCodeApplied &&
+        !cashbackFullyPaid &&
+        activeOrderTotal > 0 &&
+        !promoMeetsMinOrderTotal;
+    const promoMinProgressPct = promoMeetsMinOrderTotal
+        ? 100
+        : Math.min(
+              100,
+              Math.max(
+                  0,
+                  Math.round((activeOrderTotal / PROMO_MIN_ORDER_TOTAL_ZL) * 100)
+              )
+          );
+    const promoRemainingForMinZl = roundMoney(
+        Math.max(0, PROMO_MIN_ORDER_TOTAL_ZL - activeOrderTotal)
+    );
 
 
     const canUseCashback =
@@ -577,12 +601,12 @@ useEffect(() => {
             return;
         }
 
-        if (Number(activeOrderTotal || 0) < 100) {
+        if (Number(activeOrderTotal || 0) < PROMO_MIN_ORDER_TOTAL_ZL) {
             setPaymentPromoHint({
                 type: "error",
                 message: t(
-                    "Промокод действует только для заказов от 100 zł.",
-                    "Kod promocyjny działa tylko dla zamówień od 100 zł."
+                    `Промокод действует только для заказов от ${PROMO_MIN_ORDER_TOTAL_ZL} zł.`,
+                    `Kod promocyjny działa tylko dla zamówień od ${PROMO_MIN_ORDER_TOTAL_ZL} zł.`
                 ),
             });
             return;
@@ -640,8 +664,8 @@ useEffect(() => {
                                   )
                                 : errorCode === "PROMO_MIN_ORDER_TOTAL"
                                   ? t(
-                                        "Промокод действует только для заказов от 100 zł.",
-                                        "Kod promocyjny działa tylko dla zamówień od 100 zł."
+                                        `Промокод действует только для заказов от ${PROMO_MIN_ORDER_TOTAL_ZL} zł.`,
+                                        `Kod promocyjny działa tylko dla zamówień od ${PROMO_MIN_ORDER_TOTAL_ZL} zł.`
                                     )
                                   : errorCode === "ORDER_ALREADY_FULLY_COVERED"
                                   ? t(
@@ -701,6 +725,10 @@ useEffect(() => {
     const togglePaymentPromoOpen = () => {
         if (promoCodeApplied && promoDiscountZl > 0) return;
         if (cashbackFullyPaid) return;
+        if (promoMinOrderBlocked) {
+            haptic.light();
+            return;
+        }
         haptic.light();
         setPaymentPromoOpen((prev) => {
             const next = !prev;
@@ -837,6 +865,9 @@ useEffect(() => {
             : paymentMethod === "cash"
             ? t("Наличные", "Gotówka")
             : t("Выберите способ оплаты", "Wybierz metodę płatności");
+
+    const paymentBlikPreferCashBannerSrc =
+        lang === "pl" ? paymentBlikPreferCashPl : paymentBlikPreferCashRu;
 
     const paymentThemeImmediate =
     paymentMethod === "blik"
@@ -2431,6 +2462,14 @@ useEffect(() => {
                     </div>
                     )}
 
+                    {paymentMethod === "blik" && !paymentDetailsVisible ? (
+                        <img
+                            src={paymentBlikPreferCashBannerSrc}
+                            className="paymentBlikPreferCashBanner"
+                            alt=""
+                        />
+                    ) : null}
+
                     <button
                     type="button"
                     className={`checkoutActionBtn paymentPrimaryBtn ${paymentMethod ? "active" : ""}`}
@@ -2481,11 +2520,12 @@ useEffect(() => {
                                 promoCodeApplied && promoDiscountZl > 0
                                     ? "is-applied"
                                     : ""
-                            } ${paymentPromoOpen ? "is-open" : ""}`}
+                            } ${paymentPromoOpen ? "is-open" : ""} ${
+                                promoMinOrderBlocked ? "is-below-min" : ""
+                            }`}
                             disabled={
                                 Boolean(promoCodeApplied && promoDiscountZl > 0) ||
-                                cashbackFullyPaid ||
-                                Number(activeOrderTotal || 0) < 100
+                                cashbackFullyPaid
                             }
                             aria-expanded={
                                 promoCodeApplied && promoDiscountZl > 0
@@ -2515,6 +2555,10 @@ useEffect(() => {
                                     <span className="paymentCashbackValue paymentPromoAppliedValue">
                                         {promoCodeApplied} −{formatMoney(promoDiscountZl)}
                                     </span>
+                                ) : promoMinOrderBlocked ? (
+                                    <span className="paymentPromoMinPct">
+                                        {promoMinProgressPct}%
+                                    </span>
                                 ) : (
                                     <span
                                         className={`paymentPromoChevron ${
@@ -2525,6 +2569,43 @@ useEffect(() => {
                                 )}
                             </span>
                         </button>
+
+                        {promoMinOrderBlocked ? (
+                            <div className="paymentPromoMinGate" role="status">
+                                <p className="paymentPromoMinGateTitle">
+                                    {t(
+                                        `Промокод доступен от ${PROMO_MIN_ORDER_TOTAL_ZL} zł`,
+                                        `Kod promocyjny od ${PROMO_MIN_ORDER_TOTAL_ZL} zł`
+                                    )}
+                                </p>
+                                <div
+                                    className="paymentPromoMinProgressTrack"
+                                    aria-valuemin={0}
+                                    aria-valuemax={PROMO_MIN_ORDER_TOTAL_ZL}
+                                    aria-valuenow={activeOrderTotal}
+                                    role="progressbar"
+                                >
+                                    <div
+                                        className="paymentPromoMinProgressFill"
+                                        style={{ width: `${promoMinProgressPct}%` }}
+                                    />
+                                </div>
+                                <p className="paymentPromoMinGateMeta">
+                                    <span>
+                                        {formatMoney(activeOrderTotal)} /{" "}
+                                        {PROMO_MIN_ORDER_TOTAL_ZL} zł
+                                    </span>
+                                    {promoRemainingForMinZl > 0 ? (
+                                        <span className="paymentPromoMinGateRemain">
+                                            {t(
+                                                `ещё ${formatMoney(promoRemainingForMinZl)} zł до промокода`,
+                                                `jeszcze ${formatMoney(promoRemainingForMinZl)} zł do kodu`
+                                            )}
+                                        </span>
+                                    ) : null}
+                                </p>
+                            </div>
+                        ) : null}
 
                         {promoCodeApplied && promoDiscountZl > 0 ? null : paymentPromoOpen ? (
                             <div className="paymentPromoExpand">
@@ -2699,6 +2780,11 @@ useEffect(() => {
                     <>
                         {paymentMethod === "blik" ? (
                           <div className="paymentBlikGiveawaySheet" role="note">
+                            <img
+                              src={paymentBlikPreferCashBannerSrc}
+                              className="paymentBlikPreferCashBanner paymentBlikPreferCashBanner--inSheet"
+                              alt=""
+                            />
                             <p className="paymentBlikGiveawayText">
                               {t(
                                 `Будем вам очень благодарны, если вы выберете оплату наличными 🙏
