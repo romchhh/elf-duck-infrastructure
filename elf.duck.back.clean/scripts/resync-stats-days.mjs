@@ -76,14 +76,28 @@ await mongoose.connect(process.env.MONGODB_URI);
 
 let sendDailyPointStats = null;
 if (sendTelegram) {
-  const token = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
-  if (!token) {
-    console.error("TELEGRAM_BOT_TOKEN required for --telegram");
+  const { Telegraf } = await import("telegraf");
+  const { getTelegramBotTokens } = await import("../lib/telegram/botTokens.js");
+  const { setShopBotUsername } = await import("../lib/telegram/shopBotReferralLink.js");
+  const { setUserBots, refreshPrimaryShopBot } = await import(
+    "../lib/server/botRegistry.js"
+  );
+  const tokens = getTelegramBotTokens();
+  if (!tokens.length) {
+    console.error("TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKENS) required for --telegram");
     process.exit(1);
   }
-  const { Telegraf } = await import("telegraf");
-  const { setUserBots } = await import("../lib/server/botRegistry.js");
-  setUserBots([new Telegraf(token)]);
+  const botInstances = tokens.map((token) => new Telegraf(token));
+  setUserBots(botInstances);
+  await Promise.all(
+    botInstances.map(async (instance, botIndex) => {
+      try {
+        const me = await instance.telegram.getMe();
+        setShopBotUsername(botIndex, me?.username);
+      } catch {}
+    })
+  );
+  refreshPrimaryShopBot();
   sendDailyPointStats = (
     await import("../lib/server/helpers/chunk10.js")
   ).sendDailyPointStats;

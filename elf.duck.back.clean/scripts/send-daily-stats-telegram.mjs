@@ -24,7 +24,9 @@ dotenv.config({ path: path.join(backendRoot, ".env") });
 import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import PickupPoint from "../models/PickupPoint.js";
-import { setUserBots } from "../lib/server/botRegistry.js";
+import { setUserBots, refreshPrimaryShopBot } from "../lib/server/botRegistry.js";
+import { getTelegramBotTokens } from "../lib/telegram/botTokens.js";
+import { setShopBotUsername } from "../lib/telegram/shopBotReferralLink.js";
 import { releaseDailyStatsDispatch } from "../lib/server/dailyStatsDedupe.js";
 import {
   getOrderPointMatch,
@@ -63,13 +65,24 @@ if (!pointKey || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
   process.exit(1);
 }
 
-const token = String(process.env.TELEGRAM_BOT_TOKEN || "").trim();
-if (!token) {
-  console.error("TELEGRAM_BOT_TOKEN is missing");
+const tokens = getTelegramBotTokens();
+if (!tokens.length) {
+  console.error("TELEGRAM_BOT_TOKEN (or TELEGRAM_BOT_TOKENS) is missing");
   process.exit(1);
 }
 
-setUserBots([new Telegraf(token)]);
+const botInstances = tokens.map((token) => new Telegraf(token));
+setUserBots(botInstances);
+
+await Promise.all(
+  botInstances.map(async (instance, botIndex) => {
+    try {
+      const me = await instance.telegram.getMe();
+      setShopBotUsername(botIndex, me?.username);
+    } catch {}
+  })
+);
+refreshPrimaryShopBot();
 
 const { sendDailyPointStats } = await import("../lib/server/helpers/chunk10.js");
 

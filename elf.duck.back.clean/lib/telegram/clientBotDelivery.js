@@ -19,6 +19,11 @@ export function getShopBotByIndex(index) {
   return bots[0];
 }
 
+/** Primary bot для груп замовлень, статистики та інших операцій у Telegram-групах. */
+export function getGroupOperationsBot() {
+  return getShopBotByIndex(getPrimaryShopBotIndex());
+}
+
 /** Лише primary (@elfduck_store_bot) — для клієнтських повідомлень. */
 export function getClientDeliveryBots() {
   const bots = getActiveUserBots();

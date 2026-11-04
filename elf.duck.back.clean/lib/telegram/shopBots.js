@@ -8,7 +8,12 @@ import Cart from "../../models/Cart.js";
 import Order from "../../models/Order.js";
 import BroadcastCampaign from "../../models/BroadcastCampaign.js";
 import { getServerContext } from "../server/context.js";
-import { setUserBots, bot, userBots } from "../server/botRegistry.js";
+import {
+  setUserBots,
+  refreshPrimaryShopBot,
+  bot,
+  userBots,
+} from "../server/botRegistry.js";
 import { getTelegramBotTokens } from "./botTokens.js";
 import { handleGiveawayTestAdminCommandSafe } from "./testShopBot.js";
 import {
@@ -1030,7 +1035,24 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
       }
     };
 
-    // Особисті чати старого бота → «переїхали». Групи замовлень обробляють кнопки далі.
+    // Групи замовлень/статистики — лише @elfduck_store_bot; старі inline-кнопки → підказка.
+    activeBot.on("callback_query", async (ctx) => {
+      const chatType = String(
+        ctx.callbackQuery?.message?.chat?.type || ""
+      ).trim();
+      if (!chatType || chatType === "private") {
+        return;
+      }
+      const username = getPrimaryShopBotUsername();
+      try {
+        await ctx.answerCbQuery(
+          `Кнопки замовлень і статистики тепер у @${username}`,
+          { show_alert: true }
+        );
+      } catch {}
+    });
+
+    // Особисті чати старого бота → «переїхали».
     activeBot.use(async (ctx, next) => {
       const chatType = String(
         ctx.chat?.type || ctx.callbackQuery?.message?.chat?.type || ""
@@ -1049,8 +1071,9 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
   if (!isPrimaryShopBotIndex(shopBotIndex)) {
     registerLegacyShopBotMovedHandlers(activeBot);
     console.log(
-      `[bot] Legacy shop bot index=${shopBotIndex} → private chats show migration notice; group order buttons stay active (primary=@${getPrimaryShopBotUsername()})`
+      `[bot] Legacy shop bot index=${shopBotIndex} → private chats only (groups/orders/stats → @${getPrimaryShopBotUsername()})`
     );
+    return;
   }
 
   activeBot.use(handleManagerClientMessageText);
@@ -3554,8 +3577,10 @@ return instructionMessage;
     })
   );
 
+  refreshPrimaryShopBot();
+
   console.log(
-    `[bot] Primary client bot index=${getPrimaryShopBotIndex()} (@${getPrimaryShopBotUsername()})`
+    `[bot] Primary shop bot index=${getPrimaryShopBotIndex()} (@${getPrimaryShopBotUsername()}) — client DMs, order groups, stats groups`
   );
 
   userBots.forEach((activeBot, botIndex) => {

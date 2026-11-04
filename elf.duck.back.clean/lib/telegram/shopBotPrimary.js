@@ -1,7 +1,7 @@
 import { getTelegramBotTokens } from "./botTokens.js";
 import { getShopBotUsername } from "./shopBotReferralLink.js";
 
-/** Новий основний бот магазину — усі клієнтські повідомлення лише з нього. */
+/** Новий основний бот магазину — клієнтські DM, групи замовлень і статистики. */
 export const DEFAULT_PRIMARY_SHOP_BOT_USERNAME = "elfduck_store_bot";
 /** Старий бот: лише текст «переїхали» і лінк на store. */
 export const LEGACY_SHOP_BOT_USERNAME = "elfduck_shop_bot";
