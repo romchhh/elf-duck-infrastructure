@@ -10,7 +10,8 @@
  * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --dry-run
  * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --day 2026-11-04 --skip-delivered --apply
  * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --skip-order ED-XXXXXX --apply
- * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --extra-msg -1003271120190:2091,-1003271120190:2077 --apply
+ * docker compose exec api node scripts/refresh-delivery-group-cards.mjs --day 2026-11-04 --reset-today --apply
+ *   (видалити діапазон msg id у групі + усі картки за день заново, store+legacy)
  */
 import dotenv from "dotenv";
 import path from "path";
@@ -31,7 +32,6 @@ import { setUserBots, refreshPrimaryShopBot } from "../lib/server/botRegistry.js
 import {
   collectManagerTelegramMessageRefs,
   deleteGroupMessageWithAllShopBots,
-  deleteOrderManagerTelegramCards,
 } from "../lib/telegram/deleteGroupMessageWithShopBots.js";
 import { getTelegramBotTokens } from "../lib/telegram/botTokens.js";
 import { setShopBotUsername, getShopBotUsername } from "../lib/telegram/shopBotReferralLink.js";
@@ -46,9 +46,11 @@ function arg(name) {
 
 const dryRun = args.includes("--dry-run");
 const apply = args.includes("--apply");
-const skipDelivered = args.includes("--skip-delivered");
+const resetToday = args.includes("--reset-today");
+const skipDelivered = args.includes("--skip-delivered") && !resetToday;
 const dayKey = arg("--day") || getWarsawDayKey(new Date());
 const pauseMs = Number(arg("--pause-ms") || 1500) || 1500;
+const purgePadding = Number(arg("--purge-padding") || (resetToday ? 30 : 0)) || 0;
 
 const skipOrderNos = new Set();
 for (let i = 0; i < args.length; i += 1) {
@@ -91,6 +93,47 @@ const extraDeleteRefs = parseExtraMessageRefs(arg("--extra-msg"));
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function buildChatMessageIdRanges(orderList, padding = 0) {
+  const byChat = new Map();
+  for (const order of orderList) {
+    for (const ref of collectManagerTelegramMessageRefs(order)) {
+      const list = byChat.get(ref.chatId) || [];
+      list.push(ref.messageId);
+      byChat.set(ref.chatId, list);
+    }
+  }
+
+  const ranges = [];
+  for (const [chatId, ids] of byChat.entries()) {
+    if (!ids.length) continue;
+    const minId = Math.min(...ids);
+    const maxId = Math.max(...ids);
+    const from = Math.max(1, minId - padding);
+    const to = maxId + padding;
+    ranges.push({ chatId, from, to, knownIds: [...new Set(ids)].sort((a, b) => a - b) });
+  }
+  return ranges;
+}
+
+async function purgeChatMessageIdRange(chatId, from, to, options = {}) {
+  const delayMs = Number(options.delayMs || 80) || 80;
+  let deleted = 0;
+  let attempts = 0;
+  const deletedIds = [];
+
+  for (let messageId = from; messageId <= to; messageId += 1) {
+    attempts += 1;
+    const result = await deleteGroupMessageWithAllShopBots(chatId, messageId);
+    if (result.deleted) {
+      deleted += 1;
+      deletedIds.push(messageId);
+    }
+    if (delayMs > 0) await sleep(delayMs);
+  }
+
+  return { chatId, from, to, attempts, deleted, deletedIds };
 }
 
 const tokens = getTelegramBotTokens();
@@ -164,7 +207,9 @@ for (const order of orders) {
 console.log({
   mode: dryRun ? "dry-run" : "apply",
   dayKey,
+  resetToday,
   skipDelivered,
+  purgePadding: resetToday ? purgePadding : 0,
   skipOrderNos: [...skipOrderNos],
   primaryBot: apply ? `@${getPrimaryShopBotUsername()}` : undefined,
   primaryIndex: apply ? getPrimaryShopBotIndex() : undefined,
@@ -183,16 +228,36 @@ for (let i = 0; i < plan.length; i += 1) {
   );
 }
 
+const purgeRanges = resetToday ? buildChatMessageIdRanges(orders, purgePadding) : [];
+if (purgeRanges.length) {
+  console.log("\nPurge ranges (--reset-today, both bots try each id):");
+  for (const range of purgeRanges) {
+    const span = range.to - range.from + 1;
+    console.log(
+      `  chat ${range.chatId} msg ${range.from}…${range.to} (${span} ids, known in mongo: ${range.knownIds.join(", ")})`
+    );
+  }
+}
+
 if (dryRun) {
   console.log(
-    "\nДублікаты старых repost в группе Mongo не знает — только последний message id. Лишние сообщения удалите вручную в группе.\n" +
-      "Запуск: --skip-delivered (оставить доставленные) + --apply"
+    "\nЗапуск на проде:\n" +
+      `  docker compose exec api node scripts/refresh-delivery-group-cards.mjs --day ${dayKey} --reset-today --apply`
   );
   await mongoose.disconnect();
   process.exit(0);
 }
 
 const { repostManagerOrderToGroup } = await import("../lib/server/helpers/chunk11.js");
+
+if (resetToday && purgeRanges.length) {
+  console.log("\n=== PURGE group cards ===");
+  for (const range of purgeRanges) {
+    const stats = await purgeChatMessageIdRange(range.chatId, range.from, range.to);
+    console.log("purged", stats);
+  }
+  await sleep(2000);
+}
 
 if (extraDeleteRefs.length) {
   console.log("\nExtra delete refs (--extra-msg):");
@@ -205,6 +270,7 @@ if (extraDeleteRefs.length) {
   }
 }
 
+console.log("\n=== REPOST orders (createdAt) ===");
 for (const row of plan) {
   if (!row.action.includes("refresh")) continue;
 
