@@ -77,11 +77,44 @@ export function getWebAppBaseUrl() {
 }
 
 /**
+ * Назви шаблонів у CRM (PL · …, PL Oferta …) — не текст для клієнта в Telegram.
+ */
+export function isInternalCrmPushTitle(title) {
+  const t = String(title || "").trim();
+  if (!t) return false;
+  if (/^(PL|RU)\s*[·•\-–—]\s/i.test(t)) return true;
+  if (/^PL\s+(Oferta|Nowi|Ofer)/i.test(t)) return true;
+  if (/^PL\s+[Оо]фер/i.test(t)) return true;
+  return false;
+}
+
+export function pushTitleForTelegram(message = {}) {
+  const title = String(message?.title || "").trim();
+  return isInternalCrmPushTitle(title) ? "" : title;
+}
+
+/** Не дублювати рядок «Промокод», якщо код уже є в тексті (`` `CODE` `` або слово). */
+export function promoAlreadyInPushText(text, promo) {
+  const code = String(promo || "").trim();
+  if (!code) return true;
+  const raw = String(text || "");
+  const upper = raw.toUpperCase();
+  const codeUpper = code.toUpperCase();
+  if (upper.includes(`\`${codeUpper}\``) || upper.includes(`\`${code}\``)) {
+    return true;
+  }
+  if (new RegExp(`\\b${code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(raw)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Збирає текст розсилки (markdown → HTML).
  * title/promo лишаємо для зворотної сумісності зі старими кампаніями.
  */
 export function buildPushMessageHtml(message = {}) {
-  const title = String(message?.title || "").trim();
+  const title = pushTitleForTelegram(message);
   const text = String(message?.text || "").trim();
   const promo = String(message?.promo || "").trim();
 
@@ -95,7 +128,7 @@ export function buildPushMessageHtml(message = {}) {
     parts.push(pushMarkdownToHtml(text));
   }
 
-  if (promo) {
+  if (promo && !promoAlreadyInPushText(text, promo)) {
     parts.push(`🎁 Промокод: <code>${escapeHtml(promo)}</code>`);
   }
 

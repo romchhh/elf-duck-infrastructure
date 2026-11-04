@@ -1,4 +1,4 @@
-/** Mini app opened from test bot at WEBAPP_URL/test — same UI, extra giveaway banner. */
+/** Mini app opened from test bot at WEBAPP_URL/test — same UI; /test shows 4 giveaway banner previews. */
 export function detectAppBasename() {
   if (typeof window === "undefined") return "";
 

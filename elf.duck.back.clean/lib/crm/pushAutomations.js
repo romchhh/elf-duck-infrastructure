@@ -1,8 +1,17 @@
 import mongoose from "mongoose";
 import Order from "../../models/Order.js";
 import BroadcastCampaign from "../../models/BroadcastCampaign.js";
-import { getCompletedOrderMatch } from "./sales.js";
-import { normalizePushButtons } from "./pushMessageFormat.js";
+import { getCompletedOrderMatch, buildCustomerSalesStats } from "./sales.js";
+import {
+  getCustomerIntervalDays,
+  getMeanCustomerIntervalDays,
+  isCustomerSleeping,
+} from "./analytics/customers.js";
+import {
+  normalizePushButtons,
+  promoAlreadyInPushText,
+  pushTitleForTelegram,
+} from "./pushMessageFormat.js";
 import { formatCashbackExpireDateLocalized } from "../telegram/clientOrderMessages.js";
 
 export const CRM_PUSH_AUTOMATIONS_COLLECTION = "crm_push_automations";
@@ -13,6 +22,7 @@ export const PUSH_AUTOMATION_TRIGGERS = {
   FIRST_PURCHASE: "first_purchase",
   LEAD_FOLLOWUP: "lead_followup",
   CASHBACK_EXPIRING: "cashback_expiring",
+  CUSTOMER_SLEEPING: "customer_sleeping",
 };
 
 const MAX_DELAY_MINUTES = 14 * 24 * 60;
@@ -21,6 +31,7 @@ const AUTOMATION_LABELS = {
   first_purchase: "Авто · первая покупка",
   lead_followup: "Авто · лиды",
   cashback_expiring: "Авто · кэшбек сгорает",
+  customer_sleeping: "Авто · спящий клиент",
 };
 
 let broadcastRunner = null;
@@ -71,13 +82,19 @@ function normalizeMessage(message = {}) {
       ? "pl"
       : "ru";
 
+  let promo = String(message?.promo || "").trim();
+  const bodyForPromo = [textPl, textRu, text].filter(Boolean).join("\n");
+  if (promo && promoAlreadyInPushText(bodyForPromo, promo)) {
+    promo = "";
+  }
+
   return {
-    title: String(message?.title || "").trim(),
+    title: pushTitleForTelegram(message),
     text,
     textPl,
     textRu,
     defaultLanguage,
-    promo: String(message?.promo || "").trim(),
+    promo,
     photoUrl: String(message?.photoUrl || "").trim(),
     photoFileId: String(message?.photoFileId || "").trim(),
     buttonText: String(message?.buttonText || "").trim(),
@@ -490,6 +507,7 @@ export async function maybeScheduleLeadFollowup(telegramId) {
 const DUE_TRIGGERS = [
   PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE,
   PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP,
+  PUSH_AUTOMATION_TRIGGERS.CUSTOMER_SLEEPING,
 ];
 
 /**
@@ -573,6 +591,23 @@ export async function processDueFirstPurchaseAutomations() {
                 status: "cancelled",
                 cancelledAt: new Date(),
                 lastError: "PURCHASED",
+              },
+            }
+          );
+          continue;
+        }
+      }
+
+      if (trigger === PUSH_AUTOMATION_TRIGGERS.CUSTOMER_SLEEPING) {
+        const stillSleeping = await isTelegramCustomerSleeping(telegramId);
+        if (!stillSleeping) {
+          await sendsCollection().updateOne(
+            { _id: row._id },
+            {
+              $set: {
+                status: "cancelled",
+                cancelledAt: new Date(),
+                lastError: "NOT_SLEEPING",
               },
             }
           );
@@ -669,4 +704,148 @@ export async function notifyCashbackExpiringAutomation(user, rows) {
   }
 
   return result;
+}
+
+function sleepingSubjectId(lastSaleAt) {
+  if (!lastSaleAt) return "no-sale";
+  const ms = new Date(lastSaleAt).getTime();
+  if (Number.isNaN(ms)) return "no-sale";
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+async function loadSleepingCustomerContext() {
+  const rangeTo = new Date();
+  const salesByCustomer = await buildCustomerSalesStats(rangeTo, {});
+  const telegramIds = Array.from(salesByCustomer.keys()).filter(
+    (id) => String(id || "").trim() && !String(id).startsWith("guest_")
+  );
+
+  const intervalValues = [];
+  for (const telegramId of telegramIds) {
+    const stats = salesByCustomer.get(telegramId) || {};
+    const interval = getCustomerIntervalDays(
+      stats.firstSaleAt,
+      stats.lastSaleAt,
+      stats.purchases
+    );
+    if (interval != null) {
+      intervalValues.push(interval);
+    }
+  }
+
+  const meanCustomerIntervalDays =
+    getMeanCustomerIntervalDays(intervalValues);
+
+  return {
+    rangeTo,
+    salesByCustomer,
+    telegramIds,
+    meanCustomerIntervalDays,
+  };
+}
+
+function isStatsRowSleeping(stats, meanCustomerIntervalDays, rangeTo) {
+  const purchases = Number(stats?.purchases || 0);
+  if (purchases <= 0) return false;
+
+  return isCustomerSleeping({
+    lastSaleAt: stats?.lastSaleAt || null,
+    intervalDays: getCustomerIntervalDays(
+      stats?.firstSaleAt,
+      stats?.lastSaleAt,
+      purchases
+    ),
+    averageIntervalDays: meanCustomerIntervalDays,
+    range: { to: rangeTo },
+  });
+}
+
+async function isTelegramCustomerSleeping(telegramId) {
+  const id = String(telegramId || "").trim();
+  if (!id) return false;
+
+  const ctx = await loadSleepingCustomerContext();
+  const stats = ctx.salesByCustomer.get(id);
+  if (!stats) return false;
+
+  return isStatsRowSleeping(
+    stats,
+    ctx.meanCustomerIntervalDays,
+    ctx.rangeTo
+  );
+}
+
+/**
+ * Когда клиент переходит в «спящий» — один пост на цикл (последняя покупка).
+ * Проверка по cron; delayMinutes — отложить отправку после обнаружения.
+ */
+export async function processSleepingCustomerAutomations() {
+  try {
+    const automation = await getPushAutomation(
+      PUSH_AUTOMATION_TRIGGERS.CUSTOMER_SLEEPING
+    );
+    if (!automation?.enabled) {
+      return { ok: true, processed: 0, reason: "DISABLED" };
+    }
+
+    if (typeof broadcastRunner !== "function") {
+      return { ok: false, reason: "BROADCAST_ENGINE_UNAVAILABLE", processed: 0 };
+    }
+
+    const ctx = await loadSleepingCustomerContext();
+    const delayMs =
+      Math.max(0, Number(automation.delayMinutes || 0)) * 60 * 1000;
+
+    let processed = 0;
+    const maxPerRun = 25;
+
+    for (const telegramId of ctx.telegramIds) {
+      if (processed >= maxPerRun) break;
+
+      const stats = ctx.salesByCustomer.get(telegramId) || {};
+      if (!isStatsRowSleeping(stats, ctx.meanCustomerIntervalDays, ctx.rangeTo)) {
+        continue;
+      }
+
+      const subjectId = sleepingSubjectId(stats.lastSaleAt);
+      const identity = sendKey(
+        PUSH_AUTOMATION_TRIGGERS.CUSTOMER_SLEEPING,
+        telegramId,
+        subjectId
+      );
+
+      const existing = await sendsCollection().findOne(identity);
+      if (existing) continue;
+
+      if (delayMs > 0) {
+        try {
+          await sendsCollection().insertOne({
+            ...identity,
+            orderId: "",
+            status: "scheduled",
+            runAt: new Date(Date.now() + delayMs),
+            createdAt: new Date(),
+          });
+          processed += 1;
+        } catch (error) {
+          if (error?.code !== 11000) throw error;
+        }
+        continue;
+      }
+
+      const result = await sendAutomationNow({
+        trigger: PUSH_AUTOMATION_TRIGGERS.CUSTOMER_SLEEPING,
+        telegramId,
+        automation,
+        subjectId,
+      });
+
+      if (result?.ok) processed += 1;
+    }
+
+    return { ok: true, processed };
+  } catch (error) {
+    console.error("processSleepingCustomerAutomations error:", error);
+    return { ok: false, reason: "ERROR", processed: 0 };
+  }
 }

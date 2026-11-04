@@ -11,6 +11,7 @@ import { isAndroidPlatform } from "../utils/platformPerf.js";
 import "../styles/sideMenuLanguage.css";
 import "../styles/MainPage.css";
 import "../styles/OrdersPage.css";
+import "../styles/ComplaintSheet.css";
 import { useUser } from "../UserContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
@@ -31,11 +32,11 @@ const API_URL =
   "https://elfduck-api.telebots.site";
 
 import { getHomeBanners, isReferralBanner } from "../utils/homeBanners";
-import { isTestAppMode, appPath } from "../utils/appMode";
-import GiveawayBannerSlide, {
-  GIVEAWAY_TEST_PREVIEWS,
-} from "../components/GiveawayBannerSlide.jsx";
+import { appPath } from "../utils/appMode";
+import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
+import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
 import PaymentBlikPreferCashCopy from "../components/PaymentBlikPreferCashCopy.jsx";
+import ComplaintSheet from "../components/ComplaintSheet.jsx";
 import { resolveZabkaMapsUrl } from "../utils/blikCheckoutHints.js";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
@@ -312,6 +313,9 @@ useEffect(() => {
     const [paymentMethod, setPaymentMethod] = useState("");
     const [isPaymentMethodOpen, setIsPaymentMethodOpen] = useState(false);
     const [paymentDetailsVisible, setPaymentDetailsVisible] = useState(false);
+    const [complaintOpen, setComplaintOpen] = useState(false);
+    const [complaintOrder, setComplaintOrder] = useState(null);
+    const [complaintPickupPoint, setComplaintPickupPoint] = useState(null);
     const [cashChangeType, setCashChangeType] = useState("");
     const [copied, setCopied] = useState(false);
 
@@ -1928,8 +1932,7 @@ useEffect(() => {
     /* ================= BANNER DOTS SECTION ================= */
 
     const banners = getHomeBanners(language);
-    const showGiveawayBanner = isTestAppMode();
-    const giveawaySlides = showGiveawayBanner ? GIVEAWAY_TEST_PREVIEWS : [];
+    const { carouselSlides: giveawaySlides } = useGiveawayPublic();
     const bannerSlideCount = banners.length + giveawaySlides.length;
 
     const goToCatalogFromGiveaway = useCallback(() => {
@@ -1989,6 +1992,27 @@ useEffect(() => {
     alert(String(text));
     };
 
+    const openComplaintForOrder = (order) => {
+        haptic.light();
+        setComplaintOrder(order || null);
+        setComplaintPickupPoint(getOrderPickupPoint(order) || null);
+        setComplaintOpen(true);
+    };
+
+    const closeComplaintSheet = (result) => {
+        setComplaintOpen(false);
+        setComplaintOrder(null);
+        setComplaintPickupPoint(null);
+        if (result?.submitted) {
+            showTgAlert(
+                t(
+                    "Жалоба отправлена. Мы свяжемся с вами при необходимости.",
+                    "Skarga została wysłana. Skontaktujemy się w razie potrzeby."
+                )
+            );
+        }
+    };
+
 
     const showCashbackInfoAlert = () => {
         haptic.light();
@@ -2019,6 +2043,7 @@ useEffect(() => {
 
     return (
 
+    <>
     <div className={`App reveal delay-5 ${mounted ? "visible" : ""}`}>
 
     {cancelConfirmOrder && (
@@ -3340,10 +3365,10 @@ useEffect(() => {
 
                         <div className={`bannerSection reveal delay-2 ${mounted ? "visible" : ""}`}>
                             <div className="bannerScroll" ref={bannerScrollRef} onScroll={handleBannerScroll}>
-                            {giveawaySlides.map((preview) => (
-                              <div key={preview} className="bannerSlide giveawayBannerSlide">
+                            {giveawaySlides.map(({ key, preview }) => (
+                              <div key={key} className="bannerSlide giveawayBannerSlide">
                                 <GiveawayBannerSlide
-                                  preview={preview}
+                                  preview={preview || undefined}
                                   onGoToCatalog={goToCatalogFromGiveaway}
                                 />
                               </div>
@@ -3711,6 +3736,14 @@ useEffect(() => {
                         {t("детали заказа", "szczegóły zamówienia")}
                       </button>
                     </div>
+
+                    <button
+                      type="button"
+                      className="orderCardComplaintBtn"
+                      onClick={() => openComplaintForOrder(o)}
+                    >
+                      {t("Оставить жалобу", "Zgłoś skargę")}
+                    </button>
                   </div>
 
                     {showNotifyBlock && (
@@ -3877,6 +3910,13 @@ useEffect(() => {
     </div>
     </div>
 
+    <ComplaintSheet
+      open={complaintOpen}
+      onClose={closeComplaintSheet}
+      order={complaintOrder}
+      pickupPoint={complaintPickupPoint}
+    />
+    </>
     );
 };
 

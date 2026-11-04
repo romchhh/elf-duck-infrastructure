@@ -16,10 +16,12 @@ router.get(
     try {
       await ensurePushAutomationIndexes();
 
-      const [firstPurchase, leadFollowup, cashbackExpiring] = await Promise.all([
+      const [firstPurchase, leadFollowup, cashbackExpiring, customerSleeping] =
+        await Promise.all([
         getPushAutomation(PUSH_AUTOMATION_TRIGGERS.FIRST_PURCHASE),
         getPushAutomation(PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP),
         getPushAutomation(PUSH_AUTOMATION_TRIGGERS.CASHBACK_EXPIRING),
+        getPushAutomation(PUSH_AUTOMATION_TRIGGERS.CUSTOMER_SLEEPING),
       ]);
 
       return res.json({
@@ -28,6 +30,7 @@ router.get(
           first_purchase: firstPurchase,
           lead_followup: leadFollowup,
           cashback_expiring: cashbackExpiring,
+          customer_sleeping: customerSleeping,
         },
       });
     } catch (error) {

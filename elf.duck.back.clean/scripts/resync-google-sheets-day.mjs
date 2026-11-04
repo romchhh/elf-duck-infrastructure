@@ -37,10 +37,11 @@ function arg(name, fallback = "") {
 const pointKey = arg("--point");
 const dayKey = arg("--day");
 const dryRun = args.includes("--dry-run");
+const forceAbsolute = args.includes("--absolute");
 
 if (!pointKey || !/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) {
   console.error(
-    "Usage: node scripts/resync-google-sheets-day.mjs --point <key> --day YYYY-MM-DD [--dry-run]"
+    "Usage: node scripts/resync-google-sheets-day.mjs --point <key> --day YYYY-MM-DD [--dry-run] [--absolute]"
   );
   process.exit(1);
 }
@@ -109,7 +110,7 @@ const result = await sendDailyPointStatsToGoogleSheetsApi(
   point,
   dayOrders,
   dayKey,
-  { dryRun, skipMonthRollup: true }
+  { dryRun, skipMonthRollup: true, forceAbsolute }
 );
 
 console.log("sync result:", result);

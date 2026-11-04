@@ -3085,6 +3085,26 @@ const confirmCreateTpl = () => {
   );
 }
 
+function promoAlreadyInPushText(text, promo) {
+  const code = String(promo || '').trim();
+  if (!code) return true;
+  const raw = String(text || '');
+  const upper = raw.toUpperCase();
+  const codeUpper = code.toUpperCase();
+  if (upper.includes(`\`${codeUpper}\``) || upper.includes(`\`${code}\``)) {
+    return true;
+  }
+  if (
+    new RegExp(
+      `\\b${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+      'i'
+    ).test(raw)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function extractPromoCodesFromTexts(texts = []) {
   const joined = (Array.isArray(texts) ? texts : [texts])
     .map((value) => String(value || ''))
@@ -3554,6 +3574,13 @@ const PUSH_AUTOMATION_EVENTS = [
     delayMode: 'none',
     hint: 'Один раз за 5 дней до сгорания. В шаблоне: {amount}, {days}, {date}.',
   },
+  {
+    trigger: 'customer_sleeping',
+    label: 'Спящий клиент',
+    delayMode: 'minutes',
+    hint:
+      'Один раз, когда статус становится «Спящий» (периодичность + 7 дней без покупки). После новой покупки и повторного «сна» — снова. 0 = сразу.',
+  },
 ];
 
 function normalizeAutomationButtons(buttons = []) {
@@ -3573,20 +3600,14 @@ function buildAutomationMessageFromTemplate(template, templateId) {
   const text = String(template.text || template.preview || '').trim();
   const textPl = lang === 'pl' ? text : String(template.textPl || '').trim();
   const textRu = lang === 'ru' ? text : String(template.textRu || '').trim();
-  const promoCodes = extractPromoCodesFromTexts([
-    textPl,
-    textRu,
-    template.title,
-    template.name,
-  ]);
 
   return {
-    title: String(template.title || template.name || '').trim(),
+    title: '',
     text: textPl || textRu || text,
     textPl,
     textRu,
     defaultLanguage: 'ru',
-    promo: promoCodes[0] || '',
+    promo: '',
     buttons: normalizeAutomationButtons(template.buttons),
     templateId: String(templateId || template.id || '').trim(),
     photoUrl: String(template.photoUrl || template.photoPreviewUrl || '').trim(),
@@ -3597,8 +3618,7 @@ function buildAutomationMessageFromTemplate(template, templateId) {
 function automationMessageHasContent(message) {
   if (!message) return false;
   return Boolean(
-    String(message.title || '').trim() ||
-      String(message.text || '').trim() ||
+    String(message.text || '').trim() ||
       String(message.textPl || '').trim() ||
       String(message.textRu || '').trim() ||
       String(message.promo || '').trim() ||
@@ -4059,11 +4079,6 @@ function PushAutomationsPanel({ templates = [] }) {
                     className="mb-2 max-h-32 w-full rounded-lg object-cover"
                   />
                 ) : null}
-                {previewMessage?.title ? (
-                  <div className="mb-1 text-[12px] font-semibold text-foreground">
-                    {previewMessage.title}
-                  </div>
-                ) : null}
                 <div
                   className={PUSH_PREVIEW_CLASS}
                   dangerouslySetInnerHTML={{
@@ -4075,7 +4090,8 @@ function PushAutomationsPanel({ templates = [] }) {
                     ),
                   }}
                 />
-                {previewMessage?.promo ? (
+                {previewMessage?.promo &&
+                !promoAlreadyInPushText(previewText, previewMessage.promo) ? (
                   <p className="mt-2 text-[11px] text-muted-foreground">
                     Промокод: <code>{previewMessage.promo}</code>
                   </p>

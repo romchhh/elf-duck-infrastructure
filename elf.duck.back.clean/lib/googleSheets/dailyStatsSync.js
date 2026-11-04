@@ -135,6 +135,7 @@ export async function sendDailyPointStatsToGoogleSheetsApi(
     soldUnitsTotal,
     tierTotals,
     dryRun,
+    forceAbsolute: Boolean(options?.forceAbsolute),
   });
 
   let monthModelResult = { ok: true, skipped: true };

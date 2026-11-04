@@ -11,10 +11,12 @@ import GiveawayRulesContent from "./GiveawayRulesContent.jsx";
 
 export const GIVEAWAY_TEST_PREVIEWS = ["join", "joined", "countdown", "winners"];
 
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  import.meta.env.VITE_CRM_API_URL ||
-  "http://localhost:3000";
+import {
+  fetchGiveawayCurrent,
+  getGiveawayCache,
+  participateGiveaway,
+  subscribeGiveaway,
+} from "../utils/giveawayPublicState.js";
 
 function formatCountdown(ms, lang) {
   const totalSec = Math.max(0, Math.floor(Number(ms || 0) / 1000));
@@ -135,29 +137,35 @@ function GiveawayModalShell({ open, onClose, title, children }) {
 export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   const navigate = useNavigate();
   const lang = getCurrentLanguage();
-  const [state, setState] = useState(null);
-  const [deadlineAt, setDeadlineAt] = useState(null);
+  const [state, setState] = useState(() => getGiveawayCache());
+  const [deadlineAt, setDeadlineAt] = useState(() => {
+    const cached = getGiveawayCache();
+    return cached?.ok
+      ? Date.now() + Number(cached.countdownMs || 0)
+      : null;
+  });
   const [loading, setLoading] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [winnersOpen, setWinnersOpen] = useState(false);
   const [tick, setTick] = useState(Date.now());
 
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch(`${API_URL}/giveaway/current`, {
-        headers: {
-          "x-telegram-init-data": window?.Telegram?.WebApp?.initData || "",
-        },
-      });
-      const data = await r.json();
-      if (data?.ok) {
-        setState(data);
-        setDeadlineAt(Date.now() + Number(data.countdownMs || 0));
-      }
-    } catch (error) {
-      console.error("giveaway load error", error);
-    }
+  const applyState = useCallback((data) => {
+    if (!data?.ok) return;
+    setState(data);
+    setDeadlineAt(Date.now() + Number(data.countdownMs || 0));
   }, []);
+
+  useEffect(() => {
+    if (preview) return undefined;
+    return subscribeGiveaway(applyState);
+  }, [preview, applyState]);
+
+  const reload = useCallback(() => {
+    if (preview) return;
+    fetchGiveawayCurrent({ force: true }).then((data) => {
+      if (data?.ok) applyState(data);
+    });
+  }, [preview, applyState]);
 
   const phase = state?.phase || "active";
   const participated = Boolean(state?.participated);
@@ -189,22 +197,19 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
   }, [navigate, onGoToCatalog]);
 
   useEffect(() => {
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (mode !== "joined" && mode !== "winners") return undefined;
-    const id = window.setInterval(load, 45_000);
+    if (preview || (mode !== "joined" && mode !== "winners")) return undefined;
+    const id = window.setInterval(reload, 45_000);
     return () => window.clearInterval(id);
-  }, [load, mode]);
+  }, [reload, mode, preview]);
 
   useEffect(() => {
+    if (preview) return undefined;
     const onVisible = () => {
-      if (document.visibilityState === "visible") load();
+      if (document.visibilityState === "visible") reload();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [load]);
+  }, [reload, preview]);
 
   useEffect(() => {
     if (mode !== "countdown") return undefined;
@@ -265,22 +270,13 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
         : [];
 
   const participate = async () => {
-    if (loading) return;
+    if (loading || preview) return;
     setLoading(true);
     try {
-      const r = await fetch(`${API_URL}/giveaway/participate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-telegram-init-data": window?.Telegram?.WebApp?.initData || "",
-        },
-        body: JSON.stringify({}),
-      });
-      const data = await r.json();
+      const data = await participateGiveaway();
       if (data?.ok) {
         haptic.success();
-        setState(data);
-        setDeadlineAt(Date.now() + Number(data.countdownMs || 0));
+        applyState(data);
       } else {
         haptic.error();
       }

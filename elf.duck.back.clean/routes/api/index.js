@@ -10,6 +10,7 @@ import { registerRoutes as registerBroadcast } from "./broadcastTemplates.js";
 import { registerRoutes as registerAdminAnalytics } from "./adminAnalytics.js";
 
 import { registerRoutes as registerGiveaway } from "./giveaway.js";
+import { registerRoutes as registerComplaints } from "./complaints.js";
 
 export function registerShopApiRoutes(app) {
   registerCourier(app);
@@ -20,6 +21,7 @@ export function registerShopApiRoutes(app) {
   registerCart(app);
   registerOrders(app);
   registerGiveaway(app);
+  registerComplaints(app);
   registerAdminProducts(app);
   registerBroadcast(app);
   registerAdminAnalytics(app);

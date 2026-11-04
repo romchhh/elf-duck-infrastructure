@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from "react";
 import "../styles/ManagersPage.css";
+import "../styles/ComplaintSheet.css";
 import "../styles/MainPage.css";
 import "../styles/sideMenuLanguage.css";
 import { useNavigate } from "react-router-dom";
@@ -33,6 +34,7 @@ import historyDuckIMG from "../assets/historyDuckIMG.webp";
 import refferalDucksIMG from "../assets/refferalDucksIMG.webp"
 import supportDuckIMG from "../assets/supportDuckIMG.webp"
 import savedDuckIMG from "../assets/savedDuckIMG.webp";
+import ComplaintSheet from "../components/ComplaintSheet.jsx";
 
 import srodmiescieManagerDuck from "../assets/srodmiescieManagerDuck.webp";
 import mokotowManagerDuck from "../assets/mokotowManagerDuck.webp";
@@ -54,6 +56,8 @@ const ManagersPage = () => {
   const [managerTab, setManagerTab] = useState("pickup");
   const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
   const [avatarLoaded, setAvatarLoaded] = useState(false);
+  const [complaintOpen, setComplaintOpen] = useState(false);
+  const [complaintPickupPoint, setComplaintPickupPoint] = useState(null);
 
   const banners = getHomeBanners();
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
@@ -451,8 +455,28 @@ const ManagersPage = () => {
     showTgAlert(text);
   };
 
+  const openComplaintForPoint = (point) => {
+    haptic.light();
+    setComplaintPickupPoint(point || null);
+    setComplaintOpen(true);
+  };
+
+  const closeComplaintSheet = (result) => {
+    setComplaintOpen(false);
+    setComplaintPickupPoint(null);
+    if (result?.submitted) {
+      showTgAlert(
+        t(
+          "Жалоба отправлена. Мы свяжемся с вами при необходимости.",
+          "Skarga została wysłana. Skontaktujemy się w razie potrzeby."
+        )
+      );
+    }
+  };
+
   return (
 
+    <>
     <div className="ManagersApp">
 
     {menuVisible && (
@@ -918,6 +942,14 @@ const ManagersPage = () => {
                             : t("сегодня выходной", "dzisiaj dzień wolny")}
                         </span>
                       </button>
+
+                      <button
+                        type="button"
+                        className="managerComplaintBtn"
+                        onClick={() => openComplaintForPoint(point)}
+                      >
+                        {t("Оставить жалобу", "Zgłoś skargę")}
+                      </button>
                     </div>
 
                     <div className="pickupCheckoutArrival managerScheduleRow">
@@ -989,6 +1021,13 @@ const ManagersPage = () => {
         </div>
       </div>
     </div>
+
+    <ComplaintSheet
+      open={complaintOpen}
+      onClose={closeComplaintSheet}
+      pickupPoint={complaintPickupPoint}
+    />
+    </>
   );
 };
 

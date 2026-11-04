@@ -89,7 +89,6 @@ export async function computeBotSheetDelta({
   return { delta, nextBotSynced, lastSynced, bootstrapped };
 }
 
-/** Після per-order +N у таблицю — збільшуємо «вже синхронізовано з Mongo». */
 export async function recordPerOrderBotSheetIncrement({
   spreadsheetId,
   dayKey,
@@ -111,6 +110,30 @@ export async function recordPerOrderBotSheetIncrement({
   const tiers = tierMap(doc);
   const prev = Math.max(0, Number(tiers.get(key) || 0));
   tiers.set(key, prev + qty);
+  await saveSnapshot(doc, tiers);
+}
+
+/** Повний перезапис знімка (resync --absolute). */
+export async function setBotSheetSnapshotTotal({
+  spreadsheetId,
+  dayKey,
+  snapshotKey,
+  totalQty,
+}) {
+  const sid = String(spreadsheetId || "").trim();
+  const dk = String(dayKey || "").trim();
+  const key = String(snapshotKey || "").trim();
+  const qty = Math.max(0, Number(totalQty || 0));
+
+  if (!sid || !dk || !key) return;
+
+  let doc = await loadSnapshot(sid, dk);
+  if (!doc) {
+    doc = new SheetDayReportBotSnapshot({ spreadsheetId: sid, dayKey: dk, tiers: {} });
+  }
+
+  const tiers = tierMap(doc);
+  tiers.set(key, qty);
   await saveSnapshot(doc, tiers);
 }
 

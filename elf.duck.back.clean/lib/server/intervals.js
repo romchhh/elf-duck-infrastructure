@@ -8,7 +8,10 @@ import {
   processDueTelegramDailyStats,
   processPickupShiftCloseReminders,
 } from "./pickupShiftClose.js";
-import { processDueFirstPurchaseAutomations } from "../crm/pushAutomations.js";
+import {
+  processDueFirstPurchaseAutomations,
+  processSleepingCustomerAutomations,
+} from "../crm/pushAutomations.js";
 import { reconcileGhostReservedStock } from "./reconcileGhostReserved.js";
 import helpers from "./helpers/index.js";
 
@@ -149,4 +152,16 @@ export function startServerIntervals() {
       console.error("first purchase automation initial run error:", e);
     });
   }, 15 * 1000);
+
+  setInterval(() => {
+    processSleepingCustomerAutomations().catch((e) => {
+      console.error("sleeping customer automation error:", e);
+    });
+  }, 30 * 60 * 1000);
+
+  setTimeout(() => {
+    processSleepingCustomerAutomations().catch((e) => {
+      console.error("sleeping customer automation initial error:", e);
+    });
+  }, 45 * 1000);
 }

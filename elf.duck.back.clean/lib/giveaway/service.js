@@ -389,11 +389,20 @@ export async function getGiveawayPublicState({
   const participated = tg ? await isParticipant(monthKey, tg) : false;
   const myEntries = tg ? await countUserEntries(monthKey, tg) : 0;
 
+  const participationOpen = isGiveawayMonthLive(month);
   const showWinners =
     phase === "results" ||
     month.status === "drawn" ||
     month.status === "credited" ||
     month.status === "notified";
+
+  const isCurrentMonth =
+    String(month.monthKey || "") === getActiveGiveawayMonthKey();
+  const bannerVisible =
+    isCurrentMonth &&
+    (participationOpen ||
+      showWinners ||
+      phase === "awaiting_draw");
 
   const [participantsCount, entriesCount, winnersRaw] = await Promise.all([
     countParticipants(monthKey),
@@ -425,7 +434,8 @@ export async function getGiveawayPublicState({
     monthKey,
     phase,
     status: month.status,
-    participationOpen: isGiveawayMonthLive(month),
+    participationOpen,
+    bannerVisible,
     settings: {
       winnerCount: settings.winnerCount,
       prizeTiers: settings.prizeTiers,
@@ -624,6 +634,14 @@ export async function startGiveawayMonth(monthKey) {
       { monthKey: key },
       { $set: { startedAt: now, updatedAt: now } }
     );
+
+    const participants = await participantsCol()
+      .find({ monthKey: key })
+      .project({ telegramId: 1 })
+      .toArray();
+    for (const row of participants) {
+      await syncGiveawayEntriesForUser(key, row.telegramId);
+    }
   }
 
   return getGiveawayAdminState(key);

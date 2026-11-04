@@ -132,6 +132,8 @@ export function getStatsSheetProductCategory(row = {}) {
 const STATS_REPORT_MODEL_BY_PRODUCT_KEY = {
   "puffy-30-ml": "PUFFY 5%",
   "puffy-30-ml-70-mg": "PUFFY 7%",
+  /** На листах ОТЧЁТ (Mokotów тощо) — «YAMI 5%» / «YAMI 7%», не голий «YAMI». */
+  "yami-30ml": "YAMI 5%",
 };
 
 /** Перший заголовок блоку на листі АССОРТИМЕНТ (LIQ …). */

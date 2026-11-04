@@ -10,6 +10,7 @@ import {
   dayKassaSnapshotKey,
   dayModelTierSnapshotKey,
   recordPerOrderBotSheetIncrement,
+  setBotSheetSnapshotTotal,
 } from "./dayReportBotSnapshot.js";
 import { normalizeSheetModelName, toReportModelLabel } from "./normalize.js";
 
@@ -227,7 +228,13 @@ function reportModelMatches(cell, reportModelLabel) {
 
   if (!norm) return false;
   if (norm === wanted || norm === alt) return true;
-  return toReportModelLabel(norm) === toReportModelLabel(wanted);
+  if (toReportModelLabel(norm) === toReportModelLabel(wanted)) return true;
+
+  // YAMI 5% / YAMI 7% на листі vs legacy «YAMI» у старих замовленнях
+  if (wanted === "YAMI" && /^YAMI(\s+[57]%)?$/.test(norm)) return true;
+  if (/^YAMI\s+[57]%$/.test(wanted) && norm === "YAMI") return true;
+
+  return false;
 }
 
 export function findMonthSummaryModelRow(rows, section, reportModelLabel) {
@@ -461,6 +468,7 @@ export async function writeDayBlockFromAggregates({
   soldUnitsTotal = 0,
   tierTotals = {},
   dryRun = false,
+  forceAbsolute = false,
 }) {
   void kasaTotalZl;
   void soldUnitsTotal;
@@ -477,6 +485,92 @@ export async function writeDayBlockFromAggregates({
 
   const blockStart = block.blockStart;
   const data = [];
+
+  const productByLabel = new Map(
+    (productRows || []).map((product) => [
+      toReportModelLabel(String(product.model || "")),
+      product,
+    ])
+  );
+
+  if (forceAbsolute) {
+    const tierEntries = [
+      ["tier1", 4, "tier1"],
+      ["tier2", 5, "tier2"],
+      ["tier34", 6, "tier34"],
+      ["tier5", 7, "tier5"],
+    ];
+
+    const batch = [];
+
+    for (const modelRow of listDayBlockModelRowIndexes(rows, block)) {
+      const cellLabel = String(rows[modelRow]?.[blockStart] || "").trim();
+      const product =
+        productByLabel.get(toReportModelLabel(cellLabel)) ||
+        productByLabel.get(cellLabel);
+
+      for (const [tierKey, colOff, field] of tierEntries) {
+        const mongoTotal = Math.max(0, Number(product?.[field] || 0));
+        batch.push({
+          range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + colOff)}${modelRow + 1}`,
+          values: [[mongoTotal]],
+          meta: {
+            tierKey,
+            cellLabel: toReportModelLabel(cellLabel) || cellLabel,
+            mongoTotal,
+          },
+        });
+      }
+    }
+
+    const kassaRow = findKassaRowInDayBlock(rows, block);
+    if (kassaRow >= 0) {
+      const mongoDisc = Number(discounts || 0);
+      batch.push({
+        range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`,
+        values: [[mongoDisc]],
+        meta: { kassaDiscounts: true, mongoTotal: mongoDisc },
+      });
+    }
+
+    if (dryRun) {
+      return { ok: true, updates: batch.length, forceAbsolute: true, dryRun: true };
+    }
+
+    if (batch.length) {
+      await batchUpdateValues(
+        spreadsheetId,
+        batch.map(({ range, values }) => ({ range, values }))
+      );
+    }
+
+    for (const item of batch) {
+      if (item.meta?.kassaDiscounts) {
+        await setBotSheetSnapshotTotal({
+          spreadsheetId,
+          dayKey,
+          snapshotKey: dayKassaSnapshotKey("discounts"),
+          totalQty: item.meta.mongoTotal,
+        });
+        continue;
+      }
+      await setBotSheetSnapshotTotal({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: dayModelTierSnapshotKey(
+          item.meta.cellLabel,
+          item.meta.tierKey
+        ),
+        totalQty: item.meta.mongoTotal,
+      });
+    }
+
+    return {
+      ok: true,
+      updates: batch.length,
+      forceAbsolute: true,
+    };
+  }
 
   for (const product of productRows || []) {
     const label = toReportModelLabel(product.model);
