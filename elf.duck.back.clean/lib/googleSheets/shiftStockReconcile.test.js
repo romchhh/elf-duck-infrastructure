@@ -349,6 +349,32 @@ const liqToReport = buildShiftStockReconcile({
 assert.equal(liqToReport.errors.length, 0, "LIQ ETHEREUM/SPECIAL/OXVA ↔ report");
 assert.equal(liqToReport.mismatches.length, 0);
 
+const splitYamiAndMerry = buildShiftStockReconcile({
+  reportRows: [
+    ["04.11"],
+    ["MODEL", "СТАЛО"],
+    ["MERRY MI 30K", "1"],
+    ["YAMI 5%", "60"],
+    ["YAMI 7%", "0"],
+    ["MERRY MI", "0"],
+    ["OXVA POD", "10"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["YAMI 5%", "КОЛ-ВО"],
+    ["Apple", "60"],
+    ["MERRY MI", "КОЛ-ВО"],
+    ["MERRY MI 30K", "КОЛ-ВО"],
+    ["Mint", "1"],
+    ["LIQ YAMI 7%", "КОЛ-ВО"],
+    ["OXVA POD", "КОЛ-ВО"],
+    ["Pod", "10"],
+  ],
+  dayKey: "2026-11-04",
+});
+assert.equal(splitYamiAndMerry.errors.length, 0, "окремі блоки YAMI 5%/7% і MERRY MI/30K");
+assert.equal(splitYamiAndMerry.mismatches.length, 0);
+
 const emptyVersusStock = buildShiftStockReconcile({
   reportRows: [
     ["22.10"],

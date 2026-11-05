@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Smartphone } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/use-toast";
 import TelegramMessageEditor from "@/components/TelegramMessageEditor";
 import { PUSH_PREVIEW_CLASS, renderPushPreviewHtml } from "@/lib/pushPreviewHtml";
@@ -214,32 +215,6 @@ async function uploadMedia(file) {
   };
 }
 
-function Toggle({ on, onClick, label }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick?.();
-      }}
-      className={cn(
-        "relative h-6 w-11 shrink-0 rounded-full transition-colors",
-        on ? "bg-[hsl(142_55%_38%)]" : "bg-[hsl(232_16%_24%)]"
-      )}
-    >
-      <span
-        className={cn(
-          "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform",
-          on ? "translate-x-[22px]" : "translate-x-0.5"
-        )}
-      />
-    </button>
-  );
-}
-
 export default function PushAutomationsPanel({ templates = [] }) {
   const touchedRef = useRef(new Set());
   const [activeTrigger, setActiveTrigger] = useState("first_purchase");
@@ -250,6 +225,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
   const [delayAmount, setDelayAmount] = useState("0");
   const [delayUnit, setDelayUnit] = useState("hours");
   const [togglePending, setTogglePending] = useState("");
+  const [enableOfferFor, setEnableOfferFor] = useState(null);
   const [photoUploading, setPhotoUploading] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -354,7 +330,14 @@ export default function PushAutomationsPanel({ templates = [] }) {
         delete next[activeTrigger];
         return next;
       });
-      toast({ title: "Сценарий сохранён" });
+      const stillOff = saved?.enabled !== true;
+      setEnableOfferFor(stillOff ? activeTrigger : null);
+      toast({
+        title: stillOff ? "Сохранено" : "Сценарий сохранён",
+        description: stillOff
+          ? "Рассылка выключена — её можно включить ниже."
+          : undefined,
+      });
     },
     onError: (error) => {
       toast({
@@ -461,6 +444,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
     );
     setActiveTrigger(trigger);
     setEditingTrigger(trigger);
+    setEnableOfferFor(null);
   };
 
   const changeDelay = (amount, unit) => {
@@ -528,6 +512,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
         delete copy[event.trigger];
         return copy;
       });
+      if (next.enabled) setEnableOfferFor(null);
     } catch (error) {
       toast({
         title: "Не удалось переключить",
@@ -870,6 +855,28 @@ export default function PushAutomationsPanel({ templates = [] }) {
                 </span>
               ) : null}
             </div>
+            {enableOfferFor === activeTrigger && !dirty && !draft.enabled ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[hsl(142_55%_42%/0.35)] bg-[hsl(142_55%_38%/0.1)] px-3 py-2.5">
+                <p className="min-w-0 flex-1 text-[13px] text-foreground">
+                  Включить эту рассылку?
+                </p>
+                <button
+                  type="button"
+                  disabled={Boolean(togglePending)}
+                  onClick={() => toggleRow(activeEvent)}
+                  className="inline-flex h-8 items-center rounded-lg bg-[hsl(142_55%_38%)] px-3 text-[12px] font-semibold text-white disabled:opacity-50"
+                >
+                  {togglePending === activeTrigger ? "Включаем…" : "Включить"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEnableOfferFor(null)}
+                  className="inline-flex h-8 items-center rounded-lg px-2 text-[12px] text-muted-2 hover:text-foreground"
+                >
+                  Не сейчас
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <aside className="lg:sticky lg:top-4">
@@ -946,13 +953,15 @@ export default function PushAutomationsPanel({ templates = [] }) {
                 >
                   Редактировать
                 </button>
-                <Toggle
-                  on={source.enabled}
-                  label={`${source.enabled ? "Выключить" : "Включить"} ${event.title}`}
-                  onClick={() => {
+                <Switch
+                  checked={source.enabled}
+                  disabled={Boolean(togglePending)}
+                  aria-label={`${source.enabled ? "Выключить" : "Включить"} ${event.title}`}
+                  onCheckedChange={() => {
                     if (togglePending) return;
                     toggleRow(event);
                   }}
+                  className="data-[state=checked]:bg-[hsl(142_55%_38%)] data-[state=unchecked]:bg-[hsl(232_16%_28%)] [&>span]:bg-white"
                 />
               </div>
             );

@@ -39,6 +39,9 @@ assert.equal(reportModelMatches("MERRY MI", "MERRY MI 30K"), true);
 
 assert.equal(sameSheetModel("YAMI 5%", "YAMI 30ML"), true);
 assert.equal(sameSheetModel("YAMI 7%", "LIQ YAMI"), true);
+assert.equal(sameSheetModel("YAMI 5%", "YAMI 7%"), false);
+assert.equal(sameSheetModel("YAMI 5%", "LIQ YAMI 7%"), false);
+assert.equal(sameSheetModel("YAMI 7%", "LIQ YAMI 7%"), true);
 assert.equal(sameSheetModel("MERRY MI 30K", "MERRY MI"), true);
 assert.equal(sameSheetModel("LIQ ETHEREUM", "ETHEREUM"), true);
 assert.equal(sameSheetModel("LIQ SPECIAL", "SPECIAL"), true);

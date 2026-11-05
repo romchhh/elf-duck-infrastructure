@@ -18,48 +18,82 @@ import {
   readStrictSheetQty,
 } from "./assortmentGrid.js";
 import { normalizeSheetModelName, toReportModelLabel } from "./normalize.js";
-import { reportModelMatches } from "./dailyReportGrid.js";
 
 const DAY_BLOCK_WIDTH = 11;
 
-function modelMatchKeys(value) {
-  const normalized = normalizeSheetModelName(value);
+/** Ключ звірки. MERRY MI і MERRY MI 30K лишаються різними, якщо на листі є обидва. */
+export function reconcileModelKey(value) {
+  const raw = String(value || "")
+    .toUpperCase()
+    .replace(/🦆/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/\bMERRY\s+MI\s*(30\s*K|30000)\b/.test(raw)) return "MERRY MI 30K";
+  return normalizeSheetModelName(value);
+}
+
+function yamiGeneric(key) {
+  return key === "YAMI";
+}
+
+function yamiTier(key) {
+  return key === "YAMI 5%" || key === "YAMI 7%";
+}
+
+/**
+ * 2 — той самий підпис (LIQ ETHEREUM = ETHEREUM, LIQ YAMI 7% = YAMI 7%, LIQ OXVA = OXVA).
+ * 1 — запасний збіг, лише якщо точного блоку немає: YAMI 30ML ↔ YAMI 5%/7%, MERRY MI ↔ MERRY MI 30K.
+ * YAMI 5% і YAMI 7% між собою не збігаються.
+ */
+function exactKeys(value) {
+  const key = reconcileModelKey(value);
   const keys = new Set();
-  const add = (label) => {
-    const key = normalizeSheetModelName(label);
-    if (!key) return;
-    keys.add(key);
-    keys.add(normalizeSheetModelName(toReportModelLabel(key)));
-  };
-
-  add(normalized);
-  add(normalized.replace(/^LIQ\s+/, ""));
-
-  // Сімейства: один блок Асортимент ↔ кілька рядків Отчёт (або навпаки).
-  if (/^YAMI(\s+[57]%)?$/.test(normalized)) {
-    add("YAMI");
-    add("YAMI 5%");
-    add("YAMI 7%");
+  if (!key) return keys;
+  keys.add(key);
+  if (key !== "MERRY MI 30K") {
+    const report = normalizeSheetModelName(toReportModelLabel(key));
+    if (report) keys.add(report);
   }
-  if (/^MERRY\s+MI/.test(normalized)) {
-    add("MERRY MI");
-  }
-  if (/^PUFFY\s+[57]%$/.test(normalized) || normalized === "PUFFY") {
-    // не зливаємо 5% і 7% в один ключ — лише точний + LIQ strip вище
-  }
-
   return keys;
 }
 
+export function sheetModelMatchRank(left, right) {
+  const a = reconcileModelKey(left);
+  const b = reconcileModelKey(right);
+  if (!a || !b) return 0;
+  const leftKeys = exactKeys(left);
+  for (const key of exactKeys(right)) {
+    if (leftKeys.has(key)) return 2;
+  }
+  if ((yamiGeneric(a) && yamiTier(b)) || (yamiTier(a) && yamiGeneric(b))) return 1;
+  if (
+    (a === "MERRY MI" && b === "MERRY MI 30K") ||
+    (a === "MERRY MI 30K" && b === "MERRY MI")
+  ) {
+    return 1;
+  }
+  return 0;
+}
+
 export function sameSheetModel(left, right) {
-  if (reportModelMatches(left, right) || reportModelMatches(right, left)) {
-    return true;
+  return sheetModelMatchRank(left, right) > 0;
+}
+
+function bestModelHits(name, candidates) {
+  let best = 0;
+  const hits = [];
+  for (const item of candidates || []) {
+    const rank = sheetModelMatchRank(item?.name, name);
+    if (!rank) continue;
+    if (rank > best) {
+      best = rank;
+      hits.length = 0;
+      hits.push(item);
+    } else if (rank === best) {
+      hits.push(item);
+    }
   }
-  const rightKeys = modelMatchKeys(right);
-  for (const key of modelMatchKeys(left)) {
-    if (rightKeys.has(key)) return true;
-  }
-  return false;
+  return hits;
 }
 
 function escapeHtml(value) {
@@ -229,9 +263,7 @@ export function compareShiftStock({ reportModels, assortmentModels }) {
     }
 
     const report = rows[0];
-    const hits = (assortmentModels || []).filter((item) =>
-      sameSheetModel(item?.name, name)
-    );
+    const hits = bestModelHits(name, assortmentModels);
 
     if (hits.length === 0) {
       errors.push({
@@ -300,9 +332,15 @@ export function compareShiftStock({ reportModels, assortmentModels }) {
 
   for (const item of assortmentModels || []) {
     if (usedAssortment.has(item)) continue;
-    const inReport = (reportModels || []).some((model) =>
-      sameSheetModel(model?.name, item?.name)
-    );
+    const inReport = (reportModels || []).some((model) => {
+      const rank = sheetModelMatchRank(model?.name, item?.name);
+      if (!rank) return false;
+      if (rank === 2) return true;
+      const exactElsewhere = (assortmentModels || []).some(
+        (other) => sheetModelMatchRank(other?.name, model?.name) === 2
+      );
+      return !exactElsewhere;
+    });
     if (inReport) continue;
     errors.push({
       model: String(item?.name || "").trim(),
