@@ -300,6 +300,55 @@ const emptyBlock = buildShiftStockReconcile({
 assert.equal(emptyBlock.mismatches.length, 0);
 assert.equal(emptyBlock.errors.length, 0);
 
+const merryMi30k = buildShiftStockReconcile({
+  reportRows: [
+    ["22.10"],
+    ["MODEL", "СТАЛО"],
+    ["MERRY MI 30K", "0"],
+    ["КАССА"],
+  ],
+  assortmentRows: [["MERRY MI", "КОЛ-ВО"]],
+  dayKey: "2026-10-22",
+});
+assert.equal(merryMi30k.errors.length, 0, "MERRY MI 30K ↔ MERRY MI");
+assert.equal(merryMi30k.mismatches.length, 0);
+
+const yamiFamily = buildShiftStockReconcile({
+  reportRows: [
+    ["22.10"],
+    ["MODEL", "СТАЛО"],
+    ["YAMI 5%", "1"],
+    ["YAMI 7%", "2"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["YAMI 30ML", "КОЛ-ВО"],
+    ["Apple", "3"],
+  ],
+  dayKey: "2026-10-22",
+});
+assert.equal(yamiFamily.errors.length, 0, "YAMI 5%/7% ↔ YAMI 30ML");
+assert.equal(yamiFamily.mismatches.length, 0);
+
+const liqToReport = buildShiftStockReconcile({
+  reportRows: [
+    ["22.10"],
+    ["MODEL", "СТАЛО"],
+    ["ETHEREUM", "0"],
+    ["SPECIAL", "0"],
+    ["OXVA", "0"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ ETHEREUM", "КОЛ-ВО"],
+    ["LIQ SPECIAL", "КОЛ-ВО"],
+    ["OXVA", "КОЛ-ВО"],
+  ],
+  dayKey: "2026-10-22",
+});
+assert.equal(liqToReport.errors.length, 0, "LIQ ETHEREUM/SPECIAL/OXVA ↔ report");
+assert.equal(liqToReport.mismatches.length, 0);
+
 const emptyVersusStock = buildShiftStockReconcile({
   reportRows: [
     ["22.10"],

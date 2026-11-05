@@ -161,6 +161,9 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
     "elf-duck-1500-2": "ELF BAR 1500",
     "elf-duck-3000": "ELF BAR RI 3000",
     "yami-30ml": "YAMI",
+    // Assortment header short name; report day uses «MERRY MI 30K».
+    "merry-mi": "MERRY MI",
+    "merry-mi-30k": "MERRY MI",
   };
 
 const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([

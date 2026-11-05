@@ -18,6 +18,7 @@ import {
   readStrictSheetQty,
 } from "./assortmentGrid.js";
 import { normalizeSheetModelName, toReportModelLabel } from "./normalize.js";
+import { reportModelMatches } from "./dailyReportGrid.js";
 
 const DAY_BLOCK_WIDTH = 11;
 
@@ -33,10 +34,27 @@ function modelMatchKeys(value) {
 
   add(normalized);
   add(normalized.replace(/^LIQ\s+/, ""));
+
+  // Сімейства: один блок Асортимент ↔ кілька рядків Отчёт (або навпаки).
+  if (/^YAMI(\s+[57]%)?$/.test(normalized)) {
+    add("YAMI");
+    add("YAMI 5%");
+    add("YAMI 7%");
+  }
+  if (/^MERRY\s+MI/.test(normalized)) {
+    add("MERRY MI");
+  }
+  if (/^PUFFY\s+[57]%$/.test(normalized) || normalized === "PUFFY") {
+    // не зливаємо 5% і 7% в один ключ — лише точний + LIQ strip вище
+  }
+
   return keys;
 }
 
 export function sameSheetModel(left, right) {
+  if (reportModelMatches(left, right) || reportModelMatches(right, left)) {
+    return true;
+  }
   const rightKeys = modelMatchKeys(right);
   for (const key of modelMatchKeys(left)) {
     if (rightKeys.has(key)) return true;
@@ -198,6 +216,9 @@ export function compareShiftStock({ reportModels, assortmentModels }) {
     reportNames.set(key, prev);
   }
 
+  /** @type {Map<object, { assortment: object, reports: object[] }>} */
+  const groups = new Map();
+
   for (const [name, rows] of reportNames) {
     if (rows.length > 1) {
       errors.push({
@@ -231,14 +252,31 @@ export function compareShiftStock({ reportModels, assortmentModels }) {
 
     const assortment = hits[0];
     usedAssortment.add(assortment);
-
-    if (!report.ok) {
-      errors.push({ model: name, reason: report.reason });
-      continue;
+    if (!groups.has(assortment)) {
+      groups.set(assortment, { assortment, reports: [] });
     }
+    groups.get(assortment).reports.push(report);
+  }
+
+  for (const { assortment, reports } of groups.values()) {
+    const displayName =
+      reports.length === 1
+        ? String(reports[0]?.name || "").trim()
+        : reports.map((row) => String(row?.name || "").trim()).filter(Boolean).join(" + ");
+
+    for (const report of reports) {
+      if (!report.ok) {
+        errors.push({
+          model: String(report?.name || displayName).trim(),
+          reason: report.reason,
+        });
+      }
+    }
+    if (reports.some((report) => !report.ok)) continue;
+
     if (!assortment.ok) {
       errors.push({
-        model: name,
+        model: displayName,
         reason:
           assortment.reason ||
           "не удалось прочитать количество во вкладке «Ассортимент».",
@@ -246,11 +284,16 @@ export function compareShiftStock({ reportModels, assortmentModels }) {
       continue;
     }
 
-    if (Number(report.qty) !== Number(assortment.qty)) {
+    const reportQty = reports.reduce(
+      (sum, report) => sum + Number(report.qty || 0),
+      0
+    );
+    const assortmentQty = Number(assortment.qty || 0);
+    if (reportQty !== assortmentQty) {
       mismatches.push({
-        name,
-        reportQty: Number(report.qty),
-        assortmentQty: Number(assortment.qty),
+        name: displayName,
+        reportQty,
+        assortmentQty,
       });
     }
   }

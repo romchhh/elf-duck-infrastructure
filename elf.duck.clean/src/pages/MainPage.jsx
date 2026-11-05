@@ -439,7 +439,6 @@ const MainPage = () => {
 
   const [activeOrder, setActiveOrder] = useState(null);
 
-  const [activeOrderLoading, setActiveOrderLoading] = useState(false);
   const [activeOrderCanceling, setActiveOrderCanceling] = useState(false);
 
   const [activeOrderCancelConfirmOpen, setActiveOrderCancelConfirmOpen] =
@@ -1027,13 +1026,11 @@ const MainPage = () => {
 
     if (isGuestBrowser) {
       setActiveOrder(null);
-      setActiveOrderLoading(false);
       return;
     }
 
     if (!telegramId) {
       setActiveOrder(null);
-      setActiveOrderLoading(false);
       return;
     }
 
@@ -1081,14 +1078,9 @@ const MainPage = () => {
         if (!cancelled) {
           setActiveOrder(null);
         }
-      } finally {
-        if (!cancelled) {
-          setActiveOrderLoading(false);
-        }
       }
     };
 
-    setActiveOrderLoading(true);
     loadActiveOrder({ bustCache: true });
 
     const onVisibilityRefresh = () => {
@@ -3812,53 +3804,7 @@ navigate("/cart");
             <span className="sectionLine" />
           </div> */}
 
-          {activeOrderLoading && (
-
-            <div
-
-              className={`mainHeroLoadingSection reveal delay-2 ${
-
-                mounted ? "visible" : ""
-
-              }`}
-
-              aria-label={t("Загрузка", "Ładowanie")}
-
-            >
-
-              <div className="mainHeroLoadingCard">
-
-                <div className="mainHeroLoadingGlow" />
-
-                <div className="mainHeroLoadingTop">
-
-                  <div className="mainHeroLoadingTextGroup">
-
-                    <span className="mainHeroLoadingLine title" />
-
-                    <span className="mainHeroLoadingLine subtitle" />
-
-                  </div>
-
-                  <span className="mainHeroLoadingStatus" />
-
-                </div>
-
-                <div className="mainHeroLoadingBottom">
-
-                  <span className="mainHeroLoadingLine amountLabel" />
-
-                  <span className="mainHeroLoadingAmount" />
-
-                </div>
-
-              </div>
-
-            </div>
-
-          )}
-
-          {!activeOrderLoading && activeOrder && (
+          {activeOrder && (
             <div
               className={`mainActiveOrderSection reveal delay-2 ${
                 mounted ? "visible" : ""

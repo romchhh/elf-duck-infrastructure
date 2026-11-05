@@ -221,7 +221,7 @@ export function findMonthSummarySection(rows, dayKey) {
   return null;
 }
 
-function reportModelMatches(cell, reportModelLabel) {
+export function reportModelMatches(cell, reportModelLabel) {
   const wanted = normalizeSheetModelName(reportModelLabel);
   const alt = normalizeSheetModelName(toReportModelLabel(wanted));
   const norm = normalizeSheetModelName(cell);
@@ -230,9 +230,14 @@ function reportModelMatches(cell, reportModelLabel) {
   if (norm === wanted || norm === alt) return true;
   if (toReportModelLabel(norm) === toReportModelLabel(wanted)) return true;
 
-  // YAMI 5% / YAMI 7% на листі vs legacy «YAMI» у старих замовленнях
+  // Bare «YAMI» ↔ «YAMI 5%» / «YAMI 7%» (не змішуємо 5% з 7% між собою).
   if (wanted === "YAMI" && /^YAMI(\s+[57]%)?$/.test(norm)) return true;
   if (/^YAMI\s+[57]%$/.test(wanted) && norm === "YAMI") return true;
+
+  // MERRY MI ↔ MERRY MI 30K
+  if (/^MERRY\s+MI/.test(wanted) && /^MERRY\s+MI/.test(norm)) {
+    return true;
+  }
 
   return false;
 }
@@ -501,7 +506,9 @@ export async function writeDayBlockFromAggregates({
       ["tier5", 7, "tier5"],
     ];
 
-    const batch = [];
+    /** @type {Array<{ meta: object }>} */
+    const touched = [];
+    let updates = 0;
 
     for (const modelRow of listDayBlockModelRowIndexes(rows, block)) {
       const cellLabel = String(rows[modelRow]?.[blockStart] || "").trim();
@@ -511,63 +518,93 @@ export async function writeDayBlockFromAggregates({
 
       for (const [tierKey, colOff, field] of tierEntries) {
         const mongoTotal = Math.max(0, Number(product?.[field] || 0));
-        batch.push({
-          range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + colOff)}${modelRow + 1}`,
-          values: [[mongoTotal]],
-          meta: {
-            tierKey,
-            cellLabel: toReportModelLabel(cellLabel) || cellLabel,
-            mongoTotal,
-          },
-        });
+        const range = `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + colOff)}${modelRow + 1}`;
+        const meta = {
+          tierKey,
+          cellLabel: toReportModelLabel(cellLabel) || cellLabel,
+          mongoTotal,
+        };
+
+        if (dryRun) {
+          if (mongoTotal > 0) {
+            touched.push({ meta });
+            updates += 1;
+          }
+          continue;
+        }
+
+        const written = await writeSalesOrDiscountCell(
+          spreadsheetId,
+          range,
+          mongoTotal
+        );
+        if (written.wrote || written.cleared) {
+          touched.push({ meta });
+          updates += 1;
+        }
       }
     }
 
     const kassaRow = findKassaRowInDayBlock(rows, block);
     if (kassaRow >= 0) {
-      const mongoDisc = Number(discounts || 0);
-      batch.push({
-        range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`,
-        values: [[mongoDisc]],
-        meta: { kassaDiscounts: true, mongoTotal: mongoDisc },
-      });
+      const mongoDisc = Math.max(0, Number(discounts || 0));
+      const range = `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + 8)}${kassaRow + 1}`;
+      const meta = { kassaDiscounts: true, mongoTotal: mongoDisc };
+
+      if (dryRun) {
+        if (mongoDisc > 0) {
+          touched.push({ meta });
+          updates += 1;
+        }
+      } else {
+        const written = await writeSalesOrDiscountCell(
+          spreadsheetId,
+          range,
+          mongoDisc
+        );
+        if (written.wrote || written.cleared) {
+          touched.push({ meta });
+          updates += 1;
+        }
+      }
     }
 
     if (dryRun) {
-      return { ok: true, updates: batch.length, forceAbsolute: true, dryRun: true };
+      return { ok: true, updates, forceAbsolute: true, dryRun: true };
     }
 
-    if (batch.length) {
-      await batchUpdateValues(
-        spreadsheetId,
-        batch.map(({ range, values }) => ({ range, values }))
-      );
-    }
+    for (const modelRow of listDayBlockModelRowIndexes(rows, block)) {
+      const cellLabel = String(rows[modelRow]?.[blockStart] || "").trim();
+      const product =
+        productByLabel.get(toReportModelLabel(cellLabel)) ||
+        productByLabel.get(cellLabel);
 
-    for (const item of batch) {
-      if (item.meta?.kassaDiscounts) {
+      for (const [tierKey, , field] of tierEntries) {
+        const mongoTotal = Math.max(0, Number(product?.[field] || 0));
         await setBotSheetSnapshotTotal({
           spreadsheetId,
           dayKey,
-          snapshotKey: dayKassaSnapshotKey("discounts"),
-          totalQty: item.meta.mongoTotal,
+          snapshotKey: dayModelTierSnapshotKey(
+            toReportModelLabel(cellLabel) || cellLabel,
+            tierKey
+          ),
+          totalQty: mongoTotal,
         });
-        continue;
       }
+    }
+
+    if (kassaRow >= 0) {
       await setBotSheetSnapshotTotal({
         spreadsheetId,
         dayKey,
-        snapshotKey: dayModelTierSnapshotKey(
-          item.meta.cellLabel,
-          item.meta.tierKey
-        ),
-        totalQty: item.meta.mongoTotal,
+        snapshotKey: dayKassaSnapshotKey("discounts"),
+        totalQty: Math.max(0, Number(discounts || 0)),
       });
     }
 
     return {
       ok: true,
-      updates: batch.length,
+      updates,
       forceAbsolute: true,
     };
   }

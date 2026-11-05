@@ -31,9 +31,16 @@ export function normalizeSheetModelName(value) {
     .replace(/\bLIQ\s+HQD\b/g, "HQD")
     .replace(/\bLIQ\s+ETHEREUM\b/g, "ETHEREUM")
     .replace(/\bLIQ\s+SPECIAL\b/g, "SPECIAL")
+    .replace(/\bLIQ\s+YAMI\b/g, "YAMI")
     .replace(/\bLIQ\s+BLACK\b/g, "BLACK")
     .replace(/\bLIQ\s+FOR\s+PODS\b/g, "FOR PODS")
     .replace(/\bLIQ\s+VOZOL\s+PRIME\b/g, "VOZOL PRIME")
+    // Assortment «MERRY MI» vs report «MERRY MI 30K»
+    .replace(/\bMERRY\s+MI\s*30\s*K\b/g, "MERRY MI")
+    .replace(/\bMERRY\s+MI\s*30000\b/g, "MERRY MI")
+    // YAMI 30ML already loses 30ML via generic rule; keep 5%/7% as distinct labels.
+    .replace(/\bYAMI\s+5\s*%/g, "YAMI 5%")
+    .replace(/\bYAMI\s+7\s*%/g, "YAMI 7%")
     .replace(/\bPUFFY\s+7%\s*MG\b/g, "PUFFY 7%")
     .replace(/\bPUFFY\s+5%\s*MG\b/g, "PUFFY 5%")
     .replace(/\bELF\s+DUCK\s+D3\s+25K\b/g, "ELF BAR D3")
@@ -131,12 +138,16 @@ export function toReportModelLabel(normalizedModel) {
     "OXVA CATRIDGE": "OXVA CATRIDGE",
     "XROS CATRIDGE": "XROS CATRIDGE",
     "MERRY MI": "MERRY MI",
+    "YAMI 5%": "YAMI 5%",
+    "YAMI 7%": "YAMI 7%",
   };
 
   if (map[m]) return map[m];
 
   if (m.includes("ELF BAR D3")) return "ELF D3 25K";
   if (m.includes("BC45K") || m.includes("BC 45")) return "ELF BC45K";
+  if (/^MERRY\s+MI/.test(m)) return "MERRY MI";
+  if (/^YAMI(\s+[57]%)?$/.test(m)) return m === "YAMI" ? "YAMI" : m;
 
   return m;
 }
@@ -173,9 +184,11 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "elfliq-30-ml": ["LIQ ELFLIQ", "ELFLIQ"],
     "hqd-30-ml": ["LIQ HQD", "HQD"],
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
-    "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI"],
-    // Без голого «OXVA» — інакше fuzzy ловить «OXVA POD» / «OXVA CATRIDGE».
-    "oxva-30-ml-20-mg": ["LIQ OXVA", "OXVA 20 MG", "OXVA 30 ML"],
+    "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI", "YAMI 5%", "YAMI 7%"],
+    "merry-mi": ["MERRY MI", "MERRY MI 30K"],
+    "merry-mi-30k": ["MERRY MI", "MERRY MI 30K"],
+    // Голий «OXVA» — точний заголовок блоку на Ассортимент (не fuzzy на POD).
+    "oxva-30-ml-20-mg": ["OXVA", "LIQ OXVA", "OXVA 20 MG", "OXVA 30 ML"],
     "oxva-pod": ["OXVA POD"],
     "xros-5-mini-pod": ["XROS 5 MINI POD"],
     "xros-5-pod": ["XROS 5 POD"],
