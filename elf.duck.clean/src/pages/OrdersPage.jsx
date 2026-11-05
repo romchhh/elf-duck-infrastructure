@@ -984,11 +984,21 @@ useEffect(() => {
         try {
             const value = Math.max(
                 0,
-                Number(String(cashbackDraft || "").replace(",", "."))
+                Number(String(cashbackDraft ?? "").replace(",", "."))
             );
 
-            if (!value) {
-                closeCashbackEditor();
+            if (!Number.isFinite(value)) {
+                showTgAlert(t("Введите сумму", "Podaj kwotę"));
+                return;
+            }
+
+            if (value === 0) {
+                if (cashbackAppliedZl > 0) {
+                    const cleared = await applyCashbackToOrder("custom", 0);
+                    if (!cleared) return;
+                }
+                setIsCashbackEditing(false);
+                setCashbackDraft("");
                 return;
             }
 
@@ -1220,9 +1230,11 @@ useEffect(() => {
                     prev ? { ...prev, cashbackBalance: nextBalance } : prev
                 );
             }
+            return true;
         } catch (e) {
             console.error("applyCashbackToOrder error", e);
             alert(e?.message || t("Не удалось применить кэшбек", "Nie udało się zastosować cashbacku"));
+            return false;
         } finally {
             setPaymentSubmitting(false);
         }

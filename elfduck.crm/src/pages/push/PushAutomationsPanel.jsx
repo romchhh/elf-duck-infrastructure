@@ -245,6 +245,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
   const [activeTrigger, setActiveTrigger] = useState("first_purchase");
   const [drafts, setDrafts] = useState({});
   const [editingTrigger, setEditingTrigger] = useState(null);
+  const [composeMode, setComposeMode] = useState("template");
   const [lang, setLang] = useState("ru");
   const [delayAmount, setDelayAmount] = useState("0");
   const [delayUnit, setDelayUnit] = useState("hours");
@@ -455,6 +456,9 @@ export default function PushAutomationsPanel({ templates = [] }) {
     setDelayAmount(String(split.amount));
     setDelayUnit(split.unit);
     setLang("ru");
+    setComposeMode(
+      source.templateId || !(source.ru || source.pl) ? "template" : "manual"
+    );
     setActiveTrigger(trigger);
     setEditingTrigger(trigger);
   };
@@ -544,7 +548,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
           </h3>
           <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-muted-2">
             {editingTrigger
-              ? "Выберите язык, готовый шаблон и когда отправить."
+              ? "Шаблон или свой текст, язык и когда отправить."
               : "Включите сценарий тумблером. Текст и время — в редактировании."}
           </p>
         </div>
@@ -608,46 +612,75 @@ export default function PushAutomationsPanel({ templates = [] }) {
 
             <div>
               <p className="text-[11px] uppercase tracking-wider text-muted-2">
-                Шаблон ({lang === "pl" ? "PL" : "RU"})
+                Текст
               </p>
-              {langTemplates.length ? (
-                <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                  {langTemplates.map((template) => {
-                    const selected = draft.templateId === template.id;
-                    const preview = String(
-                      template.preview || template.text || ""
-                    )
-                      .replace(/\s+/g, " ")
-                      .trim();
-                    return (
-                      <button
-                        key={template.id}
-                        type="button"
-                        onClick={() => applyTemplate(template.id)}
-                        className={cn(
-                          "rounded-xl border px-3 py-2 text-left",
-                          selected
-                            ? "border-[hsl(255_100%_68%/0.55)] bg-[hsl(255_100%_68%/0.08)]"
-                            : "border-border hover:border-[hsl(255_20%_40%)]"
-                        )}
-                      >
-                        <div className="text-[12px] font-medium text-foreground">
-                          {template.name || template.title || "Без названия"}
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-[11px] text-muted-2">
-                          {preview || "Пустой текст"}
-                        </p>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="mt-1.5 text-[12px] text-amber-200/90">
-                  Нет шаблонов на {lang === "pl" ? "польском" : "русском"}.
-                  Создайте его в форме рассылки выше.
-                </p>
-              )}
+              <div className="mt-1.5 inline-flex rounded-lg border border-border bg-[hsl(232_26%_7%)] p-0.5">
+                {[
+                  { key: "template", label: "Шаблон" },
+                  { key: "manual", label: "Написать самому" },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setComposeMode(item.key)}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-[12px] font-medium",
+                      composeMode === item.key
+                        ? "bg-[hsl(255_100%_68%/0.18)] text-foreground"
+                        : "text-muted-2 hover:text-foreground"
+                    )}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {composeMode === "template" ? (
+              <div>
+                <p className="text-[11px] uppercase tracking-wider text-muted-2">
+                  Шаблоны ({lang === "pl" ? "PL" : "RU"})
+                </p>
+                {langTemplates.length ? (
+                  <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+                    {langTemplates.map((template) => {
+                      const selected = draft.templateId === template.id;
+                      const preview = String(
+                        template.preview || template.text || ""
+                      )
+                        .replace(/[*_~`>|]/g, "")
+                        .replace(/\s+/g, " ")
+                        .trim();
+                      return (
+                        <button
+                          key={template.id}
+                          type="button"
+                          onClick={() => applyTemplate(template.id)}
+                          className={cn(
+                            "rounded-xl border px-3 py-2 text-left",
+                            selected
+                              ? "border-[hsl(255_100%_68%/0.55)] bg-[hsl(255_100%_68%/0.08)]"
+                              : "border-border hover:border-[hsl(255_20%_40%)]"
+                          )}
+                        >
+                          <div className="text-[12px] font-medium text-foreground">
+                            {template.name || template.title || "Без названия"}
+                          </div>
+                          <p className="mt-1 line-clamp-2 text-[11px] text-muted-2">
+                            {preview || "Пустой текст"}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-1.5 text-[12px] text-amber-200/90">
+                    Нет шаблонов на {lang === "pl" ? "польском" : "русском"}.
+                    Нажмите «Написать самому» или создайте шаблон в форме выше.
+                  </p>
+                )}
+              </div>
+            ) : null}
 
             {activeEvent.delayMode === "none" ? (
               <p className="text-[12px] text-muted-2">
@@ -697,6 +730,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
               </div>
             )}
 
+            {composeMode === "manual" ? (
             <TelegramMessageEditor
               lang={lang}
               onLangChange={setLang}
@@ -706,11 +740,12 @@ export default function PushAutomationsPanel({ templates = [] }) {
                   ...current,
                   ru: next.ru,
                   pl: next.pl,
+                  templateId: "",
                 }))
               }
-              rows={5}
+              rows={8}
               placeholder={activeEvent.placeholder}
-              hint="Шаблон уже подставил текст. Здесь можно поправить формулировку."
+              hint="Этот текст уйдёт выбранным языком. Второй язык задайте переключателем сверху."
               showLangSwitch={false}
               showPreview={false}
               showPhoto
@@ -723,7 +758,9 @@ export default function PushAutomationsPanel({ templates = [] }) {
               onPhotoFile={onPhoto}
               onClearPhoto={clearPhoto}
             />
+            ) : null}
 
+            {composeMode === "manual" ? (
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <p className="text-[11px] uppercase tracking-wider text-muted-2">
@@ -812,10 +849,11 @@ export default function PushAutomationsPanel({ templates = [] }) {
                 </div>
               ) : (
                 <p className="text-[12px] text-muted-2">
-                  Кнопки подтянутся из шаблона. Можно добавить свою.
+                  Без кнопки сообщение уйдёт просто текстом.
                 </p>
               )}
             </div>
+            ) : null}
 
             <div className="flex flex-wrap items-center gap-3">
               <button

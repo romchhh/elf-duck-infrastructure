@@ -1527,7 +1527,11 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
     const prevPayment = order.payment?.toObject ? order.payment.toObject() : (order.payment || {});
     order.payment = {
       ...prevPayment,
-      method: cashbackFullyPaid ? "cashback" : String(prevPayment?.method || ""),
+      method: cashbackFullyPaid
+        ? "cashback"
+        : String(prevPayment?.method || "") === "cashback"
+          ? ""
+          : String(prevPayment?.method || ""),
       cashbackAppliedZl,
       cashbackRemainingToPayZl: remainingToPayZl,
       cashbackFullyPaid,
