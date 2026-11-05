@@ -849,6 +849,8 @@ export async function notifyGiveawayWinners(monthKey) {
   const langMap = new Map(users.map((u) => [String(u.telegramId), u.language]));
 
   let sent = 0;
+  let failed = 0;
+  const deliveryLog = [];
   const now = new Date();
 
   for (const row of winners) {
@@ -890,9 +892,58 @@ export async function notifyGiveawayWinners(monthKey) {
         { _id: row._id },
         { $set: { notifiedAt: now } }
       );
+      deliveryLog.push({
+        telegramId: tg,
+        username: "",
+        botUsername: "",
+        ok: true,
+        error: "",
+        at: new Date(),
+      });
       sent += 1;
     } catch (error) {
+      failed += 1;
+      deliveryLog.push({
+        telegramId: tg,
+        username: "",
+        botUsername: "",
+        ok: false,
+        error: String(error?.message || error || "SEND_FAILED").slice(0, 300),
+        at: new Date(),
+      });
       console.error("[GIVEAWAY][NOTIFY]", tg, error?.message || error);
+    }
+  }
+
+  if (sent + failed > 0) {
+    try {
+      const { default: BroadcastCampaign } = await import(
+        "../../models/BroadcastCampaign.js"
+      );
+      await BroadcastCampaign.create({
+        name: `Розыгрыш · ${monthKey}`,
+        source: "giveaway",
+        audience: "customers",
+        message: {
+          text: String(settings.winnerMessageRu || "").trim(),
+          textRu: String(settings.winnerMessageRu || "").trim(),
+          textPl: String(settings.winnerMessagePl || "").trim(),
+          photoUrl: String(settings.winnerPhotoUrl || "").trim(),
+          photoFileId: String(settings.winnerPhotoFileId || "").trim(),
+        },
+        status: sent > 0 ? "completed" : "failed",
+        recipients: sent + failed,
+        processed: sent + failed,
+        sent,
+        failed,
+        recipientTelegramIds: deliveryLog.map((row) => row.telegramId),
+        sentTelegramIds: deliveryLog.filter((row) => row.ok).map((row) => row.telegramId),
+        deliveryLog,
+        startedAt: now,
+        finishedAt: new Date(),
+      });
+    } catch (error) {
+      console.error("[GIVEAWAY][HISTORY]", error?.message || error);
     }
   }
 

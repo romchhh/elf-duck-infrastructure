@@ -13,6 +13,7 @@ import {
   pushTitleForTelegram,
 } from "./pushMessageFormat.js";
 import { formatCashbackExpireDateLocalized } from "../telegram/clientOrderMessages.js";
+import { getWarsawDateKey } from "./datetime.js";
 
 export const CRM_PUSH_AUTOMATIONS_COLLECTION = "crm_push_automations";
 export const CRM_PUSH_AUTOMATION_SENDS_COLLECTION =
@@ -289,33 +290,66 @@ async function sendAutomationNow({
   }
 
   try {
-    const campaign = await BroadcastCampaign.create({
-      name: `${AUTOMATION_LABELS[key] || "Авто"} · ${telegramId}`,
-      audience:
-        key === PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP
-          ? "leads"
-          : "customers",
-      filters: {
-        statuses: [],
-        categoryKeys: [],
-        locationKeys: [],
-        minCheck: 0,
-        minCashback: 0,
-        favProduct: "",
-        telegram: telegramId,
+    const dayKey = getWarsawDateKey(new Date());
+    const campaignName = AUTOMATION_LABELS[key] || "Авто";
+    const audience =
+      key === PUSH_AUTOMATION_TRIGGERS.LEAD_FOLLOWUP ? "leads" : "customers";
+
+    let campaign = null;
+    try {
+      campaign = await BroadcastCampaign.findOneAndUpdate(
+        {
+          automation: true,
+          automationTrigger: key,
+          automationDayKey: dayKey,
+        },
+        {
+          $setOnInsert: {
+            name: campaignName,
+            source: "automation",
+            automation: true,
+            automationTrigger: key,
+            automationDayKey: dayKey,
+            audience,
+            status: "queued",
+            recipients: 0,
+            recipientTelegramIds: [],
+            processed: 0,
+            sent: 0,
+            failed: 0,
+            blocked: 0,
+            purchases: 0,
+            revenue: 0,
+            conversion: 0,
+          },
+          $set: { message },
+        },
+        { upsert: true, new: true }
+      );
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      campaign = await BroadcastCampaign.findOne({
+        automation: true,
+        automationTrigger: key,
+        automationDayKey: dayKey,
+      });
+    }
+
+    if (!campaign?._id) {
+      throw new Error("AUTOMATION_CAMPAIGN_MISSING");
+    }
+
+    await BroadcastCampaign.updateOne(
+      {
+        _id: campaign._id,
+        recipientTelegramIds: { $ne: telegramId },
       },
-      message,
-      status: "queued",
-      recipients: 1,
-      recipientTelegramIds: [telegramId],
-      processed: 0,
-      sent: 0,
-      failed: 0,
-      blocked: 0,
-      purchases: 0,
-      revenue: 0,
-      conversion: 0,
-    });
+      {
+        $addToSet: { recipientTelegramIds: telegramId },
+        $inc: { recipients: 1 },
+        $set: { message, status: "queued", finishedAt: null },
+      }
+    );
 
     await broadcastRunner({
       campaignId: String(campaign._id),

@@ -13,6 +13,28 @@ const broadcastCampaignSchema =
         default: "all",
       },
 
+      automation: {
+        type: Boolean,
+        default: false,
+      },
+
+      automationTrigger: {
+        type: String,
+        default: "",
+      },
+
+      /** День Варшави YYYY-MM-DD: одна авторозсилка = один рядок історії за день. */
+      automationDayKey: {
+        type: String,
+        default: "",
+      },
+
+      /** manual | automation | giveaway */
+      source: {
+        type: String,
+        default: "manual",
+      },
+
       filters: {
         statuses: {
           type: [String],
@@ -250,6 +272,17 @@ const broadcastCampaignSchema =
 broadcastCampaignSchema.index({
   createdAt: -1,
 });
+
+broadcastCampaignSchema.index(
+  { automationTrigger: 1, automationDayKey: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      automation: true,
+      automationDayKey: { $gt: "" },
+    },
+  }
+);
 
 broadcastCampaignSchema.index({
   status: 1,

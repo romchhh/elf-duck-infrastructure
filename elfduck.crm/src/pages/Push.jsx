@@ -42,6 +42,10 @@ import {
   PUSH_PREVIEW_CLASS,
   renderPushPreviewHtml,
 } from '@/lib/pushPreviewHtml';
+import {
+  TELEGRAM_MARKDOWN_FORMATS,
+  insertTelegramMarkdown,
+} from '@/components/TelegramMessageEditor';
 import { cn } from '@/lib/utils';
 import { CRM_API_URL, crmFetchJson } from '@/lib/crmFetch';
 import { compressImageForUpload } from '@/lib/compressImage';
@@ -54,6 +58,7 @@ import {
   Chip,
   Field,
 } from '@/pages/push/pushFormUi';
+import PushAutomationsPanel from '@/pages/push/PushAutomationsPanel';
 
 const TPL_PAGE_SIZE = 5;
 const CAMPAIGN_PAGE_SIZE = 10;
@@ -84,6 +89,15 @@ function CampaignMobileRow({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[13px] font-medium text-foreground">
+            {r.source === 'giveaway' ? (
+              <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
+                Розыгрыш
+              </span>
+            ) : r.automation || r.source === 'automation' ? (
+              <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
+                Авто
+              </span>
+            ) : null}
             {r.name}
           </div>
 
@@ -278,28 +292,9 @@ export default function Push() {
   const bodyRef = useRef(null);
 
   const insertMarkdown = (before, after = before) => {
-    const el = bodyRef.current;
-    setBody((current) => {
-      const value = String(current || '');
-      const start = el?.selectionStart ?? value.length;
-      const end = el?.selectionEnd ?? value.length;
-      const selected = value.slice(start, end) || 'текст';
-      const chunk =
-        before === '> '
-          ? selected
-              .split('\n')
-              .map((line) => `> ${line}`)
-              .join('\n')
-          : `${before}${selected}${after}`;
-      const next = value.slice(0, start) + chunk + value.slice(end);
-      const cursor = start + chunk.length;
-      requestAnimationFrame(() => {
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(cursor, cursor);
-      });
-      return next;
-    });
+    setBody((current) =>
+      insertTelegramMarkdown(bodyRef.current, current, before, after)
+    );
   };
 
   const campaignNameFromBody = () => {
@@ -374,6 +369,7 @@ const [
   ] = useState(1);
 
   const [deliveryDetailId, setDeliveryDetailId] = useState(null);
+  const [historyKind, setHistoryKind] = useState('all');
 
   const {
     sortKey: campSortKey,
@@ -570,10 +566,14 @@ onSuccess: (data) => {
       ),
   });
 
-  const campaigns =
-    campaignsData
-      ?.campaigns ||
-    [];
+  const allCampaigns = campaignsData?.campaigns || [];
+  const campaigns = useMemo(() => {
+    if (historyKind === 'all') return allCampaigns;
+    return allCampaigns.filter((row) => {
+      const source = row?.source || (row?.automation ? 'automation' : 'manual');
+      return source === historyKind;
+    });
+  }, [allCampaigns, historyKind]);
 
   const {
     data: deliveryDetailData,
@@ -1124,11 +1124,19 @@ if (error?.status === 401) {
   });
 
   const deleteCampaignMutation = useMutation({
-    mutationFn: (campaignId) =>
-      crmFetch(
-        `/crm/push/campaigns/${encodeURIComponent(campaignId)}`,
-        { method: 'DELETE' }
-      ),
+    mutationFn: async (campaign) => {
+      const ids = Array.isArray(campaign?.memberIds) && campaign.memberIds.length
+        ? campaign.memberIds
+        : [campaign?.id || campaign];
+      for (const id of ids) {
+        const safe = String(id || '').trim();
+        if (!safe) continue;
+        await crmFetch(
+          `/crm/push/campaigns/${encodeURIComponent(safe)}`,
+          { method: 'DELETE' }
+        );
+      }
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['crm-push-campaigns'],
@@ -1161,7 +1169,7 @@ if (error?.status === 401) {
     ) {
       return;
     }
-    deleteCampaignMutation.mutate(campaignId);
+    deleteCampaignMutation.mutate(campaign);
   };
 
   const clearCampaignsMutation = useMutation({
@@ -1627,7 +1635,7 @@ const confirmCreateTpl = () => {
 
   useEffect(() => {
     setCampPage(1);
-  }, [campSortKey, campSortDirection]);
+  }, [campSortKey, campSortDirection, historyKind]);
 
   const sortedCampaigns = useMemo(() => {
     const rows = Array.isArray(campaigns) ? [...campaigns] : [];
@@ -1762,6 +1770,15 @@ const confirmCreateTpl = () => {
             className="truncate text-left font-medium text-foreground hover:text-[hsl(255_100%_75%)]"
             onClick={() => openDeliveryLog(r)}
           >
+            {r.source === 'giveaway' ? (
+              <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
+                Розыгрыш
+              </span>
+            ) : r.automation || r.source === 'automation' ? (
+              <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
+                Авто
+              </span>
+            ) : null}
             {r.name}
           </button>
           {r.promo ? (
@@ -2272,16 +2289,7 @@ const confirmCreateTpl = () => {
               }
             >
               <div className="mb-1.5 flex flex-wrap gap-1">
-                {[
-                  { label: 'B', tip: 'Жирный *текст*', before: '*', after: '*' },
-                  { label: 'I', tip: 'Курсив _текст_', before: '_', after: '_' },
-                  { label: 'спойлер', tip: 'Спойлер ||текст||', before: '||', after: '||' },
-                  { label: '`', tip: 'Код', before: '`', after: '`' },
-                  { label: '🔗', tip: 'Посилання', before: '[текст](', after: 'https://)' },
-                  { label: 'U', tip: 'Подчёркнутый __текст__', before: '__', after: '__' },
-                  { label: 'S', tip: 'Зачёркнутый ~~текст~~', before: '~~', after: '~~' },
-                  { label: '❝', tip: 'Цитата', before: '> ', after: '' },
-                ].map((item) => (
+                {TELEGRAM_MARKDOWN_FORMATS.map((item) => (
                   <button
                     key={item.label}
                     type="button"
@@ -2705,13 +2713,35 @@ const confirmCreateTpl = () => {
               История рассылок
             </div>
             <p className="mt-0.5 text-[11px] text-muted-2">
-              Разослано · получено · открыто апку · применения промо
+              Ручные, авто за день и розыгрыш. Доставлено · открыто · промо
             </p>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {[
+              { key: 'all', label: 'Все' },
+              { key: 'manual', label: 'Ручные' },
+              { key: 'automation', label: 'Авто' },
+              { key: 'giveaway', label: 'Розыгрыш' },
+            ].map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setHistoryKind(item.key)}
+                className={cn(
+                  'rounded-lg border px-2.5 py-1 text-[12px]',
+                  historyKind === item.key
+                    ? 'border-[hsl(255_100%_68%/0.5)] bg-[hsl(255_100%_68%/0.12)] text-foreground'
+                    : 'border-border text-muted-2 hover:text-foreground'
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
           </div>
           <button
             type="button"
             disabled={
-              !campaigns.length ||
+              !allCampaigns.length ||
               clearCampaignsMutation.isPending
             }
             onClick={() => {
@@ -3083,26 +3113,6 @@ const confirmCreateTpl = () => {
       </Dialog>
     </div>
   );
-}
-
-function promoAlreadyInPushText(text, promo) {
-  const code = String(promo || '').trim();
-  if (!code) return true;
-  const raw = String(text || '');
-  const upper = raw.toUpperCase();
-  const codeUpper = code.toUpperCase();
-  if (upper.includes(`\`${codeUpper}\``) || upper.includes(`\`${code}\``)) {
-    return true;
-  }
-  if (
-    new RegExp(
-      `\\b${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
-      'i'
-    ).test(raw)
-  ) {
-    return true;
-  }
-  return false;
 }
 
 function extractPromoCodesFromTexts(texts = []) {
@@ -3551,575 +3561,6 @@ function PushPromoCreator({ onCreated, messageTexts = [] }) {
           ) : null}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-const PUSH_AUTOMATION_EVENTS = [
-  {
-    trigger: 'first_purchase',
-    label: 'Первая покупка',
-    delayMode: 'minutes',
-    hint: '0 — сразу после выполнения заказа. 1440 = 1 день.',
-  },
-  {
-    trigger: 'lead_followup',
-    label: 'Лид без покупки',
-    delayMode: 'days',
-    hint: 'Отсчёт с первого захода в миниапп. Если клиент успеет купить — сообщение не уйдёт.',
-  },
-  {
-    trigger: 'cashback_expiring',
-    label: 'Кэшбек скоро сгорит',
-    delayMode: 'none',
-    hint: 'Один раз за 5 дней до сгорания. В шаблоне: {amount}, {days}, {date}.',
-  },
-  {
-    trigger: 'customer_sleeping',
-    label: 'Спящий клиент',
-    delayMode: 'minutes',
-    hint:
-      'Один раз, когда статус становится «Спящий» (периодичность + 7 дней без покупки). После новой покупки и повторного «сна» — снова. 0 = сразу.',
-  },
-];
-
-function normalizeAutomationButtons(buttons = []) {
-  return (Array.isArray(buttons) ? buttons : []).map((btn) => ({
-    text: String(btn?.text || ''),
-    kind: btn?.kind === 'url' ? 'url' : 'web_app',
-    path: String(btn?.path || '/'),
-    url: String(btn?.url || ''),
-  }));
-}
-
-function buildAutomationMessageFromTemplate(template, templateId) {
-  if (!template) return null;
-
-  const lang =
-    String(template.language || '').trim().toLowerCase() === 'pl' ? 'pl' : 'ru';
-  const text = String(template.text || template.preview || '').trim();
-  const textPl = lang === 'pl' ? text : String(template.textPl || '').trim();
-  const textRu = lang === 'ru' ? text : String(template.textRu || '').trim();
-
-  return {
-    title: '',
-    text: textPl || textRu || text,
-    textPl,
-    textRu,
-    defaultLanguage: 'ru',
-    promo: '',
-    buttons: normalizeAutomationButtons(template.buttons),
-    templateId: String(templateId || template.id || '').trim(),
-    photoUrl: String(template.photoUrl || template.photoPreviewUrl || '').trim(),
-    photoFileId: String(template.photoFileId || '').trim(),
-  };
-}
-
-function automationMessageHasContent(message) {
-  if (!message) return false;
-  return Boolean(
-    String(message.text || '').trim() ||
-      String(message.textPl || '').trim() ||
-      String(message.textRu || '').trim() ||
-      String(message.promo || '').trim() ||
-      String(message.photoUrl || message.photoPreviewUrl || '').trim() ||
-      String(message.photoFileId || '').trim()
-  );
-}
-
-function mergeAutomationMessageMedia(message, media = {}) {
-  if (!message) return null;
-
-  const photoUrl = String(
-    media.photoUrl || message.photoUrl || message.photoPreviewUrl || ''
-  ).trim();
-  const photoFileId = String(
-    media.photoFileId || message.photoFileId || ''
-  ).trim();
-
-  return {
-    ...message,
-    photoUrl,
-    photoFileId,
-  };
-}
-
-async function uploadCrmPushMediaFile(file) {
-  const allowed = ['image/jpeg', 'image/png', 'image/webp'];
-  if (!allowed.includes(file.type)) {
-    throw new Error('Можно загрузить JPG, PNG или WEBP');
-  }
-  if (file.size > 25 * 1024 * 1024) {
-    throw new Error('Максимум 25 МБ до сжатия');
-  }
-
-  const uploadFile = await compressImageForUpload(file, {
-    maxEdge: 1920,
-    maxBytes: 2.5 * 1024 * 1024,
-    quality: 0.85,
-  });
-
-  const formData = new FormData();
-  formData.append(
-    'file',
-    uploadFile,
-    uploadFile.name || file.name || 'push.jpg'
-  );
-
-  const data = await crmFetch('/crm/push/upload-media', {
-    method: 'POST',
-    body: formData,
-  });
-
-  const uploadedUrl = String(
-    data?.url || data?.photoPreviewUrl || ''
-  ).trim();
-
-  return {
-    uploadFile,
-    photoUrl: uploadedUrl,
-    photoFileId: String(data?.fileId || '').trim(),
-    previewUrl: uploadedUrl || URL.createObjectURL(uploadFile),
-  };
-}
-
-function defaultDelayMinutesForEvent(event, row) {
-  if (row?.updatedAt) {
-    return Math.max(0, Number(row.delayMinutes || 0));
-  }
-  if (event.delayMode === 'days') return 2880;
-  return 0;
-}
-
-function PushAutomationsPanel({ templates = [] }) {
-  const draftsRef = useRef({});
-  const [activeTrigger, setActiveTrigger] = useState('first_purchase');
-  const [enabled, setEnabled] = useState(false);
-  const [delayMinutes, setDelayMinutes] = useState('0');
-  const [templateId, setTemplateId] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('');
-  const [photoFileId, setPhotoFileId] = useState('');
-  const [mediaPreviewUrl, setMediaPreviewUrl] = useState('');
-  const [mediaUploading, setMediaUploading] = useState(false);
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['crm-push-automations'],
-    queryFn: () => crmFetch('/crm/push/automations'),
-    staleTime: 30_000,
-  });
-
-  const activeEvent =
-    PUSH_AUTOMATION_EVENTS.find((item) => item.trigger === activeTrigger) ||
-    PUSH_AUTOMATION_EVENTS[0];
-  const activeRow = data?.automations?.[activeTrigger];
-
-  const persistDraft = () => {
-    draftsRef.current[activeTrigger] = {
-      enabled,
-      delayMinutes,
-      templateId,
-      photoUrl,
-      photoFileId,
-      mediaPreviewUrl,
-    };
-  };
-
-  const resetAutomationMedia = () => {
-    if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(mediaPreviewUrl);
-    }
-    setPhotoUrl('');
-    setPhotoFileId('');
-    setMediaPreviewUrl('');
-  };
-
-  const loadTrigger = (trigger, row, event) => {
-    const draft = draftsRef.current[trigger];
-    if (draft) {
-      setEnabled(draft.enabled === true);
-      setDelayMinutes(String(draft.delayMinutes ?? '0'));
-      setTemplateId(String(draft.templateId || ''));
-      setPhotoUrl(String(draft.photoUrl || ''));
-      setPhotoFileId(String(draft.photoFileId || ''));
-      setMediaPreviewUrl(String(draft.mediaPreviewUrl || draft.photoUrl || ''));
-      return;
-    }
-
-    setEnabled(row?.enabled === true);
-    setDelayMinutes(String(defaultDelayMinutesForEvent(event, row)));
-    setTemplateId(String(row?.message?.templateId || ''));
-    const savedPhotoUrl = String(
-      row?.message?.photoUrl || row?.message?.photoPreviewUrl || ''
-    ).trim();
-    setPhotoUrl(savedPhotoUrl);
-    setPhotoFileId(String(row?.message?.photoFileId || '').trim());
-    setMediaPreviewUrl(savedPhotoUrl);
-  };
-
-  useEffect(() => {
-    if (isLoading) return;
-    const event =
-      PUSH_AUTOMATION_EVENTS.find((item) => item.trigger === activeTrigger) ||
-      PUSH_AUTOMATION_EVENTS[0];
-    loadTrigger(activeTrigger, activeRow, event);
-  }, [activeTrigger, isLoading, activeRow]);
-
-  const selectedTemplate = (templates || []).find(
-    (item) => item.id === templateId
-  );
-  const previewMessage = useMemo(() => {
-    let base = null;
-    if (selectedTemplate) {
-      base = buildAutomationMessageFromTemplate(selectedTemplate, templateId);
-    } else if (automationMessageHasContent(activeRow?.message)) {
-      base = activeRow.message;
-    }
-    return mergeAutomationMessageMedia(base, { photoUrl, photoFileId });
-  }, [
-    selectedTemplate,
-    templateId,
-    activeRow?.message,
-    photoUrl,
-    photoFileId,
-  ]);
-
-  const previewPhotoUrl =
-    mediaPreviewUrl ||
-    String(previewMessage?.photoUrl || previewMessage?.photoPreviewUrl || '').trim();
-
-  const previewLang =
-    String(previewMessage?.textPl || '').trim() &&
-    !String(previewMessage?.textRu || '').trim()
-      ? 'pl'
-      : 'ru';
-  const previewText =
-    previewLang === 'pl'
-      ? String(previewMessage?.textPl || previewMessage?.text || '')
-      : String(previewMessage?.textRu || previewMessage?.text || '');
-  const previewButtons = normalizeAutomationButtons(previewMessage?.buttons);
-  const delayDays = Math.round((Number(delayMinutes || 0) / 1440) * 10) / 10;
-
-  const queryClient = useQueryClient();
-  const saveMutation = useMutation({
-    mutationFn: () => {
-      const template = (templates || []).find((item) => item.id === templateId);
-      const baseMessage =
-        buildAutomationMessageFromTemplate(template, templateId) ||
-        (automationMessageHasContent(activeRow?.message)
-          ? activeRow.message
-          : null);
-      const message = mergeAutomationMessageMedia(baseMessage, {
-        photoUrl,
-        photoFileId,
-      });
-
-      if (!automationMessageHasContent(message)) {
-        throw new Error('Выберите шаблон или добавьте фото с текстом');
-      }
-
-      return crmFetch(`/crm/push/automations/${activeTrigger}`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          enabled,
-          delayMinutes: Number(delayMinutes || 0),
-          message,
-        }),
-      });
-    },
-    onSuccess: async () => {
-      delete draftsRef.current[activeTrigger];
-      await queryClient.invalidateQueries({
-        queryKey: ['crm-push-automations'],
-      });
-      toast({ title: 'Авторассылка сохранена' });
-    },
-    onError: (error) => {
-      toast({
-        title: 'Не удалось сохранить',
-        description: error?.message || 'SAVE_FAILED',
-        variant: 'destructive',
-      });
-    },
-  });
-
-  const switchTrigger = (trigger) => {
-    if (trigger === activeTrigger) return;
-    persistDraft();
-    setActiveTrigger(trigger);
-  };
-
-  const canSave =
-    Boolean(templateId && selectedTemplate) ||
-    automationMessageHasContent(activeRow?.message) ||
-    Boolean(String(photoUrl || photoFileId).trim());
-
-  const selectAutomationMedia = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    setMediaUploading(true);
-    try {
-      const uploaded = await uploadCrmPushMediaFile(file);
-      if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(mediaPreviewUrl);
-      }
-      setPhotoUrl(uploaded.photoUrl);
-      setPhotoFileId(uploaded.photoFileId);
-      setMediaPreviewUrl(uploaded.previewUrl);
-      toast({ title: 'Фото добавлено к авторассылке' });
-    } catch (error) {
-      toast({
-        title: 'Не удалось загрузить фото',
-        description: error?.message || 'UPLOAD_FAILED',
-        variant: 'destructive',
-      });
-    } finally {
-      setMediaUploading(false);
-    }
-  };
-
-  return (
-    <div className="rounded-2xl surface-card p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-heading text-[14px] font-semibold text-foreground">
-            Автоматическая рассылка
-          </h3>
-          <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-            Привяжите шаблон из блока выше или добавьте фото прямо здесь.
-            Текст можно взять из шаблона — настройте задержку и вкл/выкл.
-          </p>
-        </div>
-        <Chip
-          active={enabled}
-          onClick={() => setEnabled((value) => !value)}
-        >
-          {enabled ? 'Включено' : 'Выключено'}
-        </Chip>
-      </div>
-
-      {isLoading ? (
-        <p className="mt-4 text-[12px] text-muted-2">Загрузка…</p>
-      ) : (
-        <div className="mt-4 space-y-4">
-          <Field label="Событие">
-            <div className="flex flex-wrap gap-2">
-              {PUSH_AUTOMATION_EVENTS.map((event) => (
-                <button
-                  key={event.trigger}
-                  type="button"
-                  onClick={() => switchTrigger(event.trigger)}
-                  className={cn(
-                    'rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors',
-                    activeTrigger === event.trigger
-                      ? 'border-[hsl(255_100%_68%/0.5)] bg-[hsl(255_100%_68%/0.1)] text-foreground'
-                      : 'border-border text-muted-2 hover:text-foreground'
-                  )}
-                >
-                  {event.label}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_240px]">
-            <div className="space-y-3">
-              <Field label="Шаблон">
-                <select
-                  value={templateId}
-                  onChange={(event) => setTemplateId(event.target.value)}
-                  className="input-base"
-                >
-                  <option value="">Выберите сохранённый шаблон…</option>
-                  {(templates || []).map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {String(template.language || 'ru').toUpperCase()} ·{' '}
-                      {template.name || template.title || 'Без названия'}
-                    </option>
-                  ))}
-                </select>
-                {!templates.length ? (
-                  <p className="mt-1 text-[11px] text-amber-200/80">
-                    Нет шаблонов — создайте текст в форме рассылки и нажмите
-                    «Создать шаблон».
-                  </p>
-                ) : null}
-              </Field>
-
-              <Field label="Фото (необязательно)">
-                <div className="space-y-2">
-                  <label
-                    className={cn(
-                      'inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-[12px] text-muted-foreground hover:text-foreground',
-                      mediaUploading && 'pointer-events-none opacity-50'
-                    )}
-                  >
-                    <Paperclip className="h-3.5 w-3.5" />
-                    {mediaUploading
-                      ? 'Загрузка…'
-                      : previewPhotoUrl
-                        ? 'Заменить фото'
-                        : 'Добавить фото'}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      onChange={selectAutomationMedia}
-                      className="hidden"
-                    />
-                  </label>
-                  {previewPhotoUrl ? (
-                    <div className="flex items-start gap-3 rounded-lg border border-border-soft bg-[hsl(232_26%_6%)] p-2">
-                      <img
-                        src={previewPhotoUrl}
-                        alt="Фото авторассылки"
-                        className="h-16 w-16 shrink-0 rounded-md object-cover"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[11px] text-muted-foreground">
-                          Отправится как фото с подписью из шаблона. Можно
-                          добавить фото и в самом шаблоне — здесь переопределяет
-                          его для этого события.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={resetAutomationMedia}
-                          className="mt-2 text-[11px] text-muted-2 hover:text-foreground"
-                        >
-                          Удалить фото
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-muted-2">
-                      JPG, PNG или WEBP до 25 МБ (на сервер уходит сжатое
-                      изображение).
-                    </p>
-                  )}
-                </div>
-              </Field>
-
-              {activeEvent.delayMode === 'none' ? (
-                <p className="text-[11px] leading-relaxed text-muted-2">
-                  {activeEvent.hint}
-                </p>
-              ) : activeEvent.delayMode === 'days' ? (
-                <Field label="Задержка отправки">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {[1, 2].map((days) => (
-                      <button
-                        key={days}
-                        type="button"
-                        onClick={() =>
-                          setDelayMinutes(String(days * 1440))
-                        }
-                        className={cn(
-                          'rounded-lg border px-3 py-1.5 text-[12px]',
-                          Number(delayMinutes) === days * 1440
-                            ? 'border-[hsl(255_100%_68%/0.5)] text-foreground'
-                            : 'border-border text-muted-2'
-                        )}
-                      >
-                        {days} {days === 1 ? 'день' : 'дня'}
-                      </button>
-                    ))}
-                    <input
-                      value={
-                        Number.isFinite(delayDays) ? String(delayDays) : '2'
-                      }
-                      onChange={(event) => {
-                        const days = Math.min(
-                          14,
-                          Math.max(0, Number(event.target.value || 0))
-                        );
-                        setDelayMinutes(String(Math.round(days * 1440)));
-                      }}
-                      type="number"
-                      min="0"
-                      max="14"
-                      step="1"
-                      className="input-base w-24"
-                    />
-                  </div>
-                  <p className="mt-1 text-[11px] text-muted-2">
-                    {activeEvent.hint}
-                  </p>
-                </Field>
-              ) : (
-                <Field label="Задержка отправки (мин)">
-                  <input
-                    value={delayMinutes}
-                    onChange={(event) => setDelayMinutes(event.target.value)}
-                    type="number"
-                    min="0"
-                    max="20160"
-                    className="input-base max-w-[160px]"
-                  />
-                  <p className="mt-1 text-[11px] text-muted-2">
-                    {activeEvent.hint}
-                  </p>
-                </Field>
-              )}
-
-              <p className="text-[11px] text-muted-2">
-                История: «Авто · первая покупка», «Авто · лиды», «Авто · кэшбек
-                сгорает». Язык клиента — PL или RU из шаблона.
-              </p>
-            </div>
-
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-muted-2">
-                Превью
-              </p>
-              <div className="mt-2 rounded-xl bg-[hsl(234_22%_11%)] p-3">
-                {previewPhotoUrl ? (
-                  <img
-                    src={previewPhotoUrl}
-                    alt="Превью фото"
-                    className="mb-2 max-h-32 w-full rounded-lg object-cover"
-                  />
-                ) : null}
-                <div
-                  className={PUSH_PREVIEW_CLASS}
-                  dangerouslySetInnerHTML={{
-                    __html: renderPushPreviewHtml(
-                      previewText ||
-                        (templateId
-                          ? 'Выберите другой шаблон'
-                          : 'Выберите шаблон')
-                    ),
-                  }}
-                />
-                {previewMessage?.promo &&
-                !promoAlreadyInPushText(previewText, previewMessage.promo) ? (
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    Промокод: <code>{previewMessage.promo}</code>
-                  </p>
-                ) : null}
-                {previewButtons
-                  .filter((btn) => btn.text)
-                  .map((btn, index) => (
-                    <div
-                      key={`${btn.text}-${index}`}
-                      className="mt-1 rounded-md border border-[hsl(255_100%_68%/0.35)] px-2 py-1 text-center text-[10px] font-medium text-[hsl(255_100%_75%)]"
-                    >
-                      {btn.text}
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => saveMutation.mutate()}
-        disabled={saveMutation.isPending || !canSave}
-        className="mt-4 inline-flex h-9 items-center justify-center rounded-lg bg-gradient-to-r from-[hsl(255_100%_68%)] to-[hsl(280_90%_60%)] px-4 text-[12px] font-medium text-white disabled:opacity-50"
-      >
-        {saveMutation.isPending ? 'Сохраняем…' : 'Сохранить для события'}
-      </button>
     </div>
   );
 }

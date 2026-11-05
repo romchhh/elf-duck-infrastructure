@@ -1,9 +1,9 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronRight, RefreshCw, Users } from "lucide-react";
 import { crmFetchJson, CRM_API_URL } from "@/lib/crmFetch";
 import { compressImageForUpload } from "@/lib/compressImage";
-import { renderPushPreviewHtml, PUSH_PREVIEW_CLASS } from "@/lib/pushPreviewHtml";
+import TelegramMessageEditor from "@/components/TelegramMessageEditor";
 import { toast } from "@/components/ui/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -64,16 +64,6 @@ function defaultWinnerBannerUrl(lang) {
   return `${CRM_API_URL}/giveaway-media/giveaway-winner-${suffix}.webp`;
 }
 
-const MESSAGE_FORMATS = [
-  { label: "B", tip: "Жирный *текст*", before: "*", after: "*" },
-  { label: "I", tip: "Курсив _текст_", before: "_", after: "_" },
-  { label: "U", tip: "Подчёркнутый __текст__", before: "__", after: "__" },
-  { label: "S", tip: "Зачёркнутый ~~текст~~", before: "~~", after: "~~" },
-  { label: "спойлер", tip: "||текст||", before: "||", after: "||" },
-  { label: "`", tip: "Код", before: "`", after: "`" },
-  { label: "❝", tip: "Цитата", before: "> ", after: "" },
-];
-
 function StatusPill({ status }) {
   const key = String(status || "open");
   return (
@@ -120,8 +110,8 @@ export default function Giveaway() {
   const [winnerMessageOpen, setWinnerMessageOpen] = useState(false);
   const [messageDraft, setMessageDraft] = useState(null);
   const [messageLang, setMessageLang] = useState("ru");
+  const [rulesLang, setRulesLang] = useState("ru");
   const [photoUploading, setPhotoUploading] = useState(false);
-  const messageRef = useRef(null);
 
   const {
     data: monthsData,
@@ -373,32 +363,6 @@ export default function Giveaway() {
       });
     },
   });
-
-  const insertMessageFormat = (before, after = before) => {
-    const el = messageRef.current;
-    setMessageDraft((current) => {
-      const field = messageLang === "pl" ? "pl" : "ru";
-      const value = String(current?.[field] || "");
-      const start = el?.selectionStart ?? value.length;
-      const end = el?.selectionEnd ?? value.length;
-      const selected = value.slice(start, end) || "текст";
-      const chunk =
-        before === "> "
-          ? selected
-              .split("\n")
-              .map((line) => `> ${line}`)
-              .join("\n")
-          : `${before}${selected}${after}`;
-      const next = value.slice(0, start) + chunk + value.slice(end);
-      const cursor = start + chunk.length;
-      requestAnimationFrame(() => {
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(cursor, cursor);
-      });
-      return { ...(current || {}), [field]: next };
-    });
-  };
 
   const uploadWinnerPhoto = async (file) => {
     if (!file) return;
@@ -872,43 +836,31 @@ export default function Giveaway() {
                 </div>
               </div>
 
-              <div className="grid gap-3 lg:grid-cols-2">
-                <label className="block text-[12px]">
-                  <span className="mb-1 block text-muted-2">
-                    Правила (RU), опционально
-                  </span>
-                  <textarea
-                    rows={4}
-                    disabled={!settingsEditable || settingsMutation.isPending}
-                    value={settingsDraft.rulesRu || ""}
-                    onChange={(e) =>
-                      setSettingsDraft((prev) => ({
-                        ...(prev || {}),
-                        rulesRu: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[12px] leading-relaxed"
-                    placeholder="Пусто = стандартные правила"
-                  />
-                </label>
-                <label className="block text-[12px]">
-                  <span className="mb-1 block text-muted-2">
-                    Правила (PL), опционально
-                  </span>
-                  <textarea
-                    rows={4}
-                    disabled={!settingsEditable || settingsMutation.isPending}
-                    value={settingsDraft.rulesPl || ""}
-                    onChange={(e) =>
-                      setSettingsDraft((prev) => ({
-                        ...(prev || {}),
-                        rulesPl: e.target.value,
-                      }))
-                    }
-                    className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[12px] leading-relaxed"
-                    placeholder="Puste = domyślne zasady"
-                  />
-                </label>
+              <div className="rounded-xl border border-border/60 p-3">
+                <p className="mb-2 text-[12px] font-medium">
+                  Правила в магазине (опционально)
+                </p>
+                <TelegramMessageEditor
+                  lang={rulesLang}
+                  onLangChange={setRulesLang}
+                  values={{
+                    ru: settingsDraft.rulesRu || "",
+                    pl: settingsDraft.rulesPl || "",
+                  }}
+                  onChange={(next) =>
+                    setSettingsDraft((prev) => ({
+                      ...(prev || {}),
+                      rulesRu: next.ru,
+                      rulesPl: next.pl,
+                    }))
+                  }
+                  disabled={!settingsEditable || settingsMutation.isPending}
+                  rows={5}
+                  hint="Пусто = стандартные правила в магазине."
+                  showFormatToolbar={false}
+                  showPreview={false}
+                  formatHint="Заполните RU и PL — клиент увидит язык своего профиля."
+                />
               </div>
 
               {settingsEditable ? (
@@ -1005,133 +957,50 @@ export default function Giveaway() {
               </button>
 
               {winnerMessageOpen ? (
-              <>
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3">
-                <p className="text-[11px] text-muted-2">
-                  Сообщение победителям в Telegram после начисления приза.
-                  *жирный* _курсив_ __подчёркнутый__ ~~зачёркнутый~~
-                </p>
-                <div className="inline-flex rounded-lg border border-border p-0.5">
-                  {[
-                    { key: "ru", label: "RU" },
-                    { key: "pl", label: "PL" },
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setMessageLang(item.key)}
-                      className={cn(
-                        "rounded-md px-2.5 py-1 text-[11px]",
-                        messageLang === item.key
-                          ? "bg-[hsl(255_100%_68%/0.18)] text-foreground"
-                          : "text-muted-2"
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-1">
-                {MESSAGE_FORMATS.map((item) => (
-                  <button
-                    key={item.label}
-                    type="button"
-                    title={item.tip}
-                    onClick={() => insertMessageFormat(item.before, item.after)}
-                    className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-border px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-
-              <textarea
-                ref={messageRef}
-                rows={5}
-                value={messageLang === "pl" ? messageDraft.pl : messageDraft.ru}
-                onChange={(e) =>
-                  setMessageDraft((current) => ({
-                    ...(current || {}),
-                    [messageLang === "pl" ? "pl" : "ru"]: e.target.value,
-                  }))
-                }
-                className="w-full rounded-lg border border-border bg-transparent px-3 py-2 font-mono text-[12px] leading-relaxed"
-              />
-
-              <div
-                className={PUSH_PREVIEW_CLASS}
-                dangerouslySetInnerHTML={{
-                  __html: renderPushPreviewHtml(
-                    (messageLang === "pl" ? messageDraft.pl : messageDraft.ru).replaceAll(
-                      "{amount}",
-                      "150"
-                    )
-                  ),
-                }}
-              />
-
-              <div className="rounded-xl border border-border/70 bg-black/20 p-2">
-                <p className="mb-2 text-[10px] uppercase tracking-wide text-muted-2">
-                  {messageDraft.photoUrl
-                    ? "Загруженное фото"
-                    : `Баннер по умолчанию (${messageLang === "pl" ? "PL" : "RU"})`}
-                </p>
-                <img
-                  src={
-                    messageDraft.photoUrl ||
-                    defaultWinnerBannerUrl(messageLang)
-                  }
-                  alt=""
-                  className="max-h-32 w-full rounded-lg object-contain"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="cursor-pointer rounded-lg border border-border px-3 py-2 text-[12px]">
-                  {photoUploading ? "Загрузка…" : "Заменить фото"}
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    disabled={photoUploading}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      uploadWinnerPhoto(file);
+                <div className="space-y-3 border-t border-border/60 pt-3">
+                  <TelegramMessageEditor
+                    lang={messageLang}
+                    onLangChange={setMessageLang}
+                    values={{
+                      ru: messageDraft.ru || "",
+                      pl: messageDraft.pl || "",
                     }}
-                  />
-                </label>
-                {messageDraft.photoUrl ? (
-                  <button
-                    type="button"
-                    className="text-[12px] text-muted-2 hover:text-foreground"
-                    onClick={() =>
+                    onChange={(next) =>
+                      setMessageDraft((current) => ({
+                        ...(current || {}),
+                        ru: next.ru,
+                        pl: next.pl,
+                      }))
+                    }
+                    disabled={messageMutation.isPending}
+                    rows={5}
+                    hint="Сообщение победителям в Telegram после начисления приза. {amount} → сумма приза."
+                    previewTransform={(text) =>
+                      String(text || "").replaceAll("{amount}", "150")
+                    }
+                    showPhoto
+                    photoUrl={messageDraft.photoUrl || ""}
+                    defaultPhotoUrl={defaultWinnerBannerUrl(messageLang)}
+                    photoUploading={photoUploading}
+                    photoHint="Свой файл перекроет RU/PL баннер"
+                    onPhotoFile={uploadWinnerPhoto}
+                    onClearPhoto={() =>
                       setMessageDraft((current) => ({
                         ...(current || {}),
                         photoUrl: "",
                         photoFileId: "",
                       }))
                     }
+                  />
+                  <button
+                    type="button"
+                    disabled={messageMutation.isPending}
+                    onClick={() => messageMutation.mutate()}
+                    className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
                   >
-                    Снова стандартный баннер
+                    {messageMutation.isPending ? "…" : "Сохранить сообщение"}
                   </button>
-                ) : (
-                  <span className="text-[11px] text-muted-2">
-                    Свой файл перекроет RU/PL баннер
-                  </span>
-                )}
-                <button
-                  type="button"
-                  disabled={messageMutation.isPending}
-                  onClick={() => messageMutation.mutate()}
-                  className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
-                >
-                  {messageMutation.isPending ? "…" : "Сохранить сообщение"}
-                </button>
-              </div>
-              </>
+                </div>
               ) : null}
             </div>
           ) : null}
