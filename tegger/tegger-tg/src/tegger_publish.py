@@ -148,22 +148,46 @@ def compose_story_frame(
     return dest, area
 
 
-def _with_button(caption: str, entities: list, button_url: str, button_text: str):
-    """Додає текст кнопки після відміток, не зміщуючи MessageEntityMention."""
-    link = str(button_url or "").strip()
-    if not link:
-        return caption, entities
-    label = str(button_text or "").strip() or "Открыть"
-    offset = len(caption) + 1 if caption else 0
-    text = f"{caption}\n{label}" if caption else label
-    entities.append(
-        types.MessageEntityTextUrl(
-            offset=offset,
-            length=len(label),
-            url=link,
+def _mention_caption(caption: str, entities_users: list):
+    """Один рядок @user @user і окрема entity на кожен, у UTF-16.
+
+    Переноси рядка і Python len() зсували другу відмітку, Telegram її відкидав.
+    Кнопка лишається на фото і в mediaAreaUrl, без окремої entity в тексті.
+    """
+    tokens = []
+    users = []
+    for entity in entities_users:
+        username = str(entity.username or "").strip().lstrip("@")
+        if not username:
+            continue
+        tokens.append(f"@{username}")
+        users.append(entity)
+    if not tokens:
+        raise ValueError("Нет username для отметки")
+
+    mention_line = " ".join(tokens)
+    text_caption = str(caption or "").strip()
+    text = f"{text_caption}\n{mention_line}" if text_caption else mention_line
+
+    raw = text.encode("utf-16-le")
+    mention_entities = []
+    search_from = 0
+    for token, entity in zip(tokens, users):
+        needle = token.encode("utf-16-le")
+        index = raw.find(needle, search_from)
+        if index < 0 or index % 2:
+            raise RuntimeError(f"Не найдена отметка {token} в тексте истории")
+        offset = index // 2
+        length = len(needle) // 2
+        mention_entities.append(
+            types.MessageEntityMention(
+                offset=offset,
+                length=length,
+            )
         )
-    )
-    return text, entities
+        search_from = index + len(needle)
+
+    return text, mention_entities, [entity.username for entity in users]
 
 
 def link_media_area(url: str, area: dict | None):
@@ -267,8 +291,7 @@ async def publish_custom_story(
                 continue
 
             await asyncio.sleep(max(0, int(interaction_delay)))
-            text, entities, names = build_caption_and_entities(ready, caption=caption)
-            text, entities = _with_button(text, entities, link, label)
+            text, entities, names = _mention_caption(caption, ready)
             uploaded = await client.upload_file(str(composed))
             result = await client(
                 functions.stories.SendStoryRequest(
