@@ -27,6 +27,7 @@ import Locations from "@/pages/Locations";
 import Stock from "@/pages/Stock";
 import Catalog from "@/pages/Catalog";
 import Giveaway from "@/pages/Giveaway";
+import Reviews from "@/pages/Reviews";
 
 function AppRoutes() {
   return (
@@ -43,6 +44,7 @@ function AppRoutes() {
         <Route path="/sales/orders" element={<Orders />} />
         <Route path="/sales/customers" element={<Customers />} />
         <Route path="/sales/leads" element={<Leads />} />
+        <Route path="/sales/reviews" element={<Reviews />} />
         <Route path="/sales/stock" element={<Stock />} />
         <Route path="/catalog" element={<Catalog />} />
 

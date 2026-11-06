@@ -1210,6 +1210,15 @@ useEffect(() => {
 
             const data = await r.json().catch(() => ({}));
             if (!r.ok || data?.ok === false) {
+                if (Number.isFinite(Number(data?.cashbackBalance))) {
+                    const nextBalance = roundMoney(data.cashbackBalance);
+                    setUser((prev) =>
+                        prev ? { ...prev, cashbackBalance: nextBalance } : prev
+                    );
+                }
+                if (data?.error === "ORDER_ANNULLED" || data?.error === "ORDER_CANCELED") {
+                    setActivePaymentOrder(null);
+                }
                 throw new Error(data?.error || t("Не удалось применить кэшбек", "Nie udało się zastosować cashbacku"));
             }
 

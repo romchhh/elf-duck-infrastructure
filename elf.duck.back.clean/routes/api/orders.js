@@ -15,6 +15,26 @@ import {
 } from "../../lib/crm/promoOrderUse.js";
 import { sendClientBlikPaymentInstructions } from "../../lib/payments/blikClientTelegram.js";
 
+async function refundAndRejectClosedOrder(order, res) {
+  const status = String(order?.status || "").trim().toLowerCase();
+  if (status !== "canceled" && status !== "annulled") return false;
+
+  let cashbackBalance = null;
+  try {
+    const refund = await refundOrderCashback(order);
+    cashbackBalance = refund?.cashbackBalance ?? null;
+  } catch (error) {
+    console.error("closed order cashback refund error:", error);
+  }
+
+  res.status(400).json({
+    ok: false,
+    error: status === "annulled" ? "ORDER_ANNULLED" : "ORDER_CANCELED",
+    cashbackBalance,
+  });
+  return true;
+}
+
 export function registerRoutes(app) {
   bindApiGlobals();
 
@@ -1411,9 +1431,7 @@ app.post("/orders/:id/apply-cashback", async (req, res) => {
       return res.status(403).json({ ok: false, error: "FORBIDDEN" });
     }
 
-    if (String(order.status || "") === "canceled") {
-      return res.status(400).json({ ok: false, error: "ORDER_CANCELED" });
-    }
+    if (await refundAndRejectClosedOrder(order, res)) return;
 
     if (
       String(order.payment?.status || "") === "checking" ||
@@ -1581,9 +1599,7 @@ app.post("/orders/:id/apply-promo-code", async (req, res) => {
       return res.status(403).json({ ok: false, error: "FORBIDDEN" });
     }
 
-    if (String(order.status || "") === "canceled") {
-      return res.status(400).json({ ok: false, error: "ORDER_CANCELED" });
-    }
+    if (await refundAndRejectClosedOrder(order, res)) return;
 
     if (
       String(order.payment?.status || "") === "checking" ||
@@ -1815,6 +1831,8 @@ app.post("/orders/:id/payment-check", async (req, res) => {
     if (!order) {
       return res.status(404).json({ ok: false, error: "Order not found" });
     }
+
+    if (await refundAndRejectClosedOrder(order, res)) return;
 
     const priorPaymentStatus = String(order?.payment?.status || "")
       .trim()

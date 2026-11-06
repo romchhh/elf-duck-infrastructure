@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, ShoppingCart, Users, UserPlus, Handshake, Gift, Send,
-  Package, MapPin, Boxes, LayoutGrid, Tags, TicketPercent, Trophy
+  Package, MapPin, Boxes, LayoutGrid, Tags, TicketPercent, Trophy, MessageSquareText
 } from 'lucide-react';
 
 export const TEGGER_URL = String(
@@ -18,6 +18,7 @@ export const groups = [
       { to: '/sales/orders', label: 'Заказы', icon: ShoppingCart },
       { to: '/sales/customers', label: 'Клиенты', icon: Users },
       { to: '/sales/leads', label: 'Лиды', icon: UserPlus },
+      { to: '/sales/reviews', label: 'Отзывы', icon: MessageSquareText },
       { to: '/sales/stock', label: 'Остатки', icon: Boxes },
       { to: '/catalog', label: 'Каталог', icon: LayoutGrid },
     ],

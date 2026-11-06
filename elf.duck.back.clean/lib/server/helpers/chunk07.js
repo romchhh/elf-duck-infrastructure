@@ -474,20 +474,39 @@ export async function refundOrderCashback(order) {
     : [];
 
   const refundAmount = Number(originalAppliedZl.toFixed(2));
+  const orderId = String(freshOrder._id || "");
+  const alreadyReturnedZl = Number(
+    user.cashbackLedger
+      .filter(
+        (row) =>
+          String(row?.sourceOrderId || row?.orderId || "") === orderId &&
+          String(row?.source || "") === "order_payment_refund" &&
+          !row?.expiredAt
+      )
+      .reduce((sum, row) => sum + Math.max(0, Number(row?.remainingZl || 0)), 0)
+      .toFixed(2)
+  );
+  const stillMissingZl = Number(
+    Math.max(0, refundAmount - alreadyReturnedZl).toFixed(2)
+  );
 
-  user.cashbackLedger.push({
-    sourceOrderId: freshOrder._id,
-    orderId: freshOrder._id,
-    source: "order_payment_refund",
-    type: "refund",
-    amountZl: refundAmount,
-    remainingZl: refundAmount,
-    earnedAt: new Date(),
-    expiresAt: addDays(new Date(), 40),
-    warnedAt: null,
-    expiredAt: null,
-    expiredAmountZl: 0,
-  });
+  // Повторне списання на вже закрите замовлення з'їдає попередній повернення.
+  // Докидаємо лише різницю, щоб не нарахувати кешбек двічі.
+  if (stillMissingZl > 0) {
+    user.cashbackLedger.push({
+      sourceOrderId: freshOrder._id,
+      orderId: freshOrder._id,
+      source: "order_payment_refund",
+      type: "refund",
+      amountZl: stillMissingZl,
+      remainingZl: stillMissingZl,
+      earnedAt: new Date(),
+      expiresAt: addDays(new Date(), 40),
+      warnedAt: null,
+      expiredAt: null,
+      expiredAmountZl: 0,
+    });
+  }
 
   recalcUserCashbackBalanceFromLedger(user);
 

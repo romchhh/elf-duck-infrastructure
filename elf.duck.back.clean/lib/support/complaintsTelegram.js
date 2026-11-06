@@ -1,11 +1,13 @@
 import Order from "../../models/Order.js";
 import PickupPoint from "../../models/PickupPoint.js";
 import User from "../../models/User.js";
+import CustomerReview from "../../models/CustomerReview.js";
 import {
   getClientDeliveryBots,
   getShopBotByIndex,
 } from "../telegram/clientBotDelivery.js";
 import { getPrimaryShopBotIndex } from "../telegram/shopBotPrimary.js";
+import { saveReviewMediaBuffer } from "./reviewMediaStorage.js";
 
 export const DEFAULT_COMPLAINTS_CHAT_ID = "-1003968794671";
 
@@ -170,11 +172,50 @@ export async function submitCustomerComplaint({
 
   const messageHtml = lines.join("\n");
 
+  const imageUrls = [];
+  for (const img of parsedImages) {
+    try {
+      const saved = await saveReviewMediaBuffer({
+        buffer: img.buffer,
+        contentType: img.contentType,
+      });
+      if (saved?.url) imageUrls.push(saved.url);
+    } catch (saveErr) {
+      console.error("submitCustomerComplaint save image error:", saveErr);
+    }
+  }
+
+  let reviewDoc = null;
+  try {
+    reviewDoc = await CustomerReview.create({
+      telegramId: id,
+      username: String(user?.username || ""),
+      firstName: String(user?.firstName || ""),
+      lastName: String(user?.lastName || ""),
+      text: body,
+      orderId: order?._id || null,
+      orderNo: String(order?.orderNo || ""),
+      pickupPointId: pickupPoint?._id || null,
+      pointTitle,
+      pointAddress,
+      deliveryLabel,
+      source: String(source || ""),
+      imageUrls,
+      imageCount: imageUrls.length,
+      telegramSent: false,
+    });
+  } catch (persistErr) {
+    console.error("submitCustomerComplaint persist review error:", persistErr);
+  }
+
   const bots = getClientDeliveryBots();
   const bot =
     getShopBotByIndex(getPrimaryShopBotIndex()) || bots[0] || null;
 
   if (!bot?.telegram) {
+    if (reviewDoc) {
+      return { ok: true, reviewId: String(reviewDoc._id), telegramSent: false };
+    }
     return { ok: false, reason: "BOT_UNAVAILABLE" };
   }
 
@@ -207,13 +248,39 @@ export async function submitCustomerComplaint({
       );
     }
 
-    return { ok: true };
+    if (reviewDoc?._id) {
+      await CustomerReview.updateOne(
+        { _id: reviewDoc._id },
+        { $set: { telegramSent: true, telegramError: "" } }
+      );
+    }
+
+    return {
+      ok: true,
+      reviewId: reviewDoc?._id ? String(reviewDoc._id) : "",
+      telegramSent: true,
+    };
   } catch (error) {
     console.error("submitCustomerComplaint telegram error:", error);
+    const detail = String(
+      error?.response?.description || error?.message || ""
+    ).slice(0, 200);
+    if (reviewDoc?._id) {
+      await CustomerReview.updateOne(
+        { _id: reviewDoc._id },
+        { $set: { telegramSent: false, telegramError: detail } }
+      ).catch(() => {});
+      // CRM уже має запис — клієнту не показуємо помилку Telegram.
+      return {
+        ok: true,
+        reviewId: String(reviewDoc._id),
+        telegramSent: false,
+      };
+    }
     return {
       ok: false,
       reason: "TELEGRAM_SEND_FAILED",
-      detail: String(error?.response?.description || error?.message || ""),
+      detail,
     };
   }
 }

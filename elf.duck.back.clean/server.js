@@ -15,6 +15,7 @@ import cors from "cors";
 import compression from "compression";
 import { getCatalogUploadDir } from "./lib/crm/catalogMediaStorage.js";
 import { getPushUploadDir } from "./lib/crm/pushMediaStorage.js";
+import { getReviewUploadDir } from "./lib/support/reviewMediaStorage.js";
 import { getGiveawayWinnerBannerDir } from "./lib/giveaway/winnerBannerMedia.js";
 import { getBlikPreferCashBannerDir } from "./lib/payments/blikPreferCashBannerMedia.js";
 
@@ -173,6 +174,16 @@ fs.mkdirSync(pushUploadDir, { recursive: true });
 app.use(
   "/push-media",
   express.static(pushUploadDir, {
+    maxAge: "7d",
+    fallthrough: true,
+  })
+);
+
+const reviewUploadDir = getReviewUploadDir();
+fs.mkdirSync(reviewUploadDir, { recursive: true });
+app.use(
+  "/review-media",
+  express.static(reviewUploadDir, {
     maxAge: "7d",
     fallthrough: true,
   })

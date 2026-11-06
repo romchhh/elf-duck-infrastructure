@@ -1,5 +1,23 @@
 const API_URL = "";
 
+function errorMessageFromDetail(detail, fallback) {
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item.msg === "string") return item.msg;
+        return "";
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+  if (detail && typeof detail === "object" && typeof detail.msg === "string") {
+    return detail.msg;
+  }
+  return fallback;
+}
+
 async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
@@ -16,7 +34,7 @@ async function request(path, options = {}) {
 
     try {
       const data = await response.json();
-      message = data.detail || message;
+      message = errorMessageFromDetail(data.detail, message);
     } catch {
       // Ответ не содержит JSON
     }
@@ -105,7 +123,11 @@ export const teggerClient = {
             method: "POST", credentials: "include", body,
           });
           const data = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+          if (!response.ok) {
+            throw new Error(
+              errorMessageFromDetail(data.detail, `HTTP ${response.status}`)
+            );
+          }
           return data;
         },
         phoneStart: (data) => request("/api/accounts/add/phone/start", { method: "POST", body: JSON.stringify(data) }),
