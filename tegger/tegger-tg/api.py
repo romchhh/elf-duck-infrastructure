@@ -3324,6 +3324,7 @@ async def _tegger_execute(job_id: str):
                 entity = await client.get_entity(username)
                 if not getattr(entity, "username", None):
                     raise RuntimeError(f"У @{username} нет публичного username")
+            limits = execution_values()
             published = await _publish_custom_story(
                 client,
                 photo_path=item["photoPath"],
@@ -3332,23 +3333,29 @@ async def _tegger_execute(job_id: str):
                 button_url=item.get("buttonUrl") or "",
                 button_text=item.get("buttonText") or "",
                 button_color=item.get("buttonColor") or "#2AABEE",
+                story_min=limits["TARGETS_PER_STORY_MIN"],
+                story_max=limits["TARGETS_PER_STORY_MAX"],
+                interval_min=limits["STORY_INTERVAL_MIN_SECONDS"],
+                interval_max=limits["STORY_INTERVAL_MAX_SECONDS"],
+                interaction_delay=limits["INTERACTION_STORY_DELAY"],
             )
         finally:
             if client.is_connected():
                 await client.disconnect()
 
+        failed = published.get("failed") or []
         await _tegger_update(
             job_id,
             status="done",
             dryRun=False,
             finishedAt=_dt.now(_tz.utc).isoformat(),
-            resultType=published.get("resultType") or "",
-            error="",
+            resultType=f"{published.get('stories') or 0} stories",
+            error=("Не опубликованы: " + "; ".join(failed)) if failed else "",
         )
         _audit(
             "SUCCESS",
             "Тегер опубликован",
-            f"Story + {len(published.get('mentions') or [])} отметок",
+            f"{published.get('stories') or 0} историй, {len(published.get('mentions') or [])} отметок",
             item.get("senderId") or "system",
         )
     except Exception as exc:

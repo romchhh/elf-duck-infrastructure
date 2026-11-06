@@ -7,20 +7,26 @@ so the button is drawn on a fixed 9:16 frame and the hit-box matches it.
 
 from __future__ import annotations
 
+import asyncio
 import random
 import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 from telethon import functions, types
-from telethon.utils import add_surrogate
+
+from config import (
+    INTERACTION_STORY_DELAY,
+    STORY_INTERVAL_MAX_SECONDS,
+    STORY_INTERVAL_MIN_SECONDS,
+    TARGETS_PER_STORY_MAX,
+    TARGETS_PER_STORY_MIN,
+)
+from src.contact import create_test_interaction
+from src.story import build_caption_and_entities
 
 STORY_W = 1080
 STORY_H = 1920
-
-
-def _utf16_len(text: str) -> int:
-    return len(add_surrogate(text))
 
 
 def parse_button_color(raw: str) -> tuple[int, int, int]:
@@ -142,58 +148,22 @@ def compose_story_frame(
     return dest, area
 
 
-def _append_piece(parts: list[str], piece: str) -> int:
-    if parts:
-        offset = _utf16_len("\n".join(parts) + "\n")
-    else:
-        offset = 0
-    parts.append(piece)
-    return offset
-
-
-def build_caption_entities(
-    caption: str,
-    mentions: list[dict],
-    *,
-    button_url: str = "",
-    button_text: str = "",
-):
-    """Caption + TextUrl + one InputMessageEntityMentionName per user."""
-    parts: list[str] = []
-    entities: list = []
-
-    clean_caption = str(caption or "").strip()
-    if clean_caption:
-        parts.append(clean_caption)
-
+def _with_button(caption: str, entities: list, button_url: str, button_text: str):
+    """Додає текст кнопки після відміток, не зміщуючи MessageEntityMention."""
     link = str(button_url or "").strip()
+    if not link:
+        return caption, entities
     label = str(button_text or "").strip() or "Открыть"
-    if link:
-        offset = _append_piece(parts, label)
-        entities.append(
-            types.MessageEntityTextUrl(
-                offset=offset,
-                length=_utf16_len(label),
-                url=link,
-            )
+    offset = len(caption) + 1 if caption else 0
+    text = f"{caption}\n{label}" if caption else label
+    entities.append(
+        types.MessageEntityTextUrl(
+            offset=offset,
+            length=len(label),
+            url=link,
         )
-
-    if not mentions:
-        raise ValueError("Нужен хотя бы один username для отметки")
-
-    for item in mentions:
-        username = str(item["username"]).lstrip("@")
-        token = f"@{username}"
-        offset = _append_piece(parts, token)
-        entities.append(
-            types.InputMessageEntityMentionName(
-                offset=offset,
-                length=_utf16_len(token),
-                user_id=item["input_user"],
-            )
-        )
-
-    return "\n".join(parts), entities, [item["username"] for item in mentions]
+    )
+    return text, entities
 
 
 def link_media_area(url: str, area: dict | None):
@@ -214,7 +184,7 @@ def link_media_area(url: str, area: dict | None):
     )
 
 
-async def _resolve_mentions(client, usernames: list[str]) -> list[dict]:
+async def _resolve_mentions(client, usernames: list[str]) -> list:
     resolved = []
     seen = set()
     for raw in usernames:
@@ -225,18 +195,18 @@ async def _resolve_mentions(client, usernames: list[str]) -> list[dict]:
         entity = await client.get_entity(username)
         if not isinstance(entity, types.User) or not getattr(entity, "username", None):
             raise RuntimeError(f"@{username} — не пользователь с публичным username")
-        peer = await client.get_input_entity(entity)
-        if not isinstance(peer, types.InputPeerUser):
-            raise RuntimeError(f"Не удалось получить InputUser для @{username}")
-        resolved.append(
-            {
-                "username": entity.username,
-                "input_user": types.InputUser(peer.user_id, peer.access_hash),
-            }
-        )
+        resolved.append(entity)
     if not resolved:
         raise ValueError("Нужен хотя бы один username для отметки")
     return resolved
+
+
+def _take_group(pending: list, story_min: int, story_max: int) -> list:
+    """Як в оригінальному тегері: 2–3 людей на одну історію, хвіст публікується як є."""
+    size = min(random.randint(story_min, story_max), len(pending))
+    group = pending[:size]
+    del pending[:size]
+    return group
 
 
 async def publish_custom_story(
@@ -248,6 +218,11 @@ async def publish_custom_story(
     button_url: str = "",
     button_text: str = "",
     button_color: str = "#2AABEE",
+    story_min: int = TARGETS_PER_STORY_MIN,
+    story_max: int = TARGETS_PER_STORY_MAX,
+    interval_min: int = STORY_INTERVAL_MIN_SECONDS,
+    interval_max: int = STORY_INTERVAL_MAX_SECONDS,
+    interaction_delay: int = INTERACTION_STORY_DELAY,
 ):
     path = Path(photo_path)
     if not path.is_file():
@@ -256,7 +231,9 @@ async def publish_custom_story(
     link = str(button_url or "").strip()
     label = str(button_text or "").strip()
     color = str(button_color or "").strip() or "#2AABEE"
-    mentions = await _resolve_mentions(client, usernames)
+    pending = await _resolve_mentions(client, usernames)
+    story_min = max(1, int(story_min))
+    story_max = max(story_min, int(story_max))
 
     composed = path.with_name(f"{path.stem}_story.jpg")
     try:
@@ -266,41 +243,66 @@ async def publish_custom_story(
             color_hex=color,
             output_path=composed,
         )
-        text, entities, names = build_caption_entities(
-            caption,
-            mentions,
-            button_url=link,
-            button_text=label,
-        )
-        uploaded = await client.upload_file(str(composed))
-        media = types.InputMediaUploadedPhoto(file=uploaded)
+        me = await client.get_input_entity("me")
         media_areas = []
         url_area = link_media_area(link, area)
         if url_area is not None:
             media_areas.append(url_area)
 
-        me = await client.get_input_entity("me")
-        result = await client(
-            functions.stories.SendStoryRequest(
-                peer=me,
-                media=media,
-                privacy_rules=[types.InputPrivacyValueAllowAll()],
-                random_id=random.randint(-(2**63), 2**63 - 1),
-                media_areas=media_areas or None,
-                caption=text,
-                entities=entities,
-                period=86400,
-                pinned=False,
+        published = []
+        failed = []
+        stories = 0
+        last_type = ""
+        while pending:
+            group = _take_group(pending, story_min, story_max)
+            ready = []
+            for entity in group:
+                try:
+                    await create_test_interaction(client, entity)
+                except Exception as exc:
+                    failed.append(f"@{entity.username}: {type(exc).__name__}")
+                    continue
+                ready.append(entity)
+            if not ready:
+                continue
+
+            await asyncio.sleep(max(0, int(interaction_delay)))
+            text, entities, names = build_caption_and_entities(ready, caption=caption)
+            text, entities = _with_button(text, entities, link, label)
+            uploaded = await client.upload_file(str(composed))
+            result = await client(
+                functions.stories.SendStoryRequest(
+                    peer=me,
+                    media=types.InputMediaUploadedPhoto(file=uploaded),
+                    privacy_rules=[types.InputPrivacyValueAllowAll()],
+                    random_id=random.randint(-(2**63), 2**63 - 1),
+                    media_areas=media_areas or None,
+                    caption=text,
+                    entities=entities,
+                    period=86400,
+                    pinned=False,
+                )
             )
-        )
+            published.extend(names)
+            stories += 1
+            last_type = type(result).__name__
+            if pending:
+                delay = random.randint(int(interval_min), int(interval_max))
+                await asyncio.sleep(delay)
+
+        if not published:
+            detail = "; ".join(failed) or "Telegram не принял отметки"
+            raise RuntimeError(detail)
     finally:
         composed.unlink(missing_ok=True)
 
     return {
-        "mentions": names,
-        "caption": text,
+        "mentions": published,
+        "failed": failed,
+        "caption": caption,
         "buttonUrl": link,
         "buttonText": label,
         "buttonColor": color if link else "",
-        "resultType": type(result).__name__,
+        "resultType": last_type,
+        "stories": stories,
     }

@@ -189,7 +189,7 @@ export default function Tegger() {
     <div>
       <PageHeader
         title="Тегер"
-        subtitle="Одна история: фото, текст, кнопка-ссылка и отметки пользователей"
+        subtitle="Фото, текст и кнопка. Отметки как в оригинальном тегере: 2–3 человека в одной истории"
       >
         <BrandButton variant="secondary" onClick={refresh} disabled={loading}>
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} strokeWidth={2} />

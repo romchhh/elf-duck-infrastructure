@@ -47,7 +47,7 @@ def parse_story_url(url):
     return username, story_id
 
 
-def build_caption_and_entities(targets):
+def build_caption_and_entities(targets, caption=None):
     """
     Создаёт caption и отдельный MessageEntityMention
     для каждого разрешённого target.
@@ -58,6 +58,8 @@ def build_caption_and_entities(targets):
     @target1
     @target2
     @target3
+
+    caption=None берёт STORY_CAPTION из конфига.
     """
 
     if not targets:
@@ -86,8 +88,9 @@ def build_caption_and_entities(targets):
     parts = []
     entities = []
 
-    if STORY_CAPTION:
-        parts.append(STORY_CAPTION)
+    story_caption = STORY_CAPTION if caption is None else str(caption or "").strip()
+    if story_caption:
+        parts.append(story_caption)
 
     for username in usernames:
         mention = f"@{username}"
