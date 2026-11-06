@@ -147,14 +147,19 @@ export default function Tegger() {
     }
   };
 
+  const canStartSelected =
+    Boolean(selected) &&
+    selected.status !== "running" &&
+    (selected.status !== "done" || Boolean(selected.dryRun));
+
   const handleStart = async () => {
-    if (!selected || selected.status === "running" || selected.status === "done") return;
+    if (!canStartSelected) return;
     setStarting(true);
     setError("");
     setNotice("");
     try {
       await teggerClient.teggers.start(selected.id);
-      setNotice("Запуск… статус обновится ниже.");
+      setNotice("Публикация в Telegram… статус обновится ниже.");
       await refresh();
       setSelectedId(selected.id);
     } catch (err) {
@@ -354,12 +359,6 @@ export default function Tegger() {
                   </div>
                 </div>
 
-                {selected.dryRun && selected.status === "done" && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
-                    DRY_RUN: история не публиковалась в Telegram, только симуляция.
-                  </div>
-                )}
-
                 {selected.error && (
                   <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
                     {selected.error}
@@ -369,19 +368,15 @@ export default function Tegger() {
                 <BrandButton
                   variant="primary"
                   onClick={handleStart}
-                  disabled={
-                    starting ||
-                    selected.status === "running" ||
-                    selected.status === "done"
-                  }
+                  disabled={starting || !canStartSelected}
                 >
                   <Play className="h-4 w-4" strokeWidth={2} />
                   {selected.status === "running"
-                    ? "Выполняется…"
-                    : selected.status === "done"
-                      ? "Уже выполнен"
+                    ? "Публикация…"
+                    : selected.status === "done" && !selected.dryRun
+                      ? "Уже опубликован"
                       : starting
-                        ? "Запуск…"
+                        ? "Публикация…"
                         : "Запустить"}
                 </BrandButton>
               </div>

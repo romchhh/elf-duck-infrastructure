@@ -18,7 +18,7 @@ function displayCampaignStatus(campaign) {
 
 export default function Dashboard() {
 const [status, setStatus] = useState({
-  mode: "DRY RUN",
+  mode: "LIVE",
   accounts: 0,
   campaigns: 0,
   processed: 0,
@@ -31,8 +31,6 @@ const [campaigns, setCampaigns] = useState([]);
 const [logs, setLogs] = useState([]);
 const [showStart, setShowStart] = useState(false);
 const [selectedCampaignId, setSelectedCampaignId] = useState("");
-const [simulation, setSimulation] = useState(null);
-const [simulationBusy, setSimulationBusy] = useState(false);
 const [liveWorker, setLiveWorker] = useState(null);
 const [liveBusy, setLiveBusy] = useState(false);
 const [consentChecked, setConsentChecked] = useState(false);
@@ -82,37 +80,6 @@ const [error, setError] = useState("");
 
   const active = campaigns.find((c) => c.id === selectedCampaignId) ||
     campaigns.find((c) => c.status === "Активна") || campaigns[0];
-
-  useEffect(() => {
-    if (!active?.id || status.mode !== "DRY RUN") { setSimulation(null); return; }
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const data = await teggerClient.campaigns.simulation(active.id);
-        if (!cancelled) setSimulation(data);
-      } catch (err) {
-        if (!cancelled) setError(err.message || "Ошибка проверки симуляции");
-      }
-    };
-    poll();
-    const timer = window.setInterval(poll, 1500);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [active?.id, status.mode]);
-
-  const simulationAction = async (action) => {
-    if (!active?.id || simulationBusy) return;
-    setSimulationBusy(true);
-    setError("");
-    try {
-      const data = await teggerClient.campaigns.simulationAction(active.id, action);
-      setSimulation(data);
-      setShowStart(false);
-    } catch (err) {
-      setError(err.message || "Ошибка управления симуляцией");
-    } finally {
-      setSimulationBusy(false);
-    }
-  };
 
   useEffect(() => {
     let active = true;
@@ -179,47 +146,22 @@ const [error, setError] = useState("");
             </select>
             <ChevronRight aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 rotate-90 text-muted-foreground" />
           </div>
-          {status.mode === "LIVE" && (
-            <>
-              <BrandButton
-                variant="primary"
-                disabled={!active || liveBusy || liveWorker?.status === "running" || liveWorker?.status === "stopping"}
-                onClick={() => { setConsentChecked(false); setShowStart(true); }}
-              >
-                <Play className="h-4 w-4" strokeWidth={2} />
-                Запустить
-              </BrandButton>
-              {liveWorker?.campaignId === active?.id && ["running", "stopping"].includes(liveWorker?.status) && (
-                <BrandButton disabled={liveBusy || liveWorker?.status === "stopping"} onClick={() => liveAction("stop")}>Остановить</BrandButton>
-              )}
-            </>
-          )}
-          {status.mode === "DRY RUN" && (
-            <>
-              <BrandButton
-                variant="primary"
-                disabled={!active || simulationBusy || simulation?.status === "running" || simulation?.status === "paused"}
-                title="Только симуляция: Telegram не используется"
-                onClick={() => setShowStart(true)}
-              >
-                <Play className="h-4 w-4" strokeWidth={2} />
-                Запустить тест (DRY RUN)
-              </BrandButton>
-              {simulation?.status === "running" && <BrandButton disabled={simulationBusy} onClick={() => simulationAction("pause")}>Пауза теста</BrandButton>}
-              {simulation?.status === "paused" && <BrandButton disabled={simulationBusy} onClick={() => simulationAction("resume")}>Продолжить тест</BrandButton>}
-              {["running", "paused", "interrupted"].includes(simulation?.status) && <BrandButton disabled={simulationBusy} onClick={() => simulationAction("stop")}>Остановить тест</BrandButton>}
-            </>
+          <BrandButton
+            variant="primary"
+            disabled={!active || liveBusy || liveWorker?.status === "running" || liveWorker?.status === "stopping"}
+            onClick={() => { setConsentChecked(false); setShowStart(true); }}
+          >
+            <Play className="h-4 w-4" strokeWidth={2} />
+            Запустить
+          </BrandButton>
+          {liveWorker?.campaignId === active?.id && ["running", "stopping"].includes(liveWorker?.status) && (
+            <BrandButton disabled={liveBusy || liveWorker?.status === "stopping"} onClick={() => liveAction("stop")}>Остановить</BrandButton>
           )}
         </div>
       </div>
 
-      {simulation && <div className="mb-4 rounded-lg border border-border bg-card p-3 text-sm" role="status">
-        Тестовая симуляция «{active?.name}»: <strong>{simulation.status}</strong> ·
-        {" "}{simulation.completed}/{simulation.total} шагов · Telegram-запросов: 0.
-        <span className="block text-xs text-muted-foreground">Не является запуском Telegram worker; реальная статистика и прогресс не изменяются.</span>
-      </div>}
       {liveWorker && <div className="mb-4 rounded-lg border p-3 text-sm" role="status">
-        Railway worker: {liveWorker.status} · Кампания: {liveWorker.campaignId || "—"} · Публикаций: {liveWorker.storiesPublished || 0}
+        Worker: {liveWorker.status} · Кампания: {liveWorker.campaignId || "—"} · Публикаций: {liveWorker.storiesPublished || 0}
         {liveWorker.lastError && <div className="text-red-600">{liveWorker.lastError}</div>}
       </div>}
       {/* Metrics */}
@@ -359,35 +301,22 @@ const [error, setError] = useState("");
         </div>
       </div>
 
-      <ConfirmDialog open={showStart && status.mode === "LIVE"} onClose={() => setShowStart(false)}
-        onConfirm={() => liveAction("start")} title="Запустить реальные отметки" confirmLabel="Запустить LIVE">
-        <label className="flex gap-2 p-4 text-sm"><input type="checkbox" checked={consentChecked} onChange={e => setConsentChecked(e.target.checked)} />
-          Подтверждаю, что все получатели заранее согласились на отметки в Stories.</label>
-      </ConfirmDialog>
-      {/* Start confirmation */}
       <ConfirmDialog
-        open={showStart && status.mode === "DRY RUN"}
+        open={showStart}
         onClose={() => setShowStart(false)}
-        onConfirm={() => simulationAction("start")}
-        title="Тестовая симуляция (без Telegram)"
-        confirmLabel="Запустить тест"
+        onConfirm={() => liveAction("start")}
+        title="Запустить реальные отметки"
+        confirmLabel="Запустить"
       >
-        <div className="mt-4 space-y-2 rounded-lg bg-muted p-4 text-sm">
-          <Row label="Кампания" value={active?.name || "—"} />
-          <Row label="Аккаунты" value={active ? `${active.senderIds.length}` : "—"} />
-          <Row label="Отметок" value={active ? active.totalTargets.toLocaleString("ru-RU") : "—"} />
-          <Row label="Режим" value="DRY RUN — без Telegram" />
-        </div>
+        <label className="flex gap-2 p-4 text-sm">
+          <input
+            type="checkbox"
+            checked={consentChecked}
+            onChange={(e) => setConsentChecked(e.target.checked)}
+          />
+          Подтверждаю, что все получатели заранее согласились на отметки в Stories.
+        </label>
       </ConfirmDialog>
-    </div>
-  );
-}
-
-function Row({ label, value }) {
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium text-foreground">{value}</span>
     </div>
   );
 }

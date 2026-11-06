@@ -31,61 +31,6 @@ export default function CampaignDetail() {
   const [checking, setChecking] = useState(false);
   const [workerCheck, setWorkerCheck] = useState(null);
 
-  const [dryRunResult, setDryRunResult] = useState(null);
-  const [runningDryRun, setRunningDryRun] = useState(false);
-
-  const [simulation, setSimulation] = useState(null);
-  const [simulationBusy, setSimulationBusy] = useState(false);
-
-  useEffect(() => {
-    if (campaignId === "migration") return;
-    let active = true;
-    const poll = async () => {
-      try {
-        const data = await teggerClient.campaigns.simulation(campaignId);
-        if (active) setSimulation(data);
-      } catch (err) {
-        if (active && err.status !== 409) setStatusError(err.message || "Ошибка состояния симуляции");
-      }
-    };
-    poll();
-    const timer = setInterval(poll, 1500);
-    return () => { active = false; clearInterval(timer); };
-  }, [campaignId]);
-
-  const simulationAction = async (action) => {
-    setSimulationBusy(true);
-    setStatusError("");
-    try {
-      setSimulation(await teggerClient.campaigns.simulationAction(campaignId, action));
-    } catch (err) {
-      setStatusError(err.message || "Ошибка управления симуляцией");
-    } finally {
-      setSimulationBusy(false);
-    }
-  };
-
-  const runDryRun = async () => {
-    if (!campaign || runningDryRun) return;
-
-    setRunningDryRun(true);
-    setStatusError("");
-    setDryRunResult(null);
-
-    try {
-      const result = await teggerClient.campaigns.dryRun(campaign.id);
-      setDryRunResult(result);
-    } catch (err) {
-      setStatusError(
-        typeof err.message === "string"
-          ? err.message
-          : JSON.stringify(err.message)
-      );
-    } finally {
-      setRunningDryRun(false);
-    }
-  };
-
   const checkCampaign = async () => {
     if (!campaign || checking || campaign.id === "migration") {
       return;
@@ -227,27 +172,6 @@ export default function CampaignDetail() {
               {checking ? "Проверяем…" : "Проверить готовность"}
             </BrandButton>
 
-            {campaign.senderIds.length === 1 &&
-
-              campaign.senderIds[0] === "sender_test" && (
-
-                <BrandButton
-
-                  variant="primary"
-
-                  disabled={runningDryRun || checking}
-
-                  onClick={runDryRun}
-
-                >
-
-                  <Play className="h-4 w-4" />
-
-                  {runningDryRun ? "Выполняется…" : "Запустить DRY_RUN"}
-
-                </BrandButton>
-
-              )}
           </div>
         )}
       </div>
@@ -256,29 +180,10 @@ export default function CampaignDetail() {
 
         <div className="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
 
-          Проверка готовности кампании и подключения существующего обработчика.
-
-          Telegram API не вызывается. Доступна локальная тестовая симуляция.
+          Проверка готовности кампании и подключения обработчика. Без вызовов Telegram API.
 
         </div>
 
-      )}
-
-      {campaign.id !== "migration" && campaign.senderIds?.length === 1 && campaign.senderIds[0] === "sender_test" && (
-        <div className="mb-4 rounded-xl border border-border bg-card p-5">
-          <h3 className="mb-2 font-semibold">Менеджер тестовой кампании</h3>
-          <p className="mb-3 text-xs text-muted-foreground">Локальная симуляция прогресса. Telegram API не вызывается, Stories не публикуются, состояние sender не изменяется.</p>
-          <div className="mb-3 text-sm">Статус: <strong>{simulation?.status || "idle"}</strong> · Шаги: {simulation?.completed || 0}/{simulation?.total || 0} · Telegram: 0</div>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {(!simulation || ["idle", "completed", "stopped", "interrupted", "failed"].includes(simulation.status)) && <BrandButton disabled={simulationBusy} onClick={() => simulationAction("start")}>Запустить тест</BrandButton>}
-            {simulation?.status === "running" && <BrandButton disabled={simulationBusy} onClick={() => simulationAction("pause")}>Пауза</BrandButton>}
-            {simulation?.status === "paused" && <BrandButton disabled={simulationBusy} onClick={() => simulationAction("resume")}>Продолжить</BrandButton>}
-            {["running", "paused", "interrupted"].includes(simulation?.status) && <BrandButton disabled={simulationBusy} onClick={() => simulationAction("stop")}>Остановить</BrandButton>}
-          </div>
-          <div className="max-h-48 overflow-auto space-y-1 text-xs text-muted-foreground">
-            {(simulation?.events || []).slice(-20).reverse().map((event, index) => <div key={`${event.at}-${index}`}>{new Date(event.at).toLocaleTimeString("ru-RU")} — {event.message}</div>)}
-          </div>
-        </div>
       )}
 
       {preflight && (
@@ -328,39 +233,6 @@ export default function CampaignDetail() {
           <div className="mt-1 text-muted-foreground">
             Обработчик не запускался.
             Telegram-запросов: {workerCheck.telegramRequests}
-          </div>
-        </div>
-      )}
-
-      {dryRunResult && (
-        <div className="mb-4 rounded-xl border border-border bg-card p-5">
-          <h3 className="mb-4 text-base font-semibold">
-            Результат DRY_RUN
-          </h3>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <MetricCard
-              label="Доступно таргетов"
-              value={dryRunResult.remainingTargets}
-            />
-            <MetricCard
-              label="Запланировано отметок"
-              value={dryRunResult.plannedTargets}
-            />
-            <MetricCard
-              label="Запланировано Stories"
-              value={dryRunResult.plannedStories}
-            />
-            <MetricCard
-              label="Дневной лимит"
-              value={`${dryRunResult.dailyCount}/${dryRunResult.dailyLimit}`}
-            />
-          </div>
-
-          <div className="mt-4 text-xs text-muted-foreground">
-            Аккаунт: {dryRunResult.sender} ·
-            Telegram-запросов: {dryRunResult.telegramRequests} ·
-            Режим: {dryRunResult.mode}
           </div>
         </div>
       )}

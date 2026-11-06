@@ -6,7 +6,7 @@
 
 export const SYSTEM_STATUS = {
   system: "Работает",
-  mode: "DRY RUN", // "DRY RUN" | "LIVE"
+  mode: "LIVE",
   maxConcurrentSenders: 3,
 };
 
@@ -180,7 +180,7 @@ export const LOGS = Array.from({ length: 28 }, (_, i) => {
 // ---------- Settings ----------
 export const SETTINGS = {
   general: {
-    DRY_RUN: true,
+    DRY_RUN: false,
     MAX_CONCURRENT_SENDERS: 3,
   },
   limits: {

@@ -2834,7 +2834,7 @@ from runtime_telegram import credentials_configured as _credentials_configured
 
 
 class TelegramConfigUpdate(BaseModel):
-    requested_mode: Literal["DRY_RUN", "PRODUCTION"]
+    requested_mode: Literal["PRODUCTION"] = "PRODUCTION"
     api_id: str | None = None
     api_hash: str | None = None
     bot_token: str | None = None
@@ -2871,8 +2871,8 @@ async def get_telegram_config():
     data = _private_config()
     stored_id = str(data.get("api_id") or "").strip()
     return {
-        "requested_mode": data.get("requested_mode", "DRY_RUN" if DRY_RUN else "PRODUCTION"),
-        "effective_mode": "DRY_RUN" if DRY_RUN else "PRODUCTION",
+        "requested_mode": "PRODUCTION",
+        "effective_mode": "PRODUCTION",
         "api_id": stored_id,
         "api_hash_set": bool(str(data.get("api_hash") or "").strip()),
         "api_configured": _credentials_configured(),
@@ -2886,7 +2886,7 @@ async def get_telegram_config():
 @app.put("/api/settings/telegram", dependencies=[Depends(get_current_user)])
 async def save_telegram_config(payload: TelegramConfigUpdate):
     data = _private_config()
-    data["requested_mode"] = payload.requested_mode
+    data["requested_mode"] = "PRODUCTION"
     if payload.api_id is not None:
         api_id = str(payload.api_id).strip()
         if api_id in {"", "<REDACTED>"}:
@@ -3308,26 +3308,10 @@ async def _tegger_execute(job_id: str):
         startedAt=_dt.now(_tz.utc).isoformat(),
         error="",
         finishedAt=None,
+        dryRun=False,
+        resultType="",
     )
     try:
-        if DRY_RUN is True:
-            await asyncio.sleep(0.4)
-            await _tegger_update(
-                job_id,
-                status="done",
-                dryRun=True,
-                finishedAt=_dt.now(_tz.utc).isoformat(),
-                resultType="DryRun",
-                error="",
-            )
-            _audit(
-                "SUCCESS",
-                "Тегер (DRY_RUN)",
-                f"Симуляция story для {len(item.get('usernames') or [])} отметок",
-                item.get("senderId") or "system",
-            )
-            return
-
         client = create_client(item["senderId"])
         try:
             await asyncio.wait_for(client.connect(), timeout=25)
@@ -3488,12 +3472,19 @@ async def start_tegger(tegger_id: str):
             raise HTTPException(404, "Тегер не найден")
         if item.get("status") == "running":
             raise HTTPException(409, "Этот тегер уже запускается")
-        if item.get("status") == "done":
+        # Після справжньої публікації — лише новий тегер. Після DRY_RUN-симуляції можна перезапустити LIVE.
+        if item.get("status") == "done" and not item.get("dryRun"):
             raise HTTPException(409, "Тегер уже выполнен — создай новый")
         if any(x.get("status") == "running" for x in items):
             raise HTTPException(409, "Уже выполняется другой тегер — подожди")
         if not Path(item.get("photoPath") or "").is_file():
             raise HTTPException(422, "Файл фото потерян — создай тегер заново")
+        if item.get("status") == "done" and item.get("dryRun"):
+            item["status"] = "draft"
+            item["error"] = ""
+            item["finishedAt"] = None
+            item["resultType"] = ""
+            _tegger_write(items)
 
     task = _TEGGER_TASKS.get(tegger_id)
     if task and not task.done():

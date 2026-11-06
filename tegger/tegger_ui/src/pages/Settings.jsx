@@ -5,7 +5,6 @@ import PageHeader from "@/components/PageHeader";
 import Field from "@/components/Field";
 import TextInput from "@/components/TextInput";
 import BrandButton from "@/components/BrandButton";
-import BrandedSelect from "@/components/BrandedSelect";
 
 const SECTIONS = [
   { key: "limits", label: "Лимиты", fields: [
@@ -39,11 +38,10 @@ export default function Settings() {
 
   const saveTelegram = async () => {
     if (!telegram || saving) return;
-    if (telegram.requested_mode === "PRODUCTION" && !window.confirm("Сохранить PRODUCTION? LIVE-рассылки всё равно запускаются отдельно из кампаний.")) return;
     setSaving(true); setError(""); setMessage("");
     try {
       const payload = {
-        requested_mode: telegram.requested_mode,
+        requested_mode: "PRODUCTION",
         chat_id: telegram.chat_id || "",
       };
       if (telegram.api_id) payload.api_id = String(telegram.api_id).trim();
@@ -82,7 +80,7 @@ export default function Settings() {
     try {
       const saved = await teggerClient.settings.save(data);
       setData(saved);
-      setMessage("Настройки сохранены и будут применены к следующим DRY_RUN.");
+      setMessage("Настройки сохранены.");
     } catch (err) {
       setError(typeof err.message === "string" ? err.message : "Не удалось сохранить настройки");
     } finally {
@@ -94,7 +92,7 @@ export default function Settings() {
 
   return (
     <div>
-      <PageHeader title="Настройки" subtitle="Параметры планирования DRY_RUN. LIVE-запуск из интерфейса отключён.">
+      <PageHeader title="Настройки" subtitle="Лимиты, тайминги и подключение Telegram">
         <BrandButton variant="primary" disabled={!data || saving} onClick={handleSave}>
           <Save className="h-4 w-4" /> {saving ? "Сохранение…" : "Сохранить"}
         </BrandButton>
@@ -102,21 +100,13 @@ export default function Settings() {
       {error && <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{error}</div>}
       {message && <div role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">{message}</div>}
       {data && <div className="space-y-5">
-        <div className="rounded-xl border border-border bg-card p-5 text-sm">Режим сервера: <strong>{data.general.DRY_RUN ? "DRY RUN" : "LIVE"}</strong>. Режим и Telegram-конфигурация редактируются ниже; изменения режима требуют отдельного применения.</div>
+        <div className="rounded-xl border border-border bg-card p-5 text-sm">
+          Режим сервера: <strong>LIVE</strong> — публикации идут в Telegram по-настоящему.
+        </div>
         {telegram && <div className="rounded-xl border border-border bg-card p-5 space-y-5">
-          <h2 className="text-sm font-semibold">Режим работы и Telegram</h2>
-          <Field label="Режим (запрос на применение)">
-            <BrandedSelect
-              value={telegram.requested_mode}
-              onChange={(value) => setTelegram((s) => ({ ...s, requested_mode: value }))}
-              ariaLabel="Режим работы"
-              options={[["DRY_RUN", "DRY RUN — тестовый"], ["PRODUCTION", "PRODUCTION — реальный"]]}
-              className="w-full"
-            />
-          </Field>
+          <h2 className="text-sm font-semibold">Telegram</h2>
           <div className="text-xs text-muted-foreground">
-            Сейчас на сервере: <strong>{telegram.effective_mode}</strong>.
-            {" "}API: <strong>{telegram.api_configured ? "заданы" : "не заданы"}</strong>
+            API: <strong>{telegram.api_configured ? "заданы" : "не заданы"}</strong>
             {" "}(взять на <a className="text-primary underline" href="https://my.telegram.org" target="_blank" rel="noreferrer">my.telegram.org</a>).
             Аккаунты и сессии — в разделе «Аккаунты» (логин по телефону или импорт .session).
           </div>

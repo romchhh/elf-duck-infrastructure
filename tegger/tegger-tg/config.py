@@ -136,10 +136,9 @@ MAX_CONCURRENT_SENDERS = int(
     os.getenv("MAX_CONCURRENT_SENDERS", "3")
 )
 
-DRY_RUN_RAW = os.getenv(
-    "DRY_RUN",
-    "true",
-).strip().lower()
+# Глобального тестового режима больше нет — сервер всегда LIVE.
+# Переменная DRY_RUN / TEGGER_DRY_RUN игнорируется (оставлена лишь для совместимости env).
+DRY_RUN = False
 
 LOG_BOT_TOKEN = os.getenv(
     "LOG_BOT_TOKEN",
@@ -150,18 +149,6 @@ LOG_CHAT_ID = os.getenv(
     "LOG_CHAT_ID",
     "",
 ).strip()
-
-if DRY_RUN_RAW not in {
-    "true",
-    "false",
-}:
-    raise RuntimeError(
-        "DRY_RUN должен быть только true или false"
-    )
-
-DRY_RUN = (
-    DRY_RUN_RAW == "true"
-)
 
 def _proxy_env_key(sender_name: str) -> str:
     normalized = "".join(

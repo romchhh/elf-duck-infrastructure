@@ -106,7 +106,8 @@ services:
       TEGGER_BOOTSTRAP: ${TEGGER_BOOTSTRAP:-true}
       TEGGER_COOKIE_SECURE: ${TEGGER_COOKIE_SECURE:-true}
       # Telegram API ID/Hash/accounts — only via Tegger UI (not .env)
-      DRY_RUN: ${TEGGER_DRY_RUN:-true}
+      # Always LIVE — global dry-run mode removed
+      DRY_RUN: "false"
       TEGGER_ADMIN_USERNAME: ${TEGGER_ADMIN_USERNAME:-admin}
       # Prefer plaintext password — Compose mangles `$` in argon2 hashes from .env.
       # Optional: TEGGER_ADMIN_PASSWORD_HASH_B64 (base64 of argon2 string, no `$`).
