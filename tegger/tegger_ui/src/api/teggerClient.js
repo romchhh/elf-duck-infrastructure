@@ -86,6 +86,34 @@ export const teggerClient = {
     accounts: () => request("/api/parser/accounts"),
     run: (config) => request("/api/parser/run", { method: "POST", body: JSON.stringify(config) }),
   },
+
+  teggers: {
+    accounts: () => request("/api/teggers/accounts"),
+    list: () => request("/api/teggers"),
+    get: (id) => request(`/api/teggers/${encodeURIComponent(id)}`),
+    start: (id) =>
+      request(`/api/teggers/${encodeURIComponent(id)}/start`, { method: "POST" }),
+    create: async ({ senderId, usernames, caption, buttonUrl, file }) => {
+      const body = new FormData();
+      body.append("senderId", senderId || "");
+      body.append("usernames", usernames || "");
+      body.append("caption", caption || "");
+      body.append("buttonUrl", buttonUrl || "");
+      if (file) body.append("file", file);
+      const response = await fetch(`${API_URL}/api/teggers`, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          errorMessageFromDetail(data.detail, `HTTP ${response.status}`)
+        );
+      }
+      return data;
+    },
+  },
   health: () => request("/api/health"),
 
   auth: {

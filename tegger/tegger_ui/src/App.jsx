@@ -30,6 +30,7 @@ import AccountDetail from "@/pages/AccountDetail";
 
 import Logs from "@/pages/Logs";
 import Parser from "@/pages/Parser";
+import Tegger from "@/pages/Tegger";
 import Settings from "@/pages/Settings";
 
 function AppRoutes() {
@@ -75,6 +76,8 @@ function AppRoutes() {
           />
 
           <Route path="/parser" element={<Parser />} />
+
+          <Route path="/tegger" element={<Tegger />} />
 
           <Route
             path="/settings"

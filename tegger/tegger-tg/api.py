@@ -3205,6 +3205,306 @@ async def parser_run(payload: _ParserRunRequest):
 # ===== END TEGGER PARSER API =====
 
 
+# ===== TEGGER ONE-SHOT STORIES (photo + mentions + link) =====
+from src.tegger_publish import publish_custom_story as _publish_custom_story
+
+_TEGGERS_FILE = Path(DATA_DIR) / "ui_teggers.json"
+_TEGGER_MEDIA_DIR = Path(DATA_DIR) / "tegger_media"
+_tegger_lock = asyncio.Lock()
+_TEGGER_TASKS: dict[str, asyncio.Task] = {}
+
+
+def _tegger_read() -> list[dict]:
+    if not _TEGGERS_FILE.is_file():
+        return []
+    try:
+        value = json.loads(_TEGGERS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(500, "Не удалось прочитать историю тегеров") from exc
+    if not isinstance(value, list):
+        raise HTTPException(500, "Повреждён файл истории тегеров")
+    return value
+
+
+def _tegger_write(items: list[dict]) -> None:
+    _TEGGERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = _TEGGERS_FILE.with_suffix(".tmp")
+    with temporary.open("w", encoding="utf-8") as stream:
+        json.dump(items, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, _TEGGERS_FILE)
+
+
+def _tegger_view(item: dict) -> dict:
+    return {
+        "id": item["id"],
+        "createdAt": item.get("createdAt"),
+        "startedAt": item.get("startedAt"),
+        "finishedAt": item.get("finishedAt"),
+        "senderId": item.get("senderId"),
+        "usernames": list(item.get("usernames") or []),
+        "caption": item.get("caption") or "",
+        "buttonUrl": item.get("buttonUrl") or "",
+        "photoName": item.get("photoName") or "",
+        "hasPhoto": bool(item.get("photoPath")),
+        "status": item.get("status") or "draft",
+        "error": item.get("error") or "",
+        "dryRun": bool(item.get("dryRun")),
+        "resultType": item.get("resultType") or "",
+    }
+
+
+def _tegger_parse_usernames(raw: str) -> list[str]:
+    parts = re.split(r"[\s,;]+", str(raw or ""))
+    seen = set()
+    out = []
+    for part in parts:
+        username = part.strip().lstrip("@").lower()
+        if not username or username == "username":
+            continue
+        if not re.fullmatch(r"[a-zA-Z0-9_]{5,32}", username):
+            raise HTTPException(422, f"Некорректный username: @{username}")
+        if username in seen:
+            continue
+        seen.add(username)
+        out.append(username)
+    if not out:
+        raise HTTPException(422, "Укажи хотя бы один username для отметки")
+    if len(out) > 40:
+        raise HTTPException(422, "Слишком много отметок (максимум 40)")
+    return out
+
+
+def _tegger_allowed_senders() -> set[str]:
+    rows = get_accounts_data()
+    return {
+        a["id"]
+        for a in rows
+        if a["id"] not in SENDERS
+        and (Path(SESSIONS_DIR) / (a["id"] + ".session")).is_file()
+        and a.get("session", False)
+    }
+
+
+async def _tegger_update(job_id: str, **fields):
+    async with _tegger_lock:
+        items = _tegger_read()
+        for item in items:
+            if item.get("id") == job_id:
+                item.update(fields)
+                _tegger_write(items)
+                return item
+    return None
+
+
+async def _tegger_execute(job_id: str):
+    item = next((x for x in _tegger_read() if x.get("id") == job_id), None)
+    if not item:
+        return
+    await _tegger_update(
+        job_id,
+        status="running",
+        startedAt=_dt.now(_tz.utc).isoformat(),
+        error="",
+        finishedAt=None,
+    )
+    try:
+        if DRY_RUN is True:
+            await asyncio.sleep(0.4)
+            await _tegger_update(
+                job_id,
+                status="done",
+                dryRun=True,
+                finishedAt=_dt.now(_tz.utc).isoformat(),
+                resultType="DryRun",
+                error="",
+            )
+            _audit(
+                "SUCCESS",
+                "Тегер (DRY_RUN)",
+                f"Симуляция story для {len(item.get('usernames') or [])} отметок",
+                item.get("senderId") or "system",
+            )
+            return
+
+        client = create_client(item["senderId"])
+        try:
+            await asyncio.wait_for(client.connect(), timeout=25)
+            if not await client.is_user_authorized():
+                raise RuntimeError("Сессия Telegram не авторизована")
+            # Resolve mentions early so invalid users fail before publish.
+            for username in item.get("usernames") or []:
+                entity = await client.get_entity(username)
+                if not getattr(entity, "username", None):
+                    raise RuntimeError(f"У @{username} нет публичного username")
+            published = await _publish_custom_story(
+                client,
+                photo_path=item["photoPath"],
+                caption=item.get("caption") or "",
+                usernames=item.get("usernames") or [],
+                button_url=item.get("buttonUrl") or "",
+            )
+        finally:
+            if client.is_connected():
+                await client.disconnect()
+
+        await _tegger_update(
+            job_id,
+            status="done",
+            dryRun=False,
+            finishedAt=_dt.now(_tz.utc).isoformat(),
+            resultType=published.get("resultType") or "",
+            error="",
+        )
+        _audit(
+            "SUCCESS",
+            "Тегер опубликован",
+            f"Story + {len(published.get('mentions') or [])} отметок",
+            item.get("senderId") or "system",
+        )
+    except Exception as exc:
+        await _tegger_update(
+            job_id,
+            status="error",
+            finishedAt=_dt.now(_tz.utc).isoformat(),
+            error=f"{type(exc).__name__}: {str(exc)[:240]}",
+        )
+        _audit(
+            "ERROR",
+            "Ошибка тегера",
+            f"{type(exc).__name__}: {str(exc)[:200]}",
+            item.get("senderId") or "system",
+        )
+    finally:
+        _TEGGER_TASKS.pop(job_id, None)
+
+
+@app.get("/api/teggers/accounts", dependencies=[Depends(get_current_user)])
+async def tegger_accounts():
+    rows = get_accounts_data()
+    allowed = _tegger_allowed_senders()
+    return [
+        {
+            "id": a["id"],
+            "name": a.get("name", a["id"]),
+            "telegram": a.get("telegram", ""),
+            "status": a.get("status", ""),
+        }
+        for a in rows
+        if a["id"] in allowed
+    ]
+
+
+@app.get("/api/teggers", dependencies=[Depends(get_current_user)])
+async def list_teggers(limit: int = 50):
+    if not 1 <= limit <= 200:
+        raise HTTPException(422, "Некорректный limit")
+    items = sorted(
+        _tegger_read(),
+        key=lambda item: str(item.get("createdAt") or ""),
+        reverse=True,
+    )
+    return [_tegger_view(item) for item in items[:limit]]
+
+
+@app.get("/api/teggers/{tegger_id}", dependencies=[Depends(get_current_user)])
+async def get_tegger(tegger_id: str):
+    item = next((x for x in _tegger_read() if x.get("id") == tegger_id), None)
+    if not item:
+        raise HTTPException(404, "Тегер не найден")
+    return _tegger_view(item)
+
+
+@app.post("/api/teggers", dependencies=[Depends(get_current_user)])
+async def create_tegger(
+    senderId: str = _Form(...),
+    usernames: str = _Form(...),
+    caption: str = _Form(""),
+    buttonUrl: str = _Form(""),
+    file: UploadFile = File(...),
+):
+    sender = str(senderId or "").strip()
+    if sender not in _tegger_allowed_senders():
+        raise HTTPException(403, "Выбери аккаунт с рабочей сессией (не Migration)")
+    mentions = _tegger_parse_usernames(usernames)
+    text = str(caption or "").strip()
+    if len(text) > 800:
+        raise HTTPException(422, "Текст слишком длинный (макс. 800)")
+    link = str(buttonUrl or "").strip()
+    if link and not link.startswith(("http://", "https://")):
+        raise HTTPException(422, "Ссылка кнопки: http:// или https://")
+    if len(link) > 500:
+        raise HTTPException(422, "Ссылка слишком длинная")
+
+    content_type = (file.content_type or "").lower()
+    if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
+        raise HTTPException(422, "Нужно фото JPEG/PNG/WebP")
+    raw = await file.read()
+    if not raw or len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(422, "Размер фото: до 8 МБ")
+
+    job_id = _uuid4().hex
+    _TEGGER_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = ".jpg"
+    name = (file.filename or "").lower()
+    if name.endswith(".png"):
+        suffix = ".png"
+    elif name.endswith(".webp"):
+        suffix = ".webp"
+    photo_path = _TEGGER_MEDIA_DIR / f"{job_id}{suffix}"
+    photo_path.write_bytes(raw)
+
+    item = {
+        "id": job_id,
+        "createdAt": _dt.now(_tz.utc).isoformat(),
+        "startedAt": None,
+        "finishedAt": None,
+        "senderId": sender,
+        "usernames": mentions,
+        "caption": text,
+        "buttonUrl": link,
+        "photoPath": str(photo_path),
+        "photoName": file.filename or photo_path.name,
+        "status": "draft",
+        "error": "",
+        "dryRun": False,
+        "resultType": "",
+    }
+    async with _tegger_lock:
+        items = _tegger_read()
+        items.append(item)
+        _tegger_write(items)
+    _audit("INFO", "Создан тегер", f"{len(mentions)} отметок, draft", sender)
+    return _tegger_view(item)
+
+
+@app.post("/api/teggers/{tegger_id}/start", dependencies=[Depends(get_current_user)])
+async def start_tegger(tegger_id: str):
+    async with _tegger_lock:
+        items = _tegger_read()
+        item = next((x for x in items if x.get("id") == tegger_id), None)
+        if not item:
+            raise HTTPException(404, "Тегер не найден")
+        if item.get("status") == "running":
+            raise HTTPException(409, "Этот тегер уже запускается")
+        if item.get("status") == "done":
+            raise HTTPException(409, "Тегер уже выполнен — создай новый")
+        if any(x.get("status") == "running" for x in items):
+            raise HTTPException(409, "Уже выполняется другой тегер — подожди")
+        if not Path(item.get("photoPath") or "").is_file():
+            raise HTTPException(422, "Файл фото потерян — создай тегер заново")
+
+    task = _TEGGER_TASKS.get(tegger_id)
+    if task and not task.done():
+        raise HTTPException(409, "Запуск уже в процессе")
+    _TEGGER_TASKS[tegger_id] = asyncio.create_task(_tegger_execute(tegger_id))
+    return {"ok": True, "id": tegger_id, "status": "running"}
+
+
+# ===== END TEGGER ONE-SHOT STORIES =====
+
+
 # ==========================================
 # OFFLINE CAMPAIGN QUEUE — NO TELEGRAM CALLS
 # ==========================================

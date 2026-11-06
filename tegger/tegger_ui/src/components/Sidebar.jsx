@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { Home, Megaphone, Users, ScrollText, Settings, Asterisk, Radar } from "lucide-react";
+import { Home, Megaphone, Users, ScrollText, Settings, Asterisk, Radar, AtSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { services, SYSTEM_STATUS } from "@/lib/mockData";
 import ModeBadge from "@/components/ModeBadge";
 
 const NAV = [
   { to: "/", label: "Главная", icon: Home, exact: true },
+  { to: "/tegger", label: "Тегер", icon: AtSign },
   { to: "/campaigns", label: "Кампании", icon: Megaphone },
   { to: "/accounts", label: "Аккаунты", icon: Users },
   { to: "/logs", label: "Логи", icon: ScrollText },
@@ -123,11 +124,18 @@ export function MobileTopBar() {
   );
 }
 
+const MOBILE_NAV = [
+  { to: "/", label: "Главная", icon: Home, exact: true },
+  { to: "/tegger", label: "Тегер", icon: AtSign },
+  { to: "/campaigns", label: "Кампании", icon: Megaphone },
+  { to: "/accounts", label: "Аккаунты", icon: Users },
+];
+
 export function MobileNav() {
   return (
     <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-card border-t border-border pb-[env(safe-area-inset-bottom)]">
       <div className="grid grid-cols-4">
-        {NAV.map((item) => (
+        {MOBILE_NAV.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
