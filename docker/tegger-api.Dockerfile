@@ -14,6 +14,7 @@ COPY tegger/tegger-tg/requirements.txt ./
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     curl \
+    fonts-dejavu-core \
     gcc \
     libc6-dev \
     libffi-dev \

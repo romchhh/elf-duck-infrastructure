@@ -1,8 +1,8 @@
-"""Publish a Story with mentions + clickable URL button (text + color).
+"""Publish a Story: real user mentions + a drawn URL button.
 
-Telegram mediaAreaUrl only accepts url+coordinates (no label/color in API).
-We draw a styled button onto the photo and place MediaAreaUrl over it, plus a
-MessageEntityTextUrl in the caption with the same label.
+Telegram only notifies people linked with InputMessageEntityMentionName.
+Plain @username text tags just the first person. The URL area has no label,
+so the button is drawn on a fixed 9:16 frame and the hit-box matches it.
 """
 
 from __future__ import annotations
@@ -15,11 +15,8 @@ from PIL import Image, ImageDraw, ImageFont
 from telethon import functions, types
 from telethon.utils import add_surrogate
 
-# Story frame percentages for the tappable URL area / drawn button.
-BUTTON_X = 50.0
-BUTTON_Y = 84.0
-BUTTON_W = 72.0
-BUTTON_H = 9.0
+STORY_W = 1080
+STORY_H = 1920
 
 
 def _utf16_len(text: str) -> int:
@@ -29,7 +26,7 @@ def _utf16_len(text: str) -> int:
 def parse_button_color(raw: str) -> tuple[int, int, int]:
     value = str(raw or "").strip()
     if not value:
-        return (42, 171, 238)  # Telegram blue
+        return (42, 171, 238)
     if not value.startswith("#"):
         value = f"#{value}"
     if not re.fullmatch(r"#[0-9A-Fa-f]{6}", value):
@@ -48,10 +45,11 @@ def _luminance(rgb: tuple[int, int, int]) -> float:
 
 def _load_font(size: int) -> ImageFont.ImageFont:
     candidates = [
-        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/Library/Fonts/Arial Bold.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
     ]
     for path in candidates:
@@ -62,85 +60,107 @@ def _load_font(size: int) -> ImageFont.ImageFont:
     return ImageFont.load_default()
 
 
-def compose_story_button(
+def _cover_9x16(image: Image.Image) -> Image.Image:
+    frame = image.convert("RGBA")
+    sw, sh = frame.size
+    scale = max(STORY_W / sw, STORY_H / sh)
+    resized = frame.resize(
+        (max(1, int(sw * scale)), max(1, int(sh * scale))),
+        Image.Resampling.LANCZOS,
+    )
+    left = max(0, (resized.width - STORY_W) // 2)
+    top = max(0, (resized.height - STORY_H) // 2)
+    return resized.crop((left, top, left + STORY_W, top + STORY_H))
+
+
+def compose_story_frame(
     photo_path: str | Path,
     *,
-    label: str,
-    color_hex: str,
+    label: str = "",
+    color_hex: str = "#2AABEE",
     output_path: str | Path,
-) -> Path:
-    """Draw a rounded CTA button near the bottom; returns written JPEG path."""
-    src = Path(photo_path)
+) -> tuple[Path, dict | None]:
+    """Fit photo to 1080×1920 and, if label is set, draw a pill button."""
     dest = Path(output_path)
-    text = str(label or "").strip() or "Открыть"
-    if len(text) > 40:
-        text = text[:40]
-    rgb = parse_button_color(color_hex)
-    text_rgb = (255, 255, 255) if _luminance(rgb) < 0.62 else (20, 20, 20)
+    with Image.open(photo_path) as image:
+        frame = _cover_9x16(image)
 
-    with Image.open(src) as image:
-        frame = image.convert("RGBA")
-        width, height = frame.size
+    area = None
+    text = str(label or "").strip()
+    if text:
+        if len(text) > 40:
+            text = text[:40]
+        rgb = parse_button_color(color_hex)
+        ink = (255, 255, 255) if _luminance(rgb) < 0.62 else (17, 24, 39)
         overlay = Image.new("RGBA", frame.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
 
-        bw = width * (BUTTON_W / 100.0)
-        bh = height * (BUTTON_H / 100.0)
-        cx = width * (BUTTON_X / 100.0)
-        cy = height * (BUTTON_Y / 100.0)
-        left = cx - bw / 2
-        top = cy - bh / 2
-        right = cx + bw / 2
-        bottom = cy + bh / 2
-        radius = max(8, int(bh * 0.45))
-
-        # Soft shadow
-        shadow = (
-            left + width * 0.004,
-            top + height * 0.004,
-            right + width * 0.004,
-            bottom + height * 0.004,
-        )
-        draw.rounded_rectangle(shadow, radius=radius, fill=(0, 0, 0, 90))
-        draw.rounded_rectangle(
-            (left, top, right, bottom),
-            radius=radius,
-            fill=(*rgb, 245),
-        )
-
-        font_size = max(18, int(bh * 0.42))
-        font = _load_font(font_size)
-        while font_size > 14:
-            bbox = draw.textbbox((0, 0), text, font=font)
-            tw = bbox[2] - bbox[0]
-            if tw <= bw * 0.86:
-                break
-            font_size -= 2
-            font = _load_font(font_size)
-
+        font = _load_font(34)
         bbox = draw.textbbox((0, 0), text, font=font)
         tw = bbox[2] - bbox[0]
         th = bbox[3] - bbox[1]
-        tx = cx - tw / 2
-        ty = cy - th / 2 - bbox[1] * 0.15
-        draw.text((tx, ty), text, font=font, fill=(*text_rgb, 255))
+        pad_x = 36
+        height = 84
+        width = min(STORY_W - 160, max(280, tw + pad_x * 2))
+        # Shrink the label if it still overflows the pill.
+        while tw > width - pad_x * 2 and font.size > 22:
+            font = _load_font(font.size - 2)
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
 
-        composed = Image.alpha_composite(frame, overlay).convert("RGB")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        composed.save(dest, format="JPEG", quality=92, optimize=True)
-    return dest
+        left = (STORY_W - width) / 2
+        top = STORY_H - 210
+        right = left + width
+        bottom = top + height
+        radius = height // 2
+
+        draw.rounded_rectangle(
+            (left, top + 8, right, bottom + 8),
+            radius=radius,
+            fill=(0, 0, 0, 55),
+        )
+        draw.rounded_rectangle(
+            (left, top, right, bottom),
+            radius=radius,
+            fill=(*rgb, 255),
+        )
+        tx = left + (width - tw) / 2
+        ty = top + (height - th) / 2 - bbox[1]
+        draw.text((tx, ty), text, font=font, fill=(*ink, 255))
+        frame = Image.alpha_composite(frame, overlay)
+
+        area = {
+            "x": 50.0,
+            "y": ((top + height / 2) / STORY_H) * 100,
+            "w": (width / STORY_W) * 100,
+            "h": (height / STORY_H) * 100,
+        }
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    frame.convert("RGB").save(dest, format="JPEG", quality=92, optimize=True)
+    return dest, area
+
+
+def _append_piece(parts: list[str], piece: str) -> int:
+    if parts:
+        offset = _utf16_len("\n".join(parts) + "\n")
+    else:
+        offset = 0
+    parts.append(piece)
+    return offset
 
 
 def build_caption_entities(
     caption: str,
-    usernames: list[str],
+    mentions: list[dict],
     *,
     button_url: str = "",
     button_text: str = "",
 ):
-    """Caption + optional TextUrl CTA + MessageEntityMention for each @username."""
+    """Caption + TextUrl + one InputMessageEntityMentionName per user."""
     parts: list[str] = []
-    entities: list[types.TypeMessageEntity] = []
+    entities: list = []
 
     clean_caption = str(caption or "").strip()
     if clean_caption:
@@ -149,12 +169,7 @@ def build_caption_entities(
     link = str(button_url or "").strip()
     label = str(button_text or "").strip() or "Открыть"
     if link:
-        if parts:
-            prefix = "\n".join(parts) + "\n"
-            offset = _utf16_len(prefix)
-        else:
-            offset = 0
-        parts.append(label)
+        offset = _append_piece(parts, label)
         entities.append(
             types.MessageEntityTextUrl(
                 offset=offset,
@@ -163,51 +178,65 @@ def build_caption_entities(
             )
         )
 
-    normalized = []
-    for raw in usernames:
-        username = str(raw or "").strip().lstrip("@")
-        if not username:
-            continue
-        normalized.append(username)
-
-    if not normalized:
+    if not mentions:
         raise ValueError("Нужен хотя бы один username для отметки")
 
-    for username in normalized:
-        mention = f"@{username}"
-        if parts:
-            prefix = "\n".join(parts) + "\n"
-            offset = _utf16_len(prefix)
-        else:
-            offset = 0
-        parts.append(mention)
+    for item in mentions:
+        username = str(item["username"]).lstrip("@")
+        token = f"@{username}"
+        offset = _append_piece(parts, token)
         entities.append(
-            types.MessageEntityMention(
+            types.InputMessageEntityMentionName(
                 offset=offset,
-                length=_utf16_len(mention),
+                length=_utf16_len(token),
+                user_id=item["input_user"],
             )
         )
 
-    return "\n".join(parts), entities, normalized
+    return "\n".join(parts), entities, [item["username"] for item in mentions]
 
 
-def link_media_area(url: str):
-    """Tappable URL sticker area aligned with the drawn button."""
+def link_media_area(url: str, area: dict | None):
     clean = str(url or "").strip()
-    if not clean:
+    if not clean or not area:
         return None
     if not clean.startswith(("http://", "https://")):
         raise ValueError("Ссылка кнопки должна начинаться с http:// или https://")
     return types.MediaAreaUrl(
         coordinates=types.MediaAreaCoordinates(
-            x=BUTTON_X,
-            y=BUTTON_Y,
-            w=BUTTON_W,
-            h=BUTTON_H,
+            x=float(area["x"]),
+            y=float(area["y"]),
+            w=float(area["w"]),
+            h=float(area["h"]),
             rotation=0.0,
         ),
         url=clean,
     )
+
+
+async def _resolve_mentions(client, usernames: list[str]) -> list[dict]:
+    resolved = []
+    seen = set()
+    for raw in usernames:
+        username = str(raw or "").strip().lstrip("@")
+        if not username or username.lower() in seen:
+            continue
+        seen.add(username.lower())
+        entity = await client.get_entity(username)
+        if not isinstance(entity, types.User) or not getattr(entity, "username", None):
+            raise RuntimeError(f"@{username} — не пользователь с публичным username")
+        peer = await client.get_input_entity(entity)
+        if not isinstance(peer, types.InputPeerUser):
+            raise RuntimeError(f"Не удалось получить InputUser для @{username}")
+        resolved.append(
+            {
+                "username": entity.username,
+                "input_user": types.InputUser(peer.user_id, peer.access_hash),
+            }
+        )
+    if not resolved:
+        raise ValueError("Нужен хотя бы один username для отметки")
+    return resolved
 
 
 async def publish_custom_story(
@@ -227,33 +256,28 @@ async def publish_custom_story(
     link = str(button_url or "").strip()
     label = str(button_text or "").strip()
     color = str(button_color or "").strip() or "#2AABEE"
+    mentions = await _resolve_mentions(client, usernames)
 
-    publish_path = path
-    temp_composed = None
-    if link:
-        temp_composed = path.with_name(f"{path.stem}_btn.jpg")
-        publish_path = compose_story_button(
-            path,
-            label=label or "Открыть",
-            color_hex=color,
-            output_path=temp_composed,
-        )
-
-    text, entities, mentions = build_caption_entities(
-        caption,
-        usernames,
-        button_url=link,
-        button_text=label,
-    )
-
+    composed = path.with_name(f"{path.stem}_story.jpg")
     try:
-        uploaded = await client.upload_file(str(publish_path))
+        _, area = compose_story_frame(
+            path,
+            label=(label or "Открыть") if link else "",
+            color_hex=color,
+            output_path=composed,
+        )
+        text, entities, names = build_caption_entities(
+            caption,
+            mentions,
+            button_url=link,
+            button_text=label,
+        )
+        uploaded = await client.upload_file(str(composed))
         media = types.InputMediaUploadedPhoto(file=uploaded)
-
         media_areas = []
-        area = link_media_area(link)
-        if area is not None:
-            media_areas.append(area)
+        url_area = link_media_area(link, area)
+        if url_area is not None:
+            media_areas.append(url_area)
 
         me = await client.get_input_entity("me")
         result = await client(
@@ -270,11 +294,10 @@ async def publish_custom_story(
             )
         )
     finally:
-        if temp_composed is not None:
-            temp_composed.unlink(missing_ok=True)
+        composed.unlink(missing_ok=True)
 
     return {
-        "mentions": mentions,
+        "mentions": names,
         "caption": text,
         "buttonUrl": link,
         "buttonText": label,
