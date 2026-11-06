@@ -1,18 +1,20 @@
-FROM node:20-alpine AS build
+# syntax=docker/dockerfile:1
+
+FROM node:22-alpine AS build
 
 WORKDIR /app
 
-# npm 10.8 can crash with "Cannot read properties of null (reading 'edgesOut')"
-# on this dependency tree without a lockfile / with older npm.
-RUN npm install -g npm@11.5.2
-
+# npm 10.9+ (Node 22) already includes the arborist fix for
+# "Cannot read properties of null (reading 'edgesOut')".
 COPY tegger/tegger_ui/package.json tegger/tegger_ui/package-lock.json ./
-RUN npm ci --legacy-peer-deps
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --no-audit --no-fund --legacy-peer-deps
 
-COPY tegger/tegger_ui/ ./
+COPY tegger/tegger_ui/ .
 
 ENV TEGGER_SKIP_BASE44=1
-RUN npm run build
+RUN --mount=type=cache,target=/app/node_modules/.vite \
+    npm run build
 
 FROM nginx:1.27-alpine
 

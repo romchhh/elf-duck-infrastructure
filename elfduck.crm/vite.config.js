@@ -1,29 +1,49 @@
 import path from "path";
 import { fileURLToPath } from "url";
-import base44 from "@base44/vite-plugin"
-import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
-const workspaceRoot = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  ".."
-);
+const appRoot = path.dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = path.resolve(appRoot, "..");
 
-// https://vite.dev/config/
-export default defineConfig({
-  envDir: workspaceRoot,
-  plugins: [
+async function createPlugins() {
+  const plugins = [react()];
+
+  // Docker/prod builds skip Base44 HMR tooling — not needed for static UI.
+  if (process.env.CRM_SKIP_BASE44 === "1") {
+    return plugins;
+  }
+
+  const { default: base44 } = await import("@base44/vite-plugin");
+  plugins.unshift(
     base44({
-      // Support for legacy code that imports the base44 SDK with @/integrations, @/entities, etc.
-      // can be removed if the code has been updated to use the new SDK imports from @base44/sdk
-      legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === 'true',
+      legacySDKImports: process.env.BASE44_LEGACY_SDK_IMPORTS === "true",
       hmrNotifier: true,
       navigationNotifier: true,
       analyticsTracker: true,
-      visualEditAgent: true
-    }),
-    react(),
-  ],
+      visualEditAgent: true,
+    })
+  );
+  return plugins;
+}
+
+export default defineConfig(async () => ({
+  envDir: workspaceRoot,
+  plugins: await createPlugins(),
+  resolve: {
+    alias: {
+      "@": path.resolve(appRoot, "src"),
+    },
+  },
+  build: {
+    sourcemap: false,
+    reportCompressedSize: false,
+    minify: "esbuild",
+    cssMinify: "esbuild",
+    rollupOptions: {
+      maxParallelFileOps: 2,
+    },
+  },
   server: {
     port: 3002,
     strictPort: true,
@@ -34,4 +54,4 @@ export default defineConfig({
     strictPort: true,
     host: true,
   },
-});
+}));

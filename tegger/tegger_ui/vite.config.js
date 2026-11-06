@@ -36,6 +36,15 @@ async function createPlugins() {
 
 export default defineConfig(async () => ({
   plugins: await createPlugins(),
+  build: {
+    sourcemap: false,
+    reportCompressedSize: false,
+    minify: "esbuild",
+    cssMinify: "esbuild",
+    rollupOptions: {
+      maxParallelFileOps: 2,
+    },
+  },
   resolve: {
     alias: {
       '@': path.resolve(rootDir, 'src'),
