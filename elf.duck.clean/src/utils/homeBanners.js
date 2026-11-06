@@ -1,29 +1,19 @@
 import referralBannerRu from "../assets/referralBanner.webp";
 import referralBannerPl from "../assets/referralBannerPl.webp";
-import assortmentRestockBanner from "../assets/assortmentRestockBanner.webp";
-import deliveryBanner from "../assets/deliveryBanner.webp";
 import { getCurrentLanguage } from "./i18n";
 
 /**
- * Карусель головної (банер розіграшу — окремий слайд у test-режимі).
+ * Карусель головної: рефералка (+ розіграш окремим слайдом).
+ * assortmentRestock / delivery — тимчасово приховані.
  */
 export function getHomeBanners(language = getCurrentLanguage()) {
   const isPl = language === "pl";
-  return [
-    isPl ? referralBannerPl : referralBannerRu,
-    assortmentRestockBanner,
-    deliveryBanner,
-  ];
+  return [isPl ? referralBannerPl : referralBannerRu];
 }
 
 /** Усі варіанти картинок каруселі (для Cache API / preload). */
 export function getAllHomeBannerAssetUrls() {
-  return [
-    referralBannerRu,
-    referralBannerPl,
-    assortmentRestockBanner,
-    deliveryBanner,
-  ];
+  return [referralBannerRu, referralBannerPl];
 }
 
 export function isReferralBanner(src) {
