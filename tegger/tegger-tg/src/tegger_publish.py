@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import random
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -233,6 +234,30 @@ def _take_group(pending: list, story_min: int, story_max: int) -> list:
     return group
 
 
+class TeggerStopped(Exception):
+    """Користувач зупинив тегер до наступної історії."""
+
+
+async def _wait(seconds: float, cancel_event: asyncio.Event | None) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        raise TeggerStopped()
+    delay = max(0.0, float(seconds))
+    if delay == 0:
+        return
+    if cancel_event is None:
+        await asyncio.sleep(delay)
+        return
+    try:
+        await asyncio.wait_for(cancel_event.wait(), timeout=delay)
+    except asyncio.TimeoutError:
+        return
+    raise TeggerStopped()
+
+
+def _names(entities: list) -> list[str]:
+    return [str(entity.username) for entity in entities if getattr(entity, "username", None)]
+
+
 async def publish_custom_story(
     client,
     *,
@@ -247,6 +272,8 @@ async def publish_custom_story(
     interval_min: int = STORY_INTERVAL_MIN_SECONDS,
     interval_max: int = STORY_INTERVAL_MAX_SECONDS,
     interaction_delay: int = INTERACTION_STORY_DELAY,
+    on_progress=None,
+    cancel_event: asyncio.Event | None = None,
 ):
     path = Path(photo_path)
     if not path.is_file():
@@ -255,11 +282,34 @@ async def publish_custom_story(
     link = str(button_url or "").strip()
     label = str(button_text or "").strip()
     color = str(button_color or "").strip() or "#2AABEE"
-    pending = await _resolve_mentions(client, usernames)
     story_min = max(1, int(story_min))
     story_max = max(story_min, int(story_max))
+    state = {
+        "phase": "resolve",
+        "total": len([name for name in usernames if str(name or "").strip()]),
+        "mentioned": [],
+        "failed": [],
+        "stories": [],
+        "currentGroup": [],
+        "pending": 0,
+        "waitUntil": None,
+    }
+
+    async def emit(**patch) -> None:
+        state.update(patch)
+        if on_progress is not None:
+            await on_progress(dict(state))
+
+    await _wait(0, cancel_event)
+    await emit()
+    pending = await _resolve_mentions(client, usernames)
+    await emit(total=len(pending), pending=len(pending))
 
     composed = path.with_name(f"{path.stem}_story.jpg")
+    published: list[str] = []
+    failed: list[dict] = []
+    stories: list[dict] = []
+    last_type = ""
     try:
         _, area = compose_story_frame(
             path,
@@ -273,26 +323,48 @@ async def publish_custom_story(
         if url_area is not None:
             media_areas.append(url_area)
 
-        published = []
-        failed = []
-        stories = 0
-        last_type = ""
         while pending:
+            await _wait(0, cancel_event)
             group = _take_group(pending, story_min, story_max)
+            await emit(
+                phase="interaction",
+                currentGroup=_names(group),
+                pending=len(pending),
+                waitUntil=None,
+            )
             ready = []
             for entity in group:
+                await _wait(0, cancel_event)
                 try:
                     await create_test_interaction(client, entity)
                 except Exception as exc:
-                    failed.append(f"@{entity.username}: {type(exc).__name__}")
+                    failed.append(
+                        {
+                            "username": entity.username,
+                            "error": f"{type(exc).__name__}: {exc}"[:160],
+                        }
+                    )
+                    await emit(failed=list(failed), currentGroup=_names(group))
                     continue
                 ready.append(entity)
             if not ready:
+                await emit(phase="resolve", currentGroup=[], failed=list(failed), pending=len(pending))
                 continue
 
-            await asyncio.sleep(max(0, int(interaction_delay)))
+            pause = max(0, int(interaction_delay))
+            ready_names = _names(ready)
+            wait_until = (
+                (datetime.now(timezone.utc) + timedelta(seconds=pause)).isoformat()
+                if pause
+                else None
+            )
+            await emit(phase="pause", currentGroup=ready_names, waitUntil=wait_until, pending=len(pending))
+            await _wait(pause, cancel_event)
+
+            await emit(phase="publish", currentGroup=ready_names, waitUntil=None)
             text, entities, names = _mention_caption(caption, ready)
             uploaded = await client.upload_file(str(composed))
+            await _wait(0, cancel_event)
             result = await client(
                 functions.stories.SendStoryRequest(
                     peer=me,
@@ -307,25 +379,57 @@ async def publish_custom_story(
                 )
             )
             published.extend(names)
-            stories += 1
+            stories.append({"usernames": list(names)})
             last_type = type(result).__name__
             if pending:
                 delay = random.randint(int(interval_min), int(interval_max))
-                await asyncio.sleep(delay)
+                next_at = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+                await emit(
+                    phase="wait",
+                    currentGroup=[],
+                    mentioned=list(published),
+                    stories=list(stories),
+                    failed=list(failed),
+                    pending=len(pending),
+                    waitUntil=next_at,
+                )
+                await _wait(delay, cancel_event)
+            else:
+                await emit(
+                    phase="done",
+                    currentGroup=[],
+                    mentioned=list(published),
+                    stories=list(stories),
+                    failed=list(failed),
+                    pending=0,
+                    waitUntil=None,
+                )
 
         if not published:
-            detail = "; ".join(failed) or "Telegram не принял отметки"
+            detail = "; ".join(
+                f"@{item['username']}: {item['error']}" for item in failed
+            ) or "Telegram не принял отметки"
             raise RuntimeError(detail)
+    except TeggerStopped:
+        await emit(
+            phase="stopped",
+            mentioned=list(published),
+            stories=list(stories),
+            failed=list(failed),
+            pending=len(pending),
+            waitUntil=None,
+        )
+        raise
     finally:
         composed.unlink(missing_ok=True)
 
     return {
         "mentions": published,
-        "failed": failed,
+        "failed": [f"@{item['username']}: {item['error']}" for item in failed],
         "caption": caption,
         "buttonUrl": link,
         "buttonText": label,
         "buttonColor": color if link else "",
         "resultType": last_type,
-        "stories": stories,
+        "stories": len(stories),
     }

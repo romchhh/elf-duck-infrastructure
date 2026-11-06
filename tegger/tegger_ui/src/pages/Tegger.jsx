@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Play, Plus, RefreshCw, Upload } from "lucide-react";
+import { Play, Plus, RefreshCw, Square, Upload } from "lucide-react";
 import { teggerClient } from "@/api/teggerClient";
 import PageHeader from "@/components/PageHeader";
 import Field from "@/components/Field";
@@ -13,9 +13,144 @@ import { cn } from "@/lib/utils";
 const STATUS_RU = {
   draft: "Черновик",
   running: "Запуск",
+  stopping: "Останавливаем",
+  stopped: "Остановлен",
   done: "Готово",
   error: "Ошибка",
 };
+
+const PHASE_RU = {
+  connect: "Подключение к Telegram",
+  resolve: "Проверка пользователей",
+  interaction: "Контакт перед историей",
+  pause: "Пауза перед публикацией",
+  publish: "Публикация истории",
+  wait: "Пауза до следующей группы",
+  stopping: "Останавливаем после текущего шага",
+  done: "Все группы опубликованы",
+  stopped: "Остановлено",
+};
+
+function formatRemain(iso, now) {
+  if (!iso) return "";
+  const ms = new Date(iso).getTime() - now;
+  if (!Number.isFinite(ms)) return "";
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes >= 60) {
+    const hours = Math.floor(minutes / 60);
+    return `${hours}:${String(minutes % 60).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function useNow(active) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+function isLiveStatus(status) {
+  return status === "running" || status === "stopping";
+}
+
+function TeggerProgress({ job }) {
+  const progress = job.progress;
+  const live = isLiveStatus(job.status);
+  const now = useNow(live && Boolean(progress?.waitUntil));
+  if (!progress) return null;
+
+  const total = progress.total || job.usernames?.length || 0;
+  const done = progress.mentioned?.length || 0;
+  const failedCount = progress.failed?.length || 0;
+  const stories = Array.isArray(progress.stories) ? progress.stories : [];
+  const touched = Math.min(total, done + failedCount);
+  const percent = total ? Math.round((touched / total) * 100) : 0;
+  const remain = live ? formatRemain(progress.waitUntil, now) : "";
+  const mentioned = new Set(progress.mentioned || []);
+  const failed = new Map(
+    (progress.failed || [])
+      .filter((entry) => entry && entry.username)
+      .map((entry) => [entry.username, entry.error || ""])
+  );
+  const current = new Set(progress.currentGroup || []);
+  const phase = PHASE_RU[progress.phase] || (live ? "В работе" : "Прогресс");
+
+  return (
+    <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="text-sm font-medium">{phase}</div>
+        <div className="text-xs tabular-nums text-muted-foreground">
+          {done}/{total} отметок · {stories.length} групп
+        </div>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${percent}%` }} />
+      </div>
+      {remain && (
+        <div className="text-xs text-muted-foreground">
+          {progress.phase === "wait"
+            ? `Следующая группа через ${remain}`
+            : `Пауза ${remain}`}
+        </div>
+      )}
+      <div className="space-y-2">
+        {stories.map((story, index) => (
+          <div key={`story-${index}`} className="text-xs">
+            <div className="font-medium text-emerald-700">Группа {index + 1} · опубликована</div>
+            <div className="mt-0.5 text-muted-foreground">
+              {(story.usernames || []).map((name) => `@${name}`).join(" ") || "—"}
+            </div>
+          </div>
+        ))}
+        {!!progress.currentGroup?.length && (
+          <div className="text-xs">
+            <div className="font-medium text-orange-700">
+              Группа {stories.length + 1} · сейчас
+            </div>
+            <div className="mt-0.5">
+              {progress.currentGroup.map((name) => `@${name}`).join(" ")}
+            </div>
+          </div>
+        )}
+        {progress.pending > 0 && (
+          <div className="text-xs text-muted-foreground">Ещё не в группе: {progress.pending}</div>
+        )}
+        {!!progress.failed?.length && (
+          <div className="text-xs text-destructive">
+            Не вышли:{" "}
+            {progress.failed
+              .map((entry) => (entry.username ? `@${entry.username}` : entry.error))
+              .filter(Boolean)
+              .join(", ")}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {(job.usernames || []).map((name) => {
+          let tone = "bg-muted text-muted-foreground";
+          if (mentioned.has(name)) tone = "bg-emerald-50 text-emerald-700";
+          else if (failed.has(name)) tone = "bg-destructive/10 text-destructive";
+          else if (current.has(name)) tone = "bg-orange-50 text-orange-700";
+          return (
+            <span
+              key={name}
+              title={failed.get(name) || ""}
+              className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", tone)}
+            >
+              @{name}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const BUTTON_COLORS = [
   ["#2AABEE", "Telegram"],
@@ -51,6 +186,7 @@ export default function Tegger() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
@@ -101,7 +237,7 @@ export default function Tegger() {
   }, [refresh]);
 
   useEffect(() => {
-    const hasRunning = history.some((item) => item.status === "running");
+    const hasRunning = history.some((item) => isLiveStatus(item.status));
     if (!hasRunning) return undefined;
     const timer = setInterval(() => {
       teggerClient.teggers
@@ -163,9 +299,15 @@ export default function Tegger() {
     }
   };
 
+  const runningJob = history.find((item) => isLiveStatus(item.status)) || null;
+  const selectedIsLive = Boolean(selected && isLiveStatus(selected.status));
+  const stoppedAfterPublish =
+    selected?.status === "stopped" && Boolean(selected.progress?.stories?.length);
   const canStartSelected =
     Boolean(selected) &&
-    selected.status !== "running" &&
+    !selectedIsLive &&
+    !stoppedAfterPublish &&
+    !(runningJob && runningJob.id !== selected.id) &&
     (selected.status !== "done" || Boolean(selected.dryRun));
 
   const handleStart = async () => {
@@ -182,6 +324,24 @@ export default function Tegger() {
       setError(err.message || "Не удалось запустить");
     } finally {
       setStarting(false);
+    }
+  };
+
+  const handleStop = async (id) => {
+    const target = id || selected?.id;
+    if (!target) return;
+    setStopping(true);
+    setError("");
+    setNotice("");
+    try {
+      await teggerClient.teggers.stop(target);
+      setNotice("Останавливаем. Текущая история может ещё выйти, следующая — нет.");
+      await refresh();
+      setSelectedId(target);
+    } catch (err) {
+      setError(err.message || "Не удалось остановить");
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -439,40 +599,87 @@ export default function Tegger() {
                   </div>
                 )}
 
-                <div>
-                  <div className="brand-eyebrow text-[10px] mb-1">Отметки</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(selected.usernames || []).map((name) => (
-                      <span
-                        key={name}
-                        className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium"
-                      >
-                        @{name}
-                      </span>
-                    ))}
+                {selected.progress ? (
+                  <TeggerProgress job={selected} />
+                ) : (
+                  <div>
+                    <div className="brand-eyebrow text-[10px] mb-1">Отметки</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(selected.usernames || []).map((name) => (
+                        <span
+                          key={name}
+                          className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium"
+                        >
+                          @{name}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
-                {selected.error && (
+                {selected.error && selected.status !== "error" && (
+                  <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-muted-foreground">
+                    {selected.error}
+                  </div>
+                )}
+                {selected.error && selected.status === "error" && (
                   <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
                     {selected.error}
                   </div>
                 )}
 
-                <BrandButton
-                  variant="primary"
-                  onClick={handleStart}
-                  disabled={starting || !canStartSelected}
-                >
-                  <Play className="h-4 w-4" strokeWidth={2} />
-                  {selected.status === "running"
-                    ? "Публикация…"
-                    : selected.status === "done" && !selected.dryRun
-                      ? "Уже опубликован"
-                      : starting
-                        ? "Публикация…"
-                        : "Запустить"}
-                </BrandButton>
+                {runningJob && !selectedIsLive && (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+                    <div>Сейчас идёт другой тегер — {runningJob.senderId}.</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <BrandButton
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setSelectedId(runningJob.id)}
+                      >
+                        Открыть
+                      </BrandButton>
+                      <BrandButton
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleStop(runningJob.id)}
+                        disabled={stopping || runningJob.status === "stopping"}
+                      >
+                        <Square className="h-3.5 w-3.5" strokeWidth={2} />
+                        {runningJob.status === "stopping" ? "Останавливаем…" : "Остановить"}
+                      </BrandButton>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <BrandButton
+                    variant="primary"
+                    onClick={handleStart}
+                    disabled={starting || !canStartSelected}
+                  >
+                    <Play className="h-4 w-4" strokeWidth={2} />
+                    {selectedIsLive
+                      ? "Публикация…"
+                      : selected.status === "done" && !selected.dryRun
+                        ? "Уже опубликован"
+                        : stoppedAfterPublish
+                          ? "Уже были публикации"
+                          : starting
+                            ? "Публикация…"
+                            : "Запустить"}
+                  </BrandButton>
+                  {selectedIsLive && (
+                    <BrandButton
+                      variant="danger"
+                      onClick={() => handleStop(selected.id)}
+                      disabled={stopping || selected.status === "stopping"}
+                    >
+                      <Square className="h-4 w-4" strokeWidth={2} />
+                      {selected.status === "stopping" || stopping ? "Останавливаем…" : "Остановить"}
+                    </BrandButton>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -504,6 +711,8 @@ export default function Tegger() {
                             </div>
                             <div className="mt-0.5 text-xs text-muted-foreground">
                               {formatWhen(item.createdAt)}
+                              {item.progress &&
+                                ` · ${item.progress.mentioned?.length || 0}/${item.progress.total || item.usernames?.length || 0} отметок · ${item.progress.stories?.length || 0} групп`}
                             </div>
                           </div>
                           <StatusBadge status={STATUS_RU[item.status] || item.status} />

@@ -3206,12 +3206,16 @@ async def parser_run(payload: _ParserRunRequest):
 
 
 # ===== TEGGER ONE-SHOT STORIES (photo + mentions + link) =====
-from src.tegger_publish import publish_custom_story as _publish_custom_story
+from src.tegger_publish import (
+    TeggerStopped as _TeggerStopped,
+    publish_custom_story as _publish_custom_story,
+)
 
 _TEGGERS_FILE = Path(DATA_DIR) / "ui_teggers.json"
 _TEGGER_MEDIA_DIR = Path(DATA_DIR) / "tegger_media"
 _tegger_lock = asyncio.Lock()
 _TEGGER_TASKS: dict[str, asyncio.Task] = {}
+_TEGGER_CANCEL: dict[str, asyncio.Event] = {}
 
 
 def _tegger_read() -> list[dict]:
@@ -3254,7 +3258,59 @@ def _tegger_view(item: dict) -> dict:
         "error": item.get("error") or "",
         "dryRun": bool(item.get("dryRun")),
         "resultType": item.get("resultType") or "",
+        "progress": _tegger_progress_view(item),
     }
+
+
+def _tegger_blank_progress(total: int = 0, phase: str = "") -> dict:
+    return {
+        "phase": phase,
+        "total": total,
+        "mentioned": [],
+        "failed": [],
+        "stories": [],
+        "currentGroup": [],
+        "pending": total,
+        "waitUntil": None,
+    }
+
+
+def _tegger_progress_view(item: dict):
+    raw = item.get("progress")
+    if not isinstance(raw, dict):
+        return None
+    total = raw.get("total")
+    if not isinstance(total, int):
+        total = len(item.get("usernames") or [])
+    pending = raw.get("pending")
+    if not isinstance(pending, int):
+        pending = total
+    return {
+        "phase": raw.get("phase") or "",
+        "total": total,
+        "mentioned": list(raw.get("mentioned") or []),
+        "failed": list(raw.get("failed") or []),
+        "stories": list(raw.get("stories") or []),
+        "currentGroup": list(raw.get("currentGroup") or []),
+        "pending": pending,
+        "waitUntil": raw.get("waitUntil") or None,
+    }
+
+
+def _tegger_stopped_text(progress: dict) -> str:
+    stories = progress.get("stories") or []
+    mentioned = progress.get("mentioned") or []
+    current = progress.get("currentGroup") or []
+    pending = progress.get("pending") or 0
+    if not stories and not current:
+        return "Остановлено до публикации"
+    parts = [f"Остановлено. Историй: {len(stories)}, отметок: {len(mentioned)}"]
+    if current:
+        names = " ".join(f"@{name}" for name in current)
+        parts.append(f"текущая группа не опубликована: {names}")
+    if pending:
+        parts.append(f"ещё не начато: {pending}")
+    return ". ".join(parts)
 
 
 def _tegger_parse_usernames(raw: str) -> list[str]:
@@ -3300,30 +3356,75 @@ async def _tegger_update(job_id: str, **fields):
     return None
 
 
+async def _tegger_mark_stopped(job_id: str):
+    text = ""
+    sender = "system"
+    async with _tegger_lock:
+        items = _tegger_read()
+        item = next((x for x in items if x.get("id") == job_id), None)
+        if not item or item.get("status") not in ("running", "stopping"):
+            return item
+        progress = dict(item.get("progress") or _tegger_blank_progress())
+        progress["phase"] = "stopped"
+        progress["waitUntil"] = None
+        text = _tegger_stopped_text(progress)
+        sender = item.get("senderId") or "system"
+        item.update(
+            {
+                "status": "stopped",
+                "finishedAt": _dt.now(_tz.utc).isoformat(),
+                "progress": progress,
+                "resultType": (
+                    f"{len(progress.get('stories') or [])} stories"
+                    if progress.get("stories")
+                    else ""
+                ),
+                "error": text,
+            }
+        )
+        _tegger_write(items)
+    _audit("WARNING", "Тегер остановлен", text, sender)
+    return item
+
+
 async def _tegger_execute(job_id: str):
+    cancel_event = _TEGGER_CANCEL.setdefault(job_id, asyncio.Event())
     item = next((x for x in _tegger_read() if x.get("id") == job_id), None)
     if not item:
+        return
+    if cancel_event.is_set():
+        await _tegger_mark_stopped(job_id)
         return
     await _tegger_update(
         job_id,
         status="running",
-        startedAt=_dt.now(_tz.utc).isoformat(),
+        startedAt=item.get("startedAt") or _dt.now(_tz.utc).isoformat(),
         error="",
         finishedAt=None,
         dryRun=False,
         resultType="",
+        progress=_tegger_blank_progress(len(item.get("usernames") or []), phase="connect"),
     )
+    if cancel_event.is_set():
+        await _tegger_mark_stopped(job_id)
+        return
+
+    async def on_progress(snapshot: dict):
+        if cancel_event.is_set() and snapshot.get("phase") not in {"stopped", "done"}:
+            snapshot = {**snapshot, "phase": "stopping"}
+        await _tegger_update(job_id, progress=snapshot)
+
     try:
         client = create_client(item["senderId"])
         try:
+            await on_progress({
+                **_tegger_blank_progress(len(item.get("usernames") or []), phase="connect"),
+            })
             await asyncio.wait_for(client.connect(), timeout=25)
+            if cancel_event.is_set():
+                raise _TeggerStopped()
             if not await client.is_user_authorized():
                 raise RuntimeError("Сессия Telegram не авторизована")
-            # Resolve mentions early so invalid users fail before publish.
-            for username in item.get("usernames") or []:
-                entity = await client.get_entity(username)
-                if not getattr(entity, "username", None):
-                    raise RuntimeError(f"У @{username} нет публичного username")
             limits = execution_values()
             published = await _publish_custom_story(
                 client,
@@ -3338,11 +3439,16 @@ async def _tegger_execute(job_id: str):
                 interval_min=limits["STORY_INTERVAL_MIN_SECONDS"],
                 interval_max=limits["STORY_INTERVAL_MAX_SECONDS"],
                 interaction_delay=limits["INTERACTION_STORY_DELAY"],
+                on_progress=on_progress,
+                cancel_event=cancel_event,
             )
         finally:
             if client.is_connected():
                 await client.disconnect()
 
+        if cancel_event.is_set():
+            await _tegger_mark_stopped(job_id)
+            return
         failed = published.get("failed") or []
         await _tegger_update(
             job_id,
@@ -3358,7 +3464,12 @@ async def _tegger_execute(job_id: str):
             f"{published.get('stories') or 0} историй, {len(published.get('mentions') or [])} отметок",
             item.get("senderId") or "system",
         )
+    except _TeggerStopped:
+        await _tegger_mark_stopped(job_id)
     except Exception as exc:
+        if cancel_event.is_set():
+            await _tegger_mark_stopped(job_id)
+            return
         await _tegger_update(
             job_id,
             status="error",
@@ -3372,7 +3483,10 @@ async def _tegger_execute(job_id: str):
             item.get("senderId") or "system",
         )
     finally:
-        _TEGGER_TASKS.pop(job_id, None)
+        if _TEGGER_TASKS.get(job_id) is asyncio.current_task():
+            _TEGGER_TASKS.pop(job_id, None)
+        if _TEGGER_CANCEL.get(job_id) is cancel_event:
+            _TEGGER_CANCEL.pop(job_id, None)
 
 
 @app.get("/api/teggers/accounts", dependencies=[Depends(get_current_user)])
@@ -3498,27 +3612,69 @@ async def start_tegger(tegger_id: str):
         item = next((x for x in items if x.get("id") == tegger_id), None)
         if not item:
             raise HTTPException(404, "Тегер не найден")
-        if item.get("status") == "running":
+        if item.get("status") in ("running", "stopping"):
             raise HTTPException(409, "Этот тегер уже запускается")
         # Після справжньої публікації — лише новий тегер. Після DRY_RUN-симуляції можна перезапустити LIVE.
         if item.get("status") == "done" and not item.get("dryRun"):
             raise HTTPException(409, "Тегер уже выполнен — создай новый")
-        if any(x.get("status") == "running" for x in items):
-            raise HTTPException(409, "Уже выполняется другой тегер — подожди")
+        saved = item.get("progress") if isinstance(item.get("progress"), dict) else {}
+        if item.get("status") == "stopped" and saved.get("stories"):
+            raise HTTPException(409, "Тегер остановлен после публикации — создай новый для оставшихся")
+        if any(x.get("status") in ("running", "stopping") for x in items):
+            raise HTTPException(409, "Уже выполняется другой тегер — останови его или подожди")
         if not Path(item.get("photoPath") or "").is_file():
             raise HTTPException(422, "Файл фото потерян — создай тегер заново")
-        if item.get("status") == "done" and item.get("dryRun"):
-            item["status"] = "draft"
-            item["error"] = ""
-            item["finishedAt"] = None
-            item["resultType"] = ""
-            _tegger_write(items)
+        item["status"] = "running"
+        item["error"] = ""
+        item["finishedAt"] = None
+        item["resultType"] = ""
+        item["dryRun"] = False
+        item["startedAt"] = _dt.now(_tz.utc).isoformat()
+        item["progress"] = _tegger_blank_progress(
+            len(item.get("usernames") or []),
+            phase="connect",
+        )
+        _tegger_write(items)
 
     task = _TEGGER_TASKS.get(tegger_id)
     if task and not task.done():
         raise HTTPException(409, "Запуск уже в процессе")
+    _TEGGER_CANCEL[tegger_id] = asyncio.Event()
     _TEGGER_TASKS[tegger_id] = asyncio.create_task(_tegger_execute(tegger_id))
     return {"ok": True, "id": tegger_id, "status": "running"}
+
+
+@app.post("/api/teggers/{tegger_id}/stop", dependencies=[Depends(get_current_user)])
+async def stop_tegger(tegger_id: str):
+    item = next((x for x in _tegger_read() if x.get("id") == tegger_id), None)
+    if not item:
+        raise HTTPException(404, "Тегер не найден")
+    if item.get("status") not in ("running", "stopping"):
+        raise HTTPException(409, "Этот тегер не выполняется")
+    event = _TEGGER_CANCEL.get(tegger_id)
+    task = _TEGGER_TASKS.get(tegger_id)
+    if event is None and (task is None or task.done()):
+        fresh = next((x for x in _tegger_read() if x.get("id") == tegger_id), None)
+        if not fresh or fresh.get("status") not in ("running", "stopping"):
+            raise HTTPException(409, "Этот тегер уже завершён")
+        await _tegger_mark_stopped(tegger_id)
+        return {"ok": True, "id": tegger_id, "status": "stopped"}
+    if event is None:
+        event = asyncio.Event()
+        _TEGGER_CANCEL[tegger_id] = event
+    event.set()
+    updated = None
+    async with _tegger_lock:
+        items = _tegger_read()
+        current = next((x for x in items if x.get("id") == tegger_id), None)
+        if current and current.get("status") == "running":
+            current["status"] = "stopping"
+            _tegger_write(items)
+            updated = current
+    if updated is None:
+        fresh = next((x for x in _tegger_read() if x.get("id") == tegger_id), None)
+        return {"ok": True, "id": tegger_id, "status": (fresh or {}).get("status") or "done"}
+    return {"ok": True, "id": tegger_id, "status": "stopping"}
 
 
 # ===== END TEGGER ONE-SHOT STORIES =====

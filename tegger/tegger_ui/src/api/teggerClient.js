@@ -93,6 +93,8 @@ export const teggerClient = {
     get: (id) => request(`/api/teggers/${encodeURIComponent(id)}`),
     start: (id) =>
       request(`/api/teggers/${encodeURIComponent(id)}/start`, { method: "POST" }),
+    stop: (id) =>
+      request(`/api/teggers/${encodeURIComponent(id)}/stop`, { method: "POST" }),
     create: async ({
       senderId,
       usernames,

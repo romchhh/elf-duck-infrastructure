@@ -20,6 +20,7 @@ const STATUS_STYLES = {
   // tegger one-shot
   "Черновик": "bg-neutral-100 text-neutral-600 ring-1 ring-neutral-200",
   "Запуск": "bg-orange-50 text-orange-700 ring-1 ring-orange-200",
+  "Останавливаем": "bg-orange-50 text-orange-700 ring-1 ring-orange-200",
   "Готово": "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
 };
 
