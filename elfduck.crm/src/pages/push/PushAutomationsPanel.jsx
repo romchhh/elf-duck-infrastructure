@@ -165,6 +165,24 @@ function draftFromRow(row, event) {
     buttons: normalizeButtons(message.buttons),
     promo: String(message.promo || "").trim(),
     templateId: String(message.templateId || "").trim(),
+    templateIdRu: String(message.templateIdRu || "").trim(),
+    templateIdPl: String(message.templateIdPl || "").trim(),
+  };
+}
+
+function automationMessagePayload(draft) {
+  return {
+    text: String(draft?.pl || draft?.ru || "").trim(),
+    textRu: String(draft?.ru || "").trim(),
+    textPl: String(draft?.pl || "").trim(),
+    defaultLanguage: "ru",
+    promo: String(draft?.promo || "").trim(),
+    photoUrl: String(draft?.photoUrl || "").trim(),
+    photoFileId: String(draft?.photoFileId || "").trim(),
+    buttons: normalizeButtons(draft?.buttons),
+    templateId: String(draft?.templateId || "").trim(),
+    templateIdRu: String(draft?.templateIdRu || "").trim(),
+    templateIdPl: String(draft?.templateIdPl || "").trim(),
   };
 }
 
@@ -179,6 +197,8 @@ function draftKey(draft) {
     buttons: draft?.buttons || [],
     promo: String(draft?.promo || ""),
     templateId: String(draft?.templateId || ""),
+    templateIdRu: String(draft?.templateIdRu || ""),
+    templateIdPl: String(draft?.templateIdPl || ""),
   });
 }
 
@@ -296,17 +316,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
             activeEvent.delayMode === "none"
               ? 0
               : Number(draft.delayMinutes || 0),
-          message: {
-            text: String(draft.pl || draft.ru || "").trim(),
-            textRu: String(draft.ru || "").trim(),
-            textPl: String(draft.pl || "").trim(),
-            defaultLanguage: "ru",
-            promo: String(draft.promo || "").trim(),
-            photoUrl: String(draft.photoUrl || "").trim(),
-            photoFileId: String(draft.photoFileId || "").trim(),
-            buttons: normalizeButtons(draft.buttons),
-            templateId: String(draft.templateId || "").trim(),
-          },
+          message: automationMessagePayload(draft),
         }),
       });
     },
@@ -367,6 +377,8 @@ export default function PushAutomationsPanel({ templates = [] }) {
       photoFileId: built.photoFileId || current.photoFileId,
       mediaPreviewUrl: built.photoUrl || current.mediaPreviewUrl,
       templateId: built.templateId,
+      templateIdRu: lang === "ru" ? built.templateId : current.templateIdRu,
+      templateIdPl: lang === "pl" ? built.templateId : current.templateIdPl,
     }));
   };
 
@@ -421,6 +433,45 @@ export default function PushAutomationsPanel({ templates = [] }) {
   const templateName = (id) => {
     const item = (templates || []).find((row) => row.id === id);
     return String(item?.name || item?.title || "").trim();
+  };
+
+  const templateLanguage = (template) =>
+    String(template?.language || "ru").trim().toLowerCase() === "pl"
+      ? "pl"
+      : "ru";
+
+  const langLabel = (source, language) => {
+    const text = String(language === "pl" ? source.pl : source.ru).trim();
+    if (!text) return "";
+    const storedId =
+      language === "pl" ? source.templateIdPl : source.templateIdRu;
+    const storedName = templateName(storedId);
+    if (storedName) return storedName;
+    const legacy = (templates || []).find((row) => row.id === source.templateId);
+    if (legacy && templateLanguage(legacy) === language) {
+      return templateName(legacy.id);
+    }
+    const compact = text.replace(/\s+/g, " ");
+    const match = (templates || []).find((row) => {
+      if (templateLanguage(row) !== language) return false;
+      const body = String(row.text || row.preview || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return body && body === compact;
+    });
+    return match
+      ? String(match.name || match.title || "").trim()
+      : snippet(text);
+  };
+
+  const listCaption = (event, source) => {
+    const delay = formatDelay(event, source.delayMinutes);
+    const parts = [
+      source.pl ? `PL ${langLabel(source, "pl")}` : "",
+      source.ru ? `RU ${langLabel(source, "ru")}` : "",
+    ].filter(Boolean);
+    if (!parts.length) return `${delay} · Шаблон не выбран`;
+    return `${delay} · ${parts.join(" / ")}`;
   };
 
   const langTemplates = (templates || []).filter((template) => {
@@ -479,17 +530,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
             enabled: next.enabled === true,
             delayMinutes:
               event.delayMode === "none" ? 0 : Number(next.delayMinutes || 0),
-            message: {
-              text: String(next.pl || next.ru || "").trim(),
-              textRu: String(next.ru || "").trim(),
-              textPl: String(next.pl || "").trim(),
-              defaultLanguage: "ru",
-              promo: String(next.promo || "").trim(),
-              photoUrl: String(next.photoUrl || "").trim(),
-              photoFileId: String(next.photoFileId || "").trim(),
-              buttons: normalizeButtons(next.buttons),
-              templateId: String(next.templateId || "").trim(),
-            },
+            message: automationMessagePayload(next),
           }),
         }
       );
@@ -726,6 +767,10 @@ export default function PushAutomationsPanel({ templates = [] }) {
                   ru: next.ru,
                   pl: next.pl,
                   templateId: "",
+                  templateIdRu:
+                    next.ru === current.ru ? current.templateIdRu : "",
+                  templateIdPl:
+                    next.pl === current.pl ? current.templateIdPl : "",
                 }))
               }
               rows={8}
@@ -925,12 +970,6 @@ export default function PushAutomationsPanel({ templates = [] }) {
         <div className="mt-4 divide-y divide-border/70">
           {EVENTS.map((event) => {
             const { source } = cardState(event);
-            const name = templateName(source.templateId);
-            const preview =
-              name ||
-              snippet(source.ru) ||
-              snippet(source.pl) ||
-              "Шаблон не выбран";
             return (
               <div
                 key={event.trigger}
@@ -940,10 +979,8 @@ export default function PushAutomationsPanel({ templates = [] }) {
                   <div className="text-[13px] font-medium text-foreground">
                     {event.title}
                   </div>
-                  <p className="mt-0.5 truncate text-[12px] text-muted-2">
-                    {formatDelay(event, source.delayMinutes)}
-                    {" · "}
-                    {preview}
+                  <p className="mt-0.5 text-[12px] leading-snug text-muted-2">
+                    {listCaption(event, source)}
                   </p>
                 </div>
                 <button
