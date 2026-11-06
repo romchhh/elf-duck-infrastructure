@@ -283,9 +283,44 @@ const blankAssortment = buildShiftStockReconcile({
 });
 assert.match(
   blankAssortment.message,
-  /не удалось прочитать количество «Apple» во вкладке «Ассортимент»/
+  /▫️ELFLIQ:[\s\S]*в ассортименте на 1 шт\. меньше/
 );
-assert.equal(blankAssortment.mismatches.length, 0);
+assert.equal(blankAssortment.errors.length, 0);
+
+const blankFlavorIgnored = buildShiftStockReconcile({
+  reportRows: [
+    ["22.10"],
+    ["MODEL", "СТАЛО"],
+    ["ELFLIQ", "2"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ ELFLIQ", "КОЛ-ВО"],
+    ["Apple", "2"],
+    ["Banana", ""],
+  ],
+  dayKey: "2026-10-22",
+});
+assert.equal(blankFlavorIgnored.errors.length, 0);
+assert.equal(blankFlavorIgnored.mismatches.length, 0);
+
+const brokenFormulaQty = buildShiftStockReconcile({
+  reportRows: [
+    ["22.10"],
+    ["MODEL", "СТАЛО"],
+    ["ELFLIQ", "2"],
+    ["КАССА"],
+  ],
+  assortmentRows: [
+    ["LIQ ELFLIQ", "КОЛ-ВО"],
+    ["Apple", "#VALUE!"],
+  ],
+  dayKey: "2026-10-22",
+});
+assert.match(
+  brokenFormulaQty.message,
+  /не удалось прочитать количество «Apple»/
+);
 
 const emptyBlock = buildShiftStockReconcile({
   reportRows: [

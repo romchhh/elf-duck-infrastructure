@@ -60,7 +60,7 @@ export function parseAssortmentQty(cell) {
 }
 
 /**
- * Кількість для звірки. Порожня клітинка і текст на кшталт #VALUE! — не нуль.
+ * Кількість для звірки звіту. Порожня клітинка і текст на кшталт #VALUE! — не нуль.
  * Повертає { ok:true, qty } або { ok:false }.
  */
 export function readStrictSheetQty(cell) {
@@ -83,6 +83,13 @@ export function readStrictSheetQty(cell) {
   return { ok: true, qty };
 }
 
+/** Порожня «КОЛ-ВО» у смаку — залишок 0, не помилка звірки. */
+function isBlankAssortmentQty(cell) {
+  if (cell == null) return true;
+  if (typeof cell === "number") return false;
+  return String(cell).trim() === "";
+}
+
 /** Сума «КОЛ-ВО» по моделі. Блок — рядок, де поруч із назвою написано КОЛ-ВО. */
 export function listAssortmentModelStock(rows) {
   const blocks = findAssortmentModelBlocks(rows).filter((block) =>
@@ -98,7 +105,9 @@ export function listAssortmentModelStock(rows) {
     let qty = 0;
     const unreadable = [];
     for (const flavor of flavors) {
-      const parsed = readStrictSheetQty(rows[flavor.row]?.[block.qtyCol]);
+      const cell = rows[flavor.row]?.[block.qtyCol];
+      if (isBlankAssortmentQty(cell)) continue;
+      const parsed = readStrictSheetQty(cell);
       if (!parsed.ok) {
         unreadable.push(flavor.cell);
         continue;
