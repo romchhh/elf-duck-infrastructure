@@ -155,6 +155,16 @@ const broadcastCampaignSchema =
           ],
           default: [],
         },
+
+        buttonsRu: {
+          type: Array,
+          default: [],
+        },
+
+        buttonsPl: {
+          type: Array,
+          default: [],
+        },
       },
 
       templateId: {

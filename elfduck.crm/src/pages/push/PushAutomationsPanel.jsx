@@ -178,7 +178,20 @@ function draftFromRow(row, event) {
     photoFileIdPl,
     mediaPreviewUrlRu: photoUrlRu,
     mediaPreviewUrlPl: photoUrlPl,
-    buttons: normalizeButtons(message.buttons),
+    buttonsRu: normalizeButtons(
+      message.buttonsRu?.length
+        ? message.buttonsRu
+        : message.buttonsPl?.length
+          ? []
+          : message.buttons
+    ),
+    buttonsPl: normalizeButtons(
+      message.buttonsPl?.length
+        ? message.buttonsPl
+        : message.buttonsRu?.length
+          ? []
+          : message.buttons
+    ),
     promo: String(message.promo || "").trim(),
     templateId: String(message.templateId || "").trim(),
     templateIdRu: String(message.templateIdRu || "").trim(),
@@ -203,7 +216,13 @@ function automationMessagePayload(draft) {
     photoUrlPl,
     photoFileIdRu,
     photoFileIdPl,
-    buttons: normalizeButtons(draft?.buttons),
+    buttons: normalizeButtons(
+      (draft?.buttonsRu || []).some((row) => String(row?.text || "").trim())
+        ? draft.buttonsRu
+        : draft?.buttonsPl
+    ),
+    buttonsRu: normalizeButtons(draft?.buttonsRu),
+    buttonsPl: normalizeButtons(draft?.buttonsPl),
     templateId: String(draft?.templateId || "").trim(),
     templateIdRu: String(draft?.templateIdRu || "").trim(),
     templateIdPl: String(draft?.templateIdPl || "").trim(),
@@ -220,7 +239,8 @@ function draftKey(draft) {
     photoUrlPl: String(draft?.photoUrlPl || ""),
     photoFileIdRu: String(draft?.photoFileIdRu || ""),
     photoFileIdPl: String(draft?.photoFileIdPl || ""),
-    buttons: draft?.buttons || [],
+    buttonsRu: draft?.buttonsRu || [],
+    buttonsPl: draft?.buttonsPl || [],
     promo: String(draft?.promo || ""),
     templateId: String(draft?.templateId || ""),
     templateIdRu: String(draft?.templateIdRu || ""),
@@ -313,6 +333,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
       return { ...current, [activeTrigger]: next };
     });
   };
+  const activeButtons = lang === "pl" ? draft.buttonsPl || [] : draft.buttonsRu || [];
   const previewText = lang === "pl" ? draft.pl : draft.ru;
   const previewPhoto =
     lang === "pl"
@@ -404,7 +425,14 @@ export default function PushAutomationsPanel({ templates = [] }) {
           lang === "pl"
             ? built.pl || built.ru || current.pl
             : built.pl || current.pl,
-        buttons: built.buttons.length ? built.buttons : current.buttons,
+        buttonsRu:
+          lang === "ru" && built.buttons.length
+            ? built.buttons
+            : current.buttonsRu,
+        buttonsPl:
+          lang === "pl" && built.buttons.length
+            ? built.buttons
+            : current.buttonsPl,
         templateId: built.templateId,
         templateIdRu: lang === "ru" ? built.templateId : current.templateIdRu,
         templateIdPl: lang === "pl" ? built.templateId : current.templateIdPl,
@@ -856,32 +884,35 @@ export default function PushAutomationsPanel({ templates = [] }) {
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <p className="text-[11px] uppercase tracking-wider text-muted-2">
-                  Кнопки
+                  Кнопки · {lang === "pl" ? "PL" : "RU"}
                 </p>
                 <button
                   type="button"
                   className="text-[12px] text-[hsl(255_100%_75%)] hover:underline"
                   onClick={() =>
-                    setDraft((current) => ({
-                      ...current,
-                      buttons: [
-                        ...(current.buttons || []),
-                        {
-                          text: "Открыть магазин",
-                          kind: "web_app",
-                          path: "/",
-                          url: "",
-                        },
-                      ],
-                    }))
+                    setDraft((current) => {
+                      const key = lang === "pl" ? "buttonsPl" : "buttonsRu";
+                      return {
+                        ...current,
+                        [key]: [
+                          ...(current[key] || []),
+                          {
+                            text: lang === "pl" ? "Otwórz sklep" : "Открыть магазин",
+                            kind: "web_app",
+                            path: "/",
+                            url: "",
+                          },
+                        ],
+                      };
+                    })
                   }
                 >
                   Добавить
                 </button>
               </div>
-              {draft.buttons.length ? (
+              {activeButtons.length ? (
                 <div className="space-y-2">
-                  {draft.buttons.map((btn, index) => (
+                  {activeButtons.map((btn, index) => (
                     <div
                       key={`auto-btn-${index}`}
                       className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"
@@ -890,9 +921,10 @@ export default function PushAutomationsPanel({ templates = [] }) {
                         value={btn.text}
                         onChange={(event) => {
                           const text = event.target.value;
+                          const key = lang === "pl" ? "buttonsPl" : "buttonsRu";
                           setDraft((current) => ({
                             ...current,
-                            buttons: current.buttons.map((row, i) =>
+                            [key]: (current[key] || []).map((row, i) =>
                               i === index ? { ...row, text } : row
                             ),
                           }));
@@ -905,9 +937,10 @@ export default function PushAutomationsPanel({ templates = [] }) {
                         onChange={(event) => {
                           const value = event.target.value;
                           const external = /^https?:\/\//i.test(value.trim());
+                          const key = lang === "pl" ? "buttonsPl" : "buttonsRu";
                           setDraft((current) => ({
                             ...current,
-                            buttons: current.buttons.map((row, i) =>
+                            [key]: (current[key] || []).map((row, i) =>
                               i === index
                                 ? {
                                     ...row,
@@ -925,14 +958,15 @@ export default function PushAutomationsPanel({ templates = [] }) {
                       <button
                         type="button"
                         className="rounded-lg border border-border px-2 text-[12px] text-muted-2 hover:text-foreground"
-                        onClick={() =>
+                        onClick={() => {
+                          const key = lang === "pl" ? "buttonsPl" : "buttonsRu";
                           setDraft((current) => ({
                             ...current,
-                            buttons: current.buttons.filter(
+                            [key]: (current[key] || []).filter(
                               (_row, i) => i !== index
                             ),
-                          }))
-                        }
+                          }));
+                        }}
                       >
                         Убрать
                       </button>
@@ -1014,7 +1048,7 @@ export default function PushAutomationsPanel({ templates = [] }) {
                     ),
                   }}
                 />
-                {draft.buttons
+                {activeButtons
                   .filter((btn) => btn.text.trim())
                   .map((btn) => (
                     <div

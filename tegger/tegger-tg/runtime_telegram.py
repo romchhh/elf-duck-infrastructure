@@ -51,6 +51,34 @@ def get_api_credentials(*, require_configured: bool = False) -> tuple[int, str]:
     return api_id, api_hash
 
 
+def get_sender_api_credentials(sender_name: str) -> tuple[int, str] | None:
+    """API ID/Hash, з якими створювалась сесія цього акаунта."""
+    path = Path(DATA_DIR) / "ui_added_accounts.json"
+    if not path.is_file():
+        return None
+    try:
+        items = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(items, list):
+        return None
+    match = next(
+        (
+            item
+            for item in items
+            if isinstance(item, dict) and item.get("id") == sender_name
+        ),
+        None,
+    )
+    if not match:
+        return None
+    raw_id = str(match.get("apiId") or "").strip()
+    raw_hash = str(match.get("apiHash") or "").strip()
+    if not raw_id.isdigit() or int(raw_id) < 1 or len(raw_hash) < 8:
+        return None
+    return int(raw_id), raw_hash
+
+
 def credentials_configured() -> bool:
     try:
         get_api_credentials(require_configured=True)

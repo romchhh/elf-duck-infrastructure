@@ -724,7 +724,13 @@ async def apply_test_avatar(sender: str, image_path: Path) -> dict:
 from datetime import datetime as _dt, timezone as _tz
 from uuid import uuid4 as _uuid4
 from telethon import TelegramClient as _TelegramClient
-from telethon.errors import SessionPasswordNeededError as _SessionPasswordNeededError
+from telethon.errors import (
+    PhoneCodeExpiredError as _PhoneCodeExpiredError,
+    PhoneCodeInvalidError as _PhoneCodeInvalidError,
+    SessionPasswordNeededError as _SessionPasswordNeededError,
+)
+from telethon.sessions import SQLiteSession as _SQLiteSession
+from telethon.sessions import StringSession as _StringSession
 from src.telegram_client import _parse_socks5_proxy as _parse_proxy
 from runtime_telegram import get_api_credentials as _get_api_credentials
 from fastapi import Form as _Form
@@ -782,17 +788,48 @@ def _validate_new_proxy(raw):
         raise HTTPException(422, 'Неверный SOCKS5 proxy') from exc
 
 
-def _new_client(path, proxy):
+def _resolve_login_credentials(api_id, api_hash):
+    raw_id = str(api_id or '').strip()
+    raw_hash = str(api_hash or '').strip()
+    if raw_id or raw_hash:
+        if not raw_id.isdigit() or int(raw_id) < 1 or len(raw_hash) < 8:
+            raise HTTPException(422, 'Укажи API ID и API Hash с my.telegram.org')
+        return int(raw_id), raw_hash
     try:
-        api_id, api_hash = _get_api_credentials(require_configured=True)
+        return _get_api_credentials(require_configured=True)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _TelegramClient(
-        str(path),
-        api_id,
-        api_hash,
-        proxy=_validate_new_proxy(proxy),
-    )
+        raise HTTPException(422, str(exc)) from exc
+
+
+def _new_client(path, proxy, api_id, api_hash):
+    parsed_proxy = _validate_new_proxy(proxy)
+    if isinstance(path, _StringSession):
+        return _TelegramClient(path, api_id, api_hash, proxy=parsed_proxy)
+    return _TelegramClient(str(path), api_id, api_hash, proxy=parsed_proxy)
+
+
+def _code_delivery_hint(sent):
+    name = type(getattr(sent, 'type', None)).__name__
+    if 'Sms' in name:
+        return 'Код пришёл по SMS. Вводи только цифры из последнего сообщения.'
+    if 'Call' in name:
+        return 'Код продиктуют звонком. Вводи только цифры.'
+    if 'App' in name:
+        return 'Код пришёл в приложение Telegram, не по SMS. Возьми последнее сообщение.'
+    return 'Вводи только код из последнего сообщения Telegram.'
+
+
+def _normalize_login_code(raw):
+    digits = re.sub(r'\D', '', str(raw or ''))
+    if not 4 <= len(digits) <= 8:
+        raise HTTPException(422, 'Код — это цифры из последнего сообщения Telegram')
+    return digits
+
+
+async def _ensure_login_connected(entry):
+    client = entry['client']
+    if not client.is_connected():
+        await asyncio.wait_for(client.connect(), timeout=25)
 
 
 def _account_added_view(record):
@@ -817,7 +854,7 @@ def _account_added_view(record):
     }
 
 
-def _commit_new_account(sender, session_path, proxy, story_template, me):
+def _commit_new_account(sender, session_path, proxy, story_template, me, api_id=None, api_hash=''):
     final = Path(SESSIONS_DIR) / f'{sender}.session'
     _validate_new_sender(sender)
     if not session_path.is_file():
@@ -827,6 +864,7 @@ def _commit_new_account(sender, session_path, proxy, story_template, me):
         items = _added_accounts()
         record = {'id': sender, 'username': me.username or '', 'telegramId': me.id,
                   'proxy': proxy, 'storyTemplate': story_template,
+                  'apiId': str(api_id or ''), 'apiHash': str(api_hash or ''),
                   'createdAt': _dt.now(_tz.utc).isoformat()}
         items.append(record)
         _save_added_accounts(items)
@@ -864,42 +902,77 @@ async def list_real_logs(level: str = 'ALL', sender: str = 'all', search: str = 
     return rows[-limit:][::-1]
 
 
+async def _persist_string_session(session_string, dest_base, api_id, api_hash, proxy):
+    text = str(session_string or '').strip()
+    if len(text) < 50:
+        raise HTTPException(422, 'Строка сессии слишком короткая')
+    client = _new_client(_StringSession(text), proxy, api_id, api_hash)
+    sqlite = None
+    try:
+        await asyncio.wait_for(client.connect(), timeout=25)
+        if not await asyncio.wait_for(client.is_user_authorized(), timeout=25):
+            raise HTTPException(422, 'Строка сессии не авторизована')
+        me = await asyncio.wait_for(client.get_me(), timeout=25)
+        sqlite = _SQLiteSession(str(dest_base))
+        sqlite.set_dc(client.session.dc_id, client.session.server_address, client.session.port)
+        sqlite.auth_key = client.session.auth_key
+        sqlite.save()
+        return me
+    finally:
+        if sqlite is not None:
+            sqlite.close()
+        if client.is_connected():
+            await client.disconnect()
+
+
 @app.post('/api/accounts/add/import', dependencies=[Depends(get_current_user)])
 async def import_new_account(sender: str = _Form(...), proxy: str = _Form(''),
-                             storyTemplate: str = _Form(''), file: UploadFile = File(...)):
+                             storyTemplate: str = _Form(''), apiId: str = _Form(''),
+                             apiHash: str = _Form(''), sessionString: str = _Form(''),
+                             file: UploadFile | None = File(None)):
     async with _ADD_LOCK:
         _validate_new_sender(sender)
         _validate_new_proxy(proxy)
-        if not file.filename.lower().endswith('.session'):
-            raise HTTPException(422, 'Нужен файл .session')
-        content = await file.read(4 * 1024 * 1024 + 1)
-        if len(content) > 4 * 1024 * 1024 or len(content) < 100:
-            raise HTTPException(422, 'Недопустимый размер файла .session')
+        api_id, api_hash = _resolve_login_credentials(apiId, apiHash)
+        has_file = file is not None and bool(getattr(file, 'filename', ''))
+        text = sessionString.strip()
+        if has_file == bool(text):
+            raise HTTPException(422, 'Передай файл .session или строку сессии')
         _LOGIN_DIR.mkdir(parents=True, exist_ok=True)
-        staging = _LOGIN_DIR / (_uuid4().hex + '.session')
-        staging.write_bytes(content)
+        token = _uuid4().hex
+        staging = _LOGIN_DIR / f'{token}.session'
         client = None
         try:
+            if text:
+                me = await _persist_string_session(text, _LOGIN_DIR / token, api_id, api_hash, proxy)
+                return _commit_new_account(sender, staging, proxy, storyTemplate, me, api_id, api_hash)
+            if not file.filename.lower().endswith('.session'):
+                raise HTTPException(422, 'Нужен файл .session')
+            content = await file.read(4 * 1024 * 1024 + 1)
+            if len(content) > 4 * 1024 * 1024 or len(content) < 100:
+                raise HTTPException(422, 'Недопустимый размер файла .session')
+            staging.write_bytes(content)
             with _sqlite3.connect(f'file:{staging}?mode=ro', uri=True) as db:
                 if db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'").fetchone() is None:
                     raise HTTPException(422, 'Это не Telethon SQLite session')
-            client = _new_client(staging.with_suffix(''), proxy)
+            client = _new_client(staging.with_suffix(''), proxy, api_id, api_hash)
             await asyncio.wait_for(client.connect(), timeout=25)
             if not await asyncio.wait_for(client.is_user_authorized(), timeout=25):
-                raise HTTPException(422, 'Telegram-сессия не авторизована')
+                raise HTTPException(422, 'Telegram-сессия не авторизована. Проверь API ID и API Hash, с которыми она создана.')
             me = await asyncio.wait_for(client.get_me(), timeout=25)
             await client.disconnect()
             client = None
-            return _commit_new_account(sender, staging, proxy, storyTemplate, me)
+            return _commit_new_account(sender, staging, proxy, storyTemplate, me, api_id, api_hash)
         except HTTPException:
             raise
         except Exception as exc:
             _audit('ERROR', 'Ошибка импорта аккаунта', type(exc).__name__, sender)
             raise HTTPException(502, f'Проверка Telegram не удалась: {type(exc).__name__}') from exc
         finally:
-            if client is not None:
+            if client is not None and client.is_connected():
                 await client.disconnect()
-            staging.unlink(missing_ok=True)
+            if staging.is_file() and not (Path(SESSIONS_DIR) / f'{sender}.session').is_file():
+                staging.unlink(missing_ok=True)
 
 
 class _PhoneStart(BaseModel):
@@ -907,6 +980,8 @@ class _PhoneStart(BaseModel):
     phone: str
     proxy: str = ''
     storyTemplate: str = ''
+    apiId: str = ''
+    apiHash: str = ''
 
 
 class _PhoneCode(BaseModel):
@@ -942,7 +1017,10 @@ async def _complete_login(token, me):
     await entry['client'].disconnect()
     async with _ADD_LOCK:
         try:
-            result = _commit_new_account(entry['sender'], entry['path'], entry['proxy'], entry['storyTemplate'], me)
+            result = _commit_new_account(
+                entry['sender'], entry['path'], entry['proxy'], entry['storyTemplate'], me,
+                entry.get('apiId'), entry.get('apiHash', ''),
+            )
         finally:
             await _cleanup_login(token)
     return {'status': 'complete', 'account': result}
@@ -955,44 +1033,77 @@ async def start_phone_login(payload: _PhoneStart):
         _validate_new_proxy(payload.proxy)
         if not re.fullmatch(r'\+[1-9]\d{6,14}', payload.phone.strip()):
             raise HTTPException(422, 'Номер укажи в международном формате: +...')
+        api_id, api_hash = _resolve_login_credentials(payload.apiId, payload.apiHash)
         _LOGIN_DIR.mkdir(parents=True, exist_ok=True)
         token = _uuid4().hex
         staging = _LOGIN_DIR / token
-        client = _new_client(staging, payload.proxy)
+        client = _new_client(staging, payload.proxy, api_id, api_hash)
         try:
             await asyncio.wait_for(client.connect(), timeout=25)
             sent = await asyncio.wait_for(client.send_code_request(payload.phone.strip()), timeout=30)
         except Exception as exc:
-            await client.disconnect()
+            if client.is_connected():
+                await client.disconnect()
             staging.with_suffix('.session').unlink(missing_ok=True)
             _audit('ERROR', 'Ошибка отправки кода Telegram', type(exc).__name__, payload.sender)
             raise HTTPException(502, f'Не удалось запросить код: {type(exc).__name__}') from exc
         _PENDING_LOGINS[token] = {'client': client, 'path': staging.with_suffix('.session'),
             'sender': payload.sender, 'phone': payload.phone.strip(),
             'phone_code_hash': sent.phone_code_hash, 'proxy': payload.proxy,
-            'storyTemplate': payload.storyTemplate, 'created': _time.monotonic()}
+            'storyTemplate': payload.storyTemplate, 'apiId': api_id, 'apiHash': api_hash,
+            'created': _time.monotonic()}
         _audit('INFO', 'Запрошен код Telegram', 'Ожидается подтверждение', payload.sender)
-        return {'status': 'code_required', 'token': token}
+        return {'status': 'code_required', 'token': token, 'hint': _code_delivery_hint(sent)}
 
 
 @app.post('/api/accounts/add/phone/code', dependencies=[Depends(get_current_user)])
 async def submit_phone_code(payload: _PhoneCode):
     entry = _get_login(payload.token)
+    code = _normalize_login_code(payload.code)
+    phone_code_hash = getattr(entry['client'], '_phone_code_hash', None) or entry.get('phone_code_hash')
     try:
-        await asyncio.wait_for(entry['client'].sign_in(phone=entry['phone'], code=payload.code.strip(),
-            phone_code_hash=entry['phone_code_hash']), timeout=30)
+        await _ensure_login_connected(entry)
+        await asyncio.wait_for(entry['client'].sign_in(
+            phone=entry['phone'], code=code, phone_code_hash=phone_code_hash,
+        ), timeout=30)
     except _SessionPasswordNeededError:
         return {'status': 'password_required', 'token': payload.token}
+    except _PhoneCodeInvalidError as exc:
+        raise HTTPException(
+            422,
+            'Этот код не подходит к текущему запросу. Введи цифры из самого свежего сообщения Telegram или запроси код ещё раз.',
+        ) from exc
+    except _PhoneCodeExpiredError as exc:
+        raise HTTPException(422, 'Код уже истёк. Запроси новый.') from exc
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(422, f'Код не принят: {type(exc).__name__}') from exc
+        raise HTTPException(422, 'Код не принят. Запроси новый и введи только его цифры.') from exc
     me = await entry['client'].get_me()
     return await _complete_login(payload.token, me)
+
+
+class _PhoneToken(BaseModel):
+    token: str
+
+
+@app.post('/api/accounts/add/phone/resend', dependencies=[Depends(get_current_user)])
+async def resend_phone_code(payload: _PhoneToken):
+    entry = _get_login(payload.token)
+    try:
+        await _ensure_login_connected(entry)
+        sent = await asyncio.wait_for(entry['client'].send_code_request(entry['phone']), timeout=30)
+    except Exception as exc:
+        raise HTTPException(502, 'Не удалось отправить код ещё раз. Начни добавление заново.') from exc
+    entry['phone_code_hash'] = sent.phone_code_hash
+    return {'status': 'code_required', 'token': payload.token, 'hint': _code_delivery_hint(sent)}
 
 
 @app.post('/api/accounts/add/phone/password', dependencies=[Depends(get_current_user)])
 async def submit_phone_password(payload: _PhonePassword):
     entry = _get_login(payload.token)
     try:
+        await _ensure_login_connected(entry)
         await asyncio.wait_for(entry['client'].sign_in(password=payload.password), timeout=30)
     except Exception as exc:
         raise HTTPException(422, f'2FA не пройдена: {type(exc).__name__}') from exc

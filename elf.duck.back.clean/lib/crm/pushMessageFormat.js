@@ -192,6 +192,30 @@ export function resolvePushPhotoForLanguage(message = {}, language = "") {
   };
 }
 
+function buttonRowsHaveText(rows) {
+  return (Array.isArray(rows) ? rows : []).some((row) =>
+    String(row?.text || "").trim()
+  );
+}
+
+/** Текст кнопок окремо для RU/PL. Старий buttons — спільний, якщо окремих ще немає. */
+export function resolvePushButtonsForLanguage(message = {}, language = "") {
+  const fallback =
+    String(message?.defaultLanguage || "ru").trim().toLowerCase() === "pl"
+      ? "pl"
+      : "ru";
+  const lang =
+    language === "pl" || language === "ru" ? language : fallback;
+  const ru = Array.isArray(message?.buttonsRu) ? message.buttonsRu : [];
+  const pl = Array.isArray(message?.buttonsPl) ? message.buttonsPl : [];
+  const legacy = Array.isArray(message?.buttons) ? message.buttons : [];
+  const hasPerLang = buttonRowsHaveText(ru) || buttonRowsHaveText(pl);
+  const chosen = lang === "pl" ? pl : ru;
+  if (buttonRowsHaveText(chosen)) return chosen;
+  if (!hasPerLang) return legacy;
+  return [];
+}
+
 /** Готові HTML для pl / ru / default (один раз перед циклом розсилки). */
 export function buildPushMessageHtmlByLanguage(message = {}) {
   const shared = {
@@ -241,7 +265,10 @@ export function buildPushReplyMarkup(message = {}, options = {}) {
   const campaignId = String(options?.campaignId || "").trim();
   const rows = [];
 
-  const buttons = Array.isArray(message?.buttons) ? message.buttons : [];
+  const buttons = resolvePushButtonsForLanguage(
+    message,
+    options?.language
+  );
 
   for (const button of buttons) {
     const text = String(button?.text || "").trim();
@@ -323,7 +350,7 @@ export function buildPushReplyMarkup(message = {}, options = {}) {
   if (!rows.length && campaignId && webAppBase) {
     rows.push([
       {
-        text: "Открыть магазин",
+        text: options?.language === "pl" ? "Otwórz sklep" : "Открыть магазин",
         web_app: {
           url: appendPushCampaignParam(`${webAppBase}/`, campaignId),
         },

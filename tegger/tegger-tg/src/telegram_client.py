@@ -14,7 +14,10 @@ from config import (
     SESSIONS_DIR,
     SENDER_PROXIES,
 )
-from runtime_telegram import get_api_credentials
+from runtime_telegram import (
+    get_api_credentials,
+    get_sender_api_credentials,
+)
 
 
 def _parse_socks5_proxy(
@@ -170,9 +173,13 @@ def create_client(
         proxy_url
     )
 
-    api_id, api_hash = get_api_credentials(
-        require_configured=True,
-    )
+    own = get_sender_api_credentials(sender_name)
+    if own:
+        api_id, api_hash = own
+    else:
+        api_id, api_hash = get_api_credentials(
+            require_configured=True,
+        )
 
     return TelegramClient(
         str(session_path),

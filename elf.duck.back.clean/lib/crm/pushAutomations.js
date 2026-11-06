@@ -116,6 +116,8 @@ function normalizeMessage(message = {}) {
     buttonText: String(message?.buttonText || "").trim(),
     buttonUrl: String(message?.buttonUrl || "").trim(),
     buttons: normalizePushButtons(message?.buttons || []),
+    buttonsRu: normalizePushButtons(message?.buttonsRu || []),
+    buttonsPl: normalizePushButtons(message?.buttonsPl || []),
     templateId: String(message?.templateId || "").trim(),
     templateIdRu: String(message?.templateIdRu || "").trim(),
     templateIdPl: String(message?.templateIdPl || "").trim(),

@@ -4,6 +4,7 @@ import {
   isInternalCrmPushTitle,
   promoAlreadyInPushText,
   pushTitleForTelegram,
+  resolvePushButtonsForLanguage,
   resolvePushPhotoForLanguage,
 } from "./pushMessageFormat.js";
 
@@ -71,6 +72,35 @@ assert.deepEqual(
     "pl"
   ),
   { photoUrl: "", photoFileId: "" }
+);
+
+assert.deepEqual(
+  resolvePushButtonsForLanguage(
+    { buttons: [{ text: "Стара" }] },
+    "pl"
+  ).map((row) => row.text),
+  ["Стара"]
+);
+assert.deepEqual(
+  resolvePushButtonsForLanguage(
+    {
+      buttons: [{ text: "Стара" }],
+      buttonsRu: [{ text: "Магазин" }],
+      buttonsPl: [{ text: "Sklep" }],
+    },
+    "pl"
+  ).map((row) => row.text),
+  ["Sklep"]
+);
+assert.deepEqual(
+  resolvePushButtonsForLanguage(
+    {
+      buttonsRu: [{ text: "Магазин" }],
+      buttonsPl: [],
+    },
+    "pl"
+  ),
+  []
 );
 
 console.log("pushMessageFormat tests ok");

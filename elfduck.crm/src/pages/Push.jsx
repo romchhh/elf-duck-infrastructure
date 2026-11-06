@@ -285,9 +285,29 @@ export default function Push() {
     Boolean(String(bodyPl || '').trim()) ||
     Boolean(String(bodyRu || '').trim());
 
-  const [inlineButtons, setInlineButtons] = useState([
+  const [buttonsRu, setButtonsRu] = useState([
     { text: 'Открыть магазин', kind: 'web_app', path: '/' },
   ]);
+  const [buttonsPl, setButtonsPl] = useState([
+    { text: 'Otwórz sklep', kind: 'web_app', path: '/' },
+  ]);
+  const inlineButtons = messageLang === 'pl' ? buttonsPl : buttonsRu;
+  const setButtonsForLang = (lang, next) => {
+    const apply = (prev) =>
+      typeof next === 'function' ? next(prev) : next;
+    if (lang === 'pl') setButtonsPl(apply);
+    else setButtonsRu(apply);
+  };
+  const setInlineButtons = (next) => setButtonsForLang(messageLang, next);
+  const serializeButtons = (rows) =>
+    (Array.isArray(rows) ? rows : [])
+      .filter((btn) => String(btn?.text || '').trim())
+      .map((btn) => ({
+        text: String(btn.text || '').trim(),
+        kind: btn.kind === 'url' ? 'url' : 'web_app',
+        path: String(btn.path || '/').trim() || '/',
+        url: String(btn.url || '').trim(),
+      }));
 
   const bodyRef = useRef(null);
 
@@ -1318,14 +1338,13 @@ const deleteTemplate =
                     photoFileIdRu: photoFileIdRu || '',
                     photoFileIdPl: photoFileIdPl || '',
 
-                    buttons: inlineButtons
-                      .filter((btn) => String(btn?.text || '').trim())
-                      .map((btn) => ({
-                        text: String(btn.text || '').trim(),
-                        kind: btn.kind === 'url' ? 'url' : 'web_app',
-                        path: String(btn.path || '/').trim() || '/',
-                        url: String(btn.url || '').trim(),
-                      })),
+                    buttons: serializeButtons(
+                      buttonsRu.some((btn) => String(btn?.text || '').trim())
+                        ? buttonsRu
+                        : buttonsPl
+                    ),
+                    buttonsRu: serializeButtons(buttonsRu),
+                    buttonsPl: serializeButtons(buttonsPl),
 
                     buttonText: '',
                     buttonUrl: '',
@@ -1346,8 +1365,11 @@ const deleteTemplate =
           setCampPage(1);
           setBodyPl('');
           setBodyRu('');
-          setInlineButtons([
+          setButtonsRu([
             { text: 'Открыть магазин', kind: 'web_app', path: '/' },
+          ]);
+          setButtonsPl([
+            { text: 'Otwórz sklep', kind: 'web_app', path: '/' },
           ]);
           setActiveTpl(null);
           clearAllPhotos();
@@ -1520,7 +1542,8 @@ const deleteTemplate =
       }
 
       if (Array.isArray(template.buttons) && template.buttons.length) {
-        setInlineButtons(
+        setButtonsForLang(
+          tplLang,
           template.buttons.map((btn) => ({
             text: String(btn?.text || ''),
             kind: btn?.kind === 'url' ? 'url' : 'web_app',
@@ -1532,7 +1555,7 @@ const deleteTemplate =
         const legacyUrl = String(template.buttonUrl || '').trim();
         const isExternal =
           /^https?:\/\//i.test(legacyUrl) || /^tg:/i.test(legacyUrl);
-        setInlineButtons([
+        setButtonsForLang(tplLang, [
           {
             text: String(template.buttonText || ''),
             kind: isExternal ? 'url' : 'web_app',
@@ -2365,7 +2388,9 @@ const confirmCreateTpl = () => {
               }}
             />
 
-            <Field label="Инлайн-кнопки (миниапп)">
+            <Field
+              label={`Инлайн-кнопки · ${messageLang === 'pl' ? 'PL' : 'RU'}`}
+            >
               <div className="space-y-2">
                 {inlineButtons.map((btn, index) => (
                   <div
@@ -2422,6 +2447,7 @@ const confirmCreateTpl = () => {
                   + Добавить кнопку
                 </button>
                 <p className="text-[11px] text-muted-2">
+                  Текст кнопки окремий для RU і PL — перемикач мови міняє підпис.
                   Кнопка відкриває мініапп (WEBAPP_URL + шлях). Приклади: `/`,
                   `/catalog`, `/promo`
                 </p>

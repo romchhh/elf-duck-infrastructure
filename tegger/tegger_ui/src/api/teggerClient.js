@@ -92,12 +92,15 @@ export const teggerClient = {
   },
 
     accounts: {
-        addImport: async ({ sender, proxy, storyTemplate, file }) => {
+        addImport: async ({ sender, proxy, storyTemplate, file, apiId, apiHash, sessionString }) => {
           const body = new FormData();
           body.append("sender", sender);
           body.append("proxy", proxy || "");
           body.append("storyTemplate", storyTemplate || "");
-          body.append("file", file);
+          body.append("apiId", apiId || "");
+          body.append("apiHash", apiHash || "");
+          body.append("sessionString", sessionString || "");
+          if (file) body.append("file", file);
           const response = await fetch(`${API_URL}/api/accounts/add/import`, {
             method: "POST", credentials: "include", body,
           });
@@ -107,6 +110,7 @@ export const teggerClient = {
         },
         phoneStart: (data) => request("/api/accounts/add/phone/start", { method: "POST", body: JSON.stringify(data) }),
         phoneCode: (data) => request("/api/accounts/add/phone/code", { method: "POST", body: JSON.stringify(data) }),
+        phoneResend: (data) => request("/api/accounts/add/phone/resend", { method: "POST", body: JSON.stringify(data) }),
         phonePassword: (data) => request("/api/accounts/add/phone/password", { method: "POST", body: JSON.stringify(data) }),
         sync: () => request("/api/accounts/sync", { method: "POST" }),
 

@@ -403,10 +403,6 @@ app.locals.runCrmBroadcastCampaign =
       throw new Error("MESSAGE_REQUIRED");
     }
 
-    const replyMarkup = buildPushReplyMarkup(message, {
-      campaignId: safeCampaignId,
-    });
-
     // Мови отримувачів — щоб слати PL/RU варіант
     const languageByTelegramId = new Map();
     if (pendingTelegramIds.length > 0) {
@@ -579,15 +575,18 @@ const messageText =
     : userLang === "pl"
       ? messageTextPl || defaultMessageText
       : defaultMessageText;
+const sendLang =
+  userLang === "pl" || userLang === "ru"
+    ? userLang
+    : htmlByLang.defaultLanguage;
 const {
   photoUrl,
   photoFileId,
-} = resolvePushPhotoForLanguage(
-  message,
-  userLang === "pl" || userLang === "ru"
-    ? userLang
-    : htmlByLang.defaultLanguage
-);
+} = resolvePushPhotoForLanguage(message, sendLang);
+const replyMarkup = buildPushReplyMarkup(message, {
+  campaignId: safeCampaignId,
+  language: sendLang,
+});
 
 if (!messageText) {
   throw new Error("MESSAGE_REQUIRED");

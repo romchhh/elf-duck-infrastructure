@@ -211,6 +211,8 @@ router.post(
           body?.buttonUrl
         );
 
+      const buttonsRu = normalizePushButtons(body?.buttonsRu);
+      const buttonsPl = normalizePushButtons(body?.buttonsPl);
       const buttons = normalizePushButtons(body?.buttons);
 
       if (!title && !text && !textPl && !textRu && !promo) {
@@ -483,6 +485,8 @@ router.post(
               buttonText,
               buttonUrl,
               buttons,
+              buttonsRu,
+              buttonsPl,
             },
 
             templateId:
@@ -536,6 +540,8 @@ router.post(
             buttonText,
             buttonUrl,
             buttons,
+            buttonsRu,
+            buttonsPl,
           },
         });
 
