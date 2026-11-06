@@ -39,11 +39,6 @@ export default defineConfig(async () => ({
   build: {
     sourcemap: false,
     reportCompressedSize: false,
-    minify: "esbuild",
-    cssMinify: "esbuild",
-    rollupOptions: {
-      maxParallelFileOps: 2,
-    },
   },
   resolve: {
     alias: {
