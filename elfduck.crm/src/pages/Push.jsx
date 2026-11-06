@@ -47,7 +47,7 @@ import {
   insertTelegramMarkdown,
 } from '@/components/TelegramMessageEditor';
 import { cn } from '@/lib/utils';
-import { CRM_API_URL, crmFetchJson } from '@/lib/crmFetch';
+import { CRM_API_URL, crmFetch as crmFetchHttp, crmFetchJson } from '@/lib/crmFetch';
 import { compressImageForUpload } from '@/lib/compressImage';
 import {
   clearCrmSessionToken,
@@ -67,7 +67,28 @@ const LANGUAGE_FILTERS = [
   { key: 'ru', label: 'RU' },
 ];
 
+/** JSON CRM API (історично ім'я `crmFetch` у цьому файлі). */
 const crmFetch = crmFetchJson;
+
+async function downloadPushExport(campaignId, kind) {
+  const response = await crmFetchHttp(
+    `/crm/push/campaigns/${encodeURIComponent(campaignId)}/export?kind=${encodeURIComponent(kind)}`
+  );
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(text.slice(0, 160) || `HTTP ${response.status}`);
+  }
+  const blob = await response.blob();
+  const disposition = String(response.headers.get('Content-Disposition') || '');
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match ? match[1] : `push_${campaignId}_${kind}.csv`;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
 function CampaignMobileRow({
   r,
@@ -139,6 +160,14 @@ function CampaignMobileRow({
             {
               label: 'Доставлено',
               value: num(r.sent),
+            },
+            {
+              label: 'Не доставлено',
+              value: (
+                <span title="Аудитория минус успешно доставленные в Telegram">
+                  {num(r.notDelivered)}
+                </span>
+              ),
             },
             {
               label: 'Ошибки',
@@ -427,6 +456,7 @@ const [
   ] = useState(1);
 
   const [deliveryDetailId, setDeliveryDetailId] = useState(null);
+  const [exportBusy, setExportBusy] = useState(null);
   const [historyKind, setHistoryKind] = useState('all');
 
   const {
@@ -652,6 +682,27 @@ onSuccess: (data) => {
     const id = String(row?.id || '').trim();
     if (!id) return;
     setDeliveryDetailId(id);
+  };
+
+  const exportCampaignCsv = async (campaignId, kind) => {
+    const id = String(campaignId || '').trim();
+    if (!id) return;
+    setExportBusy(kind);
+    try {
+      await downloadPushExport(id, kind);
+      toast({
+        title: kind === 'ok' ? 'Список успешных' : 'Список без доставки',
+        description: 'CSV сохранён',
+      });
+    } catch (error) {
+      toast({
+        title: 'Не удалось скачать файл',
+        description: error?.message || 'EXPORT_FAILED',
+        variant: 'destructive',
+      });
+    } finally {
+      setExportBusy(null);
+    }
   };
 
   /*
@@ -1899,6 +1950,24 @@ const confirmCreateTpl = () => {
     },
 
     {
+      key: 'notDelivered',
+      header: 'Не доставл.',
+      align: 'right',
+      render: (r) => (
+        <span
+          className={
+            Number(r.notDelivered || 0) > 0
+              ? 'text-amber-200/90'
+              : 'text-muted-foreground'
+          }
+          title="Аудитория без успешной доставки (ещё не отправлено или без ответа от Telegram)"
+        >
+          {num(r.notDelivered)}
+        </span>
+      ),
+    },
+
+    {
       key: 'failed',
       header: 'Ошибки',
       align: 'right',
@@ -2887,6 +2956,12 @@ const confirmCreateTpl = () => {
                 {' · '}
                 доставлено {num(deliveryDetail.sent)} / аудитория{' '}
                 {num(deliveryDetail.recipients)}
+                {Number(deliveryDetail.notDelivered || 0) > 0 ? (
+                  <span className="text-amber-200/90">
+                    {' '}
+                    · не доставлено {num(deliveryDetail.notDelivered)}
+                  </span>
+                ) : null}
                 {Number(deliveryDetail.failed || 0) > 0 ? (
                   <span className="text-red-300">
                     {' '}
@@ -2894,6 +2969,38 @@ const confirmCreateTpl = () => {
                   </span>
                 ) : null}
               </p>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={Boolean(exportBusy)}
+                  className="rounded-lg border border-border bg-[hsl(255_100%_68%/0.08)] px-3 py-1.5 text-[11px] font-medium text-[hsl(255_100%_75%)] hover:bg-[hsl(255_100%_68%/0.15)] disabled:opacity-50"
+                  onClick={() =>
+                    exportCampaignCsv(deliveryDetail.id || deliveryDetailId, 'ok')
+                  }
+                >
+                  {exportBusy === 'ok' ? '…' : 'Скачать доставленных (CSV)'}
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(exportBusy)}
+                  className="rounded-lg border border-border px-3 py-1.5 text-[11px] font-medium text-foreground hover:bg-[hsl(232_26%_14%)] disabled:opacity-50"
+                  onClick={() =>
+                    exportCampaignCsv(deliveryDetail.id || deliveryDetailId, 'failed')
+                  }
+                >
+                  {exportBusy === 'failed'
+                    ? '…'
+                    : 'Скачать без доставки (CSV)'}
+                </button>
+              </div>
+
+              {deliveryDetail.deliveryLogTruncated ? (
+                <p className="text-[11px] text-muted-2">
+                  В таблице только последние 500 строк лога. Полные списки —
+                  через кнопки выше.
+                </p>
+              ) : null}
 
               {Array.isArray(deliveryDetail.deliveryLog) &&
               deliveryDetail.deliveryLog.length > 0 ? (

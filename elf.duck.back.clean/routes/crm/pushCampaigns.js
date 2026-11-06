@@ -4,6 +4,7 @@ import {
   buildPushCampaignAnalytics,
   getPeriodRange,
   BroadcastCampaign,
+  User,
   requireCrmPushAdmin,
 } from "./deps.js";
 import { getWarsawDateKey, warsawLocalToUtc } from "../../lib/crm/datetime.js";
@@ -58,6 +59,63 @@ function automationBucket(row) {
   return `${trigger}|${day}`;
 }
 
+async function resolveCampaignMembers(row) {
+  if (!row) return [row];
+  let members = [row];
+  if (campaignSource(row) === "automation") {
+    const dayKey =
+      String(row.automationDayKey || "").trim() ||
+      getWarsawDateKey(row.createdAt || row.startedAt || new Date());
+    const range = warsawDayRange(dayKey);
+    const title = autoTitle(row.name);
+    if (range && title) {
+      const found = await BroadcastCampaign.find({
+        createdAt: { $gte: range.from, $lt: range.to },
+        $or: [
+          {
+            automation: true,
+            automationTrigger: String(row.automationTrigger || ""),
+            automationDayKey: dayKey,
+          },
+          { name: { $regex: `^${escapeRegex(title)}` } },
+        ],
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+      if (found.length) members = found;
+    }
+  }
+  return members;
+}
+
+function mergeDeliveryLogs(members) {
+  return members
+    .flatMap((item) => (Array.isArray(item.deliveryLog) ? item.deliveryLog : []))
+    .sort((a, b) => new Date(b?.at || 0) - new Date(a?.at || 0));
+}
+
+function csvEscape(value) {
+  const raw = String(value ?? "");
+  if (/[",\n\r]/.test(raw)) {
+    return `"${raw.replace(/"/g, '""')}"`;
+  }
+  return raw;
+}
+
+function sendRecipientsCsv(res, filename, rows) {
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${filename.replace(/[^a-zA-Z0-9._-]+/g, "_")}"`
+  );
+  const header = ["telegram_id", "username"].map(csvEscape).join(",");
+  const lines = rows.map(
+    (row) => `${csvEscape(row.telegramId)},${csvEscape(row.username)}`
+  );
+  const body = [header, ...lines].join("\r\n");
+  res.send(`\ufeff${body}\r\n`);
+}
+
 function groupHistoryRows(rows) {
   const out = [];
   const groups = new Map();
@@ -94,6 +152,7 @@ function groupHistoryRows(rows) {
     prev.revenue += Number(row.revenue || 0);
     const base = Math.max(prev.sent, prev.recipients, 1);
     prev.conversion = Number(((prev.purchases / base) * 100).toFixed(1));
+    prev.notDelivered = Math.max(0, prev.recipients - prev.sent);
   }
 
   return out;
@@ -304,124 +363,122 @@ router.get(
         },
 
         campaigns: groupHistoryRows(
-          rows.map((row) => ({
-            id:
-              String(
-                row?._id ||
-                  ""
-              ),
-
-            name:
-              String(
-                row?.name ||
-                  "Рассылка"
-              ),
-
-            source: campaignSource(row),
-
-            automation: campaignSource(row) === "automation",
-
-            audience:
-              String(
-                row?.audience ||
-                  "all"
-              ),
-
-            status:
-              String(
-                row?.status ||
-                  "queued"
-              ),
-
-            recipients:
-              Number(
-                row?.recipients ||
-                  0
-              ),
-
-            processed:
-              Number(
-                row?.processed ||
-                  0
-              ),
-
-            sent:
-              Number(
-                row?.sent ||
-                  0
-              ),
-
-            failed:
-              Number(
-                row?.failed ||
-                  0
-              ),
-
-            blocked:
-              Number(
-                row?.blocked ||
-                  0
-              ),
-
-            opened: Number(row?.opened || 0),
-
-            promoApplications: Number(
-              row?.promoApplications || 0
-            ),
-
-            promo:
-              String(row?.message?.promo || "").trim() ||
-              (Array.isArray(row?.promoCodes) && row.promoCodes[0]) ||
-              "",
-
-            purchases:
-              Number(
-                row?.purchases ||
-                  0
-              ),
-
-            buyers:
-
-                Number(
-
-                    row?.buyers || 0
-
+          rows.map((row) => {
+            const recipients = Number(row?.recipients || 0);
+            const sent = Number(row?.sent || 0);
+            return {
+              id:
+                String(
+                  row?._id ||
+                    ""
                 ),
 
-            revenue:
-              Number(
-                row?.revenue ||
-                  0
+              name:
+                String(
+                  row?.name ||
+                    "Рассылка"
+                ),
+
+              source: campaignSource(row),
+
+              automation: campaignSource(row) === "automation",
+
+              audience:
+                String(
+                  row?.audience ||
+                    "all"
+                ),
+
+              status:
+                String(
+                  row?.status ||
+                    "queued"
+                ),
+
+              recipients,
+
+              processed:
+                Number(
+                  row?.processed ||
+                    0
+                ),
+
+              sent,
+
+              failed:
+                Number(
+                  row?.failed ||
+                    0
+                ),
+
+              blocked:
+                Number(
+                  row?.blocked ||
+                    0
+                ),
+
+              notDelivered: Math.max(0, recipients - sent),
+
+              opened: Number(row?.opened || 0),
+
+              promoApplications: Number(
+                row?.promoApplications || 0
               ),
 
-            conversion:
-              Number(
-                row?.conversion ||
-                  0
-              ),
+              promo:
+                String(row?.message?.promo || "").trim() ||
+                (Array.isArray(row?.promoCodes) && row.promoCodes[0]) ||
+                "",
 
-            startedAt:
-              row?.startedAt ||
-              null,
+              purchases:
+                Number(
+                  row?.purchases ||
+                    0
+                ),
 
-            finishedAt:
-              row?.finishedAt ||
-              null,
+              buyers:
 
-            createdAt:
-              row?.createdAt ||
-              null,
+                  Number(
 
-            deliveryBotUsername: String(row?.deliveryBotUsername || "").trim(),
+                      row?.buyers || 0
 
-            lastErrors: Array.isArray(row?.lastErrors)
-              ? row.lastErrors.slice(-10)
-              : [],
+                  ),
 
-            deliveryLogCount: Array.isArray(row?.deliveryLog)
-              ? row.deliveryLog.length
-              : 0,
-          }))
+              revenue:
+                Number(
+                  row?.revenue ||
+                    0
+                ),
+
+              conversion:
+                Number(
+                  row?.conversion ||
+                    0
+                ),
+
+              startedAt:
+                row?.startedAt ||
+                null,
+
+              finishedAt:
+                row?.finishedAt ||
+                null,
+
+              createdAt:
+                row?.createdAt ||
+                null,
+
+              deliveryBotUsername: String(row?.deliveryBotUsername || "").trim(),
+
+              lastErrors: Array.isArray(row?.lastErrors)
+                ? row.lastErrors.slice(-10)
+                : [],
+
+              deliveryLogCount: Array.isArray(row?.deliveryLog)
+                ? row.deliveryLog.length
+                : 0,
+            };
+          })
         ),
       });
     } catch (error) {
@@ -464,37 +521,29 @@ router.get(
         });
       }
 
-      let members = [row];
-      if (campaignSource(row) === "automation") {
-        const dayKey =
-          String(row.automationDayKey || "").trim() ||
-          getWarsawDateKey(row.createdAt || row.startedAt || new Date());
-        const range = warsawDayRange(dayKey);
-        const title = autoTitle(row.name);
-        if (range && title) {
-          members = await BroadcastCampaign.find({
-            createdAt: { $gte: range.from, $lt: range.to },
-            $or: [
-              {
-                automation: true,
-                automationTrigger: String(row.automationTrigger || ""),
-                automationDayKey: dayKey,
-              },
-              { name: { $regex: `^${escapeRegex(title)}` } },
-            ],
-          })
-            .sort({ createdAt: -1 })
-            .lean();
-          if (!members.length) members = [row];
-        }
-      }
-
-      const deliveryLog = members
-        .flatMap((item) => (Array.isArray(item.deliveryLog) ? item.deliveryLog : []))
-        .sort((a, b) => new Date(b?.at || 0) - new Date(a?.at || 0))
-        .slice(0, 500);
+      const members = await resolveCampaignMembers(row);
+      const fullDeliveryLog = mergeDeliveryLogs(members);
+      const deliveryLog = fullDeliveryLog.slice(0, 500);
       const sum = (field) =>
         members.reduce((total, item) => total + Number(item?.[field] || 0), 0);
+
+      const recipientTelegramIds = [
+        ...new Set(
+          members
+            .flatMap((item) => item.recipientTelegramIds || [])
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        ),
+      ];
+      const sentTelegramIds = new Set(
+        members
+          .flatMap((item) => item.sentTelegramIds || [])
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      );
+      const recipientsTotal = sum("recipients");
+      const sentTotal = sum("sent");
+      const notDeliveredCount = Math.max(0, recipientsTotal - sentTotal);
 
       return res.json({
         ok: true,
@@ -506,16 +555,18 @@ router.get(
           audience: String(row.audience || "all"),
           filters: row.filters || {},
           message: row.message || {},
-          recipients: sum("recipients"),
+          recipients: recipientsTotal,
           processed: sum("processed"),
-          sent: sum("sent"),
+          sent: sentTotal,
           failed: sum("failed"),
           blocked: sum("blocked"),
+          notDelivered: notDeliveredCount,
+          deliveryLogTruncated: fullDeliveryLog.length > 500,
           deliveryBotUsername: String(
             members.find((item) => item.deliveryBotUsername)?.deliveryBotUsername || ""
           ).trim(),
-          recipientTelegramIds: members.flatMap((item) => item.recipientTelegramIds || []),
-          sentTelegramIds: members.flatMap((item) => item.sentTelegramIds || []),
+          recipientTelegramIds,
+          sentTelegramIds: [...sentTelegramIds],
           lastErrors: members
             .flatMap((item) => item.lastErrors || [])
             .slice(-20),
@@ -530,6 +581,115 @@ router.get(
       return res.status(500).json({
         ok: false,
         error: "CRM_PUSH_CAMPAIGN_LOAD_FAILED",
+      });
+    }
+  }
+);
+
+router.get(
+  "/push/campaigns/:id/export",
+  requireCrmPushAdmin,
+  async (req, res) => {
+    try {
+      const id = String(req.params?.id || "").trim();
+      const kind = String(req.query?.kind || "ok").trim().toLowerCase();
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "CAMPAIGN_ID_REQUIRED",
+        });
+      }
+      if (kind !== "ok" && kind !== "failed") {
+        return res.status(400).json({
+          ok: false,
+          error: "EXPORT_KIND_INVALID",
+        });
+      }
+
+      const row = await BroadcastCampaign.findById(id).lean();
+      if (!row) {
+        return res.status(404).json({
+          ok: false,
+          error: "CAMPAIGN_NOT_FOUND",
+        });
+      }
+
+      const members = await resolveCampaignMembers(row);
+      const fullDeliveryLog = mergeDeliveryLogs(members);
+
+      const recipientTelegramIds = [
+        ...new Set(
+          members
+            .flatMap((item) => item.recipientTelegramIds || [])
+            .map((value) => String(value || "").trim())
+            .filter(Boolean)
+        ),
+      ];
+      const sentTelegramIds = new Set(
+        members
+          .flatMap((item) => item.sentTelegramIds || [])
+          .map((value) => String(value || "").trim())
+          .filter(Boolean)
+      );
+
+      let targetIds = [];
+      if (kind === "ok") {
+        targetIds = [...sentTelegramIds];
+      } else {
+        const failed = new Set();
+        for (const rid of recipientTelegramIds) {
+          if (!sentTelegramIds.has(rid)) {
+            failed.add(rid);
+          }
+        }
+        if (!failed.size && fullDeliveryLog.length) {
+          for (const entry of fullDeliveryLog) {
+            if (entry && entry.ok === false) {
+              const tid = String(entry.telegramId || "").trim();
+              if (tid) failed.add(tid);
+            }
+          }
+        }
+        targetIds = [...failed];
+      }
+
+      const usernameById = new Map();
+      if (targetIds.length > 0) {
+        const profiles = await User.find({
+          telegramId: { $in: targetIds },
+        })
+          .select({ telegramId: 1, username: 1 })
+          .lean();
+        for (const profile of profiles) {
+          const tid = String(profile?.telegramId || "").trim();
+          if (!tid) continue;
+          usernameById.set(
+            tid,
+            String(profile?.username || "").trim()
+          );
+        }
+      }
+
+      const rows = targetIds.map((telegramId) => ({
+        telegramId,
+        username: usernameById.get(telegramId) || "",
+      }));
+
+      const safeName =
+        String(row?.name || "campaign")
+          .replace(/[^\w\-\u0400-\u04FF]+/g, "_")
+          .slice(0, 60) || "campaign";
+      const filename =
+        kind === "ok"
+          ? `push_${safeName}_${id}_ok.csv`
+          : `push_${safeName}_${id}_not_delivered.csv`;
+
+      return sendRecipientsCsv(res, filename, rows);
+    } catch (error) {
+      console.error("GET /crm/push/campaigns/:id/export error:", error);
+      return res.status(500).json({
+        ok: false,
+        error: "CRM_PUSH_CAMPAIGN_EXPORT_FAILED",
       });
     }
   }
