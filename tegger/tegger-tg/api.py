@@ -724,6 +724,7 @@ async def apply_test_avatar(sender: str, image_path: Path) -> dict:
 from datetime import datetime as _dt, timezone as _tz
 from uuid import uuid4 as _uuid4
 from telethon import TelegramClient as _TelegramClient
+from telethon import utils as _telethon_utils
 from telethon.errors import (
     FloodWaitError as _FloodWaitError,
     PhoneCodeExpiredError as _PhoneCodeExpiredError,
@@ -828,14 +829,23 @@ def _normalize_login_code(raw):
     return digits
 
 
+def _telethon_phone_key(phone):
+    """Ключ у client._phone_code_hash — digits без '+', як у Telethon utils.parse_phone."""
+    raw = str(phone or '').strip()
+    return _telethon_utils.parse_phone(raw) or raw.lstrip('+') or raw
+
+
 def _login_phone_code_hash(entry):
     """Telethon держит _phone_code_hash як dict[phone] → hash, не як рядок."""
     client = entry.get('client')
     phone = str(entry.get('phone') or '').strip()
+    phone_key = _telethon_phone_key(phone)
     stored = entry.get('phone_code_hash')
     raw = getattr(client, '_phone_code_hash', None) if client is not None else None
     if isinstance(raw, dict):
-        value = raw.get(phone) if phone else None
+        value = raw.get(phone_key) if phone_key else None
+        if not value and phone:
+            value = raw.get(phone)
         if not value and raw:
             value = next(iter(raw.values()), None)
         if value:
@@ -853,29 +863,30 @@ def _store_login_phone_code_hash(entry, phone_code_hash):
         return
     entry['phone_code_hash'] = value
     client = entry.get('client')
-    phone = str(entry.get('phone') or '').strip()
-    if client is None or not phone:
+    phone_key = _telethon_phone_key(entry.get('phone'))
+    if client is None or not phone_key:
         return
     raw = getattr(client, '_phone_code_hash', None)
     if isinstance(raw, dict):
-        raw[phone] = value
+        raw[phone_key] = value
     else:
         try:
-            client._phone_code_hash = {phone: value}
+            client._phone_code_hash = {phone_key: value}
         except Exception:
             pass
 
 
-def _clear_client_phone_code_hash(client, phone):
-    """Убрать hash входа, чтобы Telethon сделал новый SendCodeRequest, а не ResendCode."""
-    phone = str(phone or '').strip()
+def _clear_client_phone_code_hash(client, phone=None):
+    """Убрать hash входа, чтобы Telethon сделал новый SendCodeRequest, а не ResendCode.
+
+    Важно: Telethon хранит ключ как parse_phone('+380...') → '380...' без плюса.
+    На login-сессии один номер — безопаснее очистить весь dict.
+    """
     raw = getattr(client, '_phone_code_hash', None)
     if isinstance(raw, dict):
-        if phone:
-            raw.pop(phone, None)
-        else:
-            raw.clear()
-    elif isinstance(raw, str) and raw.strip():
+        raw.clear()
+        return
+    if isinstance(raw, str) and raw.strip():
         try:
             client._phone_code_hash = {}
         except Exception:
@@ -1182,18 +1193,12 @@ async def resend_phone_code(payload: _PhoneToken):
         # Пока hash є на клієнті — Telethon шле ResendCodeRequest.
         return await asyncio.wait_for(client.send_code_request(phone), timeout=30)
 
-    async def _send_sms():
-        await _ensure_login_connected(entry)
-        return await asyncio.wait_for(
-            client.send_code_request(phone, force_sms=True),
-            timeout=30,
-        )
-
     sent = None
     try:
         sent = await _send_resend()
-    except _SendCodeUnavailableError:
-        # Новий SendCodeRequest після скидання hash (див. опис RPC SEND_CODE_UNAVAILABLE).
+    except (_SendCodeUnavailableError, _PhoneCodeExpiredError):
+        # force_sms у Telethon вже deprecated і лише знову кличе ResendCode.
+        # Після SEND_CODE_UNAVAILABLE потрібен новий SendCodeRequest зі скинутим hash.
         try:
             await _ensure_login_connected(entry)
             sent = await asyncio.wait_for(_fresh_send_code_request(entry), timeout=30)
@@ -1203,27 +1208,18 @@ async def resend_phone_code(payload: _PhoneToken):
                 429,
                 f'Telegram просит подождать {seconds or "несколько"} сек. перед новым кодом.',
             ) from exc
-        except Exception:
-            try:
-                sent = await _send_sms()
-            except _FloodWaitError as wait_exc:
-                seconds = int(getattr(wait_exc, 'seconds', 0) or 0)
-                raise HTTPException(
-                    429,
-                    f'Telegram просит подождать {seconds or "несколько"} сек. перед новым кодом.',
-                ) from wait_exc
-            except Exception as sms_exc:
-                _audit(
-                    'ERROR',
-                    'Ошибка повторной отправки кода',
-                    f'SendCodeUnavailableError/{type(sms_exc).__name__}',
-                    entry.get('sender') or 'system',
-                )
-                raise HTTPException(
-                    502,
-                    f'Не удалось отправить код ещё раз ({type(sms_exc).__name__}). '
-                    'Нажми «Начать заново» и запроси код снова.',
-                ) from sms_exc
+        except Exception as fresh_exc:
+            _audit(
+                'ERROR',
+                'Ошибка повторной отправки кода',
+                f'SendCodeUnavailableError/{type(fresh_exc).__name__}',
+                entry.get('sender') or 'system',
+            )
+            raise HTTPException(
+                502,
+                f'Не удалось отправить код ещё раз ({type(fresh_exc).__name__}). '
+                'Нажми «Начать заново» и запроси код снова.',
+            ) from fresh_exc
     except _FloodWaitError as exc:
         seconds = int(getattr(exc, 'seconds', 0) or 0)
         raise HTTPException(
@@ -1232,25 +1228,26 @@ async def resend_phone_code(payload: _PhoneToken):
         ) from exc
     except Exception as exc:
         try:
-            sent = await _send_sms()
+            await _ensure_login_connected(entry)
+            sent = await asyncio.wait_for(_fresh_send_code_request(entry), timeout=30)
         except _FloodWaitError as wait_exc:
             seconds = int(getattr(wait_exc, 'seconds', 0) or 0)
             raise HTTPException(
                 429,
                 f'Telegram просит подождать {seconds or "несколько"} сек. перед новым кодом.',
             ) from wait_exc
-        except Exception as sms_exc:
+        except Exception as fresh_exc:
             _audit(
                 'ERROR',
                 'Ошибка повторной отправки кода',
-                f'{type(exc).__name__}/{type(sms_exc).__name__}',
+                f'{type(exc).__name__}/{type(fresh_exc).__name__}',
                 entry.get('sender') or 'system',
             )
             raise HTTPException(
                 502,
-                f'Не удалось отправить код ещё раз ({type(sms_exc).__name__}). '
+                f'Не удалось отправить код ещё раз ({type(fresh_exc).__name__}). '
                 'Нажми «Начать заново» и запроси код снова.',
-            ) from sms_exc
+            ) from fresh_exc
     _store_login_phone_code_hash(entry, sent.phone_code_hash)
     return {'status': 'code_required', 'token': payload.token, 'hint': _code_delivery_hint(sent)}
 
