@@ -158,6 +158,40 @@ export function resolvePushTextForLanguage(message = {}, language = "") {
   return textPl || legacy || textRu;
 }
 
+/**
+ * Фото окремо для RU/PL. Старе photoUrl / photoFileId —
+ * спільне, якщо per-lang ще не задані.
+ */
+export function resolvePushPhotoForLanguage(message = {}, language = "") {
+  const fallback =
+    String(message?.defaultLanguage || "ru").trim().toLowerCase() === "pl"
+      ? "pl"
+      : "ru";
+  const lang =
+    language === "pl" || language === "ru" ? language : fallback;
+
+  const photoUrlRu = String(message?.photoUrlRu || "").trim();
+  const photoUrlPl = String(message?.photoUrlPl || "").trim();
+  const photoFileIdRu = String(message?.photoFileIdRu || "").trim();
+  const photoFileIdPl = String(message?.photoFileIdPl || "").trim();
+  const legacyUrl = String(message?.photoUrl || "").trim();
+  const legacyFileId = String(message?.photoFileId || "").trim();
+  const hasPerLangUrl = Boolean(photoUrlRu || photoUrlPl);
+  const hasPerLangFile = Boolean(photoFileIdRu || photoFileIdPl);
+
+  if (lang === "ru") {
+    return {
+      photoUrl: photoUrlRu || (!hasPerLangUrl ? legacyUrl : ""),
+      photoFileId: photoFileIdRu || (!hasPerLangFile ? legacyFileId : ""),
+    };
+  }
+
+  return {
+    photoUrl: photoUrlPl || (!hasPerLangUrl ? legacyUrl : ""),
+    photoFileId: photoFileIdPl || (!hasPerLangFile ? legacyFileId : ""),
+  };
+}
+
 /** Готові HTML для pl / ru / default (один раз перед циклом розсилки). */
 export function buildPushMessageHtmlByLanguage(message = {}) {
   const shared = {

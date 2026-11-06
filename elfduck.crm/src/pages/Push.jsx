@@ -310,25 +310,63 @@ export default function Push() {
   setMediaFile,
 ] = useState(null);
 
-const [
-  mediaPreviewUrl,
-  setMediaPreviewUrl,
-] = useState('');
+const [mediaPreviewUrlRu, setMediaPreviewUrlRu] = useState('');
+const [mediaPreviewUrlPl, setMediaPreviewUrlPl] = useState('');
+const [photoFileIdRu, setPhotoFileIdRu] = useState('');
+const [photoFileIdPl, setPhotoFileIdPl] = useState('');
+const [photoUrlRu, setPhotoUrlRu] = useState('');
+const [photoUrlPl, setPhotoUrlPl] = useState('');
 
-const [
-  photoFileId,
-  setPhotoFileId,
-] = useState('');
+const mediaPreviewUrl =
+  messageLang === 'pl' ? mediaPreviewUrlPl : mediaPreviewUrlRu;
+const photoFileId = messageLang === 'pl' ? photoFileIdPl : photoFileIdRu;
+const photoUrl = messageLang === 'pl' ? photoUrlPl : photoUrlRu;
+const templatePhotoPreviewUrl = mediaPreviewUrl;
 
-const [photoUrl, setPhotoUrl] = useState('');
+const setActivePhoto = ({
+  url = '',
+  fileId = '',
+  preview = '',
+  clearBlob = true,
+  lang = messageLang,
+} = {}) => {
+  const targetLang = lang === 'pl' ? 'pl' : 'ru';
+  const prevPreview =
+    targetLang === 'pl' ? mediaPreviewUrlPl : mediaPreviewUrlRu;
+  if (
+    clearBlob &&
+    prevPreview &&
+    prevPreview.startsWith('blob:') &&
+    prevPreview !== preview
+  ) {
+    URL.revokeObjectURL(prevPreview);
+  }
+  if (targetLang === 'pl') {
+    setPhotoUrlPl(url);
+    setPhotoFileIdPl(fileId);
+    setMediaPreviewUrlPl(preview || url);
+  } else {
+    setPhotoUrlRu(url);
+    setPhotoFileIdRu(fileId);
+    setMediaPreviewUrlRu(preview || url);
+  }
+};
 
-const [
-
-  templatePhotoPreviewUrl,
-
-  setTemplatePhotoPreviewUrl,
-
-] = useState('');
+const clearAllPhotos = () => {
+  if (mediaPreviewUrlRu?.startsWith('blob:')) {
+    URL.revokeObjectURL(mediaPreviewUrlRu);
+  }
+  if (mediaPreviewUrlPl?.startsWith('blob:')) {
+    URL.revokeObjectURL(mediaPreviewUrlPl);
+  }
+  setMediaFile(null);
+  setMediaPreviewUrlRu('');
+  setMediaPreviewUrlPl('');
+  setPhotoFileIdRu('');
+  setPhotoFileIdPl('');
+  setPhotoUrlRu('');
+  setPhotoUrlPl('');
+};
 
 const [
   mediaUploading,
@@ -895,15 +933,12 @@ const selectMedia =
         data?.url || data?.photoPreviewUrl || ''
       ).trim();
 
-      if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(mediaPreviewUrl);
-      }
-
       setMediaFile(uploadFile);
-      setMediaPreviewUrl(uploadedUrl || URL.createObjectURL(uploadFile));
-      setPhotoUrl(uploadedUrl);
-      setPhotoFileId(String(data?.fileId || ''));
-      setTemplatePhotoPreviewUrl(uploadedUrl);
+      setActivePhoto({
+        url: uploadedUrl,
+        fileId: String(data?.fileId || ''),
+        preview: uploadedUrl || URL.createObjectURL(uploadFile),
+      });
 
       toast({
         title: 'Медиа добавлено',
@@ -941,15 +976,8 @@ const selectMedia =
   };
 
 const removeMedia = () => {
-  if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
-    URL.revokeObjectURL(mediaPreviewUrl);
-  }
-
   setMediaFile(null);
-  setMediaPreviewUrl('');
-  setPhotoFileId('');
-  setPhotoUrl('');
-  setTemplatePhotoPreviewUrl('');
+  setActivePhoto({ url: '', fileId: '', preview: '' });
 };
 
   /*
@@ -972,9 +1000,9 @@ const removeMedia = () => {
                     title: tplName.trim(),
                     text: body.trim(),
                     language: messageLang,
-                    photoUrl: photoUrl || templatePhotoPreviewUrl || '',
+                    photoUrl: photoUrl || '',
                     photoFileId: photoFileId || '',
-                    photoPreviewUrl: photoUrl || templatePhotoPreviewUrl || '',
+                    photoPreviewUrl: photoUrl || '',
                     buttons: inlineButtons
                       .filter((btn) => String(btn?.text || '').trim())
                       .map((btn) => ({
@@ -1283,8 +1311,12 @@ const deleteTemplate =
 
                     promo: '',
 
-                    photoUrl: photoUrl || '',
-                    photoFileId: photoFileId || '',
+                    photoUrl: photoUrlRu || photoUrlPl || '',
+                    photoFileId: photoFileIdRu || photoFileIdPl || '',
+                    photoUrlRu: photoUrlRu || '',
+                    photoUrlPl: photoUrlPl || '',
+                    photoFileIdRu: photoFileIdRu || '',
+                    photoFileIdPl: photoFileIdPl || '',
 
                     buttons: inlineButtons
                       .filter((btn) => String(btn?.text || '').trim())
@@ -1318,14 +1350,7 @@ const deleteTemplate =
             { text: 'Открыть магазин', kind: 'web_app', path: '/' },
           ]);
           setActiveTpl(null);
-          setPhotoFileId('');
-          setPhotoUrl('');
-          setTemplatePhotoPreviewUrl('');
-          if (mediaPreviewUrl?.startsWith('blob:')) {
-            URL.revokeObjectURL(mediaPreviewUrl);
-          }
-          setMediaPreviewUrl('');
-          setMediaFile(null);
+          clearAllPhotos();
 
           await Promise.all([
             queryClient.invalidateQueries({
@@ -1521,16 +1546,13 @@ const deleteTemplate =
         template.photoUrl || template.photoPreviewUrl || ''
       ).trim();
 
-      setPhotoFileId(template.photoFileId || '');
-      setPhotoUrl(tplUrl);
-      setTemplatePhotoPreviewUrl(tplUrl);
       setMediaFile(null);
-
-      if (mediaPreviewUrl && mediaPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(mediaPreviewUrl);
-      }
-
-      setMediaPreviewUrl(tplUrl);
+      setActivePhoto({
+        url: tplUrl,
+        fileId: String(template.photoFileId || ''),
+        preview: tplUrl,
+        lang: tplLang,
+      });
 
       toast({
         title: 'Шаблон применён',

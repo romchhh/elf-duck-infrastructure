@@ -12,6 +12,7 @@ export { getActiveGiveawayMonthKey };
 import {
   prizeAmountForPlace,
   resolveGiveawaySettings,
+  resolveWinnerPhotoForLanguage,
   sumPrizePoolZl,
   getDefaultGiveawaySettings,
   normalizeGiveawaySettings,
@@ -628,6 +629,18 @@ export async function updateGiveawayMonthSettings(monthKey, rawSettings = {}) {
   if (rawSettings.winnerPhotoFileId !== undefined) {
     patch.winnerPhotoFileId = rawSettings.winnerPhotoFileId;
   }
+  if (rawSettings.winnerPhotoUrlRu !== undefined) {
+    patch.winnerPhotoUrlRu = rawSettings.winnerPhotoUrlRu;
+  }
+  if (rawSettings.winnerPhotoUrlPl !== undefined) {
+    patch.winnerPhotoUrlPl = rawSettings.winnerPhotoUrlPl;
+  }
+  if (rawSettings.winnerPhotoFileIdRu !== undefined) {
+    patch.winnerPhotoFileIdRu = rawSettings.winnerPhotoFileIdRu;
+  }
+  if (rawSettings.winnerPhotoFileIdPl !== undefined) {
+    patch.winnerPhotoFileIdPl = rawSettings.winnerPhotoFileIdPl;
+  }
 
   const settings = normalizeGiveawaySettings(patch);
 
@@ -868,8 +881,10 @@ export async function notifyGiveawayWinners(monthKey) {
     const html = pushMarkdownToHtml(
       String(template).replaceAll("{amount}", String(row.amountZl ?? ""))
     );
-    let photoFileId = settings.winnerPhotoFileId;
-    let photoUrl = settings.winnerPhotoUrl;
+    let { photoFileId, photoUrl } = resolveWinnerPhotoForLanguage(
+      settings,
+      lang
+    );
     if (!photoFileId && !photoUrl) {
       photoUrl = getDefaultGiveawayWinnerBannerUrl(lang);
     }
@@ -930,6 +945,10 @@ export async function notifyGiveawayWinners(monthKey) {
           textPl: String(settings.winnerMessagePl || "").trim(),
           photoUrl: String(settings.winnerPhotoUrl || "").trim(),
           photoFileId: String(settings.winnerPhotoFileId || "").trim(),
+          photoUrlRu: String(settings.winnerPhotoUrlRu || "").trim(),
+          photoUrlPl: String(settings.winnerPhotoUrlPl || "").trim(),
+          photoFileIdRu: String(settings.winnerPhotoFileIdRu || "").trim(),
+          photoFileIdPl: String(settings.winnerPhotoFileIdPl || "").trim(),
         },
         status: sent > 0 ? "completed" : "failed",
         recipients: sent + failed,

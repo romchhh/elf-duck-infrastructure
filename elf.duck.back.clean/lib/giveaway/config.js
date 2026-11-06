@@ -18,6 +18,10 @@ export function getDefaultGiveawaySettings() {
     winnerMessagePl: "",
     winnerPhotoUrl: "",
     winnerPhotoFileId: "",
+    winnerPhotoUrlRu: "",
+    winnerPhotoUrlPl: "",
+    winnerPhotoFileIdRu: "",
+    winnerPhotoFileIdPl: "",
   };
 }
 
@@ -75,6 +79,47 @@ export function normalizeGiveawaySettings(raw = {}) {
     winnerMessagePl: String(raw?.winnerMessagePl ?? "").trim(),
     winnerPhotoUrl: String(raw?.winnerPhotoUrl ?? "").trim(),
     winnerPhotoFileId: String(raw?.winnerPhotoFileId ?? "").trim(),
+    winnerPhotoUrlRu: String(raw?.winnerPhotoUrlRu ?? "").trim(),
+    winnerPhotoUrlPl: String(raw?.winnerPhotoUrlPl ?? "").trim(),
+    winnerPhotoFileIdRu: String(raw?.winnerPhotoFileIdRu ?? "").trim(),
+    winnerPhotoFileIdPl: String(raw?.winnerPhotoFileIdPl ?? "").trim(),
+  };
+}
+
+/** Своє фото переможця для мови; інакше старе спільне; інакше порожньо (дефолтний банер). */
+export function resolveWinnerPhotoForLanguage(settings = {}, language = "ru") {
+  const cfg = normalizeGiveawaySettings(settings);
+  const lang =
+    String(language || "ru").trim().toLowerCase() === "pl" ? "pl" : "ru";
+  const hasPerLangUrl = Boolean(
+    cfg.winnerPhotoUrlRu || cfg.winnerPhotoUrlPl
+  );
+  const hasPerLangFile = Boolean(
+    cfg.winnerPhotoFileIdRu || cfg.winnerPhotoFileIdPl
+  );
+
+  if (lang === "pl") {
+    return {
+      photoUrl:
+        cfg.winnerPhotoUrlPl ||
+        (!hasPerLangUrl ? cfg.winnerPhotoUrl : "") ||
+        "",
+      photoFileId:
+        cfg.winnerPhotoFileIdPl ||
+        (!hasPerLangFile ? cfg.winnerPhotoFileId : "") ||
+        "",
+    };
+  }
+
+  return {
+    photoUrl:
+      cfg.winnerPhotoUrlRu ||
+      (!hasPerLangUrl ? cfg.winnerPhotoUrl : "") ||
+      "",
+    photoFileId:
+      cfg.winnerPhotoFileIdRu ||
+      (!hasPerLangFile ? cfg.winnerPhotoFileId : "") ||
+      "",
   };
 }
 

@@ -1,8 +1,10 @@
-import giveawayBanner from "../assets/giveawayBanner.webp";
+import giveawayBannerRu from "../assets/giveawayBanner.webp";
+import giveawayBannerPl from "../assets/giveawayBannerPl.webp";
 import {
   getHomeBanners,
   getAllHomeBannerAssetUrls,
 } from "./homeBanners.js";
+import { getCurrentLanguage } from "./i18n";
 import { preloadImage, preloadImages } from "./preloadImage.js";
 
 const CACHE_NAME = "elfduck-home-banners-v2";
@@ -19,10 +21,15 @@ export function getBannerDisplaySrc(src) {
   return blobUrlBySrc.get(key) || key;
 }
 
+export function getGiveawayBannerSrc(language = getCurrentLanguage()) {
+  return language === "pl" ? giveawayBannerPl : giveawayBannerRu;
+}
+
 export function getAllBannerAssetUrls() {
   return [
     ...getAllHomeBannerAssetUrls(),
-    giveawayBanner,
+    giveawayBannerRu,
+    giveawayBannerPl,
   ].filter(Boolean);
 }
 
@@ -110,6 +117,7 @@ export function getCachedHomeBanners(language) {
   return mapBannersToCachedSrcs(getHomeBanners(language));
 }
 
-export function getCachedGiveawayBannerSrc() {
-  return getBannerDisplaySrc(giveawayBanner) || giveawayBanner;
+export function getCachedGiveawayBannerSrc(language = getCurrentLanguage()) {
+  const src = getGiveawayBannerSrc(language);
+  return getBannerDisplaySrc(src) || src;
 }

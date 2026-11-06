@@ -144,9 +144,22 @@ function draftFromRow(row, event) {
     if (String(message.defaultLanguage || "ru") === "pl") pl = text;
     else ru = text;
   }
-  const photoUrl = String(
+  const legacyPhotoUrl = String(
     message.photoUrl || message.photoPreviewUrl || ""
   ).trim();
+  const legacyPhotoFileId = String(message.photoFileId || "").trim();
+  const photoUrlRu =
+    String(message.photoUrlRu || "").trim() ||
+    (!message.photoUrlPl ? legacyPhotoUrl : "");
+  const photoUrlPl =
+    String(message.photoUrlPl || "").trim() ||
+    (!message.photoUrlRu ? legacyPhotoUrl : "");
+  const photoFileIdRu =
+    String(message.photoFileIdRu || "").trim() ||
+    (!message.photoFileIdPl ? legacyPhotoFileId : "");
+  const photoFileIdPl =
+    String(message.photoFileIdPl || "").trim() ||
+    (!message.photoFileIdRu ? legacyPhotoFileId : "");
   const saved = Boolean(row?.updatedAt);
   const delay = saved
     ? Math.max(0, Number(row?.delayMinutes || 0))
@@ -159,9 +172,12 @@ function draftFromRow(row, event) {
     delayMinutes: String(delay),
     ru,
     pl,
-    photoUrl,
-    photoFileId: String(message.photoFileId || "").trim(),
-    mediaPreviewUrl: photoUrl,
+    photoUrlRu,
+    photoUrlPl,
+    photoFileIdRu,
+    photoFileIdPl,
+    mediaPreviewUrlRu: photoUrlRu,
+    mediaPreviewUrlPl: photoUrlPl,
     buttons: normalizeButtons(message.buttons),
     promo: String(message.promo || "").trim(),
     templateId: String(message.templateId || "").trim(),
@@ -171,14 +187,22 @@ function draftFromRow(row, event) {
 }
 
 function automationMessagePayload(draft) {
+  const photoUrlRu = String(draft?.photoUrlRu || "").trim();
+  const photoUrlPl = String(draft?.photoUrlPl || "").trim();
+  const photoFileIdRu = String(draft?.photoFileIdRu || "").trim();
+  const photoFileIdPl = String(draft?.photoFileIdPl || "").trim();
   return {
     text: String(draft?.pl || draft?.ru || "").trim(),
     textRu: String(draft?.ru || "").trim(),
     textPl: String(draft?.pl || "").trim(),
     defaultLanguage: "ru",
     promo: String(draft?.promo || "").trim(),
-    photoUrl: String(draft?.photoUrl || "").trim(),
-    photoFileId: String(draft?.photoFileId || "").trim(),
+    photoUrl: photoUrlRu || photoUrlPl,
+    photoFileId: photoFileIdRu || photoFileIdPl,
+    photoUrlRu,
+    photoUrlPl,
+    photoFileIdRu,
+    photoFileIdPl,
     buttons: normalizeButtons(draft?.buttons),
     templateId: String(draft?.templateId || "").trim(),
     templateIdRu: String(draft?.templateIdRu || "").trim(),
@@ -192,8 +216,10 @@ function draftKey(draft) {
     delayMinutes: String(draft?.delayMinutes ?? "0"),
     ru: String(draft?.ru || ""),
     pl: String(draft?.pl || ""),
-    photoUrl: String(draft?.photoUrl || ""),
-    photoFileId: String(draft?.photoFileId || ""),
+    photoUrlRu: String(draft?.photoUrlRu || ""),
+    photoUrlPl: String(draft?.photoUrlPl || ""),
+    photoFileIdRu: String(draft?.photoFileIdRu || ""),
+    photoFileIdPl: String(draft?.photoFileIdPl || ""),
     buttons: draft?.buttons || [],
     promo: String(draft?.promo || ""),
     templateId: String(draft?.templateId || ""),
@@ -206,7 +232,8 @@ function hasContent(draft) {
   return Boolean(
     String(draft?.ru || "").trim() ||
       String(draft?.pl || "").trim() ||
-      String(draft?.photoUrl || draft?.photoFileId || "").trim() ||
+      String(draft?.photoUrlRu || draft?.photoFileIdRu || "").trim() ||
+      String(draft?.photoUrlPl || draft?.photoFileIdPl || "").trim() ||
       String(draft?.promo || "").trim()
   );
 }
@@ -287,7 +314,11 @@ export default function PushAutomationsPanel({ templates = [] }) {
     });
   };
   const previewText = lang === "pl" ? draft.pl : draft.ru;
-  const previewPhoto = draft.mediaPreviewUrl || draft.photoUrl;
+  const previewPhoto =
+    lang === "pl"
+      ? draft.mediaPreviewUrlPl || draft.photoUrlPl
+      : draft.mediaPreviewUrlRu || draft.photoUrlRu;
+  const activePhotoUrl = lang === "pl" ? draft.photoUrlPl : draft.photoUrlRu;
 
   const rowsByTrigger = data?.automations || {};
 
@@ -362,24 +393,33 @@ export default function PushAutomationsPanel({ templates = [] }) {
     const template = (templates || []).find((item) => item.id === id);
     const built = messageFromTemplate(template);
     if (!built) return;
-    setDraft((current) => ({
-      ...current,
-      ru:
-        lang === "ru"
-          ? built.ru || built.pl || current.ru
-          : built.ru || current.ru,
-      pl:
-        lang === "pl"
-          ? built.pl || built.ru || current.pl
-          : built.pl || current.pl,
-      buttons: built.buttons.length ? built.buttons : current.buttons,
-      photoUrl: built.photoUrl || current.photoUrl,
-      photoFileId: built.photoFileId || current.photoFileId,
-      mediaPreviewUrl: built.photoUrl || current.mediaPreviewUrl,
-      templateId: built.templateId,
-      templateIdRu: lang === "ru" ? built.templateId : current.templateIdRu,
-      templateIdPl: lang === "pl" ? built.templateId : current.templateIdPl,
-    }));
+    setDraft((current) => {
+      const next = {
+        ...current,
+        ru:
+          lang === "ru"
+            ? built.ru || built.pl || current.ru
+            : built.ru || current.ru,
+        pl:
+          lang === "pl"
+            ? built.pl || built.ru || current.pl
+            : built.pl || current.pl,
+        buttons: built.buttons.length ? built.buttons : current.buttons,
+        templateId: built.templateId,
+        templateIdRu: lang === "ru" ? built.templateId : current.templateIdRu,
+        templateIdPl: lang === "pl" ? built.templateId : current.templateIdPl,
+      };
+      if (lang === "pl") {
+        next.photoUrlPl = built.photoUrl || current.photoUrlPl;
+        next.photoFileIdPl = built.photoFileId || current.photoFileIdPl;
+        next.mediaPreviewUrlPl = built.photoUrl || current.mediaPreviewUrlPl;
+      } else {
+        next.photoUrlRu = built.photoUrl || current.photoUrlRu;
+        next.photoFileIdRu = built.photoFileId || current.photoFileIdRu;
+        next.mediaPreviewUrlRu = built.photoUrl || current.mediaPreviewUrlRu;
+      }
+      return next;
+    });
   };
 
   const onPhoto = async (file) => {
@@ -387,15 +427,26 @@ export default function PushAutomationsPanel({ templates = [] }) {
     setPhotoUploading(true);
     try {
       const uploaded = await uploadMedia(file);
-      if (draft.mediaPreviewUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(draft.mediaPreviewUrl);
+      const previewKey =
+        lang === "pl" ? "mediaPreviewUrlPl" : "mediaPreviewUrlRu";
+      if (draft[previewKey]?.startsWith("blob:")) {
+        URL.revokeObjectURL(draft[previewKey]);
       }
-      setDraft((current) => ({
-        ...current,
-        photoUrl: uploaded.photoUrl,
-        photoFileId: uploaded.photoFileId,
-        mediaPreviewUrl: uploaded.previewUrl,
-      }));
+      setDraft((current) =>
+        lang === "pl"
+          ? {
+              ...current,
+              photoUrlPl: uploaded.photoUrl,
+              photoFileIdPl: uploaded.photoFileId,
+              mediaPreviewUrlPl: uploaded.previewUrl,
+            }
+          : {
+              ...current,
+              photoUrlRu: uploaded.photoUrl,
+              photoFileIdRu: uploaded.photoFileId,
+              mediaPreviewUrlRu: uploaded.previewUrl,
+            }
+      );
     } catch (error) {
       toast({
         title: "Не удалось загрузить фото",
@@ -408,15 +459,26 @@ export default function PushAutomationsPanel({ templates = [] }) {
   };
 
   const clearPhoto = () => {
-    if (draft.mediaPreviewUrl?.startsWith("blob:")) {
-      URL.revokeObjectURL(draft.mediaPreviewUrl);
+    const previewKey =
+      lang === "pl" ? "mediaPreviewUrlPl" : "mediaPreviewUrlRu";
+    if (draft[previewKey]?.startsWith("blob:")) {
+      URL.revokeObjectURL(draft[previewKey]);
     }
-    setDraft((current) => ({
-      ...current,
-      photoUrl: "",
-      photoFileId: "",
-      mediaPreviewUrl: "",
-    }));
+    setDraft((current) =>
+      lang === "pl"
+        ? {
+            ...current,
+            photoUrlPl: "",
+            photoFileIdPl: "",
+            mediaPreviewUrlPl: "",
+          }
+        : {
+            ...current,
+            photoUrlRu: "",
+            photoFileIdRu: "",
+            mediaPreviewUrlRu: "",
+          }
+    );
   };
 
   const delayValue = Number(draft.delayMinutes || 0);
@@ -779,11 +841,11 @@ export default function PushAutomationsPanel({ templates = [] }) {
               showLangSwitch={false}
               showPreview={false}
               showPhoto
-              photoUrl={draft.photoUrl}
+              photoUrl={activePhotoUrl}
               photoUploading={photoUploading}
               photoLabelEmpty="Без фото"
               photoAddLabel="Добавить фото"
-              photoHint="Уйдёт вместе с текстом."
+              photoHint={`Фото для ${lang === "pl" ? "PL" : "RU"} — у другой языка своё.`}
               clearPhotoLabel="Убрать фото"
               onPhotoFile={onPhoto}
               onClearPhoto={clearPhoto}

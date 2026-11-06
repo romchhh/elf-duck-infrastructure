@@ -110,9 +110,29 @@ const broadcastCampaignSchema =
         },
 
         photoFileId: {
-  type: String,
-  default: "",
-},
+          type: String,
+          default: "",
+        },
+
+        photoUrlRu: {
+          type: String,
+          default: "",
+        },
+
+        photoUrlPl: {
+          type: String,
+          default: "",
+        },
+
+        photoFileIdRu: {
+          type: String,
+          default: "",
+        },
+
+        photoFileIdPl: {
+          type: String,
+          default: "",
+        },
 
         buttonText: {
           type: String,

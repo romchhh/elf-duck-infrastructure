@@ -320,7 +320,7 @@ export default function GiveawayBannerSlide({ onGoToCatalog, preview = "" }) {
         onClick={handleBannerActivate}
       >
         <img
-          src={getCachedGiveawayBannerSrc()}
+          src={getCachedGiveawayBannerSrc(lang)}
           alt=""
           className="giveawayBannerBg"
           draggable={false}

@@ -89,6 +89,17 @@ function normalizeMessage(message = {}) {
     promo = "";
   }
 
+  const photoUrlRu = String(message?.photoUrlRu || "").trim();
+  const photoUrlPl = String(message?.photoUrlPl || "").trim();
+  const photoFileIdRu = String(message?.photoFileIdRu || "").trim();
+  const photoFileIdPl = String(message?.photoFileIdPl || "").trim();
+  const photoUrl =
+    String(message?.photoUrl || "").trim() || photoUrlRu || photoUrlPl;
+  const photoFileId =
+    String(message?.photoFileId || "").trim() ||
+    photoFileIdRu ||
+    photoFileIdPl;
+
   return {
     title: pushTitleForTelegram(message),
     text,
@@ -96,8 +107,12 @@ function normalizeMessage(message = {}) {
     textRu,
     defaultLanguage,
     promo,
-    photoUrl: String(message?.photoUrl || "").trim(),
-    photoFileId: String(message?.photoFileId || "").trim(),
+    photoUrl,
+    photoFileId,
+    photoUrlRu,
+    photoUrlPl,
+    photoFileIdRu,
+    photoFileIdPl,
     buttonText: String(message?.buttonText || "").trim(),
     buttonUrl: String(message?.buttonUrl || "").trim(),
     buttons: normalizePushButtons(message?.buttons || []),
@@ -145,7 +160,11 @@ export async function upsertPushAutomation(trigger, payload = {}) {
     !message.textRu &&
     !message.promo &&
     !message.photoUrl &&
-    !message.photoFileId
+    !message.photoFileId &&
+    !message.photoUrlRu &&
+    !message.photoUrlPl &&
+    !message.photoFileIdRu &&
+    !message.photoFileIdPl
   ) {
     throw new Error("MESSAGE_REQUIRED");
   }
@@ -230,7 +249,11 @@ async function sendAutomationNow({
     !message.textRu &&
     !message.promo &&
     !message.photoUrl &&
-    !message.photoFileId
+    !message.photoFileId &&
+    !message.photoUrlRu &&
+    !message.photoUrlPl &&
+    !message.photoFileIdRu &&
+    !message.photoFileIdPl
   ) {
     if (alreadyClaimed) {
       await sendsCollection().updateOne(

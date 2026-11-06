@@ -189,15 +189,16 @@ router.post(
           body?.promo
         );
 
+      const photoUrlRu = normalizePushString(body?.photoUrlRu);
+      const photoUrlPl = normalizePushString(body?.photoUrlPl);
+      const photoFileIdRu = normalizePushString(body?.photoFileIdRu);
+      const photoFileIdPl = normalizePushString(body?.photoFileIdPl);
       const photoUrl =
-        normalizePushString(
-          body?.photoUrl
-        );
-
-        const photoFileId =
-  normalizePushString(
-    body?.photoFileId
-  );
+        normalizePushString(body?.photoUrl) || photoUrlRu || photoUrlPl;
+      const photoFileId =
+        normalizePushString(body?.photoFileId) ||
+        photoFileIdRu ||
+        photoFileIdPl;
         
 
       const buttonText =
@@ -475,6 +476,10 @@ router.post(
               promo,
               photoUrl,
               photoFileId,
+              photoUrlRu,
+              photoUrlPl,
+              photoFileIdRu,
+              photoFileIdPl,
               buttonText,
               buttonUrl,
               buttons,
@@ -524,6 +529,10 @@ router.post(
             promo,
             photoUrl,
             photoFileId,
+            photoUrlRu,
+            photoUrlPl,
+            photoFileIdRu,
+            photoFileIdPl,
             buttonText,
             buttonUrl,
             buttons,

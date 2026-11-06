@@ -159,11 +159,25 @@ export default function Giveaway() {
       rulesRu: String(data.settings.rulesRu || ""),
       rulesPl: String(data.settings.rulesPl || ""),
     });
+    const legacyUrl = String(data.settings.winnerPhotoUrl || "");
+    const legacyFileId = String(data.settings.winnerPhotoFileId || "");
+    const photoUrlRu =
+      String(data.settings.winnerPhotoUrlRu || "") ||
+      (!data.settings.winnerPhotoUrlPl ? legacyUrl : "");
+    const photoUrlPl =
+      String(data.settings.winnerPhotoUrlPl || "") ||
+      (!data.settings.winnerPhotoUrlRu ? legacyUrl : "");
     setMessageDraft({
       ru: String(data.settings.winnerMessageRu || DEFAULT_WINNER_MESSAGE_RU),
       pl: String(data.settings.winnerMessagePl || DEFAULT_WINNER_MESSAGE_PL),
-      photoUrl: String(data.settings.winnerPhotoUrl || ""),
-      photoFileId: String(data.settings.winnerPhotoFileId || ""),
+      photoUrlRu,
+      photoUrlPl,
+      photoFileIdRu:
+        String(data.settings.winnerPhotoFileIdRu || "") ||
+        (!data.settings.winnerPhotoFileIdPl ? legacyFileId : ""),
+      photoFileIdPl:
+        String(data.settings.winnerPhotoFileIdPl || "") ||
+        (!data.settings.winnerPhotoFileIdRu ? legacyFileId : ""),
     });
   }, [settingsSyncKey]);
 
@@ -292,8 +306,16 @@ export default function Giveaway() {
           body: JSON.stringify({
             winnerMessageRu: messageDraft?.ru || "",
             winnerMessagePl: messageDraft?.pl || "",
-            winnerPhotoUrl: messageDraft?.photoUrl || "",
-            winnerPhotoFileId: messageDraft?.photoFileId || "",
+            winnerPhotoUrl:
+              messageDraft?.photoUrlRu || messageDraft?.photoUrlPl || "",
+            winnerPhotoFileId:
+              messageDraft?.photoFileIdRu ||
+              messageDraft?.photoFileIdPl ||
+              "",
+            winnerPhotoUrlRu: messageDraft?.photoUrlRu || "",
+            winnerPhotoUrlPl: messageDraft?.photoUrlPl || "",
+            winnerPhotoFileIdRu: messageDraft?.photoFileIdRu || "",
+            winnerPhotoFileIdPl: messageDraft?.photoFileIdPl || "",
           }),
         }
       ),
@@ -379,11 +401,22 @@ export default function Giveaway() {
         method: "POST",
         body: formData,
       });
-      setMessageDraft((current) => ({
-        ...(current || {}),
-        photoUrl: String(data?.url || data?.photoPreviewUrl || ""),
-        photoFileId: String(data?.fileId || ""),
-      }));
+      setMessageDraft((current) => {
+        const url = String(data?.url || data?.photoPreviewUrl || "");
+        const fileId = String(data?.fileId || "");
+        if (messageLang === "pl") {
+          return {
+            ...(current || {}),
+            photoUrlPl: url,
+            photoFileIdPl: fileId,
+          };
+        }
+        return {
+          ...(current || {}),
+          photoUrlRu: url,
+          photoFileIdRu: fileId,
+        };
+      });
     } catch (error) {
       toast({
         title: "Не удалось загрузить фото",
@@ -944,8 +977,12 @@ export default function Giveaway() {
                   </h3>
                   <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
                     {winnerMessageOpen
-                      ? "{amount} подставится суммой приза. Форматирование как в рассылке."
-                      : `${messageDraft.photoUrl ? "Своё фото · " : "Стандартный баннер · "}${(messageDraft.ru || DEFAULT_WINNER_MESSAGE_RU).slice(0, 72)}…`}
+                      ? "{amount} подставится суммой приза. Форматирование как в рассылке. Фото отдельно для RU и PL."
+                      : `${
+                          messageDraft.photoUrlRu || messageDraft.photoUrlPl
+                            ? "Своё фото · "
+                            : "Стандартный баннер · "
+                        }${(messageDraft.ru || DEFAULT_WINNER_MESSAGE_RU).slice(0, 72)}…`}
                   </p>
                 </div>
                 <ChevronRight
@@ -979,17 +1016,29 @@ export default function Giveaway() {
                       String(text || "").replaceAll("{amount}", "150")
                     }
                     showPhoto
-                    photoUrl={messageDraft.photoUrl || ""}
+                    photoUrl={
+                      (messageLang === "pl"
+                        ? messageDraft.photoUrlPl
+                        : messageDraft.photoUrlRu) || ""
+                    }
                     defaultPhotoUrl={defaultWinnerBannerUrl(messageLang)}
                     photoUploading={photoUploading}
-                    photoHint="Свой файл перекроет RU/PL баннер"
+                    photoHint={`Своё фото для ${messageLang === "pl" ? "PL" : "RU"}. У другой языка — своё или стандартный баннер.`}
                     onPhotoFile={uploadWinnerPhoto}
                     onClearPhoto={() =>
-                      setMessageDraft((current) => ({
-                        ...(current || {}),
-                        photoUrl: "",
-                        photoFileId: "",
-                      }))
+                      setMessageDraft((current) =>
+                        messageLang === "pl"
+                          ? {
+                              ...(current || {}),
+                              photoUrlPl: "",
+                              photoFileIdPl: "",
+                            }
+                          : {
+                              ...(current || {}),
+                              photoUrlRu: "",
+                              photoFileIdRu: "",
+                            }
+                      )
                     }
                   />
                   <button

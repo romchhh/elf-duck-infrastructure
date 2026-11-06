@@ -385,13 +385,11 @@ app.locals.runCrmBroadcastCampaign =
     const {
       buildPushMessageHtmlByLanguage,
       buildPushReplyMarkup,
+      resolvePushPhotoForLanguage,
     } = await import("../crm/pushMessageFormat.js");
     const { normalizeAppLanguage } = await import(
       "../crm/userLanguage.js"
     );
-
-    const photoUrl = String(message?.photoUrl || "").trim();
-    const photoFileId = String(message?.photoFileId || "").trim();
 
     const htmlByLang = buildPushMessageHtmlByLanguage(message);
     const messageTextPl = htmlByLang.pl;
@@ -581,6 +579,15 @@ const messageText =
     : userLang === "pl"
       ? messageTextPl || defaultMessageText
       : defaultMessageText;
+const {
+  photoUrl,
+  photoFileId,
+} = resolvePushPhotoForLanguage(
+  message,
+  userLang === "pl" || userLang === "ru"
+    ? userLang
+    : htmlByLang.defaultLanguage
+);
 
 if (!messageText) {
   throw new Error("MESSAGE_REQUIRED");

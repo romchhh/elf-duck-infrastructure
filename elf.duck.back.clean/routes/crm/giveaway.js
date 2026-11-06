@@ -77,6 +77,10 @@ router.patch(
         winnerMessagePl: body.winnerMessagePl,
         winnerPhotoUrl: body.winnerPhotoUrl,
         winnerPhotoFileId: body.winnerPhotoFileId,
+        winnerPhotoUrlRu: body.winnerPhotoUrlRu,
+        winnerPhotoUrlPl: body.winnerPhotoUrlPl,
+        winnerPhotoFileIdRu: body.winnerPhotoFileIdRu,
+        winnerPhotoFileIdPl: body.winnerPhotoFileIdPl,
       });
       return res.json({ ok: true, ...state });
     } catch (error) {
