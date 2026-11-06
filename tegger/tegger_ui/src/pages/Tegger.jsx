@@ -17,6 +17,16 @@ const STATUS_RU = {
   error: "Ошибка",
 };
 
+const BUTTON_COLORS = [
+  ["#2AABEE", "Telegram"],
+  ["#22C55E", "Зелёный"],
+  ["#111827", "Чёрный"],
+  ["#F97316", "Оранжевый"],
+  ["#A855F7", "Фиолетовый"],
+  ["#EF4444", "Красный"],
+  ["#FFFFFF", "Белый"],
+];
+
 function formatWhen(value) {
   if (!value) return "—";
   try {
@@ -48,6 +58,8 @@ export default function Tegger() {
   const [usernamesText, setUsernamesText] = useState("");
   const [caption, setCaption] = useState("");
   const [buttonUrl, setButtonUrl] = useState("");
+  const [buttonText, setButtonText] = useState("Открыть");
+  const [buttonColor, setButtonColor] = useState("#2AABEE");
   const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState("");
 
@@ -118,6 +130,8 @@ export default function Tegger() {
     setUsernamesText("");
     setCaption("");
     setButtonUrl("");
+    setButtonText("Открыть");
+    setButtonColor("#2AABEE");
     setPhoto(null);
     if (photoPreview) URL.revokeObjectURL(photoPreview);
     setPhotoPreview("");
@@ -134,6 +148,8 @@ export default function Tegger() {
         usernames: usernamesText,
         caption,
         buttonUrl,
+        buttonText,
+        buttonColor,
         file: photo,
       });
       setNotice("Тегер создан. Можно запускать.");
@@ -240,13 +256,82 @@ export default function Tegger() {
             />
           </Field>
 
-          <Field label="Кнопка-ссылка" hint="Опционально · http(s)://">
-            <TextInput
-              value={buttonUrl}
-              onChange={(event) => setButtonUrl(event.target.value)}
-              placeholder="https://example.com"
-            />
-          </Field>
+          <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold">Кнопка-ссылка</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Рисуется на фото + кликабельная зона Stories (mediaAreaUrl). В caption — тот же текст как ссылка.
+              </p>
+            </div>
+            <Field label="URL" hint="http(s):// · можно оставить пустым">
+              <TextInput
+                value={buttonUrl}
+                onChange={(event) => setButtonUrl(event.target.value)}
+                placeholder="https://t.me/your_bot"
+              />
+            </Field>
+            <Field label="Текст кнопки" hint="До 40 символов">
+              <TextInput
+                value={buttonText}
+                onChange={(event) => setButtonText(event.target.value)}
+                maxLength={40}
+                placeholder="Открыть магазин"
+                disabled={!buttonUrl.trim()}
+              />
+            </Field>
+            <Field label="Цвет кнопки">
+              <div className="flex flex-wrap items-center gap-2">
+                {BUTTON_COLORS.map(([hex, name]) => (
+                  <button
+                    key={hex}
+                    type="button"
+                    title={name}
+                    disabled={!buttonUrl.trim()}
+                    onClick={() => setButtonColor(hex)}
+                    className={cn(
+                      "h-8 w-8 rounded-full border-2 transition",
+                      buttonColor.toUpperCase() === hex.toUpperCase()
+                        ? "border-primary scale-110"
+                        : "border-border",
+                      !buttonUrl.trim() && "opacity-40"
+                    )}
+                    style={{ backgroundColor: hex }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  aria-label="Свой цвет"
+                  value={/^#[0-9A-Fa-f]{6}$/.test(buttonColor) ? buttonColor : "#2AABEE"}
+                  disabled={!buttonUrl.trim()}
+                  onChange={(event) => setButtonColor(event.target.value)}
+                  className="h-8 w-10 cursor-pointer rounded border border-border bg-transparent disabled:opacity-40"
+                />
+                <span className="text-xs text-muted-foreground tabular-nums">{buttonColor}</span>
+              </div>
+            </Field>
+            {buttonUrl.trim() && (
+              <div className="flex justify-center pt-1">
+                <div
+                  className="inline-flex min-w-[180px] items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold shadow-sm"
+                  style={{
+                    backgroundColor: buttonColor,
+                    color:
+                      (() => {
+                        const hex = buttonColor.replace("#", "");
+                        if (hex.length !== 6) return "#fff";
+                        const r = parseInt(hex.slice(0, 2), 16);
+                        const g = parseInt(hex.slice(2, 4), 16);
+                        const b = parseInt(hex.slice(4, 6), 16);
+                        const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+                        return lum < 0.62 ? "#fff" : "#111";
+                      })(),
+                  }}
+                >
+                  {buttonText.trim() || "Открыть"}
+                </div>
+              </div>
+            )}
+          </div>
 
           <Field label="Фото">
             <label
@@ -332,13 +417,22 @@ export default function Tegger() {
                 )}
 
                 {selected.buttonUrl && (
-                  <div>
-                    <div className="brand-eyebrow text-[10px] mb-1">Ссылка</div>
+                  <div className="space-y-2">
+                    <div className="brand-eyebrow text-[10px]">Кнопка</div>
+                    <div
+                      className="inline-flex min-w-[140px] items-center justify-center rounded-full px-4 py-2 text-sm font-semibold"
+                      style={{
+                        backgroundColor: selected.buttonColor || "#2AABEE",
+                        color: "#fff",
+                      }}
+                    >
+                      {selected.buttonText || "Открыть"}
+                    </div>
                     <a
                       href={selected.buttonUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="break-all text-primary hover:underline"
+                      className="block break-all text-xs text-primary hover:underline"
                     >
                       {selected.buttonUrl}
                     </a>

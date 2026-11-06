@@ -93,12 +93,22 @@ export const teggerClient = {
     get: (id) => request(`/api/teggers/${encodeURIComponent(id)}`),
     start: (id) =>
       request(`/api/teggers/${encodeURIComponent(id)}/start`, { method: "POST" }),
-    create: async ({ senderId, usernames, caption, buttonUrl, file }) => {
+    create: async ({
+      senderId,
+      usernames,
+      caption,
+      buttonUrl,
+      buttonText,
+      buttonColor,
+      file,
+    }) => {
       const body = new FormData();
       body.append("senderId", senderId || "");
       body.append("usernames", usernames || "");
       body.append("caption", caption || "");
       body.append("buttonUrl", buttonUrl || "");
+      body.append("buttonText", buttonText || "");
+      body.append("buttonColor", buttonColor || "#2AABEE");
       if (file) body.append("file", file);
       const response = await fetch(`${API_URL}/api/teggers`, {
         method: "POST",

@@ -3246,6 +3246,8 @@ def _tegger_view(item: dict) -> dict:
         "usernames": list(item.get("usernames") or []),
         "caption": item.get("caption") or "",
         "buttonUrl": item.get("buttonUrl") or "",
+        "buttonText": item.get("buttonText") or "",
+        "buttonColor": item.get("buttonColor") or "",
         "photoName": item.get("photoName") or "",
         "hasPhoto": bool(item.get("photoPath")),
         "status": item.get("status") or "draft",
@@ -3328,6 +3330,8 @@ async def _tegger_execute(job_id: str):
                 caption=item.get("caption") or "",
                 usernames=item.get("usernames") or [],
                 button_url=item.get("buttonUrl") or "",
+                button_text=item.get("buttonText") or "",
+                button_color=item.get("buttonColor") or "#2AABEE",
             )
         finally:
             if client.is_connected():
@@ -3406,6 +3410,8 @@ async def create_tegger(
     usernames: str = _Form(...),
     caption: str = _Form(""),
     buttonUrl: str = _Form(""),
+    buttonText: str = _Form(""),
+    buttonColor: str = _Form("#2AABEE"),
     file: UploadFile = File(...),
 ):
     sender = str(senderId or "").strip()
@@ -3420,6 +3426,19 @@ async def create_tegger(
         raise HTTPException(422, "Ссылка кнопки: http:// или https://")
     if len(link) > 500:
         raise HTTPException(422, "Ссылка слишком длинная")
+    btn_label = str(buttonText or "").strip()
+    if len(btn_label) > 40:
+        raise HTTPException(422, "Текст кнопки: максимум 40 символов")
+    if link and not btn_label:
+        btn_label = "Открыть"
+    btn_color = str(buttonColor or "").strip() or "#2AABEE"
+    if link:
+        try:
+            from src.tegger_publish import parse_button_color as _parse_btn_color
+            _parse_btn_color(btn_color)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        btn_color = btn_color if btn_color.startswith("#") else f"#{btn_color}"
 
     content_type = (file.content_type or "").lower()
     if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
@@ -3448,6 +3467,8 @@ async def create_tegger(
         "usernames": mentions,
         "caption": text,
         "buttonUrl": link,
+        "buttonText": btn_label if link else "",
+        "buttonColor": btn_color if link else "",
         "photoPath": str(photo_path),
         "photoName": file.filename or photo_path.name,
         "status": "draft",
