@@ -91,7 +91,7 @@ const {
   isExemptFromPaymentTimeoutAnnul,
   annulOrderBecauseNoPaymentConfirm,
   getCartStockContextId,
-  refundOrderCashback,
+  processHeldCashbackRefunds,
 } = __chunk07;
 
 function releaseOrderReservedStockSafe(order, options) {
@@ -737,39 +737,15 @@ export async function processOrdersWithoutPaymentConfirm() {
       }
     }
 
-    // Скасовані / анульовані, на яких кешбек лишився списаним
-    // (повторне apply-cashback після ануляції). Повертаємо в цьому ж циклі, раз на хвилину.
-    let cashbackRefunded = 0;
-    const heldCashbackOrders = await Order.find({
-      status: { $in: ["canceled", "annulled"] },
-      "payment.cashbackAppliedZl": { $gt: 0 },
-      $or: [
-        { "payment.cashbackRefundedAt": null },
-        { "payment.cashbackRefundedAt": { $exists: false } },
-      ],
-    })
-      .sort({ updatedAt: 1 })
-      .limit(40);
+    // Додатковий прохід (основний швидкий цикл — processHeldCashbackRefunds кожні 10с).
+    const held = await processHeldCashbackRefunds();
 
-    for (const heldOrder of heldCashbackOrders) {
-      try {
-        const refunded = await refundOrderCashback(heldOrder);
-        if (refunded?.refunded) {
-          cashbackRefunded += 1;
-          console.log("[CASHBACK REFUND CLOSED ORDER]", {
-            orderNo: String(heldOrder?.orderNo || ""),
-            amount: refunded.amount,
-          });
-        }
-      } catch (refundErr) {
-        console.error(
-          "processOrdersWithoutPaymentConfirm held cashback refund error:",
-          refundErr
-        );
-      }
-    }
-
-    return { ok: true, annulled, orphansReleased, cashbackRefunded };
+    return {
+      ok: true,
+      annulled,
+      orphansReleased,
+      cashbackRefunded: Number(held?.refunded || 0),
+    };
   } catch (e) {
     console.error(
       "processOrdersWithoutPaymentConfirm error:",

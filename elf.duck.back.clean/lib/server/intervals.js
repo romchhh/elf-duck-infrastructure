@@ -69,6 +69,11 @@ export function startServerIntervals() {
     runIntervalJob("processOrdersWithoutPaymentConfirm");
   }, 60 * 1000);
 
+  // Кожні 10с: кешбек на canceled/annulled повертаємо одразу, якщо щось зависло
+  setInterval(() => {
+    runIntervalJob("processHeldCashbackRefunds");
+  }, 10 * 1000);
+
   setInterval(() => {
     runIntervalJob("processStaleCarts");
   }, CART_AUTO_CLEAR_INTERVAL_MS);
@@ -93,8 +98,13 @@ export function startServerIntervals() {
   }, 10 * 1000);
 
   runIntervalJob("processOrdersWithoutPaymentConfirm");
+  runIntervalJob("processHeldCashbackRefunds");
 
   runIntervalJob("processCashbackLedgerExpirations");
+
+  setTimeout(() => {
+    runIntervalJob("processHeldCashbackRefunds");
+  }, 3 * 1000);
 
   // Ghost reserved: звірка з відкритими замовленнями (переживає рестарт)
   const runGhostReconcile = () => {

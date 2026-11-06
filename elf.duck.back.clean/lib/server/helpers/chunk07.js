@@ -402,11 +402,31 @@ export async function refundOrderCashback(order) {
     };
   }
 
-  const freshOrder =
-    await Order.findById(
-      String(order._id || "")
-    );
+  const orderId = String(order._id || "");
 
+  /*
+   * Атомарно «забираємо» утриманий кешбек з замовлення,
+   * щоб скасування / ануляція / фоновий цикл не подвоїли повернення.
+   */
+  const claimed = await Order.findOneAndUpdate(
+    {
+      _id: orderId,
+      "payment.cashbackAppliedZl": { $gt: 0 },
+    },
+    {
+      $set: {
+        "payment.cashbackAppliedZl": 0,
+        "payment.cashbackRefundedAt": new Date(),
+        "payment.cashbackAppliedAt": null,
+        "payment.cashbackFullyPaid": false,
+        "payment.cashbackRefundFailedAt": null,
+        "payment.cashbackRefundFailReason": "",
+      },
+    },
+    { new: false }
+  );
+
+  const freshOrder = claimed || (await Order.findById(orderId));
   if (!freshOrder) {
     return {
       refunded: false,
@@ -420,13 +440,17 @@ export async function refundOrderCashback(order) {
       ? freshOrder.payment.toObject()
       : freshOrder.payment || {};
 
+  const heldZl = Number(payment?.cashbackAppliedZl || 0);
   const originalAppliedZl = Number(
-    payment?.cashbackOriginalAppliedZl ||
-      payment?.cashbackAppliedZl ||
+    (
+      payment?.cashbackOriginalAppliedZl ||
+      heldZl ||
+      payment?.cashbackRefundedAmountZl ||
       0
+    ).toFixed(2)
   );
 
-  if (!(originalAppliedZl > 0)) {
+  if (!(originalAppliedZl > 0) && !(heldZl > 0)) {
     const userBalance = await User.findOne(
       { telegramId: String(freshOrder.userTelegramId || "") },
       { cashbackBalance: 1 }
@@ -439,9 +463,9 @@ export async function refundOrderCashback(order) {
   }
 
   /*
-   * Повторную отмену не обрабатываем.
+   * Уже повернули і на замовленні більше нічого не утримується.
    */
-  if (payment?.cashbackRefundedAt) {
+  if (!claimed && payment?.cashbackRefundedAt && !(heldZl > 0)) {
     const userBalance = await User.findOne(
       { telegramId: String(freshOrder.userTelegramId || "") },
       { cashbackBalance: 1 }
@@ -454,12 +478,22 @@ export async function refundOrderCashback(order) {
   }
 
   const user = await User.findOne({
-    telegramId: String(
-      freshOrder.userTelegramId || ""
-    ),
+    telegramId: String(freshOrder.userTelegramId || ""),
   });
 
   if (!user) {
+    if (claimed) {
+      await Order.updateOne(
+        { _id: orderId },
+        {
+          $set: {
+            "payment.cashbackRefundedAt": null,
+            "payment.cashbackRefundFailedAt": new Date(),
+            "payment.cashbackRefundFailReason": "USER_NOT_FOUND",
+          },
+        }
+      ).catch(() => {});
+    }
     return {
       refunded: false,
       amount: 0,
@@ -467,14 +501,13 @@ export async function refundOrderCashback(order) {
     };
   }
 
-  user.cashbackLedger = Array.isArray(
-    user.cashbackLedger
-  )
+  user.cashbackLedger = Array.isArray(user.cashbackLedger)
     ? user.cashbackLedger
     : [];
 
-  const refundAmount = Number(originalAppliedZl.toFixed(2));
-  const orderId = String(freshOrder._id || "");
+  const refundAmount = Number(
+    Math.max(originalAppliedZl, heldZl).toFixed(2)
+  );
   const alreadyReturnedZl = Number(
     user.cashbackLedger
       .filter(
@@ -483,7 +516,10 @@ export async function refundOrderCashback(order) {
           String(row?.source || "") === "order_payment_refund" &&
           !row?.expiredAt
       )
-      .reduce((sum, row) => sum + Math.max(0, Number(row?.remainingZl || 0)), 0)
+      .reduce(
+        (sum, row) => sum + Math.max(0, Number(row?.remainingZl || 0)),
+        0
+      )
       .toFixed(2)
   );
   const stillMissingZl = Number(
@@ -509,41 +545,80 @@ export async function refundOrderCashback(order) {
   }
 
   recalcUserCashbackBalanceFromLedger(user);
-
   user.markModified?.("cashbackLedger");
-
   await user.save();
 
-  freshOrder.payment = {
-    ...payment,
-
-    /*
-     * Сохраняем первоначальную сумму,
-     * даже после обнуления cashbackAppliedZl.
-     */
-    cashbackOriginalAppliedZl: refundAmount,
-    cashbackRefundedAmountZl: refundAmount,
-    cashbackRefundedAt: new Date(),
-    cashbackAppliedZl: 0,
-    cashbackRemainingToPayZl: Number(freshOrder.totalZl || 0),
-    cashbackFullyPaid: false,
-    cashbackAppliedAt: null,
-    cashbackRefundFailedAt: null,
-    cashbackRefundFailReason: "",
-    method:
-      payment?.method === "cashback"
-        ? null
-        : payment?.method || null,
-  };
-
-  freshOrder.markModified?.("payment");
-  await freshOrder.save();
+  await Order.updateOne(
+    { _id: orderId },
+    {
+      $set: {
+        "payment.cashbackOriginalAppliedZl": refundAmount,
+        "payment.cashbackRefundedAmountZl": refundAmount,
+        "payment.cashbackRefundedAt": new Date(),
+        "payment.cashbackAppliedZl": 0,
+        "payment.cashbackRemainingToPayZl": Number(freshOrder.totalZl || 0),
+        "payment.cashbackFullyPaid": false,
+        "payment.cashbackAppliedAt": null,
+        "payment.cashbackRefundFailedAt": null,
+        "payment.cashbackRefundFailReason": "",
+        ...(payment?.method === "cashback"
+          ? { "payment.method": null }
+          : {}),
+      },
+    }
+  );
 
   return {
-    refunded: true,
+    refunded: stillMissingZl > 0 || Boolean(claimed),
     amount: refundAmount,
     cashbackBalance: Number(user.cashbackBalance || 0),
   };
+}
+
+/** Швидке повернення кешбеку на скасованих / анульованих замовленнях. */
+export async function processHeldCashbackRefunds() {
+  let refunded = 0;
+  let scanned = 0;
+
+  try {
+    const heldCashbackOrders = await Order.find({
+      status: { $in: ["canceled", "annulled"] },
+      "payment.cashbackAppliedZl": { $gt: 0 },
+    })
+      .sort({ updatedAt: 1 })
+      .limit(80);
+
+    scanned = heldCashbackOrders.length;
+
+    for (const heldOrder of heldCashbackOrders) {
+      try {
+        const result = await refundOrderCashback(heldOrder);
+        if (result?.refunded) {
+          refunded += 1;
+          console.log("[CASHBACK REFUND CLOSED ORDER]", {
+            orderNo: String(heldOrder?.orderNo || ""),
+            amount: result.amount,
+          });
+        }
+      } catch (refundErr) {
+        console.error(
+          "processHeldCashbackRefunds order error:",
+          String(heldOrder?._id || ""),
+          refundErr
+        );
+      }
+    }
+
+    return { ok: true, scanned, refunded };
+  } catch (e) {
+    console.error("processHeldCashbackRefunds error:", e);
+    return {
+      ok: false,
+      scanned,
+      refunded,
+      error: String(e?.message || e),
+    };
+  }
 }
 
 export async function deductRefundedOrderCashback(order) {
