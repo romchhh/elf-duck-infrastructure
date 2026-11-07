@@ -210,21 +210,63 @@ def link_media_area(url: str, area: dict | None):
     )
 
 
-async def _resolve_mentions(client, usernames: list[str]) -> list:
+def _resolve_mention_error(username: str, exc: BaseException) -> str:
+    message = str(exc).strip()
+    if "No user has" in message:
+        return "Нет пользователя с таким @username в Telegram"
+    if len(message) > 160:
+        message = message[:160]
+    return message or type(exc).__name__
+
+
+async def _resolve_mentions(
+    client, usernames: list[str]
+) -> tuple[list, list[dict]]:
     resolved = []
+    skipped: list[dict] = []
     seen = set()
     for raw in usernames:
         username = str(raw or "").strip().lstrip("@")
         if not username or username.lower() in seen:
             continue
         seen.add(username.lower())
-        entity = await client.get_entity(username)
-        if not isinstance(entity, types.User) or not getattr(entity, "username", None):
-            raise RuntimeError(f"@{username} — не пользователь с публичным username")
+        try:
+            entity = await client.get_entity(username)
+        except Exception as exc:
+            skipped.append(
+                {
+                    "username": username,
+                    "error": _resolve_mention_error(username, exc),
+                }
+            )
+            continue
+        if not isinstance(entity, types.User):
+            skipped.append(
+                {
+                    "username": username,
+                    "error": "Не пользователь Telegram",
+                }
+            )
+            continue
+        if not getattr(entity, "username", None):
+            skipped.append(
+                {
+                    "username": username,
+                    "error": "Нет публичного username",
+                }
+            )
+            continue
         resolved.append(entity)
     if not resolved:
-        raise ValueError("Нужен хотя бы один username для отметки")
-    return resolved
+        hint = "; ".join(
+            f"@{item['username']}: {item['error']}" for item in skipped[:8]
+        )
+        if len(skipped) > 8:
+            hint += f" …ещё {len(skipped) - 8}"
+        raise ValueError(
+            hint or "Нужен хотя бы один валидный username для отметки"
+        )
+    return resolved, skipped
 
 
 def _take_group(pending: list, story_min: int, story_max: int) -> list:
@@ -454,7 +496,11 @@ async def publish_custom_story(
 
     await _wait(0, cancel_event)
     await emit()
-    resolved = await _resolve_mentions(client, usernames)
+    published: list[str] = []
+    failed: list[dict] = []
+    resolved, skipped_resolve = await _resolve_mentions(client, usernames)
+    failed.extend(skipped_resolve)
+    await emit(failed=list(failed))
     lang_by_id = await asyncio.to_thread(
         languages_for_entities,
         resolved,
@@ -468,8 +514,6 @@ async def publish_custom_story(
         languages={"pl": len(buckets["pl"]), "ru": len(buckets["ru"])},
     )
 
-    published: list[str] = []
-    failed: list[dict] = []
     stories: list[dict] = []
     last_type = ""
     me = await client.get_input_entity("me")
