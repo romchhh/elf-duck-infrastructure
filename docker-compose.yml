@@ -115,6 +115,7 @@ services:
       TEGGER_ADMIN_PASSWORD_HASH_B64: ${TEGGER_ADMIN_PASSWORD_HASH_B64:-}
       LOG_BOT_TOKEN: ${TEGGER_LOG_BOT_TOKEN:-}
       LOG_CHAT_ID: ${TEGGER_LOG_CHAT_ID:-}
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/elfduck}
     volumes:
       - tegger_data:/data
     ports:

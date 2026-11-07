@@ -3241,6 +3241,12 @@ def _tegger_write(items: list[dict]) -> None:
 
 
 def _tegger_view(item: dict) -> dict:
+    caption_ru = str(item.get("captionRu") or item.get("caption") or "").strip()
+    caption_pl = str(item.get("captionPl") or "").strip()
+    btn_ru = str(item.get("buttonTextRu") or item.get("buttonText") or "").strip()
+    btn_pl = str(item.get("buttonTextPl") or "").strip()
+    photo_ru = str(item.get("photoPathRu") or item.get("photoPath") or "")
+    photo_pl = str(item.get("photoPathPl") or photo_ru)
     return {
         "id": item["id"],
         "createdAt": item.get("createdAt"),
@@ -3248,12 +3254,19 @@ def _tegger_view(item: dict) -> dict:
         "finishedAt": item.get("finishedAt"),
         "senderId": item.get("senderId"),
         "usernames": list(item.get("usernames") or []),
-        "caption": item.get("caption") or "",
+        "caption": caption_ru,
+        "captionRu": caption_ru,
+        "captionPl": caption_pl,
+        "defaultLanguage": str(item.get("defaultLanguage") or "ru"),
         "buttonUrl": item.get("buttonUrl") or "",
-        "buttonText": item.get("buttonText") or "",
+        "buttonText": btn_ru,
+        "buttonTextRu": btn_ru,
+        "buttonTextPl": btn_pl,
         "buttonColor": item.get("buttonColor") or "",
-        "photoName": item.get("photoName") or "",
-        "hasPhoto": bool(item.get("photoPath")),
+        "photoName": item.get("photoNameRu") or item.get("photoName") or "",
+        "photoNamePl": item.get("photoNamePl") or "",
+        "hasPhoto": bool(photo_ru),
+        "hasPhotoPl": bool(photo_pl),
         "status": item.get("status") or "draft",
         "error": item.get("error") or "",
         "dryRun": bool(item.get("dryRun")),
@@ -3313,24 +3326,83 @@ def _tegger_stopped_text(progress: dict) -> str:
     return ". ".join(parts)
 
 
+async def _tegger_read_upload(file: UploadFile) -> bytes:
+    content_type = (file.content_type or "").lower()
+    if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
+        raise HTTPException(422, "Нужно фото JPEG/PNG/WebP")
+    raw = await file.read()
+    if not raw or len(raw) > 8 * 1024 * 1024:
+        raise HTTPException(422, "Размер фото: до 8 МБ")
+    return raw
+
+
+def _tegger_photo_suffix(filename: str) -> str:
+    name = (filename or "").lower()
+    if name.endswith(".png"):
+        return ".png"
+    if name.endswith(".webp"):
+        return ".webp"
+    return ".jpg"
+
+
+_TEGGER_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{5,32}$")
+_TEGGER_SKIP_TOKENS = frozenset({"username", "telegram_id", "user", "id"})
+
+
+def _tegger_add_username(seen: set[str], out: list[str], token: str) -> None:
+    username = str(token or "").strip().lstrip("@").lower()
+    if not username or username in _TEGGER_SKIP_TOKENS:
+        return
+    if re.fullmatch(r"\d+", username):
+        return
+    if not _TEGGER_USERNAME_RE.fullmatch(username):
+        raise HTTPException(422, f"Некорректный username: @{username}")
+    if username in seen:
+        return
+    seen.add(username)
+    out.append(username)
+
+
 def _tegger_parse_usernames(raw: str) -> list[str]:
-    parts = re.split(r"[\s,;]+", str(raw or ""))
-    seen = set()
-    out = []
-    for part in parts:
-        username = part.strip().lstrip("@").lower()
-        if not username or username == "username":
-            continue
-        if not re.fullmatch(r"[a-zA-Z0-9_]{5,32}", username):
-            raise HTTPException(422, f"Некорректный username: @{username}")
-        if username in seen:
-            continue
-        seen.add(username)
-        out.append(username)
+    """@user, список через пробіл/кома або CSV `telegram_id,username` (лише username)."""
+    text = str(raw or "").replace("\r\n", "\n").replace("\r", "\n").strip("\ufeff")
+    seen: set[str] = set()
+    out: list[str] = []
+    lines = [ln.strip() for ln in text.split("\n")] if text else []
+
+    if lines:
+        for line in lines:
+            if not line:
+                continue
+            low = line.lower().replace(" ", "")
+            if low in ("telegram_id,username", "telegram_id,username,"):
+                continue
+            if re.fullmatch(r"\d{1,5}", line) and "," not in line:
+                continue
+            if "," in line:
+                cells = [c.strip().strip('"').strip("'") for c in line.split(",")]
+                picked = None
+                for cell in reversed(cells):
+                    token = str(cell or "").strip().lstrip("@").lower()
+                    if not token or token in _TEGGER_SKIP_TOKENS or re.fullmatch(
+                        r"\d+", token
+                    ):
+                        continue
+                    picked = cell
+                    break
+                if picked is not None:
+                    _tegger_add_username(seen, out, picked)
+                continue
+            for part in re.split(r"[\s,;]+", line):
+                _tegger_add_username(seen, out, part)
+    else:
+        for part in re.split(r"[\s,;]+", text):
+            _tegger_add_username(seen, out, part)
+
     if not out:
         raise HTTPException(422, "Укажи хотя бы один username для отметки")
-    if len(out) > 40:
-        raise HTTPException(422, "Слишком много отметок (максимум 40)")
+    if len(out) > 500:
+        raise HTTPException(422, "Слишком много отметок (максимум 500)")
     return out
 
 
@@ -3428,12 +3500,16 @@ async def _tegger_execute(job_id: str):
             limits = execution_values()
             published = await _publish_custom_story(
                 client,
-                photo_path=item["photoPath"],
-                caption=item.get("caption") or "",
+                photo_path=item.get("photoPathRu") or item.get("photoPath") or "",
+                caption=item.get("captionRu") or item.get("caption") or "",
                 usernames=item.get("usernames") or [],
                 button_url=item.get("buttonUrl") or "",
-                button_text=item.get("buttonText") or "",
+                button_text=item.get("buttonTextRu") or item.get("buttonText") or "",
                 button_color=item.get("buttonColor") or "#2AABEE",
+                photo_path_pl=item.get("photoPathPl") or None,
+                caption_pl=item.get("captionPl") or "",
+                button_text_pl=item.get("buttonTextPl") or "",
+                default_language=str(item.get("defaultLanguage") or "ru"),
                 story_min=limits["TARGETS_PER_STORY_MIN"],
                 story_max=limits["TARGETS_PER_STORY_MAX"],
                 interval_min=limits["STORY_INTERVAL_MIN_SECONDS"],
@@ -3525,33 +3601,60 @@ async def get_tegger(tegger_id: str):
     return _tegger_view(item)
 
 
+@app.post("/api/teggers/language-preview", dependencies=[Depends(get_current_user)])
+async def tegger_language_preview(usernames: str = _Form(...)):
+    from src.user_language import DEFAULT_LANGUAGE, language_stats_by_usernames
+
+    mentions = _tegger_parse_usernames(usernames)
+    stats = await asyncio.to_thread(language_stats_by_usernames, mentions)
+    total = len(mentions)
+    return {
+        "ok": True,
+        "total": total,
+        "defaultLanguage": DEFAULT_LANGUAGE,
+        "languages": stats,
+    }
+
+
 @app.post("/api/teggers", dependencies=[Depends(get_current_user)])
 async def create_tegger(
     senderId: str = _Form(...),
     usernames: str = _Form(...),
     caption: str = _Form(""),
+    captionRu: str = _Form(""),
+    captionPl: str = _Form(""),
     buttonUrl: str = _Form(""),
     buttonText: str = _Form(""),
+    buttonTextRu: str = _Form(""),
+    buttonTextPl: str = _Form(""),
     buttonColor: str = _Form("#2AABEE"),
+    defaultLanguage: str = _Form("ru"),
     file: UploadFile = File(...),
+    filePl: UploadFile | None = File(None),
 ):
     sender = str(senderId or "").strip()
     if sender not in _tegger_allowed_senders():
         raise HTTPException(403, "Выбери аккаунт с рабочей сессией (не Migration)")
     mentions = _tegger_parse_usernames(usernames)
-    text = str(caption or "").strip()
-    if len(text) > 800:
+    text_ru = str(captionRu or caption or "").strip()
+    text_pl = str(captionPl or "").strip()
+    if not text_ru:
+        raise HTTPException(422, "Укажи текст истории (RU)")
+    if len(text_ru) > 800 or len(text_pl) > 800:
         raise HTTPException(422, "Текст слишком длинный (макс. 800)")
     link = str(buttonUrl or "").strip()
     if link and not link.startswith(("http://", "https://")):
         raise HTTPException(422, "Ссылка кнопки: http:// или https://")
     if len(link) > 500:
         raise HTTPException(422, "Ссылка слишком длинная")
-    btn_label = str(buttonText or "").strip()
-    if len(btn_label) > 40:
+    btn_ru = str(buttonTextRu or buttonText or "").strip()
+    btn_pl = str(buttonTextPl or "").strip()
+    if len(btn_ru) > 40 or len(btn_pl) > 40:
         raise HTTPException(422, "Текст кнопки: максимум 40 символов")
-    if link and not btn_label:
-        btn_label = "Открыть"
+    if link and not btn_ru:
+        btn_ru = "Открыть"
+    if link and not btn_pl:
+        btn_pl = "Otwórz"
     btn_color = str(buttonColor or "").strip() or "#2AABEE"
     if link:
         try:
@@ -3560,24 +3663,25 @@ async def create_tegger(
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         btn_color = btn_color if btn_color.startswith("#") else f"#{btn_color}"
+    default_lang = str(defaultLanguage or "ru").strip().lower()
+    if default_lang not in ("ru", "pl"):
+        default_lang = "ru"
 
-    content_type = (file.content_type or "").lower()
-    if content_type not in {"image/jpeg", "image/jpg", "image/png", "image/webp"}:
-        raise HTTPException(422, "Нужно фото JPEG/PNG/WebP")
-    raw = await file.read()
-    if not raw or len(raw) > 8 * 1024 * 1024:
-        raise HTTPException(422, "Размер фото: до 8 МБ")
-
+    raw_ru = await _tegger_read_upload(file)
     job_id = _uuid4().hex
     _TEGGER_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-    suffix = ".jpg"
-    name = (file.filename or "").lower()
-    if name.endswith(".png"):
-        suffix = ".png"
-    elif name.endswith(".webp"):
-        suffix = ".webp"
-    photo_path = _TEGGER_MEDIA_DIR / f"{job_id}{suffix}"
-    photo_path.write_bytes(raw)
+    suffix_ru = _tegger_photo_suffix(file.filename or "")
+    photo_path_ru = _TEGGER_MEDIA_DIR / f"{job_id}_ru{suffix_ru}"
+    photo_path_ru.write_bytes(raw_ru)
+
+    photo_path_pl = photo_path_ru
+    photo_name_pl = ""
+    if filePl is not None and filePl.filename:
+        raw_pl = await _tegger_read_upload(filePl)
+        suffix_pl = _tegger_photo_suffix(filePl.filename or "")
+        photo_path_pl = _TEGGER_MEDIA_DIR / f"{job_id}_pl{suffix_pl}"
+        photo_path_pl.write_bytes(raw_pl)
+        photo_name_pl = filePl.filename or photo_path_pl.name
 
     item = {
         "id": job_id,
@@ -3586,12 +3690,21 @@ async def create_tegger(
         "finishedAt": None,
         "senderId": sender,
         "usernames": mentions,
-        "caption": text,
+        "caption": text_ru,
+        "captionRu": text_ru,
+        "captionPl": text_pl,
+        "defaultLanguage": default_lang,
         "buttonUrl": link,
-        "buttonText": btn_label if link else "",
+        "buttonText": btn_ru if link else "",
+        "buttonTextRu": btn_ru if link else "",
+        "buttonTextPl": btn_pl if link else "",
         "buttonColor": btn_color if link else "",
-        "photoPath": str(photo_path),
-        "photoName": file.filename or photo_path.name,
+        "photoPath": str(photo_path_ru),
+        "photoPathRu": str(photo_path_ru),
+        "photoPathPl": str(photo_path_pl),
+        "photoName": file.filename or photo_path_ru.name,
+        "photoNameRu": file.filename or photo_path_ru.name,
+        "photoNamePl": photo_name_pl,
         "status": "draft",
         "error": "",
         "dryRun": False,
@@ -3622,7 +3735,8 @@ async def start_tegger(tegger_id: str):
             raise HTTPException(409, "Тегер остановлен после публикации — создай новый для оставшихся")
         if any(x.get("status") in ("running", "stopping") for x in items):
             raise HTTPException(409, "Уже выполняется другой тегер — останови его или подожди")
-        if not Path(item.get("photoPath") or "").is_file():
+        photo_ok = Path(item.get("photoPathRu") or item.get("photoPath") or "").is_file()
+        if not photo_ok:
             raise HTTPException(422, "Файл фото потерян — создай тегер заново")
         item["status"] = "running"
         item["error"] = ""

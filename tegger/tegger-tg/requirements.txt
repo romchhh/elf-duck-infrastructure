@@ -9,3 +9,4 @@ uvicorn[standard]==0.34.3
 argon2-cffi==25.1.0
 Pillow==11.3.0
 python-multipart==0.0.20
+pymongo==4.11.3

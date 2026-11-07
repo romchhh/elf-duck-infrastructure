@@ -100,9 +100,17 @@ function TeggerProgress({ job }) {
         </div>
       )}
       <div className="space-y-2">
+        {progress.languages && (progress.languages.pl > 0 || progress.languages.ru > 0) ? (
+          <div className="text-[11px] text-muted-foreground">
+            PL {progress.languages.pl || 0} · RU {progress.languages.ru || 0} (н/д → RU)
+          </div>
+        ) : null}
         {stories.map((story, index) => (
           <div key={`story-${index}`} className="text-xs">
-            <div className="font-medium text-emerald-700">Группа {index + 1} · опубликована</div>
+            <div className="font-medium text-emerald-700">
+              Группа {index + 1} · опубликована
+              {story.language ? ` · ${String(story.language).toUpperCase()}` : ""}
+            </div>
             <div className="mt-0.5 text-muted-foreground">
               {(story.usernames || []).map((name) => `@${name}`).join(" ") || "—"}
             </div>
@@ -171,12 +179,43 @@ function formatWhen(value) {
   }
 }
 
+const USERNAME_RE = /^[a-zA-Z0-9_]{5,32}$/i;
+const SKIP_USER_TOKENS = new Set(["username", "telegram_id", "user", "id"]);
+
 function parseUsernames(text) {
-  return text
-    .split(/[\s,;]+/)
-    .map((t) => t.trim().replace(/^@+/, ""))
-    .filter(Boolean)
-    .filter((t) => t.toLowerCase() !== "username");
+  const raw = String(text || "").replace(/\r\n/g, "\n").trim();
+  const seen = new Set();
+  const out = [];
+  const add = (token) => {
+    const username = String(token || "").trim().replace(/^@+/, "").toLowerCase();
+    if (!username || SKIP_USER_TOKENS.has(username) || /^\d+$/.test(username)) return;
+    if (!USERNAME_RE.test(username)) return;
+    if (seen.has(username)) return;
+    seen.add(username);
+    out.push(username);
+  };
+
+  const lines = raw.includes("\n") ? raw.split("\n") : [raw];
+  for (const line of lines) {
+    const ln = line.trim();
+    if (!ln) continue;
+    if (ln.toLowerCase().replace(/\s/g, "") === "telegram_id,username") continue;
+    if (/^\d{1,5}$/.test(ln) && !ln.includes(",")) continue;
+    if (ln.includes(",")) {
+      const cells = ln.split(",").map((c) => c.trim().replace(/^["']|["']$/g, ""));
+      let picked = null;
+      for (let i = cells.length - 1; i >= 0; i -= 1) {
+        const token = String(cells[i] || "").trim().replace(/^@+/, "").toLowerCase();
+        if (!token || SKIP_USER_TOKENS.has(token) || /^\d+$/.test(token)) continue;
+        picked = cells[i];
+        break;
+      }
+      if (picked) add(picked);
+    } else {
+      ln.split(/[\s,;]+/).forEach(add);
+    }
+  }
+  return out;
 }
 
 export default function Tegger() {
@@ -192,12 +231,18 @@ export default function Tegger() {
 
   const [senderId, setSenderId] = useState("");
   const [usernamesText, setUsernamesText] = useState("");
-  const [caption, setCaption] = useState("");
+  const [messageLang, setMessageLang] = useState("ru");
+  const [captionRu, setCaptionRu] = useState("");
+  const [captionPl, setCaptionPl] = useState("");
   const [buttonUrl, setButtonUrl] = useState("");
-  const [buttonText, setButtonText] = useState("Открыть");
+  const [buttonTextRu, setButtonTextRu] = useState("Открыть");
+  const [buttonTextPl, setButtonTextPl] = useState("Otwórz");
   const [buttonColor, setButtonColor] = useState("#2AABEE");
-  const [photo, setPhoto] = useState(null);
-  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoRu, setPhotoRu] = useState(null);
+  const [photoPl, setPhotoPl] = useState(null);
+  const [photoPreviewRu, setPhotoPreviewRu] = useState("");
+  const [photoPreviewPl, setPhotoPreviewPl] = useState("");
+  const [langStats, setLangStats] = useState(null);
 
   const selected = useMemo(
     () => history.find((item) => item.id === selectedId) || null,
@@ -206,7 +251,11 @@ export default function Tegger() {
 
   const mentionCount = parseUsernames(usernamesText).length;
   const canCreate =
-    Boolean(senderId) && mentionCount > 0 && Boolean(photo) && !saving;
+    Boolean(senderId) &&
+    mentionCount > 0 &&
+    Boolean(photoRu) &&
+    Boolean(captionRu.trim()) &&
+    !saving;
 
   const refresh = useCallback(async () => {
     setError("");
@@ -250,27 +299,55 @@ export default function Tegger() {
 
   useEffect(() => {
     return () => {
-      if (photoPreview) URL.revokeObjectURL(photoPreview);
+      if (photoPreviewRu) URL.revokeObjectURL(photoPreviewRu);
+      if (photoPreviewPl) URL.revokeObjectURL(photoPreviewPl);
     };
-  }, [photoPreview]);
+  }, [photoPreviewRu, photoPreviewPl]);
 
-  const onPickPhoto = (event) => {
+  useEffect(() => {
+    if (!mentionCount) {
+      setLangStats(null);
+      return undefined;
+    }
+    const timer = setTimeout(() => {
+      teggerClient.teggers
+        .languagePreview(usernamesText)
+        .then((data) => setLangStats(data?.languages || null))
+        .catch(() => setLangStats(null));
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [usernamesText, mentionCount]);
+
+  const onPickPhoto = (lang) => (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhoto(file);
-    setPhotoPreview(URL.createObjectURL(file));
+    if (lang === "pl") {
+      if (photoPreviewPl) URL.revokeObjectURL(photoPreviewPl);
+      setPhotoPl(file);
+      setPhotoPreviewPl(URL.createObjectURL(file));
+    } else {
+      if (photoPreviewRu) URL.revokeObjectURL(photoPreviewRu);
+      setPhotoRu(file);
+      setPhotoPreviewRu(URL.createObjectURL(file));
+    }
   };
 
   const resetForm = () => {
     setUsernamesText("");
-    setCaption("");
+    setMessageLang("ru");
+    setCaptionRu("");
+    setCaptionPl("");
     setButtonUrl("");
-    setButtonText("Открыть");
+    setButtonTextRu("Открыть");
+    setButtonTextPl("Otwórz");
     setButtonColor("#2AABEE");
-    setPhoto(null);
-    if (photoPreview) URL.revokeObjectURL(photoPreview);
-    setPhotoPreview("");
+    setPhotoRu(null);
+    setPhotoPl(null);
+    if (photoPreviewRu) URL.revokeObjectURL(photoPreviewRu);
+    if (photoPreviewPl) URL.revokeObjectURL(photoPreviewPl);
+    setPhotoPreviewRu("");
+    setPhotoPreviewPl("");
+    setLangStats(null);
   };
 
   const handleCreate = async () => {
@@ -282,11 +359,14 @@ export default function Tegger() {
       const created = await teggerClient.teggers.create({
         senderId,
         usernames: usernamesText,
-        caption,
+        captionRu,
+        captionPl,
         buttonUrl,
-        buttonText,
+        buttonTextRu,
+        buttonTextPl,
         buttonColor,
-        file: photo,
+        file: photoRu,
+        filePl: photoPl || undefined,
       });
       setNotice("Тегер создан. Можно запускать.");
       resetForm();
@@ -349,7 +429,7 @@ export default function Tegger() {
     <div>
       <PageHeader
         title="Тегер"
-        subtitle="Фото, текст и кнопка. Отметки как в оригинальном тегере: 2–3 человека в одной истории"
+        subtitle="PL и RU: фото, текст и кнопка по языку из базы. В одной истории 2–3 отметки одной мови"
       >
         <BrandButton variant="secondary" onClick={refresh} disabled={loading}>
           <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} strokeWidth={2} />
@@ -376,7 +456,7 @@ export default function Tegger() {
           <div>
             <h2 className="text-base font-semibold tracking-tight">Новый тегер</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Выбери аккаунт, вставь @username, загрузи фото и при желании ссылку.
+              Заполни RU и PL. Язык берётся из CRM (мініап); без мови в профилі — RU.
             </p>
           </div>
 
@@ -394,27 +474,68 @@ export default function Tegger() {
 
           <Field
             label="Отметки"
-            hint={`${mentionCount} пользователей · через пробел, запятую или с новой строки`}
+            hint={`${mentionCount} username · @список или вставка CSV (telegram_id,username) — берём только username`}
           >
             <textarea
               value={usernamesText}
               onChange={(event) => setUsernamesText(event.target.value)}
-              rows={5}
-              placeholder={"@user1\n@user2\n@user3"}
+              rows={8}
+              placeholder={"telegram_id,username\n1002548271,Nastya_grabb\n\nили @user1 @user2"}
               className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/25"
             />
           </Field>
 
-          <Field label="Текст истории" hint="Будет над отметками">
-            <textarea
-              value={caption}
-              onChange={(event) => setCaption(event.target.value)}
-              rows={3}
-              maxLength={800}
-              placeholder="Короткий текст к истории"
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/25"
-            />
-          </Field>
+          {langStats ? (
+            <p className="text-xs text-muted-foreground">
+              По базе: PL {langStats.pl || 0} · RU {langStats.ru || 0} · н/д{" "}
+              {langStats.unknown || 0} (н/д получат RU)
+            </p>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              ["ru", "RU"],
+              ["pl", "PL"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setMessageLang(key)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border transition",
+                  messageLang === key
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-muted/50"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {messageLang === "ru" ? (
+            <Field label="Текст истории (RU)" hint="Будет над отметками для RU-аудитории">
+              <textarea
+                value={captionRu}
+                onChange={(event) => setCaptionRu(event.target.value)}
+                rows={3}
+                maxLength={800}
+                placeholder="Текст на русском"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/25"
+              />
+            </Field>
+          ) : (
+            <Field label="Текст истории (PL)" hint="Для польской аудитории">
+              <textarea
+                value={captionPl}
+                onChange={(event) => setCaptionPl(event.target.value)}
+                rows={3}
+                maxLength={800}
+                placeholder="Tekst po polsku"
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/25"
+              />
+            </Field>
+          )}
 
           <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
             <div>
@@ -430,12 +551,19 @@ export default function Tegger() {
                 placeholder="https://t.me/your_bot"
               />
             </Field>
-            <Field label="Текст кнопки" hint="До 40 символов">
+            <Field
+              label={messageLang === "pl" ? "Текст кнопки (PL)" : "Текст кнопки (RU)"}
+              hint="До 40 символов · отдельно для PL и RU"
+            >
               <TextInput
-                value={buttonText}
-                onChange={(event) => setButtonText(event.target.value)}
+                value={messageLang === "pl" ? buttonTextPl : buttonTextRu}
+                onChange={(event) =>
+                  messageLang === "pl"
+                    ? setButtonTextPl(event.target.value)
+                    : setButtonTextRu(event.target.value)
+                }
                 maxLength={40}
-                placeholder="Открыть магазин"
+                placeholder={messageLang === "pl" ? "Otwórz sklep" : "Открыть магазин"}
                 disabled={!buttonUrl.trim()}
               />
             </Field>
@@ -487,22 +615,30 @@ export default function Tegger() {
                       })(),
                   }}
                 >
-                  {buttonText.trim() || "Открыть"}
+                  {(messageLang === "pl" ? buttonTextPl : buttonTextRu).trim() ||
+                    (messageLang === "pl" ? "Otwórz" : "Открыть")}
                 </div>
               </div>
             )}
           </div>
 
-          <Field label="Фото">
+          <Field
+            label={messageLang === "pl" ? "Фото (PL)" : "Фото (RU)"}
+            hint={
+              messageLang === "ru"
+                ? "RU обязательно. PL — переключи на PL или будет то же фото"
+                : "Отдельное фото для PL (иначе при публикации — как RU)"
+            }
+          >
             <label
               className={cn(
                 "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-8 text-center transition-colors hover:bg-muted/50",
-                photoPreview && "border-solid"
+                (messageLang === "pl" ? photoPreviewPl : photoPreviewRu) && "border-solid"
               )}
             >
-              {photoPreview ? (
+              {(messageLang === "pl" ? photoPreviewPl : photoPreviewRu) ? (
                 <img
-                  src={photoPreview}
+                  src={messageLang === "pl" ? photoPreviewPl : photoPreviewRu}
                   alt="Превью"
                   className="max-h-56 w-auto rounded-xl object-contain"
                 />
@@ -516,11 +652,13 @@ export default function Tegger() {
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 className="hidden"
-                onChange={onPickPhoto}
+                onChange={onPickPhoto(messageLang)}
               />
             </label>
-            {photo && (
-              <div className="mt-2 text-xs text-muted-foreground truncate">{photo.name}</div>
+            {(messageLang === "pl" ? photoPl : photoRu) && (
+              <div className="mt-2 text-xs text-muted-foreground truncate">
+                {(messageLang === "pl" ? photoPl : photoRu)?.name}
+              </div>
             )}
           </Field>
 
@@ -569,10 +707,18 @@ export default function Tegger() {
                   </div>
                 </div>
 
-                {selected.caption && (
+                {(selected.captionRu || selected.caption) && (
                   <div>
-                    <div className="brand-eyebrow text-[10px] mb-1">Текст</div>
-                    <p className="whitespace-pre-wrap text-muted-foreground">{selected.caption}</p>
+                    <div className="brand-eyebrow text-[10px] mb-1">Текст RU</div>
+                    <p className="whitespace-pre-wrap text-muted-foreground">
+                      {selected.captionRu || selected.caption}
+                    </p>
+                  </div>
+                )}
+                {selected.captionPl && (
+                  <div>
+                    <div className="brand-eyebrow text-[10px] mb-1">Текст PL</div>
+                    <p className="whitespace-pre-wrap text-muted-foreground">{selected.captionPl}</p>
                   </div>
                 )}
 
@@ -586,7 +732,10 @@ export default function Tegger() {
                         color: "#fff",
                       }}
                     >
-                      {selected.buttonText || "Открыть"}
+                      {selected.buttonTextRu || selected.buttonText || "Открыть"}
+                      {selected.buttonTextPl
+                        ? ` · PL: ${selected.buttonTextPl}`
+                        : ""}
                     </div>
                     <a
                       href={selected.buttonUrl}

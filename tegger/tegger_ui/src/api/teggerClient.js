@@ -95,23 +95,48 @@ export const teggerClient = {
       request(`/api/teggers/${encodeURIComponent(id)}/start`, { method: "POST" }),
     stop: (id) =>
       request(`/api/teggers/${encodeURIComponent(id)}/stop`, { method: "POST" }),
+    languagePreview: async (usernames) => {
+      const body = new FormData();
+      body.append("usernames", usernames || "");
+      const response = await fetch(`${API_URL}/api/teggers/language-preview`, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          errorMessageFromDetail(data.detail, `HTTP ${response.status}`)
+        );
+      }
+      return data;
+    },
     create: async ({
       senderId,
       usernames,
-      caption,
+      captionRu,
+      captionPl,
       buttonUrl,
-      buttonText,
+      buttonTextRu,
+      buttonTextPl,
       buttonColor,
       file,
+      filePl,
     }) => {
       const body = new FormData();
       body.append("senderId", senderId || "");
       body.append("usernames", usernames || "");
-      body.append("caption", caption || "");
+      body.append("captionRu", captionRu || "");
+      body.append("captionPl", captionPl || "");
+      body.append("caption", captionRu || "");
       body.append("buttonUrl", buttonUrl || "");
-      body.append("buttonText", buttonText || "");
+      body.append("buttonTextRu", buttonTextRu || "");
+      body.append("buttonTextPl", buttonTextPl || "");
+      body.append("buttonText", buttonTextRu || "");
       body.append("buttonColor", buttonColor || "#2AABEE");
+      body.append("defaultLanguage", "ru");
       if (file) body.append("file", file);
+      if (filePl) body.append("filePl", filePl);
       const response = await fetch(`${API_URL}/api/teggers`, {
         method: "POST",
         credentials: "include",
