@@ -651,16 +651,13 @@ export async function publishShiftStockReconcile({
     return { ok: true, skipped: true, reason: "ALREADY_CHECKED" };
   }
 
-  const settled = dryRun ? true : await waitForAssortmentWrites(point);
+  if (!dryRun) {
+    await waitForAssortmentWrites(point);
+  }
   const syncIssues = dryRun
     ? { pending: [], failed: [] }
     : await listAssortmentSyncIssuesForShift(point, dayKey);
   const syncWarnings = buildAssortmentSyncWarningLines(syncIssues);
-  if (!settled && !syncWarnings.length) {
-    syncWarnings.push(
-      "⚠️ Запись в «Ассортимент» ещё выполняется — сверка могла не увидеть расхождение."
-    );
-  }
 
   const tabTitle = reportTabTitleForDayKey(dayKey);
   let reportRows;
