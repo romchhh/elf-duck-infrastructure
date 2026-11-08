@@ -194,10 +194,11 @@ export async function maybeScheduleFirstOrderServiceReview(order) {
     const runAt = randomRunAt();
 
     try {
-      await invitesCollection().insertOne({
+        await invitesCollection().insertOne({
         telegramId,
         orderId,
         pickupPointId,
+        language: "",
         status: "scheduled",
         runAt,
         sentAt: null,
@@ -223,7 +224,7 @@ export async function maybeScheduleFirstOrderServiceReview(order) {
 
 export async function sendServiceReviewInviteTelegram(invite, user) {
   const telegramId = String(invite?.telegramId || "").trim();
-  const language = resolveUserLanguage(user);
+  const language = resolveUserLanguage(user, invite?.language);
   const payload = buildServiceReviewTelegramPayload(language);
 
   if (!payload.imageExists) {
@@ -245,6 +246,8 @@ export async function sendServiceReviewInviteTelegram(invite, user) {
     { source: fs.createReadStream(payload.imagePath) },
     extra
   );
+
+  return { language: payload.language };
 }
 
 /**
@@ -302,12 +305,26 @@ export async function triggerServiceReviewTestInvite(telegramId) {
       .select({ language: 1 })
       .lean();
 
-    await sendServiceReviewInviteTelegram({ telegramId: id }, user);
+    const sentPayload = await sendServiceReviewInviteTelegram(
+      { telegramId: id },
+      user
+    );
+
+    await invitesCollection().updateOne(
+      { telegramId: id },
+      {
+        $set: {
+          language: sentPayload?.language || resolveUserLanguage(user),
+          updatedAt: new Date(),
+        },
+      }
+    );
 
     return {
       ok: true,
       orderId: orderId || null,
       pickupPointId: pickupPointId || null,
+      language: sentPayload?.language || resolveUserLanguage(user),
     };
   } catch (error) {
     console.error("triggerServiceReviewTestInvite error:", error);
@@ -355,12 +372,13 @@ export async function processDueServiceReviewInvites() {
         .lean();
 
       try {
-        await sendServiceReviewInviteTelegram(invite, user);
+        const sentPayload = await sendServiceReviewInviteTelegram(invite, user);
         await invitesCollection().updateOne(
           { _id: invite._id },
           {
             $set: {
               status: "sent",
+              language: sentPayload?.language || resolveUserLanguage(user),
               sentAt: new Date(),
               updatedAt: new Date(),
               lastError: "",
@@ -414,7 +432,11 @@ export async function getServiceReviewContext(telegramId) {
   const user = await User.findOne({ telegramId: id })
     .select({ language: 1 })
     .lean();
-  const language = resolveUserLanguage(user);
+  // Та сама мова, що в повідомленні бота (збережена при відправці).
+  const language =
+    invite.language === "pl" || invite.language === "ru"
+      ? invite.language
+      : resolveUserLanguage(user);
 
   const completed = invite.status === "completed";
   const canSubmit = invite.status === "sent";
