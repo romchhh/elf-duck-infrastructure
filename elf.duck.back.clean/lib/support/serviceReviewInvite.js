@@ -459,7 +459,7 @@ export async function getServiceReviewContext(telegramId) {
   const ratings = RATING_KEYS.map((key) => ({
     key,
     label: ratingLabelFor(language, key),
-    emoji: key === "great" ? "🤩" : key === "good" ? "🙂" : "😕",
+    emoji: key === "great" ? "😍" : key === "good" ? "😐" : "😞",
     needsDetails: key !== "great",
   }));
 

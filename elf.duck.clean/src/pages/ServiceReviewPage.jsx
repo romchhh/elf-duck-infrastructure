@@ -3,6 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useUser } from "../UserContext";
 import { setCurrentLanguage } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
+import bannerRu from "../assets/serviceReviewBannerRu.png";
+import bannerPl from "../assets/serviceReviewBannerPl.png";
+import zlotyIcon from "../assets/zlotyIcon.webp";
 import "../styles/ServiceReviewPage.css";
 
 const API_URL =
@@ -13,24 +16,24 @@ const API_URL =
 const COPY = {
   ru: {
     loading: "Загрузка…",
-    badge: "15 zł на кэшбек",
-    title: "Как вам наш сервис?",
-    subtitle: "Выберите оценку — после отзыва сразу начислим 15 zł на баланс.",
+    badge: "+15 zł на баланс",
+    title: "Оцени наш сервис",
+    subtitle: "Честный отзыв = сразу 15 zł кэшбека на баланс в боте",
     unavailableTitle: "Оценка недоступна",
     unavailableText:
       "Ссылка активна после первого заказа, когда придёт сообщение от бота.",
     toShop: "В магазин",
     thanks: "Спасибо за отзыв!",
-    rewarded: (zl) => `На баланс кэшбека начислено ${zl} zł.`,
+    rewarded: (zl) => `${zl} zł уже на твоём кэшбек-балансе`,
     continueShopping: "Продолжить покупки",
     order: "Заказ",
     point: "Точка",
-    detailsHint: "Расскажите подробнее — что можно улучшить?",
-    detailsPlaceholder: "Напишите пару слов о заказе…",
-    detailsShort: (n) => `Расскажите подробнее (минимум ${n} символа).`,
-    submit: "Отправить и получить 15 zł",
+    detailsHint: "Расскажи подробнее — что улучшить?",
+    detailsPlaceholder: "Пара слов о заказе…",
+    detailsShort: (n) => `Напиши чуть подробнее (минимум ${n} символа).`,
+    submit: "Отправить · получить 15 zł",
     submitting: "Отправка…",
-    back: "← Назад",
+    back: "← Назад к оценкам",
     loadError: "Не удалось загрузить форму отзыва.",
     submitError: "Не удалось отправить отзыв. Попробуйте позже.",
     ratings: {
@@ -41,25 +44,24 @@ const COPY = {
   },
   pl: {
     loading: "Ładowanie…",
-    badge: "15 zł cashback",
-    title: "Jak oceniasz nasz serwis?",
-    subtitle:
-      "Wybierz ocenę — po wysłaniu od razu dodamy 15 zł na Twój bilans.",
+    badge: "+15 zł na bilans",
+    title: "Oceń nasz serwis",
+    subtitle: "Szczera opinia = od razu 15 zł cashback na bilans w bocie",
     unavailableTitle: "Ocena niedostępna",
     unavailableText:
       "Link jest aktywny po pierwszym zamówieniu, gdy bot wyśle wiadomość.",
     toShop: "Do sklepu",
     thanks: "Dziękujemy za opinię!",
-    rewarded: (zl) => `Na saldo cashback dodano ${zl} zł.`,
+    rewarded: (zl) => `${zl} zł już jest na Twoim saldzie cashback`,
     continueShopping: "Kontynuuj zakupy",
     order: "Zamówienie",
     point: "Punkt",
-    detailsHint: "Napisz więcej — co możemy poprawić?",
+    detailsHint: "Napisz więcej — co poprawić?",
     detailsPlaceholder: "Kilka słów o zamówieniu…",
     detailsShort: (n) => `Napisz więcej (minimum ${n} znaki).`,
-    submit: "Wyślij i odbierz 15 zł",
+    submit: "Wyślij · odbierz 15 zł",
     submitting: "Wysyłanie…",
-    back: "← Wróć",
+    back: "← Wróć do ocen",
     loadError: "Nie udało się wczytać formularza opinii.",
     submitError: "Nie udało się wysłać opinii. Spróbuj później.",
     ratings: {
@@ -68,6 +70,12 @@ const COPY = {
       bad: "Nie podobało mi się",
     },
   },
+};
+
+const RATING_META = {
+  great: { emoji: "😍", tone: "great" },
+  good: { emoji: "😐", tone: "good" },
+  bad: { emoji: "😞", tone: "bad" },
 };
 
 function copyFor(lang) {
@@ -106,6 +114,7 @@ export default function ServiceReviewPage() {
   const [doneReward, setDoneReward] = useState(null);
 
   const copy = useMemo(() => copyFor(lang), [lang]);
+  const bannerSrc = lang === "pl" ? bannerPl : bannerRu;
 
   useEffect(() => {
     paintTelegramChrome();
@@ -153,16 +162,16 @@ export default function ServiceReviewPage() {
     };
   }, []);
 
-  const ratings = useMemo(() => {
-    const keys = ["great", "good", "bad"];
-    const emojis = { great: "🤩", good: "🙂", bad: "😕" };
-    return keys.map((key) => ({
-      key,
-      emoji: emojis[key],
-      label: copy.ratings[key],
-      needsDetails: key !== "great",
-    }));
-  }, [copy]);
+  const ratings = useMemo(
+    () =>
+      ["great", "good", "bad"].map((key) => ({
+        key,
+        emoji: RATING_META[key].emoji,
+        label: copy.ratings[key],
+        needsDetails: key !== "great",
+      })),
+    [copy]
+  );
 
   const minDetails = Number(context?.minDetailsChars || 3);
 
@@ -247,43 +256,65 @@ export default function ServiceReviewPage() {
 
   if (!context?.eligible && !context?.completed) {
     return shell(
-      <div className="serviceReviewDone">
-        <div className="serviceReviewDoneEmoji">👀</div>
-        <p className="serviceReviewDoneTitle">{copy.unavailableTitle}</p>
-        <p className="serviceReviewDoneText">{copy.unavailableText}</p>
-        <button
-          type="button"
-          className="serviceReviewSubmit"
-          onClick={() => navigate("/")}
-        >
-          {copy.toShop}
-        </button>
-      </div>
+      <>
+        <div className="serviceReviewBanner">
+          <img src={bannerSrc} alt="" />
+        </div>
+        <div className="serviceReviewDone">
+          <div className="serviceReviewDoneEmoji">👀</div>
+          <p className="serviceReviewDoneTitle">{copy.unavailableTitle}</p>
+          <p className="serviceReviewDoneText">{copy.unavailableText}</p>
+          <button
+            type="button"
+            className="serviceReviewSubmit"
+            onClick={() => navigate("/")}
+          >
+            {copy.toShop}
+          </button>
+        </div>
+      </>
     );
   }
 
   if (context?.completed || step === "done") {
     const reward = doneReward ?? context?.rewardZl ?? 15;
     return shell(
-      <div className="serviceReviewDone">
-        <div className="serviceReviewDoneEmoji">💚</div>
-        <p className="serviceReviewDoneTitle">{copy.thanks}</p>
-        <p className="serviceReviewDoneText">{copy.rewarded(reward)}</p>
-        <button
-          type="button"
-          className="serviceReviewSubmit"
-          onClick={() => navigate("/")}
-        >
-          {copy.continueShopping}
-        </button>
-      </div>
+      <>
+        <div className="serviceReviewBanner">
+          <img src={bannerSrc} alt="" />
+        </div>
+        <div className="serviceReviewDone">
+          <div className="serviceReviewDoneEmoji">💚</div>
+          <p className="serviceReviewDoneTitle">{copy.thanks}</p>
+          <p className="serviceReviewDoneText">{copy.rewarded(reward)}</p>
+          <button
+            type="button"
+            className="serviceReviewSubmit"
+            onClick={() => navigate("/")}
+          >
+            {copy.continueShopping}
+          </button>
+        </div>
+      </>
     );
   }
 
   return shell(
     <>
+      <div className="serviceReviewBanner">
+        <img src={bannerSrc} alt="" />
+      </div>
+
       <div className="serviceReviewHero">
-        <div className="serviceReviewBadge">💸 {copy.badge}</div>
+        <div className="serviceReviewBadge">
+          <img
+            className="serviceReviewBadgeIcon"
+            src={zlotyIcon}
+            alt=""
+            aria-hidden
+          />
+          {copy.badge}
+        </div>
         <h1 className="serviceReviewTitle">{copy.title}</h1>
         <p className="serviceReviewSubtitle">{copy.subtitle}</p>
       </div>
