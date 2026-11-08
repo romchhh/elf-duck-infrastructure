@@ -41,11 +41,11 @@ const RATING_LABELS = {
 
 const INVITE_CAPTION = {
   ru:
-    "Кажется, ты кое-что забыл 👀\n\n" +
+    "<b>Кажется, ты кое-что забыл 👀</b>\n\n" +
     "Нам важно получить от тебя обратную связь и понять, как ты оцениваешь качество нашей работы 💬\n\n" +
     "Будем благодарны за твой отзыв — после его отправки мы автоматически начислим <b>15 zł на твой баланс в боте</b> 💸",
   pl:
-    "Wygląda na to, że o czymś zapomniałeś/aś 👀\n\n" +
+    "<b>Wygląda na to, że o czymś zapomniałeś/aś 👀</b>\n\n" +
     "Zależy nam na Twojej opinii i na tym, jak oceniasz jakość naszej pracy 💬\n\n" +
     "Będziemy wdzięczni za opinię — po jej wysłaniu automatycznie dodamy <b>15 zł na Twój bilans w bocie</b> 💸",
 };
