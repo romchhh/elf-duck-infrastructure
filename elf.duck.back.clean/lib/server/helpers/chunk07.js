@@ -1562,6 +1562,17 @@ export async function changePickupOrderStatusByManager(
     console.error("first purchase automation import error:", e);
   }
 
+  try {
+    const { maybeScheduleFirstOrderServiceReview } = await import(
+      "../../support/serviceReviewInvite.js"
+    );
+    maybeScheduleFirstOrderServiceReview(completedOrder).catch((err) => {
+      console.error("first order service review hook error:", err);
+    });
+  } catch (e) {
+    console.error("first order service review import error:", e);
+  }
+
   return completedOrder;
 }
 

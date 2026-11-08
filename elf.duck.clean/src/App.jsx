@@ -10,6 +10,7 @@ const ReferralPage = React.lazy(() => import("./pages/ReferralPage"));
 const FavoritePage = React.lazy(() => import("./pages/FavoritePage"));
 const ManagersPage = React.lazy(() => import("./pages/ManagersPage"));
 const PromoPage = React.lazy(() => import("./pages/PromoPage"));
+const ServiceReviewPage = React.lazy(() => import("./pages/ServiceReviewPage"));
 
 const routeFallbackStyle = {
   flex: 1,
@@ -81,6 +82,7 @@ const App = () => {
           <Route path="/favorites" element={<FavoritePage />} />
           <Route path="/managers" element={<ManagersPage />} />
           <Route path="/promo" element={<PromoPage />} />
+          <Route path="/service-review" element={<ServiceReviewPage />} />
         </Routes>
       </Suspense>
     </DesktopShell>

@@ -379,6 +379,17 @@ export async function completeInpostShipment(
     } catch (e) {
       console.error("first purchase automation (inpost) import error:", e);
     }
+
+    try {
+      const { maybeScheduleFirstOrderServiceReview } = await import(
+        "../../support/serviceReviewInvite.js"
+      );
+      maybeScheduleFirstOrderServiceReview(order).catch((err) => {
+        console.error("first order service review (inpost) hook error:", err);
+      });
+    } catch (e) {
+      console.error("first order service review (inpost) import error:", e);
+    }
   }
 
   let clientNotified = Boolean(

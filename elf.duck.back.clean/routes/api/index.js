@@ -11,6 +11,7 @@ import { registerRoutes as registerAdminAnalytics } from "./adminAnalytics.js";
 
 import { registerRoutes as registerGiveaway } from "./giveaway.js";
 import { registerRoutes as registerComplaints } from "./complaints.js";
+import { registerRoutes as registerServiceReview } from "./serviceReview.js";
 
 export function registerShopApiRoutes(app) {
   registerCourier(app);
@@ -22,6 +23,7 @@ export function registerShopApiRoutes(app) {
   registerOrders(app);
   registerGiveaway(app);
   registerComplaints(app);
+  registerServiceReview(app);
   registerAdminProducts(app);
   registerBroadcast(app);
   registerAdminAnalytics(app);

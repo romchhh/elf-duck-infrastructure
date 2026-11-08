@@ -15,7 +15,10 @@ import {
   userBots,
 } from "../server/botRegistry.js";
 import { getTelegramBotTokens } from "./botTokens.js";
-import { handleGiveawayTestAdminCommandSafe } from "./testShopBot.js";
+import {
+  handleGiveawayTestAdminCommandSafe,
+  handleServiceReviewTestCommandSafe,
+} from "./testShopBot.js";
 import {
   getActiveUserBots,
   getShopBotByIndex,
@@ -1274,6 +1277,7 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
   });
 
   activeBot.command(["testbotadmin", "test"], handleGiveawayTestAdminCommandSafe);
+  activeBot.command("testreview", handleServiceReviewTestCommandSafe);
 
   async function notifyPickupClientAfterManagerPaymentStatus(
     order,

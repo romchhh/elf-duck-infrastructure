@@ -12,6 +12,7 @@ import {
   processDueFirstPurchaseAutomations,
   processSleepingCustomerAutomations,
 } from "../crm/pushAutomations.js";
+import { processDueServiceReviewInvites } from "../support/serviceReviewInvite.js";
 import { reconcileGhostReservedStock } from "./reconcileGhostReserved.js";
 import helpers from "./helpers/index.js";
 
@@ -162,6 +163,18 @@ export function startServerIntervals() {
       console.error("first purchase automation initial run error:", e);
     });
   }, 15 * 1000);
+
+  setInterval(() => {
+    processDueServiceReviewInvites().catch((e) => {
+      console.error("service review invite due error:", e);
+    });
+  }, 30 * 1000);
+
+  setTimeout(() => {
+    processDueServiceReviewInvites().catch((e) => {
+      console.error("service review invite initial run error:", e);
+    });
+  }, 20 * 1000);
 
   setInterval(() => {
     processSleepingCustomerAutomations().catch((e) => {

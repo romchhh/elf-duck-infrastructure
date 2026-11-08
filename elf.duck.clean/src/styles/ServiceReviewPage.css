@@ -1,0 +1,151 @@
+.serviceReviewPage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 14px calc(20px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  color: #fff;
+  background: #000;
+}
+
+.serviceReviewHero {
+  text-align: center;
+  margin-bottom: 18px;
+}
+
+.serviceReviewHeroEmoji {
+  font-size: 42px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.serviceReviewTitle {
+  margin: 0 0 8px;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.serviceReviewSubtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.serviceReviewMeta {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.serviceReviewOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.serviceReviewOption {
+  width: 100%;
+  text-align: left;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  padding: 14px 14px;
+  font-size: 14px;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.serviceReviewOptionSelected {
+  border-color: rgba(120, 220, 140, 0.65);
+  background: rgba(80, 180, 110, 0.12);
+}
+
+.serviceReviewOptionEmoji {
+  margin-right: 8px;
+}
+
+.serviceReviewTextarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+}
+
+.serviceReviewTextarea:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.serviceReviewError {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #ff8f8f;
+}
+
+.serviceReviewSubmit {
+  width: 100%;
+  border: none;
+  border-radius: 16px;
+  padding: 14px 16px;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 13px;
+  color: #0b1a10;
+  background: linear-gradient(135deg, #9dffbf, #6fe89a);
+  cursor: pointer;
+}
+
+.serviceReviewSubmit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.serviceReviewDone {
+  text-align: center;
+  margin-top: 24px;
+  padding: 22px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.serviceReviewDoneTitle {
+  margin: 0 0 8px;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 15px;
+}
+
+.serviceReviewDoneText {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.serviceReviewLoading {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+}

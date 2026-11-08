@@ -104,3 +104,61 @@ export async function handleGiveawayTestAdminCommandSafe(ctx) {
     await ctx.reply(botStartErrorText(errLang)).catch(() => {});
   }
 }
+
+/** /testreview — те саме повідомлення «Оцініть сервіс», що після 1-го замовлення */
+export async function handleServiceReviewTestCommand(ctx) {
+  if (!isGiveawayTestAdmin(ctx.from?.id)) {
+    await ctx.reply(
+      "Команда только для администраторов (ADMIN_IDS / SUPER_ADMIN_IDS)."
+    );
+    return;
+  }
+
+  const tgId = String(ctx.from?.id || "").trim();
+  if (!tgId) {
+    await ctx.reply("Не удалось определить Telegram ID.");
+    return;
+  }
+
+  const { triggerServiceReviewTestInvite } = await import(
+    "../support/serviceReviewInvite.js"
+  );
+
+  const result = await triggerServiceReviewTestInvite(tgId);
+  if (!result.ok) {
+    const reason = String(result.reason || "ERROR");
+    const hint =
+      reason === "WEBAPP_URL_MISSING"
+        ? "\n\nПроверь WEBAPP_URL / APP_URL на сервере."
+        : reason.startsWith("SERVICE_REVIEW_IMAGE_MISSING")
+          ? "\n\nНет promo-ru.png / promo-pl.png в assets/service-review."
+          : "";
+    await ctx.reply(`Не удалось отправить тест: ${reason}${hint}`);
+    return;
+  }
+
+  const lang =
+    normalizeAppLanguage(ctx.from?.language_code) || "ru";
+  const extra =
+    lang === "pl"
+      ? "\n\nOtwórz przycisk na zdjęciu powyżej lub miniap /service-review."
+      : "\n\nОткрой кнопку на фото выше или миниап /service-review.";
+
+  await ctx.reply(
+    `✅ Тест отзыва после 1-го заказа отправлен.${extra}\n\n` +
+      (result.orderId
+        ? `Привязка к заказу: ${result.orderId}`
+        : "Завершённых заказов нет — точка будет пустой (для UI достаточно).`)
+  );
+}
+
+export async function handleServiceReviewTestCommandSafe(ctx) {
+  try {
+    await handleServiceReviewTestCommand(ctx);
+  } catch (error) {
+    console.error("[bot] testreview command error:", error);
+    await ctx
+      .reply("Ошибка /testreview. Смотри логи API.")
+      .catch(() => {});
+  }
+}

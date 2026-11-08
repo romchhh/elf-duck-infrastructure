@@ -28,6 +28,9 @@ const customerReviewSchema = new mongoose.Schema(
 
     source: { type: String, default: "" },
 
+    rating: { type: String, default: "" },
+    ratingLabel: { type: String, default: "" },
+
     imageUrls: { type: [String], default: [] },
     imageCount: { type: Number, default: 0 },
 
