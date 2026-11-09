@@ -217,7 +217,9 @@ async function upsertProduct(spec) {
     titleModal: spec.titleModal,
     price: Number(existing?.price > 0 ? existing.price : spec.price),
     listPriceZl: Number(existing?.listPriceZl || 0),
-    cardBgUrl: "",
+    cardBgUrl: String(
+      existing?.cardBgUrl || spec.cardBgUrl || ""
+    ).trim(),
     cardDuckUrl: cardUrl(spec.cardFile),
     orderImgUrl: cardUrl(spec.orderFile || spec.cardFile),
     classCardDuck: "productCardImageRight",
@@ -268,6 +270,12 @@ async function main() {
   await mongoose.connect(uri, { dbName });
 
   try {
+    // Ті самі фони карток, що в каталозі (як у GH 33K / YAMI).
+    const DISPOSABLE_BG =
+      "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreihjucgk2vsq5x5u3y3joot5fp42nbgql32mjkivjkmryhtdxrerka";
+    const LIQUID_BG =
+      "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiavqxbdav3hk2rqcokp7iobnb462rjcyaxfg3ejrg5zindszv6ws4";
+
     await upsertProduct({
       productKey: "merry-mi-blade-30k",
       categoryKey: "disposables",
@@ -276,6 +284,7 @@ async function main() {
       titleModal: "MERRY MI BLADE 30K",
       price: 95,
       sortOrder: 28,
+      cardBgUrl: DISPOSABLE_BG,
       cardFile: "merry-mi-blade-30k-card.png",
       orderFile: "merry-mi-blade-30k-order.png",
       flavorLabels: BLADE_FLAVORS,
@@ -289,6 +298,7 @@ async function main() {
       titleModal: "LIQUID MERRY MI",
       price: 55,
       sortOrder: 35,
+      cardBgUrl: LIQUID_BG,
       cardFile: "merry-mi-card.png",
       orderFile: "merry-mi-order.png",
       flavorLabels: LIQUID_FLAVORS,
