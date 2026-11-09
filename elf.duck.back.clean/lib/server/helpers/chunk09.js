@@ -164,6 +164,7 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
     // Assortment header short name; report day uses «MERRY MI 30K».
     "merry-mi": "MERRY MI",
     "merry-mi-30k": "MERRY MI",
+    "merry-mi-blade-30k": "MERRY MI BLADE 30K",
   };
 
 const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([

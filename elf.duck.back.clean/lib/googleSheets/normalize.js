@@ -185,8 +185,14 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "hqd-30-ml": ["LIQ HQD", "HQD"],
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
     "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI", "YAMI 5%", "YAMI 7%"],
-    "merry-mi": ["MERRY MI", "MERRY MI 30K"],
+    "merry-mi": ["MERRY MI", "LIQ MERRY MI"],
     "merry-mi-30k": ["MERRY MI", "MERRY MI 30K"],
+    "merry-mi-blade-30k": [
+      "MERRY MI BLADE 30K",
+      "MERRY MI BLADE",
+      "MERRY MI 30K",
+      "MERRY MI",
+    ],
     // Голий «OXVA» — точний заголовок блоку на Ассортимент (не fuzzy на POD).
     "oxva-30-ml-20-mg": ["OXVA", "LIQ OXVA", "OXVA 20 MG", "OXVA 30 ML"],
     "oxva-pod": ["OXVA POD"],
