@@ -511,11 +511,16 @@ export async function processOrdersWithoutPaymentConfirm() {
           .trim()
           .toLowerCase();
 
+        const freshPaymentMethod = String(
+          freshOrder?.payment?.method || ""
+        ).trim();
+
         const canSendPaymentReminder =
           ["created", "processing"].includes(
             freshOrderStatus
           ) &&
-          freshPaymentStatus === "unpaid";
+          freshPaymentStatus === "unpaid" &&
+          !freshPaymentMethod;
 
         if (!canSendPaymentReminder) {
           continue;

@@ -837,26 +837,42 @@ app.post("/orders/confirm", async (req, res) => {
           }
         : { packageUnits: 0, deliveryFeeZl: 0, subsidyZl: 0 };
 
-    const duplicateCreatedAfter = new Date(Date.now() - 15 * 1000);
+    // Вікно як payment timeout (~10 хв): клієнт після чат-кнопки «оплата»
+    // часто оформлює той самий кошик знову → другий orderNo.
+    const duplicateCreatedAfter = new Date(Date.now() - 10 * 60 * 1000);
 
-    const currentOrderFingerprint = JSON.stringify({
+    const buildOrderFingerprint = (src) =>
+      JSON.stringify({
+        telegramId: String(src?.telegramId || src?.userTelegramId || "").trim(),
+        totalZl: Number(Number(src?.totalZl || 0).toFixed(2)),
+        deliveryType: src?.deliveryType || null,
+        deliveryMethod: src?.deliveryMethod || null,
+        pickupPointId: src?.pickupPointId ? String(src.pickupPointId) : null,
+        arrivalTime: src?.arrivalTime ?? null,
+        deliveryTimeWindow: src?.deliveryTimeWindow ?? null,
+        courierAddress: src?.courierAddress ?? null,
+        inpostData: src?.inpostData ?? {},
+        items: (Array.isArray(src?.items) ? src.items : []).map((row) => ({
+          productKey: String(row?.productKey || ""),
+          flavors: (Array.isArray(row?.flavors) ? row.flavors : []).map((f) => ({
+            flavorKey: String(f?.flavorKey || ""),
+            qty: Number(f?.qty || 0),
+            unitPrice: Number(f?.unitPrice || 0),
+          })),
+        })),
+      });
+
+    const currentOrderFingerprint = buildOrderFingerprint({
       telegramId,
       totalZl: Number(totalZl.toFixed(2)),
       deliveryType,
       deliveryMethod,
-      pickupPointId: pickupPointId ? String(pickupPointId) : null,
+      pickupPointId,
       arrivalTime: cart.arrivalTime ?? null,
       deliveryTimeWindow: cart.deliveryTimeWindow ?? null,
       courierAddress: cart.courierAddress ?? null,
       inpostData: cart.inpostData ?? {},
-      items: orderItems.map((row) => ({
-        productKey: String(row?.productKey || ""),
-        flavors: (Array.isArray(row?.flavors) ? row.flavors : []).map((f) => ({
-          flavorKey: String(f?.flavorKey || ""),
-          qty: Number(f?.qty || 0),
-          unitPrice: Number(f?.unitPrice || 0),
-        })),
-      })),
+      items: orderItems,
     });
 
     console.time("orders/confirm duplicate check");
@@ -867,11 +883,12 @@ app.post("/orders/confirm", async (req, res) => {
         deliveryType,
         deliveryMethod,
         pickupPointId,
-        status: "created",
+        status: { $in: ["created", "processing", "assembled"] },
         createdAt: { $gte: duplicateCreatedAfter },
       },
       {
         _id: 1,
+        orderNo: 1,
         userTelegramId: 1,
         totalZl: 1,
         deliveryType: 1,
@@ -882,39 +899,33 @@ app.post("/orders/confirm", async (req, res) => {
         courierAddress: 1,
         inpostData: 1,
         items: 1,
+        payment: 1,
+        status: 1,
         createdAt: 1,
+        currency: 1,
+        bgUrl: 1,
+        methodLabel: 1,
       }
     )
       .sort({ createdAt: -1 })
       .lean();
 
     const duplicateOrder = recentDuplicateCandidates.find((existing) => {
-      const existingFingerprint = JSON.stringify({
-        telegramId: String(existing?.userTelegramId || "").trim(),
-        totalZl: Number(existing?.totalZl || 0),
-        deliveryType: existing?.deliveryType || null,
-        deliveryMethod: existing?.deliveryMethod || null,
-        pickupPointId: existing?.pickupPointId ? String(existing.pickupPointId) : null,
-        arrivalTime: existing?.arrivalTime ?? null,
-        deliveryTimeWindow: existing?.deliveryTimeWindow ?? null,
-        courierAddress: existing?.courierAddress ?? null,
-        inpostData: existing?.inpostData ?? {},
-        items: (Array.isArray(existing?.items) ? existing.items : []).map((row) => ({
-          productKey: String(row?.productKey || ""),
-          flavors: (Array.isArray(row?.flavors) ? row.flavors : []).map((f) => ({
-            flavorKey: String(f?.flavorKey || ""),
-            qty: Number(f?.qty || 0),
-            unitPrice: Number(f?.unitPrice || 0),
-          })),
-        })),
-      });
-
-      return existingFingerprint === currentOrderFingerprint;
+      return buildOrderFingerprint(existing) === currentOrderFingerprint;
     });
 
     console.timeEnd("orders/confirm duplicate check");
     if (duplicateOrder) {
-      return res.json({ ok: true, order: duplicateOrder, duplicate: true });
+      return res.json({
+        ok: true,
+        order: duplicateOrder,
+        duplicate: true,
+        paymentAlreadySubmitted: ["checking", "awaiting", "paid"].includes(
+          String(duplicateOrder?.payment?.status || "")
+            .trim()
+            .toLowerCase()
+        ),
+      });
     }
     
     console.time("orders/confirm create order")
@@ -1055,7 +1066,15 @@ app.post("/orders/confirm", async (req, res) => {
     console.timeEnd("orders/confirm total");
     res.json({ ok: true, order: created });
 
+    // Невелика затримка: клієнт часто обирає оплату в мініапі одразу після confirm —
+    // тоді sendClientOrderCreatedInfo побачить payment.status ≠ unpaid і не надішле зайве.
     Promise.resolve()
+      .then(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(resolve, 2500);
+          })
+      )
       .then(() => sendClientOrderCreatedInfo(created))
       .catch((e) => console.error("sendClientOrderCreatedInfo post-response error:", e));
 
@@ -1841,15 +1860,36 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       String(order?.payment?.managerMessageId || "").trim()
     );
 
-    if (
-      ["checking", "awaiting"].includes(priorPaymentStatus) &&
-      Number.isFinite(priorManagerMessageId) &&
-      priorManagerMessageId > 0
-    ) {
+    // Вже обрали оплату — не створюємо другий «прохід» і не дублюємо картку менеджеру.
+    if (["checking", "awaiting", "paid"].includes(priorPaymentStatus)) {
       stopPaymentReminder(order._id);
+      if (
+        ["checking", "awaiting"].includes(priorPaymentStatus) &&
+        !(Number.isFinite(priorManagerMessageId) && priorManagerMessageId > 0)
+      ) {
+        try {
+          await sendOrderCreatedNotification(order, {
+            skipClientNotification: true,
+          });
+        } catch (notifyErr) {
+          console.error(
+            "payment-check idempotent manager notify error:",
+            notifyErr
+          );
+        }
+      }
+      try {
+        await clearClientPaymentPromptButtons(order);
+      } catch (clearErr) {
+        console.error(
+          "payment-check clearClientPaymentPromptButtons error:",
+          clearErr
+        );
+      }
       return res.json({
         ok: true,
         order: order.toObject ? order.toObject() : order,
+        alreadySubmitted: true,
       });
     }
 
@@ -2045,6 +2085,15 @@ app.post("/orders/:id/payment-check", async (req, res) => {
       }
 
     );
+
+    try {
+      await clearClientPaymentPromptButtons(order);
+    } catch (clearErr) {
+      console.error(
+        "payment-check clearClientPaymentPromptButtons error:",
+        clearErr
+      );
+    }
 
     if (String(resolvedPaymentMethod || "").trim().toLowerCase() === "blik") {
       try {

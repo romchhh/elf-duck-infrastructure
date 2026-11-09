@@ -6239,6 +6239,14 @@ if (pointBlob.includes("srodmiescie")) {
                         }
 
                         const createdOrder = data?.order || null;
+                        const paymentAlreadySubmitted = Boolean(
+                          data?.paymentAlreadySubmitted ||
+                            ["checking", "awaiting", "paid"].includes(
+                              String(createdOrder?.payment?.status || "")
+                                .trim()
+                                .toLowerCase()
+                            )
+                        );
 
                         if (isGuestBrowser && createdOrder) {
                           addGuestOrder(createdOrder);
@@ -6251,7 +6259,14 @@ if (pointBlob.includes("srodmiescie")) {
                           replace: true,
                           state: createdOrder
                             ? {
-                                openPaymentOrderId: String(createdOrder?._id || ""),
+                                // Не відкриваємо оплату знову, якщо цей заказ уже пішов менеджеру
+                                ...(paymentAlreadySubmitted
+                                  ? {}
+                                  : {
+                                      openPaymentOrderId: String(
+                                        createdOrder?._id || ""
+                                      ),
+                                    }),
                                 seedOrder: createdOrder,
                               }
                             : undefined,

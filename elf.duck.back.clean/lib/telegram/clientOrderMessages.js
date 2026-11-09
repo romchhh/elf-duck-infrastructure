@@ -356,6 +356,30 @@ export function fallbackDeliveryWindow(lang) {
   );
 }
 
+/** Після вибору оплати — замість «выберите способ оплаты». */
+export function buildPaymentSubmittedClientMessage({
+  lang = "ru",
+  orderNo = "",
+}) {
+  const no = escapeHtml(orderNo || "—");
+  if (lang === "pl") {
+    return [
+      `✅ <b>PŁATNOŚĆ PRZEKAZANA</b>`,
+      ``,
+      `Zamówienie <b>#${no}</b> już jest u menedżera.`,
+      ``,
+      `Nie trzeba ponownie wybierać płatności ani składać zamówienia jeszcze raz.`,
+    ].join("\n");
+  }
+  return [
+    `✅ <b>ОПЛАТА ПЕРЕДАНА</b>`,
+    ``,
+    `Заказ <b>#${no}</b> уже у менеджера.`,
+    ``,
+    `Не нужно снова выбирать оплату и оформлять заказ повторно.`,
+  ].join("\n");
+}
+
 /** Нагадування вибрати оплату (5 / 9 хв). */
 export function buildUnpaidPaymentReminderClientMessage({
   lang = "ru",

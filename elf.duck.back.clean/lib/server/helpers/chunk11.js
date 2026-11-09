@@ -27,6 +27,7 @@ import { formatOrderFlavorCharacteristicLabel } from "../../orderFlavorLabel.js"
 import {
   buildAlmostReadyClientMessage,
   buildPayOrderWebAppKeyboard,
+  buildPaymentSubmittedClientMessage,
   getClientAppLanguage,
 } from "../../telegram/clientOrderMessages.js";
 
@@ -2287,24 +2288,61 @@ export async function sendClientOrderCreatedInfo(order) {
   try {
     if (!order?.userTelegramId || !getActiveUserBots().length) return;
 
-    const orderNo = String(order.orderNo || "").trim();
+    const orderId = String(order?._id || "").trim();
+    const fresh = orderId
+      ? await Order.findById(orderId)
+          .select({
+            userTelegramId: 1,
+            orderNo: 1,
+            totalZl: 1,
+            currency: 1,
+            shopBotIndex: 1,
+            pickupPointId: 1,
+            deliveryType: 1,
+            deliveryMethod: 1,
+            payment: 1,
+            status: 1,
+          })
+          .lean()
+          .catch(() => null)
+      : null;
 
-    const point = await resolveOrderNotificationPoint(order).catch(() => null);
-    const pickupPoint = order?.pickupPointId
-      ? await PickupPoint.findById(order.pickupPointId).lean().catch(() => null)
+    const live = fresh || order;
+    const paymentStatus = String(live?.payment?.status || "unpaid")
+      .trim()
+      .toLowerCase();
+    const paymentMethod = String(live?.payment?.method || "").trim();
+    const managerMessageId = Number(
+      String(live?.payment?.managerMessageId || "").trim()
+    );
+
+    // Якщо клієнт уже встиг обрати оплату в мініапі — не шлемо «виберіть оплату».
+    if (
+      paymentStatus !== "unpaid" ||
+      paymentMethod ||
+      (Number.isFinite(managerMessageId) && managerMessageId > 0)
+    ) {
+      return;
+    }
+
+    const orderNo = String(live.orderNo || "").trim();
+
+    const point = await resolveOrderNotificationPoint(live).catch(() => null);
+    const pickupPoint = live?.pickupPointId
+      ? await PickupPoint.findById(live.pickupPointId).lean().catch(() => null)
       : null;
 
     const photoPoint = point || pickupPoint || null;
 
     const photoUrl = firstNonEmptyString(
-      getCustomerOrderPhotoByPickupPoint(order, photoPoint),
-      getManagerOrderPhotoByPickupPoint(order, photoPoint),
+      getCustomerOrderPhotoByPickupPoint(live, photoPoint),
+      getManagerOrderPhotoByPickupPoint(live, photoPoint),
       resolveTelegramMediaUrl("clientOrderPhotoDefault"),
       resolveTelegramMediaUrl("orderPhotoDefault")
     );
 
-    const amountText = `${Number(order.totalZl || 0)} ${escapeHtml(order.currency || "PLN")}`;
-    const clientLang = await getClientAppLanguage(order.userTelegramId);
+    const amountText = `${Number(live.totalZl || 0)} ${escapeHtml(live.currency || "PLN")}`;
+    const clientLang = await getClientAppLanguage(live.userTelegramId);
     const clientText = buildAlmostReadyClientMessage({
       lang: clientLang,
       orderNo,
@@ -2316,19 +2354,19 @@ export async function sendClientOrderCreatedInfo(order) {
       disable_web_page_preview: true,
     };
 
-    const payKeyboard = buildPayOrderWebAppKeyboard(clientLang, order?._id);
+    const payKeyboard = buildPayOrderWebAppKeyboard(clientLang, live?._id);
     if (payKeyboard) {
       extra.reply_markup = payKeyboard;
     }
 
-    const preferredBotIndex = Number(order?.shopBotIndex);
+    const preferredBotIndex = Number(live?.shopBotIndex);
 
-    await sendViaUserShopBot(
-      order.userTelegramId,
+    const delivery = await sendViaUserShopBot(
+      live.userTelegramId,
       async (clientBot) => {
         if (photoUrl) {
           return clientBot.telegram.sendPhoto(
-            String(order.userTelegramId),
+            String(live.userTelegramId),
             { url: photoUrl },
             {
               caption: clientText,
@@ -2338,7 +2376,7 @@ export async function sendClientOrderCreatedInfo(order) {
         }
 
         return clientBot.telegram.sendMessage(
-          String(order.userTelegramId),
+          String(live.userTelegramId),
           clientText,
           extra
         );
@@ -2349,6 +2387,21 @@ export async function sendClientOrderCreatedInfo(order) {
           : undefined,
       }
     );
+
+    const sentMessageId = String(delivery?.result?.message_id || "").trim();
+    if (orderId && sentMessageId) {
+      await Order.updateOne(
+        { _id: orderId },
+        {
+          $set: {
+            "payment.clientPaymentPromptMessageId": sentMessageId,
+            "payment.clientPaymentPromptChatId": String(
+              live.userTelegramId || ""
+            ),
+          },
+        }
+      ).catch(() => {});
+    }
   } catch (e) {
     if (isUserChatUnavailableTelegramError(e)) {
       const errorCode = Number(e?.response?.error_code || 0);
@@ -2365,6 +2418,81 @@ export async function sendClientOrderCreatedInfo(order) {
     }
 
     console.error("sendClientOrderCreatedInfo error:", e);
+  }
+}
+
+/** Прибрати кнопку «Перейти к оплате» після успішного payment-check. */
+export async function clearClientPaymentPromptButtons(order) {
+  try {
+    if (!order?.userTelegramId || !getActiveUserBots().length) return;
+
+    const messageId = Number(
+      String(order?.payment?.clientPaymentPromptMessageId || "").trim()
+    );
+    const chatId = String(
+      order?.payment?.clientPaymentPromptChatId ||
+        order?.userTelegramId ||
+        ""
+    ).trim();
+
+    if (!Number.isFinite(messageId) || messageId <= 0 || !chatId) return;
+
+    const clientLang = await getClientAppLanguage(order.userTelegramId);
+    const updatedText = buildPaymentSubmittedClientMessage({
+      lang: clientLang,
+      orderNo: order?.orderNo || "",
+    });
+
+    const preferredBotIndex = Number(order?.shopBotIndex);
+
+    await sendViaUserShopBot(
+      order.userTelegramId,
+      async (clientBot) => {
+        try {
+          await clientBot.telegram.editMessageCaption(
+            chatId,
+            messageId,
+            undefined,
+            updatedText,
+            {
+              parse_mode: "HTML",
+              reply_markup: { inline_keyboard: [] },
+            }
+          );
+          return true;
+        } catch {
+          try {
+            await clientBot.telegram.editMessageText(
+              chatId,
+              messageId,
+              undefined,
+              updatedText,
+              {
+                parse_mode: "HTML",
+                disable_web_page_preview: true,
+                reply_markup: { inline_keyboard: [] },
+              }
+            );
+            return true;
+          } catch {
+            await clientBot.telegram.editMessageReplyMarkup(
+              chatId,
+              messageId,
+              undefined,
+              { inline_keyboard: [] }
+            ).catch(() => {});
+            return false;
+          }
+        }
+      },
+      {
+        preferredBotIndex: Number.isFinite(preferredBotIndex)
+          ? preferredBotIndex
+          : undefined,
+      }
+    );
+  } catch (e) {
+    console.error("clearClientPaymentPromptButtons error:", e);
   }
 }
 

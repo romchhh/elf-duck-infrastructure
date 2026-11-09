@@ -189,6 +189,10 @@ const orderSchema = new mongoose.Schema(
       managerMessageChatId: { type: String, default: "" },
       managerMessageId: { type: String, default: "" },
 
+      /** Telegram message «выберите оплату» — щоб прибрати кнопку після payment-check */
+      clientPaymentPromptMessageId: { type: String, default: "" },
+      clientPaymentPromptChatId: { type: String, default: "" },
+
       paymentReminder5SentAt: {
         type: Date,
         default: null,

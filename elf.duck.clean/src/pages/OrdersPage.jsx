@@ -459,6 +459,31 @@ useEffect(() => {
     };
 
     const openPaymentRoll = async (order) => {
+        const paymentStatus = String(order?.payment?.status || "unpaid")
+            .trim()
+            .toLowerCase();
+        const paymentMethodAlready = String(order?.payment?.method || "").trim();
+
+        // Старе повідомлення в боті з кнопкою оплати не має знову відкривати лист,
+        // якщо спосіб уже обрано / заказ уже у менеджера.
+        if (
+            paymentStatus !== "unpaid" ||
+            paymentMethodAlready
+        ) {
+            haptic.warning();
+            try {
+                window?.Telegram?.WebApp?.showAlert?.(
+                    t(
+                        "Способ оплаты для этого заказа уже выбран. Новый заказ создавать не нужно.",
+                        "Metoda płatności dla tego zamówienia jest już wybrana. Nie twórz nowego zamówienia."
+                    )
+                );
+            } catch {
+                // ignore
+            }
+            return;
+        }
+
         setPaymentSheetOffsetY(0);
         setIsPaymentDragging(false);
         setActivePaymentOrder(order || null);
