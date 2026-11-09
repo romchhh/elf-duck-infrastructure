@@ -85,12 +85,13 @@ function TierInputs({ title, hint, values, onChange, suffix = 'zł' }) {
   );
 }
 
-function SmartPricingPanel() {
+function SmartPricingPanel({ open, onOpenChange }) {
   const [settings, setSettings] = useState(null);
   const [exampleBase, setExampleBase] = useState(60);
 
   const { isLoading, isError, refetch } = useQuery({
     queryKey: ['crm-smart-pricing'],
+    enabled: open,
     queryFn: async () => {
       const data = await crmFetchJson('/crm/settings/smart-pricing');
       setSettings(data.settings);
@@ -108,6 +109,7 @@ function SmartPricingPanel() {
       setSettings(data.settings);
       toast({ title: 'Смарт-цены сохранены' });
       refetch();
+      onOpenChange?.(false);
     },
     onError: (e) =>
       toast({
@@ -117,85 +119,85 @@ function SmartPricingPanel() {
       }),
   });
 
-  if (isLoading || !settings) {
-    return (
-      <div className="rounded-2xl surface-card p-4 text-[13px] text-muted-2">
-        Загружаем смарт-цены…
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="rounded-2xl surface-card p-4 text-[13px] text-red-400">
-        Не удалось загрузить смарт-цены
-      </div>
-    );
-  }
-
   const preview = (discount) =>
     Math.max(0, Number(exampleBase || 0) - Number(discount || 0)).toFixed(0);
 
   return (
-    <div className="space-y-4 rounded-2xl surface-card p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-[14px] font-semibold text-foreground">Смарт-цены</h2>
-          <p className="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
-            Для жидкостей и одноразок — скидка от базовой цены товара в каталоге.
-            Пример: база {exampleBase} zł → 1 шт. {preview(settings.liquidDiscounts.qty1)} zł,
-            2 шт. {preview(settings.liquidDiscounts.qty2)} zł, 3 шт.{' '}
-            {preview(settings.liquidDiscounts.qty3)} zł, 5+ шт.{' '}
-            {preview(settings.liquidDiscounts.qty5)} zł. Картриджи — фиксированная цена за штуку.
-          </p>
-        </div>
-        <label className="text-[11px] text-muted-2">
-          Пример базы, zł
-          <Input
-            type="number"
-            min="1"
-            className="mt-1 w-24"
-            value={exampleBase}
-            onChange={(e) => setExampleBase(Number(e.target.value || 0))}
-          />
-        </label>
-      </div>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Смарт-цены</DialogTitle>
+        </DialogHeader>
 
-      <TierInputs
-        title="Жидкости — скидка от базы"
-        hint="Сколько zł вычитается из цены каталога"
-        values={settings.liquidDiscounts}
-        onChange={(liquidDiscounts) =>
-          setSettings((s) => ({ ...s, liquidDiscounts }))
-        }
-        suffix="zł скидки"
-      />
-      <TierInputs
-        title="Одноразки — скидка от базы"
-        values={settings.disposableDiscounts}
-        onChange={(disposableDiscounts) =>
-          setSettings((s) => ({ ...s, disposableDiscounts }))
-        }
-        suffix="zł скидки"
-      />
-      <TierInputs
-        title="Картриджи — цена за штуку"
-        hint="Абсолютная цена, не скидка"
-        values={settings.cartridgePrices}
-        onChange={(cartridgePrices) =>
-          setSettings((s) => ({ ...s, cartridgePrices }))
-        }
-        suffix="zł / шт."
-      />
+        {isLoading || !settings ? (
+          <p className="text-[13px] text-muted-2">Загружаем смарт-цены…</p>
+        ) : isError ? (
+          <p className="text-[13px] text-red-400">Не удалось загрузить смарт-цены</p>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="max-w-xl text-[12px] leading-relaxed text-muted-foreground">
+                Для жидкостей и одноразок — скидка от базовой цены товара в каталоге.
+                Пример: база {exampleBase} zł → 1 шт. {preview(settings.liquidDiscounts.qty1)} zł,
+                2 шт. {preview(settings.liquidDiscounts.qty2)} zł, 3 шт.{' '}
+                {preview(settings.liquidDiscounts.qty3)} zł, 5+ шт.{' '}
+                {preview(settings.liquidDiscounts.qty5)} zł. Картриджи — фиксированная цена за
+                штуку.
+              </p>
+              <label className="text-[11px] text-muted-2">
+                Пример базы, zł
+                <Input
+                  type="number"
+                  min="1"
+                  className="mt-1 w-24"
+                  value={exampleBase}
+                  onChange={(e) => setExampleBase(Number(e.target.value || 0))}
+                />
+              </label>
+            </div>
 
-      <Button
-        size="sm"
-        disabled={saveMut.isPending}
-        onClick={() => saveMut.mutate()}
-      >
-        {saveMut.isPending ? 'Сохраняем…' : 'Сохранить смарт-цены'}
-      </Button>
-    </div>
+            <TierInputs
+              title="Жидкости — скидка от базы"
+              hint="Сколько zł вычитается из цены каталога"
+              values={settings.liquidDiscounts}
+              onChange={(liquidDiscounts) =>
+                setSettings((s) => ({ ...s, liquidDiscounts }))
+              }
+              suffix="zł скидки"
+            />
+            <TierInputs
+              title="Одноразки — скидка от базы"
+              values={settings.disposableDiscounts}
+              onChange={(disposableDiscounts) =>
+                setSettings((s) => ({ ...s, disposableDiscounts }))
+              }
+              suffix="zł скидки"
+            />
+            <TierInputs
+              title="Картриджи — цена за штуку"
+              hint="Абсолютная цена, не скидка"
+              values={settings.cartridgePrices}
+              onChange={(cartridgePrices) =>
+                setSettings((s) => ({ ...s, cartridgePrices }))
+              }
+              suffix="zł / шт."
+            />
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange?.(false)}>
+            Закрыть
+          </Button>
+          <Button
+            disabled={saveMut.isPending || !settings}
+            onClick={() => saveMut.mutate()}
+          >
+            {saveMut.isPending ? 'Сохраняем…' : 'Сохранить смарт-цены'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -614,6 +616,7 @@ export default function Catalog() {
   const [search, setSearch] = useState('');
   const [catDialog, setCatDialog] = useState({ open: false, item: null });
   const [prodDialog, setProdDialog] = useState({ open: false, item: null });
+  const [smartPricingOpen, setSmartPricingOpen] = useState(false);
   const [toggleId, setToggleId] = useState('');
 
   const enabled = Boolean(CRM_API_URL);
@@ -697,14 +700,26 @@ export default function Catalog() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-[20px] font-semibold text-foreground">Каталог магазина</h1>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Карточки как в mini app: фон, утка, плашки, цены. Клик по карточке — редактирование.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[20px] font-semibold text-foreground">Каталог магазина</h1>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            Карточки как в mini app: фон, утка, плашки, цены. Клик по карточке — редактирование.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setSmartPricingOpen(true)}
+        >
+          Настройки смарт-цен
+        </Button>
       </div>
 
-      <SmartPricingPanel />
+      <SmartPricingPanel
+        open={smartPricingOpen}
+        onOpenChange={setSmartPricingOpen}
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">

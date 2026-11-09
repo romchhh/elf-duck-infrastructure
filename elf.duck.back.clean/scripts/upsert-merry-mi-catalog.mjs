@@ -26,12 +26,17 @@ dotenv.config({ path: path.join(scriptDir, "..", "..", ".env") });
 
 const dryRun = process.argv.includes("--dry-run");
 const dbArg = process.argv.find((a) => a.startsWith("--db="));
-const dbName = String(
-  dbArg?.slice("--db=".length) ||
-    process.env.CATALOG_DB ||
-    process.env.SOURCE_DB ||
-    "elfduck"
-).trim();
+
+function dbNameFromUri(uri) {
+  try {
+    const path = new URL(String(uri || "").replace(/^mongodb(\+srv)?:/, "https:"))
+      .pathname.replace(/^\//, "")
+      .split("/")[0];
+    return path || "";
+  } catch {
+    return "";
+  }
+}
 const CARD_VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "14");
 const APP_URL = String(
   process.env.APP_URL ||
@@ -251,6 +256,13 @@ async function main() {
     console.error("MONGODB_URI is required");
     process.exit(1);
   }
+
+  const dbName = String(
+    dbArg?.slice("--db=".length) ||
+      process.env.CATALOG_DB ||
+      dbNameFromUri(uri) ||
+      "test"
+  ).trim();
 
   console.log("Mongo:", describeMongoUri(uri), "→ dbName:", dbName);
   await mongoose.connect(uri, { dbName });
