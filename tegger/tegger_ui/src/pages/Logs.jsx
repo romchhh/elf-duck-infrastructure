@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { teggerClient } from "@/api/teggerClient";
 import PageHeader from "@/components/PageHeader";
 import BrandedSelect from "@/components/BrandedSelect";
 import { cn } from "@/lib/utils";
+
+function teggerHref(log) {
+  if (log?.teggerId) {
+    return `/tegger?job=${encodeURIComponent(log.teggerId)}&repeat=1`;
+  }
+  if (/тегер/i.test(log?.event || "")) return "/tegger";
+  return null;
+}
 
 const LEVEL_STYLES = {
   SUCCESS: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
@@ -84,31 +93,52 @@ export default function Logs() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {logs.map((l) => (
-              <tr key={l.id} className="hover:bg-muted/30">
-                <Td className="text-muted-foreground tabular-nums whitespace-nowrap">{l.date} {l.time}</Td>
-                <Td className="font-medium whitespace-nowrap">{l.sender}</Td>
-                <Td>
-                  <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium", LEVEL_STYLES[l.level])}>
-                    {l.event}
-                  </span>
-                </Td>
-                <Td className="text-muted-foreground">{l.detail}</Td>
-              </tr>
-            ))}
+            {logs.map((l) => {
+              const href = teggerHref(l);
+              return (
+                <tr key={l.id} className="hover:bg-muted/30">
+                  <Td className="text-muted-foreground tabular-nums whitespace-nowrap">{l.date} {l.time}</Td>
+                  <Td className="font-medium whitespace-nowrap">{l.sender}</Td>
+                  <Td>
+                    <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium", LEVEL_STYLES[l.level])}>
+                      {l.event}
+                    </span>
+                  </Td>
+                  <Td className="text-muted-foreground">
+                    {l.detail}
+                    {href ? (
+                      <>
+                        {" · "}
+                        <Link to={href} className="text-primary hover:underline">
+                          повторить
+                        </Link>
+                      </>
+                    ) : null}
+                  </Td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         <div className="md:hidden divide-y divide-border">
-          {logs.map((l) => (
-            <div key={l.id} className="p-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium", LEVEL_STYLES[l.level])}>{l.event}</span>
-                <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{l.date} {l.time}</span>
+          {logs.map((l) => {
+            const href = teggerHref(l);
+            return (
+              <div key={l.id} className="p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium", LEVEL_STYLES[l.level])}>{l.event}</span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{l.date} {l.time}</span>
+                </div>
+                <div className="mt-1.5 text-sm font-medium text-foreground">{l.sender}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">{l.detail}</div>
+                {href ? (
+                  <Link to={href} className="mt-2 inline-block text-xs font-medium text-primary hover:underline">
+                    Открыть и повторить →
+                  </Link>
+                ) : null}
               </div>
-              <div className="mt-1.5 text-sm font-medium text-foreground">{l.sender}</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">{l.detail}</div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         {logs.length === 0 && <div className="p-10 text-center text-sm text-muted-foreground">Нет событий</div>}
       </div>

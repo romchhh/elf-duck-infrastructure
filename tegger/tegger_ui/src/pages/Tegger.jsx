@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Play, Plus, RefreshCw, Square, Upload } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Play, Plus, RefreshCw, RotateCcw, Square, Upload } from "lucide-react";
 import { teggerClient } from "@/api/teggerClient";
 import PageHeader from "@/components/PageHeader";
 import Field from "@/components/Field";
@@ -219,6 +220,7 @@ function parseUsernames(text) {
 }
 
 export default function Tegger() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [accounts, setAccounts] = useState([]);
   const [history, setHistory] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
@@ -226,8 +228,11 @@ export default function Tegger() {
   const [saving, setSaving] = useState(false);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [repeatOpen, setRepeatOpen] = useState(false);
+  const [repeatUsernames, setRepeatUsernames] = useState("");
 
   const [senderId, setSenderId] = useState("");
   const [usernamesText, setUsernamesText] = useState("");
@@ -248,6 +253,7 @@ export default function Tegger() {
     () => history.find((item) => item.id === selectedId) || null,
     [history, selectedId]
   );
+  const repeatMentionCount = parseUsernames(repeatUsernames).length;
 
   const mentionCount = parseUsernames(usernamesText).length;
   const canCreate =
@@ -284,6 +290,23 @@ export default function Tegger() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const jobId = searchParams.get("job");
+    const wantRepeat = searchParams.get("repeat") === "1";
+    if (!jobId || loading || !history.length) return;
+    if (!history.some((item) => item.id === jobId)) return;
+    setSelectedId(jobId);
+    if (wantRepeat) {
+      const job = history.find((item) => item.id === jobId);
+      setRepeatUsernames((job?.usernames || []).map((u) => `@${u}`).join("\n"));
+      setRepeatOpen(true);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete("job");
+    next.delete("repeat");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, loading, history]);
 
   useEffect(() => {
     const hasRunning = history.some((item) => isLiveStatus(item.status));
@@ -422,6 +445,48 @@ export default function Tegger() {
       setError(err.message || "Не удалось остановить");
     } finally {
       setStopping(false);
+    }
+  };
+
+  const openRepeat = (job = selected) => {
+    if (!job) return;
+    setSelectedId(job.id);
+    setRepeatUsernames((job.usernames || []).map((u) => `@${u}`).join("\n"));
+    setRepeatOpen(true);
+    setError("");
+    setNotice("");
+  };
+
+  const handleDuplicate = async ({ andStart = false } = {}) => {
+    if (!selected || repeatMentionCount < 1 || duplicating) return;
+    const live = history.find((item) => isLiveStatus(item.status));
+    if (andStart && live) {
+      setError("Сначала останови текущий тегер — одновременно можно один.");
+      return;
+    }
+    setDuplicating(true);
+    setError("");
+    setNotice("");
+    try {
+      const created = await teggerClient.teggers.duplicate(selected.id, repeatUsernames);
+      setNotice(
+        andStart
+          ? "Черновик создан, запускаем…"
+          : "Черновик создан с новой аудиторией. Можно запускать."
+      );
+      setRepeatOpen(false);
+      await refresh();
+      setSelectedId(created.id);
+      if (andStart) {
+        await teggerClient.teggers.start(created.id);
+        setNotice("Публикация в Telegram… статус обновится ниже.");
+        await refresh();
+        setSelectedId(created.id);
+      }
+    } catch (err) {
+      setError(err.message || "Не удалось повторить тегер");
+    } finally {
+      setDuplicating(false);
     }
   };
 
@@ -818,6 +883,16 @@ export default function Tegger() {
                             ? "Публикация…"
                             : "Запустить"}
                   </BrandButton>
+                  {!selectedIsLive && (
+                    <BrandButton
+                      variant="secondary"
+                      onClick={() => openRepeat(selected)}
+                      disabled={duplicating}
+                    >
+                      <RotateCcw className="h-4 w-4" strokeWidth={2} />
+                      Повторить
+                    </BrandButton>
+                  )}
                   {selectedIsLive && (
                     <BrandButton
                       variant="danger"
@@ -829,6 +904,69 @@ export default function Tegger() {
                     </BrandButton>
                   )}
                 </div>
+
+                {repeatOpen && (
+                  <div className="rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Повтор с новой аудиторией</h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Фото, тексты RU/PL и кнопка копируются. Меняешь только отметки.
+                      </p>
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <div>
+                        Аккаунт: <span className="text-foreground font-medium">{selected.senderId}</span>
+                      </div>
+                      {(selected.captionRu || selected.caption) && (
+                        <div className="line-clamp-2">
+                          RU: {selected.captionRu || selected.caption}
+                        </div>
+                      )}
+                      {selected.captionPl ? (
+                        <div className="line-clamp-2">PL: {selected.captionPl}</div>
+                      ) : null}
+                      {selected.photoNameRu || selected.photoName ? (
+                        <div>Фото: {selected.photoNameRu || selected.photoName}</div>
+                      ) : null}
+                    </div>
+                    <Field
+                      label="Новые отметки"
+                      hint={`${repeatMentionCount} username`}
+                    >
+                      <textarea
+                        value={repeatUsernames}
+                        onChange={(event) => setRepeatUsernames(event.target.value)}
+                        rows={7}
+                        placeholder={"@user1\n@user2\nили CSV telegram_id,username"}
+                        className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/25"
+                      />
+                    </Field>
+                    <div className="flex flex-wrap gap-2">
+                      <BrandButton
+                        variant="primary"
+                        onClick={() => handleDuplicate({ andStart: true })}
+                        disabled={duplicating || repeatMentionCount < 1 || Boolean(runningJob)}
+                      >
+                        <Play className="h-4 w-4" strokeWidth={2} />
+                        {duplicating ? "Создаём…" : "Создать и запустить"}
+                      </BrandButton>
+                      <BrandButton
+                        variant="secondary"
+                        onClick={() => handleDuplicate({ andStart: false })}
+                        disabled={duplicating || repeatMentionCount < 1}
+                      >
+                        Только черновик
+                      </BrandButton>
+                      <BrandButton
+                        variant="ghost"
+                        onClick={() => setRepeatOpen(false)}
+                        disabled={duplicating}
+                      >
+                        Отмена
+                      </BrandButton>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -847,7 +985,10 @@ export default function Tegger() {
                     <li key={item.id}>
                       <button
                         type="button"
-                        onClick={() => setSelectedId(item.id)}
+                        onClick={() => {
+                          setSelectedId(item.id);
+                          setRepeatOpen(false);
+                        }}
                         className={cn(
                           "w-full px-1 py-3 text-left transition-colors",
                           active ? "bg-primary/5" : "hover:bg-muted/40"

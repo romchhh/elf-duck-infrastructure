@@ -22,7 +22,7 @@ from src.telegram_client import create_client
 
 from pydantic import BaseModel, Field
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Body
 from fastapi.responses import FileResponse
 
 from PIL import Image, UnidentifiedImageError
@@ -747,9 +747,18 @@ _PENDING_LOGINS = {}
 _ADD_LOCK = asyncio.Lock()
 
 
-def _audit(level, event, detail='', sender='system'):
-    record = {'id': _uuid4().hex, 'at': _dt.now(_tz.utc).isoformat(),
-              'level': level, 'sender': sender, 'event': event, 'detail': detail}
+def _audit(level, event, detail='', sender='system', teggerId=None):
+    record = {
+        'id': _uuid4().hex,
+        'at': _dt.now(_tz.utc).isoformat(),
+        'level': level,
+        'sender': sender,
+        'event': event,
+        'detail': detail,
+    }
+    tid = str(teggerId or '').strip()
+    if tid:
+        record['teggerId'] = tid
     _AUDIT_FILE.parent.mkdir(parents=True, exist_ok=True)
     with _AUDIT_FILE.open('a', encoding='utf-8') as stream:
         stream.write(json.dumps(record, ensure_ascii=False) + '\n')
@@ -3455,7 +3464,7 @@ async def _tegger_mark_stopped(job_id: str):
             }
         )
         _tegger_write(items)
-    _audit("WARNING", "Тегер остановлен", text, sender)
+    _audit("WARNING", "Тегер остановлен", text, sender, teggerId=job_id)
     return item
 
 
@@ -3539,6 +3548,7 @@ async def _tegger_execute(job_id: str):
             "Тегер опубликован",
             f"{published.get('stories') or 0} историй, {len(published.get('mentions') or [])} отметок",
             item.get("senderId") or "system",
+            teggerId=job_id,
         )
     except _TeggerStopped:
         await _tegger_mark_stopped(job_id)
@@ -3557,6 +3567,7 @@ async def _tegger_execute(job_id: str):
             "Ошибка тегера",
             f"{type(exc).__name__}: {str(exc)[:200]}",
             item.get("senderId") or "system",
+            teggerId=job_id,
         )
     finally:
         if _TEGGER_TASKS.get(job_id) is asyncio.current_task():
@@ -3714,7 +3725,100 @@ async def create_tegger(
         items = _tegger_read()
         items.append(item)
         _tegger_write(items)
-    _audit("INFO", "Создан тегер", f"{len(mentions)} отметок, draft", sender)
+    _audit(
+        "INFO",
+        "Создан тегер",
+        f"{len(mentions)} отметок, draft",
+        sender,
+        teggerId=job_id,
+    )
+    return _tegger_view(item)
+
+
+@app.post("/api/teggers/{tegger_id}/duplicate", dependencies=[Depends(get_current_user)])
+async def duplicate_tegger(tegger_id: str, payload: dict = Body(default=None)):
+    """Новий draft з тим самим фото/текстом/кнопкою — лише нова аудиторія."""
+    body = payload if isinstance(payload, dict) else {}
+    mentions = _tegger_parse_usernames(str(body.get("usernames") or ""))
+    if not mentions:
+        raise HTTPException(422, "Нужны username для отметок")
+    if len(mentions) > 500:
+        raise HTTPException(422, "Слишком много username (макс. 500)")
+
+    async with _tegger_lock:
+        items = _tegger_read()
+        source = next((x for x in items if x.get("id") == tegger_id), None)
+        if not source:
+            raise HTTPException(404, "Тегер не найден")
+
+        src_ru = Path(str(source.get("photoPathRu") or source.get("photoPath") or ""))
+        src_pl = Path(str(source.get("photoPathPl") or src_ru))
+        if not src_ru.is_file():
+            raise HTTPException(422, "Файл фото потерян — создай тегер заново")
+
+        job_id = _uuid4().hex
+        _TEGGER_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+        suffix_ru = src_ru.suffix or ".jpg"
+        photo_path_ru = _TEGGER_MEDIA_DIR / f"{job_id}_ru{suffix_ru}"
+        photo_path_ru.write_bytes(src_ru.read_bytes())
+
+        photo_path_pl = photo_path_ru
+        photo_name_pl = str(source.get("photoNamePl") or "")
+        if src_pl.is_file() and src_pl.resolve() != src_ru.resolve():
+            suffix_pl = src_pl.suffix or suffix_ru
+            photo_path_pl = _TEGGER_MEDIA_DIR / f"{job_id}_pl{suffix_pl}"
+            photo_path_pl.write_bytes(src_pl.read_bytes())
+        elif not photo_name_pl:
+            photo_name_pl = ""
+
+        caption_ru = str(source.get("captionRu") or source.get("caption") or "").strip()
+        caption_pl = str(source.get("captionPl") or "").strip()
+        btn_ru = str(source.get("buttonTextRu") or source.get("buttonText") or "").strip()
+        btn_pl = str(source.get("buttonTextPl") or "").strip()
+        link = str(source.get("buttonUrl") or "").strip()
+        btn_color = str(source.get("buttonColor") or "").strip()
+        default_lang = str(source.get("defaultLanguage") or "ru").strip().lower()
+        if default_lang not in ("ru", "pl"):
+            default_lang = "ru"
+
+        item = {
+            "id": job_id,
+            "createdAt": _dt.now(_tz.utc).isoformat(),
+            "startedAt": None,
+            "finishedAt": None,
+            "senderId": source.get("senderId"),
+            "usernames": mentions,
+            "caption": caption_ru,
+            "captionRu": caption_ru,
+            "captionPl": caption_pl,
+            "defaultLanguage": default_lang,
+            "buttonUrl": link,
+            "buttonText": btn_ru if link else "",
+            "buttonTextRu": btn_ru if link else "",
+            "buttonTextPl": btn_pl if link else "",
+            "buttonColor": btn_color if link else "",
+            "photoPath": str(photo_path_ru),
+            "photoPathRu": str(photo_path_ru),
+            "photoPathPl": str(photo_path_pl),
+            "photoName": source.get("photoNameRu") or source.get("photoName") or photo_path_ru.name,
+            "photoNameRu": source.get("photoNameRu") or source.get("photoName") or photo_path_ru.name,
+            "photoNamePl": photo_name_pl,
+            "status": "draft",
+            "error": "",
+            "dryRun": False,
+            "resultType": "",
+            "sourceTeggerId": tegger_id,
+        }
+        items.append(item)
+        _tegger_write(items)
+
+    _audit(
+        "INFO",
+        "Повтор тегера",
+        f"from={tegger_id[:8]} · {len(mentions)} отметок, draft",
+        item.get("senderId") or "system",
+        teggerId=job_id,
+    )
     return _tegger_view(item)
 
 

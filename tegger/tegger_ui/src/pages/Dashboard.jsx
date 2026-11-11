@@ -288,15 +288,40 @@ const [error, setError] = useState("");
                 </div>
               )}
 
-              {logs.map((l) => (
-              <div key={l.id} className="px-4 py-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-foreground truncate">{l.event}</span>
-                  <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{l.time}</span>
-                </div>
-                <div className="mt-0.5 text-[11px] text-muted-foreground truncate">{l.sender} · {l.detail}</div>
-              </div>
-            ))}
+              {logs.map((l) => {
+                const isTegger = /тегер/i.test(l.event || "");
+                const href = l.teggerId
+                  ? `/tegger?job=${encodeURIComponent(l.teggerId)}&repeat=1`
+                  : isTegger
+                    ? "/tegger"
+                    : null;
+                const body = (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-medium text-foreground truncate">{l.event}</span>
+                      <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{l.time}</span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
+                      {l.sender} · {l.detail}
+                      {href ? " · повторить →" : ""}
+                    </div>
+                  </>
+                );
+                return href ? (
+                  <Link
+                    key={l.id}
+                    to={href}
+                    className="block px-4 py-2.5 hover:bg-muted/40 transition-colors"
+                    title="Открыть тегер и повторить с новой аудиторией"
+                  >
+                    {body}
+                  </Link>
+                ) : (
+                  <div key={l.id} className="px-4 py-2.5">
+                    {body}
+                  </div>
+                );
+              })}
           </div>
         </div>
       </div>

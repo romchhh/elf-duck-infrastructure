@@ -150,6 +150,11 @@ export const teggerClient = {
       }
       return data;
     },
+    duplicate: (id, usernames) =>
+      request(`/api/teggers/${encodeURIComponent(id)}/duplicate`, {
+        method: "POST",
+        body: JSON.stringify({ usernames: usernames || "" }),
+      }),
   },
   health: () => request("/api/health"),
 
