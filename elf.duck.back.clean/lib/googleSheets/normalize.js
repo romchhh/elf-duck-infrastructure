@@ -7,6 +7,9 @@ export function normalizeSheetModelName(value) {
     .toUpperCase()
     .replace(/🦆/g, "")
     .replace(/CARTRIDGE/g, "CATRIDGE")
+    // Keep SPECIAL before generic PUFFY → 5%/7% rules.
+    .replace(/\bLIQ\s+PUFFY\s+SPECIAL\b/g, "PUFFY SPECIAL")
+    .replace(/\bPUFFY\s+SPECIAL\b/g, "PUFFY SPECIAL")
     .replace(/\bPUFFY\s+30\s*ML\s*\/\s*70\s*MG\b/g, "PUFFY 7%")
     .replace(/\bPUFFY\s+30\s*ML\s*\/\s*50\s*MG\b/g, "PUFFY 5%")
     .replace(/\bPUFFY\s+30\s*ML\b/g, "PUFFY 5%")
@@ -128,6 +131,7 @@ export function toReportModelLabel(normalizedModel) {
     "VOZOL PRIME": "VOZOL PRIME",
     "PUFFY 7%": "PUFFY 7%",
     "PUFFY 5%": "PUFFY 5%",
+    "PUFFY SPECIAL": "PUFFY SPECIAL",
     YAMI: "YAMI",
     OXVA: "OXVA",
     "OXVA POD": "OXVA POD",
@@ -174,6 +178,12 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
       "PUFFY 70%",
       "PUFFY 70",
       "PUFFY 70 MG",
+    ],
+    "puffy-special": [
+      "PUFFY SPECIAL",
+      "LIQ PUFFY SPECIAL",
+      "PUFFY SPECIAL 30 ML",
+      "PUFFY SPECIAL 50 MG",
     ],
     // Каталог: chaser-black-30-ml = HQD 30 ML → блок LIQ HQD.
     "chaser-black-30-ml": ["LIQ HQD", "HQD"],

@@ -132,6 +132,7 @@ export function getStatsSheetProductCategory(row = {}) {
 const STATS_REPORT_MODEL_BY_PRODUCT_KEY = {
   "puffy-30-ml": "PUFFY 5%",
   "puffy-30-ml-70-mg": "PUFFY 7%",
+  "puffy-special": "PUFFY SPECIAL",
   /** На листах ОТЧЁТ (Mokotów тощо) — «YAMI 5%» / «YAMI 7%», не голий «YAMI». */
   "yami-30ml": "YAMI 5%",
 };
@@ -150,6 +151,7 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
   "chaser-for-pods-30-ml": "LIQ FOR PODS",
   "puffy-30-ml": "LIQ PUFFY 5%",
   "puffy-30-ml-70-mg": "LIQ PUFFY 7%",
+  "puffy-special": "LIQ PUFFY SPECIAL",
     "oxva-30-ml-20-mg": "OXVA",
     "oxva-pod": "OXVA POD",
     "xros-5-mini-pod": "XROS 5 MINI POD",

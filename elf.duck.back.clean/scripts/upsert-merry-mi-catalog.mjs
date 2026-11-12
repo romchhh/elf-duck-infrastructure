@@ -58,6 +58,11 @@ function slugFlavor(label) {
     .replace(/^-+|-+$/g, "");
 }
 
+/** Стара назва на сайті → актуальна (зберігаємо stock / gradient). */
+const FLAVOR_PREV_LABELS = {
+  "black mint": ["breezy lemon berry"],
+};
+
 function buildFlavors(labels, existingFlavors = []) {
   const byKey = new Map(
     (Array.isArray(existingFlavors) ? existingFlavors : []).map((f) => [
@@ -77,8 +82,13 @@ function buildFlavors(labels, existingFlavors = []) {
   return labels.map((label) => {
     const text = String(label).trim();
     const fk = slugFlavor(text);
+    const prevLabels = FLAVOR_PREV_LABELS[text.toLowerCase()] || [];
     const prev =
-      byKey.get(fk) || byLabel.get(text.toLowerCase()) || null;
+      byKey.get(fk) ||
+      byLabel.get(text.toLowerCase()) ||
+      prevLabels.map((p) => byLabel.get(p)).find(Boolean) ||
+      prevLabels.map((p) => byKey.get(slugFlavor(p))).find(Boolean) ||
+      null;
 
     return {
       flavorKey: fk,
@@ -111,7 +121,7 @@ const BLADE_FLAVORS = [
   "Green Apple",
   "Frozen Grape",
   "Fizzy Cherry",
-  "Breezy Lemon Berry",
+  "Black Mint",
   "Tropical Citrus Fizz",
   "Mr. Blue",
   "Fanta",
@@ -149,7 +159,7 @@ const LIQUID_FLAVORS = [
   "Red Energy Ice",
   "Dragon Fruit Ice",
   "Green Apple",
-  "Breezy Lemon Berry",
+  "Black Mint",
   "Tropical Citrus Fizz",
   "Fanta",
   "Grapefruit Refresher",

@@ -31,6 +31,31 @@ function autoTitle(name) {
   return `Авто · ${String(match[1] || "").trim()}`;
 }
 
+const AUTOMATION_TRIGGER_LABELS = {
+  first_purchase: "Авто · первая покупка",
+  lead_followup: "Авто · лиды",
+  cashback_expiring: "Авто · кэшбек сгорает",
+  customer_sleeping: "Авто · спящий клиент",
+};
+
+function automationTriggerKey(row) {
+  const explicit = String(row?.automationTrigger || "").trim();
+  if (explicit && Object.prototype.hasOwnProperty.call(AUTOMATION_TRIGGER_LABELS, explicit)) {
+    return explicit;
+  }
+  const title = autoTitle(row?.name || explicit).toLowerCase();
+  if (title.includes("кэшбек") || title.includes("кешбек")) return "cashback_expiring";
+  if (title.includes("спящ")) return "customer_sleeping";
+  if (title.includes("перв")) return "first_purchase";
+  if (title.includes("лид")) return "lead_followup";
+  return explicit || autoTitle(row?.name) || "automation";
+}
+
+function automationDisplayName(row) {
+  const key = automationTriggerKey(row);
+  return AUTOMATION_TRIGGER_LABELS[key] || autoTitle(row?.name) || "Авто";
+}
+
 function warsawDayRange(dayKey) {
   const [year, month, day] = String(dayKey || "")
     .split("-")
@@ -54,8 +79,7 @@ function automationBucket(row) {
   const day =
     String(row?.automationDayKey || "").trim() ||
     getWarsawDateKey(row?.createdAt || row?.startedAt || new Date());
-  const trigger =
-    String(row?.automationTrigger || "").trim() || autoTitle(row?.name);
+  const trigger = automationTriggerKey(row);
   return `${trigger}|${day}`;
 }
 
@@ -116,43 +140,142 @@ function sendRecipientsCsv(res, filename, rows) {
   res.send(`\ufeff${body}\r\n`);
 }
 
+const AUTOMATION_STATUS_RANK = {
+  running: 5,
+  queued: 4,
+  failed: 3,
+  completed: 2,
+  cancelled: 1,
+};
+
+function pickAutomationStatus(current, next) {
+  const left = AUTOMATION_STATUS_RANK[String(current || "")] || 0;
+  const right = AUTOMATION_STATUS_RANK[String(next || "")] || 0;
+  return right > left ? next : current;
+}
+
+function newerTimestamp(left, right) {
+  const a = left ? new Date(left).getTime() : NaN;
+  const b = right ? new Date(right).getTime() : NaN;
+  if (!Number.isFinite(a)) return right || null;
+  if (!Number.isFinite(b)) return left || null;
+  return b >= a ? right : left;
+}
+
+function olderTimestamp(left, right) {
+  const a = left ? new Date(left).getTime() : NaN;
+  const b = right ? new Date(right).getTime() : NaN;
+  if (!Number.isFinite(a)) return right || null;
+  if (!Number.isFinite(b)) return left || null;
+  return b <= a ? right : left;
+}
+
+function mergeCampaignMetrics(target, row) {
+  target.recipients += Number(row.recipients || 0);
+  target.sent += Number(row.sent || 0);
+  target.failed += Number(row.failed || 0);
+  target.blocked += Number(row.blocked || 0);
+  target.processed += Number(row.processed || 0);
+  target.opened += Number(row.opened || 0);
+  target.promoApplications += Number(row.promoApplications || 0);
+  target.purchases += Number(row.purchases || 0);
+  target.buyers += Number(row.buyers || 0);
+  target.revenue += Number(row.revenue || 0);
+  const base = Math.max(target.sent, target.recipients, 1);
+  target.conversion = Number(((target.purchases / base) * 100).toFixed(1));
+  target.notDelivered = Math.max(0, target.recipients - target.sent);
+  target.status = pickAutomationStatus(target.status, row.status);
+  target.startedAt = newerTimestamp(target.startedAt, row.startedAt);
+  target.finishedAt = newerTimestamp(target.finishedAt, row.finishedAt);
+  target.createdAt = newerTimestamp(target.createdAt, row.createdAt);
+  target.firstAt = olderTimestamp(
+    target.firstAt || target.startedAt || target.createdAt,
+    row.startedAt || row.createdAt
+  );
+  if (!target.deliveryBotUsername && row.deliveryBotUsername) {
+    target.deliveryBotUsername = row.deliveryBotUsername;
+  }
+}
+
 function groupHistoryRows(rows) {
-  const out = [];
-  const groups = new Map();
+  // 1) Same trigger + day → one mailing row (as before).
+  const dayRows = [];
+  const dayGroups = new Map();
 
   for (const row of rows) {
     const bucket = row.source === "automation" ? automationBucket(row) : "";
     if (!bucket) {
-      out.push({ ...row, memberIds: [row.id] });
+      dayRows.push({ ...row, memberIds: [row.id] });
       continue;
     }
 
-    const prev = groups.get(bucket);
+    const prev = dayGroups.get(bucket);
     if (!prev) {
+      const trigger = automationTriggerKey(row);
       const next = {
         ...row,
-        name: autoTitle(row.name),
+        name: automationDisplayName(row),
+        automationTrigger: trigger,
         memberIds: [row.id],
+        firstAt: row.startedAt || row.createdAt || null,
       };
-      groups.set(bucket, next);
-      out.push(next);
+      dayGroups.set(bucket, next);
+      dayRows.push(next);
       continue;
     }
 
     prev.memberIds.push(row.id);
-    prev.recipients += Number(row.recipients || 0);
-    prev.sent += Number(row.sent || 0);
-    prev.failed += Number(row.failed || 0);
-    prev.blocked += Number(row.blocked || 0);
-    prev.processed += Number(row.processed || 0);
-    prev.opened += Number(row.opened || 0);
-    prev.promoApplications += Number(row.promoApplications || 0);
-    prev.purchases += Number(row.purchases || 0);
-    prev.buyers += Number(row.buyers || 0);
-    prev.revenue += Number(row.revenue || 0);
-    const base = Math.max(prev.sent, prev.recipients, 1);
-    prev.conversion = Number(((prev.purchases / base) * 100).toFixed(1));
-    prev.notDelivered = Math.max(0, prev.recipients - prev.sent);
+    mergeCampaignMetrics(prev, row);
+  }
+
+  // 2) All days of one trigger → one parent row with expandable children.
+  const out = [];
+  const triggerGroups = new Map();
+
+  for (const row of dayRows) {
+    if (row.source !== "automation") {
+      out.push(row);
+      continue;
+    }
+
+    const trigger = automationTriggerKey(row);
+    const key = `trigger:${trigger}`;
+    const child = {
+      ...row,
+      name: automationDisplayName(row),
+      isAutomationChild: true,
+      automationTrigger: trigger,
+    };
+    const prev = triggerGroups.get(key);
+    if (!prev) {
+      const parent = {
+        ...row,
+        id: `auto-group:${encodeURIComponent(trigger)}`,
+        name: automationDisplayName(row),
+        automationTrigger: trigger,
+        isAutomationGroup: true,
+        runCount: 1,
+        memberIds: [...(row.memberIds || [row.id])],
+        children: [child],
+        firstAt: row.firstAt || row.startedAt || row.createdAt || null,
+      };
+      triggerGroups.set(key, parent);
+      out.push(parent);
+      continue;
+    }
+
+    prev.children.push(child);
+    prev.runCount = prev.children.length;
+    prev.memberIds.push(...(row.memberIds || [row.id]));
+    mergeCampaignMetrics(prev, row);
+  }
+
+  for (const parent of triggerGroups.values()) {
+    parent.children.sort((a, b) => {
+      const left = new Date(b.startedAt || b.createdAt || 0).getTime();
+      const right = new Date(a.startedAt || a.createdAt || 0).getTime();
+      return left - right;
+    });
   }
 
   return out;
@@ -382,6 +505,10 @@ router.get(
               source: campaignSource(row),
 
               automation: campaignSource(row) === "automation",
+
+              automationTrigger: String(row?.automationTrigger || "").trim(),
+
+              automationDayKey: String(row?.automationDayKey || "").trim(),
 
               audience:
                 String(

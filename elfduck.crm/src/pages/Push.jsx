@@ -8,6 +8,8 @@ import {
 
 import {
 
+  ChevronDown,
+
   Layers,
 
   Paperclip,
@@ -95,12 +97,26 @@ function CampaignMobileRow({
   onDelete,
   deleting,
   onShowDelivery,
+  expanded,
+  onToggleExpand,
 }) {
+  const isGroup = Boolean(r.isAutomationGroup);
+  const isChild = Boolean(r.isAutomationChild);
+  const runCount = Number(r.runCount || r.children?.length || 0);
+  const displayName = String(r.name || '')
+    .replace(/^Авто\s*·\s*/i, '')
+    .trim();
+
   return (
-    <div className="relative rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-3.5 pt-8">
+    <div
+      className={cn(
+        'relative rounded-xl border border-border-soft bg-[hsl(232_26%_6%)] p-3.5 pt-8',
+        isChild && 'ml-3 border-dashed'
+      )}
+    >
       <button
         type="button"
-        title="Удалить из истории"
+        title={isGroup ? 'Удалить все рассылки триггера' : 'Удалить из истории'}
         disabled={deleting || r.status === 'running' || r.status === 'queued'}
         onClick={() => onDelete?.(r)}
         className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-[16px] leading-none text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -109,23 +125,40 @@ function CampaignMobileRow({
       </button>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-medium text-foreground">
-            {r.source === 'giveaway' ? (
-              <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
-                Розыгрыш
-              </span>
-            ) : r.automation || r.source === 'automation' ? (
-              <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
-                Авто
-              </span>
+          <button
+            type="button"
+            className="flex min-w-0 items-center gap-1.5 text-left"
+            onClick={() => {
+              if (isGroup) onToggleExpand?.(r.id);
+              else onShowDelivery?.(r);
+            }}
+          >
+            {isGroup ? (
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 text-muted-2 transition-transform',
+                  expanded ? 'rotate-0' : '-rotate-90'
+                )}
+              />
             ) : null}
-            {r.name}
-          </div>
+            <div className="truncate text-[13px] font-medium text-foreground">
+              {r.source === 'giveaway' ? (
+                <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
+                  Розыгрыш
+                </span>
+              ) : r.automation || r.source === 'automation' ? (
+                <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
+                  Авто
+                </span>
+              ) : null}
+              {isGroup || isChild ? displayName || r.name : r.name}
+            </div>
+          </button>
 
           <div className="text-[11px] text-muted-2">
-            Аудитория:{' '}
-            {r.audience}
-            {r.promo ? ` · ${r.promo}` : ''}
+            {isGroup
+              ? `${runCount} рассылок · суммарно`
+              : `Аудитория: ${r.audience}${r.promo ? ` · ${r.promo}` : ''}`}
           </div>
         </div>
 
@@ -176,14 +209,24 @@ function CampaignMobileRow({
           ]}
         />
 
-        <button
-          type="button"
-          className="mt-2 text-[11px] text-[hsl(255_100%_75%)] hover:underline"
-          onClick={() => onShowDelivery?.(r)}
-        >
-          Лог доставки
-          {r.deliveryBotUsername ? ` · @${r.deliveryBotUsername}` : ''}
-        </button>
+        {isGroup ? (
+          <button
+            type="button"
+            className="mt-2 text-[11px] text-[hsl(255_100%_75%)] hover:underline"
+            onClick={() => onToggleExpand?.(r.id)}
+          >
+            {expanded ? 'Скрыть рассылки' : 'Показать рассылки'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="mt-2 text-[11px] text-[hsl(255_100%_75%)] hover:underline"
+            onClick={() => onShowDelivery?.(r)}
+          >
+            Лог доставки
+            {r.deliveryBotUsername ? ` · @${r.deliveryBotUsername}` : ''}
+          </button>
+        )}
 
         <div className="mt-2.5">
           <MetricGrid
@@ -458,6 +501,20 @@ const [
   const [deliveryDetailId, setDeliveryDetailId] = useState(null);
   const [exportBusy, setExportBusy] = useState(null);
   const [historyKind, setHistoryKind] = useState('all');
+  const [expandedAutomationGroups, setExpandedAutomationGroups] = useState(
+    () => new Set()
+  );
+
+  const toggleAutomationGroup = (groupId) => {
+    const id = String(groupId || '').trim();
+    if (!id) return;
+    setExpandedAutomationGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const {
     sortKey: campSortKey,
@@ -679,8 +736,12 @@ onSuccess: (data) => {
     deliveryDetailData?.campaign || null;
 
   const openDeliveryLog = (row) => {
+    if (row?.isAutomationGroup) {
+      toggleAutomationGroup(row.id);
+      return;
+    }
     const id = String(row?.id || '').trim();
-    if (!id) return;
+    if (!id || id.startsWith('auto-group:')) return;
     setDeliveryDetailId(id);
   };
 
@@ -1261,11 +1322,13 @@ if (error?.status === 401) {
       setAuthModalOpen(true);
       return;
     }
-    if (
-      !window.confirm(
-        `Удалить «${campaign?.name || 'рассылку'}» из истории?`
-      )
-    ) {
+    const runs = Number(
+      campaign?.runCount || campaign?.children?.length || 0
+    );
+    const label = campaign?.isAutomationGroup
+      ? `все рассылки «${campaign?.name || 'триггера'}» (${runs})`
+      : `«${campaign?.name || 'рассылку'}»`;
+    if (!window.confirm(`Удалить ${label} из истории?`)) {
       return;
     }
     deleteCampaignMutation.mutate(campaign);
@@ -1789,7 +1852,7 @@ const confirmCreateTpl = () => {
       campPageCount
     );
 
-  const campRows =
+  const campPageRows =
     sortedCampaigns.slice(
       (
         safeCampPage -
@@ -1800,6 +1863,28 @@ const confirmCreateTpl = () => {
       safeCampPage *
         CAMPAIGN_PAGE_SIZE
     );
+
+  const campRows = useMemo(() => {
+    const out = [];
+    for (const row of campPageRows) {
+      out.push(row);
+      if (
+        row?.isAutomationGroup &&
+        expandedAutomationGroups.has(String(row.id)) &&
+        Array.isArray(row.children) &&
+        row.children.length
+      ) {
+        for (const child of row.children) {
+          out.push({
+            ...child,
+            isAutomationChild: true,
+            parentGroupId: row.id,
+          });
+        }
+      }
+    }
+    return out;
+  }, [campPageRows, expandedAutomationGroups]);
 
   const tplPageCount =
     Math.max(
@@ -1842,7 +1927,11 @@ const confirmCreateTpl = () => {
       render: (r) => (
         <button
           type="button"
-          title="Удалить из истории"
+          title={
+            r.isAutomationGroup
+              ? 'Удалить все рассылки триггера'
+              : 'Удалить из истории'
+          }
           disabled={
             deleteCampaignMutation.isPending ||
             r.status === 'running' ||
@@ -1859,42 +1948,113 @@ const confirmCreateTpl = () => {
       key: 'name',
       header: 'Кампания',
 
-      render: (r) => (
-        <div className="min-w-0">
-          <button
-            type="button"
-            className="truncate text-left font-medium text-foreground hover:text-[hsl(255_100%_75%)]"
-            onClick={() => openDeliveryLog(r)}
-          >
-            {r.source === 'giveaway' ? (
-              <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
-                Розыгрыш
-              </span>
-            ) : r.automation || r.source === 'automation' ? (
-              <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
-                Авто
-              </span>
+      render: (r) => {
+        const isGroup = Boolean(r.isAutomationGroup);
+        const isChild = Boolean(r.isAutomationChild);
+        const expanded =
+          isGroup && expandedAutomationGroups.has(String(r.id));
+        const runCount = Number(r.runCount || r.children?.length || 0);
+        const displayName = String(r.name || '')
+          .replace(/^Авто\s*·\s*/i, '')
+          .trim();
+
+        return (
+          <div className={cn('min-w-0', isChild && 'pl-4')}>
+            <div className="flex min-w-0 items-center gap-1.5">
+              {isGroup ? (
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  title={expanded ? 'Скрыть рассылки' : 'Показать рассылки'}
+                  onClick={() => toggleAutomationGroup(r.id)}
+                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-2 hover:bg-[hsl(255_100%_68%/0.12)] hover:text-foreground"
+                >
+                  <ChevronDown
+                    className={cn(
+                      'h-3.5 w-3.5 transition-transform',
+                      expanded ? 'rotate-0' : '-rotate-90'
+                    )}
+                  />
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className={cn(
+                  'truncate text-left font-medium hover:text-[hsl(255_100%_75%)]',
+                  isChild ? 'text-muted-foreground' : 'text-foreground'
+                )}
+                onClick={() => {
+                  if (isGroup) {
+                    toggleAutomationGroup(r.id);
+                    return;
+                  }
+                  openDeliveryLog(r);
+                }}
+              >
+                {r.source === 'giveaway' ? (
+                  <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
+                    Розыгрыш
+                  </span>
+                ) : r.automation || r.source === 'automation' ? (
+                  <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
+                    Авто
+                  </span>
+                ) : null}
+                {isGroup || isChild ? displayName || r.name : r.name}
+              </button>
+            </div>
+            {isGroup ? (
+              <div className="mt-0.5 truncate text-[11px] text-muted-2">
+                {runCount} рассыл
+                {runCount === 1 ? 'ка' : runCount >= 2 && runCount <= 4 ? 'ки' : 'ок'}
+                {' · суммарно'}
+              </div>
             ) : null}
-            {r.name}
-          </button>
-          {r.promo ? (
-            <div className="truncate text-[11px] text-muted-2">
-              {r.promo}
-            </div>
-          ) : null}
-          {r.deliveryBotUsername ? (
-            <div className="truncate text-[10px] text-muted-2">
-              @{r.deliveryBotUsername}
-            </div>
-          ) : null}
-        </div>
-      ),
+            {!isGroup && r.promo ? (
+              <div className="truncate text-[11px] text-muted-2">
+                {r.promo}
+              </div>
+            ) : null}
+            {!isGroup && r.deliveryBotUsername ? (
+              <div className="truncate text-[10px] text-muted-2">
+                @{r.deliveryBotUsername}
+              </div>
+            ) : null}
+          </div>
+        );
+      },
     },
 
     {
       key: 'sentAt',
       header: 'Дата',
       render: (r) => {
+        if (r.isAutomationGroup) {
+          const last = r.startedAt || r.createdAt || null;
+          const first = r.firstAt || null;
+          const lastDate = last ? new Date(last) : null;
+          const firstDate = first ? new Date(first) : null;
+          const fmt = (date) =>
+            date && Number.isFinite(date.getTime())
+              ? date.toLocaleDateString('ru-RU', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                })
+              : '';
+          const lastLabel = fmt(lastDate);
+          const firstLabel = fmt(firstDate);
+          if (!lastLabel) {
+            return <span className="text-muted-2">—</span>;
+          }
+          return (
+            <span className="text-muted-foreground">
+              {firstLabel && firstLabel !== lastLabel
+                ? `${firstLabel} – ${lastLabel}`
+                : lastLabel}
+            </span>
+          );
+        }
         const raw = r.startedAt || r.createdAt || null;
         if (!raw) {
           return <span className="text-muted-2">—</span>;
@@ -1971,20 +2131,32 @@ const confirmCreateTpl = () => {
       key: 'failed',
       header: 'Ошибки',
       align: 'right',
-      render: (r) => (
-        <button
-          type="button"
-          className={
-            Number(r.failed || 0) > 0
-              ? 'text-red-300 hover:underline'
-              : 'text-muted-foreground'
-          }
-          title="Не доставлено — откройте лог"
-          onClick={() => openDeliveryLog(r)}
-        >
-          {num(r.failed)}
-        </button>
-      ),
+      render: (r) =>
+        r.isAutomationGroup ? (
+          <span
+            className={
+              Number(r.failed || 0) > 0
+                ? 'text-red-300'
+                : 'text-muted-foreground'
+            }
+            title="Сумма ошибок по всем рассылкам триггера"
+          >
+            {num(r.failed)}
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={
+              Number(r.failed || 0) > 0
+                ? 'text-red-300 hover:underline'
+                : 'text-muted-foreground'
+            }
+            title="Не доставлено — откройте лог"
+            onClick={() => openDeliveryLog(r)}
+          >
+            {num(r.failed)}
+          </button>
+        ),
     },
 
     {
@@ -2830,7 +3002,7 @@ const confirmCreateTpl = () => {
               История рассылок
             </div>
             <p className="mt-0.5 text-[11px] text-muted-2">
-              Ручные, авто за день и розыгрыш. Доставлено · открыто · промо
+              Авто-триггеры — одной строкой (сумма); клик раскрывает каждую рассылку
             </p>
           </div>
           <div className="flex flex-wrap gap-1">
@@ -2905,6 +3077,8 @@ const confirmCreateTpl = () => {
                 onDelete={deleteCampaign}
                 deleting={deleteCampaignMutation.isPending}
                 onShowDelivery={openDeliveryLog}
+                expanded={expandedAutomationGroups.has(String(r.id))}
+                onToggleExpand={toggleAutomationGroup}
               />
             )
           )}

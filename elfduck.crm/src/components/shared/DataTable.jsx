@@ -59,7 +59,8 @@ export default function DataTable({
               className={cn(
                 'border-b border-border-soft transition-colors',
                 onRowClick && 'cursor-pointer',
-                'hover:bg-[hsl(234_22%_11%/0.6)]'
+                'hover:bg-[hsl(234_22%_11%/0.6)]',
+                row?.isAutomationChild && 'bg-[hsl(234_22%_9%/0.55)]'
               )}
             >
               {columns.map((c) => (
