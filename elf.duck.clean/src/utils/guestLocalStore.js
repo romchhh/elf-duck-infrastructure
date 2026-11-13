@@ -3,6 +3,7 @@ const CART_KEY = "elfduck_guest_cart_v1";
 const FAVORITES_KEY = "elfduck_guest_favorites_v1";
 const PROFILE_KEY = "elfduck_guest_profile_v1";
 const ORDERS_KEY = "elfduck_guest_orders_v1";
+const SAVED_INPOST_KEY = "elfduck_saved_inpost_v1";
 /** Legacy MainPage cart (items array only) — migrated into guest cart on read */
 const LEGACY_CART_ITEMS_KEY = "elfduck_cart_v1";
 
@@ -166,6 +167,42 @@ export function saveGuestProfile(profile) {
   };
   try {
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
+export function getGuestSavedInpostData() {
+  try {
+    const raw = window.localStorage.getItem(SAVED_INPOST_KEY);
+    const p = safeParse(raw, null);
+    if (!p || typeof p !== "object") return null;
+    const next = {
+      fullName: String(p.fullName || "").trim() || null,
+      phone: String(p.phone || "").trim() || null,
+      email: String(p.email || "").trim() || null,
+      city: String(p.city || "").trim() || null,
+      lockerAddress: String(p.lockerAddress || "").trim() || null,
+    };
+    if (!next.fullName && !next.phone) return null;
+    return next;
+  } catch {
+    return null;
+  }
+}
+
+export function saveGuestSavedInpostData(data) {
+  const next = {
+    fullName: String(data?.fullName || "").trim() || null,
+    phone: String(data?.phone || "").trim() || null,
+    email: String(data?.email || "").trim() || null,
+    city: String(data?.city || "").trim() || null,
+    lockerAddress: String(data?.lockerAddress || "").trim() || null,
+  };
+  if (!next.fullName && !next.phone) return null;
+  try {
+    window.localStorage.setItem(SAVED_INPOST_KEY, JSON.stringify(next));
   } catch {
     /* ignore */
   }

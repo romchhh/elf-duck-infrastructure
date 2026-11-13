@@ -3,6 +3,7 @@ import {
   loadGuestCart,
   mergeGuestCartPatch,
   clearGuestCart,
+  getGuestSavedInpostData,
 } from "./utils/guestLocalStore";
 import { buildApiHeaders } from "./utils/shoppingSession";
 import { API_URL } from "./api.js";
@@ -73,7 +74,11 @@ function buildLocalCartFromSave(
 
 export async function getCart() {
   if (isGuestShopping()) {
-    return loadGuestCart();
+    const cart = loadGuestCart();
+    return {
+      ...cart,
+      savedInpostData: getGuestSavedInpostData(),
+    };
   }
 
   const r = await fetch(`${API_URL}/cart`, {
@@ -82,8 +87,12 @@ export async function getCart() {
   const data = await r.json().catch(() => ({}));
 
   const cart = data?.cart ? data.cart : data;
+  const base = cart || { items: [], checkoutPickupPointId: null };
 
-  return cart || { items: [], checkoutPickupPointId: null };
+  return {
+    ...base,
+    savedInpostData: data?.savedInpostData || null,
+  };
 }
 
 export async function saveCart(

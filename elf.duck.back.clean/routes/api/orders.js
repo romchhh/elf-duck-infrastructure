@@ -14,6 +14,7 @@ import {
   releaseOrderPromoUse,
 } from "../../lib/crm/promoOrderUse.js";
 import { sendClientBlikPaymentInstructions } from "../../lib/payments/blikClientTelegram.js";
+import { persistSavedInpostData } from "../../lib/inpostSavedProfile.js";
 
 async function refundAndRejectClosedOrder(order, res) {
   const status = String(order?.status || "").trim().toLowerCase();
@@ -1020,6 +1021,26 @@ app.post("/orders/confirm", async (req, res) => {
 
     created.stockReservedAt = new Date();
     await created.save();
+
+    // Зберігаємо останні дані InPost для наступних замовлень (Telegram-користувачі).
+    if (
+      !isGuestOrder &&
+      deliveryType === "delivery" &&
+      deliveryMethod === "inpost"
+    ) {
+      try {
+        await persistSavedInpostData({
+          User,
+          telegramId,
+          inpostData: created.inpostData || cart.inpostData,
+        });
+      } catch (e) {
+        console.error(
+          "[inpostSaved] persist failed:",
+          e?.message || e
+        );
+      }
+    }
 
     // після кожного замовлення: Mongo ← Google Таблиця складу (debounce, у фоні)
     import("../../lib/googleSheets/orderSync.js")

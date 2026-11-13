@@ -64,6 +64,8 @@ import {
   getGuestProfile,
   saveGuestProfile,
   addGuestOrder,
+  getGuestSavedInpostData,
+  saveGuestSavedInpostData,
 } from "../utils/guestLocalStore";
 import { peekPendingCart, clearPendingCart } from "../pendingCart";
 import { readProductVisualCache, writeProductVisualCache } from "../utils/visualCache";
@@ -655,6 +657,11 @@ const CartPage = () => {
     city: "",
     lockerAddress: "",
   });
+
+  /** Останні збережені дані InPost (з профілю / минулого замовлення). */
+  const [savedInpostData, setSavedInpostData] = useState(() =>
+    isGuestBrowser ? getGuestSavedInpostData() : null
+  );
 
   const [guestProfileForm, setGuestProfileForm] = useState(() => getGuestProfile());
 
@@ -1590,6 +1597,13 @@ useEffect(() => {
               lockerAddress: cart.inpostData.lockerAddress || "",
             });
           }
+          const guestSaved =
+            cart?.savedInpostData ||
+            cartResponse?.savedInpostData ||
+            getGuestSavedInpostData();
+          if (guestSaved) {
+            setSavedInpostData(guestSaved);
+          }
           const lockedType =
             cart?.checkoutDeliveryType ||
             (cart?.checkoutPickupPointId ? "pickup" : "delivery");
@@ -1703,6 +1717,12 @@ useEffect(() => {
             city: cart.inpostData.city || "",
             lockerAddress: cart.inpostData.lockerAddress || "",
           });
+        }
+
+        const nextSavedInpost =
+          cart?.savedInpostData || cartResponse?.savedInpostData || null;
+        if (nextSavedInpost) {
+          setSavedInpostData(nextSavedInpost);
         }
 
         const loadedItems = Array.isArray(cart?.items) ? cart.items : [];
@@ -2638,6 +2658,56 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
     : inpostStep === 3 ? t("Электронная почта", "Adres e-mail")
     : inpostStep === 4 ? t("Город", "Miasto")
     : t("Адрес пачкомата InPost", "Adres paczkomatu InPost"));
+
+  const normalizedSavedInpost = useMemo(() => {
+    const d = savedInpostData && typeof savedInpostData === "object"
+      ? savedInpostData
+      : null;
+    if (!d) return null;
+    const next = {
+      fullName: String(d.fullName || "").trim(),
+      phone: String(d.phone || "").trim(),
+      email: String(d.email || "").trim(),
+      city: String(d.city || "").trim(),
+      lockerAddress: String(d.lockerAddress || "").trim(),
+    };
+    if (!next.fullName || !next.phone) return null;
+    return next;
+  }, [savedInpostData]);
+
+  const inpostFormMatchesSaved = useMemo(() => {
+    if (!normalizedSavedInpost) return false;
+    return (
+      String(inpostForm.fullName || "").trim() === normalizedSavedInpost.fullName &&
+      String(inpostForm.phone || "").trim() === normalizedSavedInpost.phone &&
+      String(inpostForm.email || "").trim() === normalizedSavedInpost.email &&
+      String(inpostForm.city || "").trim() === normalizedSavedInpost.city &&
+      String(inpostForm.lockerAddress || "").trim() ===
+        normalizedSavedInpost.lockerAddress
+    );
+  }, [inpostForm, normalizedSavedInpost]);
+
+  const showSavedInpostOffer =
+    !isOrderDetailsMode &&
+    deliveryType === "delivery" &&
+    deliveryMethod === "inpost" &&
+    Boolean(normalizedSavedInpost) &&
+    !inpostFormMatchesSaved;
+
+  const applySavedInpostData = () => {
+    if (!normalizedSavedInpost) return;
+    haptic.light();
+    setInpostForm({
+      fullName: normalizedSavedInpost.fullName,
+      phone: normalizedSavedInpost.phone,
+      email: normalizedSavedInpost.email,
+      city: normalizedSavedInpost.city,
+      lockerAddress: normalizedSavedInpost.lockerAddress,
+    });
+    setInpostStep(5);
+    setIsAddressEditing(false);
+    setEditingFieldKey(null);
+  };
 
   const keepAddressInputInView = () => {
     const input = addressInputRef.current;
@@ -5202,6 +5272,33 @@ if (pointBlob.includes("srodmiescie")) {
                             </span>
                           </div>
 
+                          {showSavedInpostOffer && (
+                            <button
+                              type="button"
+                              className="inpostReuseOffer"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                applySavedInpostData();
+                              }}
+                            >
+                              <span className="inpostReuseOfferTitle">
+                                {t(
+                                  "Использовать прошлые данные",
+                                  "Użyj poprzednich danych"
+                                )}
+                              </span>
+                              <span className="inpostReuseOfferMeta">
+                                {[
+                                  normalizedSavedInpost.fullName,
+                                  normalizedSavedInpost.phone,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </span>
+                            </button>
+                          )}
+
                           {/* кнопка-«инпут» */}
                           <button
                             type="button"
@@ -6250,6 +6347,27 @@ if (pointBlob.includes("srodmiescie")) {
                                 .toLowerCase()
                             )
                         );
+
+                        if (
+                          deliveryType === "delivery" &&
+                          deliveryMethod === "inpost" &&
+                          inpostForm?.fullName &&
+                          inpostForm?.phone
+                        ) {
+                          const justSaved = {
+                            fullName: String(inpostForm.fullName || "").trim(),
+                            phone: String(inpostForm.phone || "").trim(),
+                            email: String(inpostForm.email || "").trim(),
+                            city: String(inpostForm.city || "").trim(),
+                            lockerAddress: String(
+                              inpostForm.lockerAddress || ""
+                            ).trim(),
+                          };
+                          setSavedInpostData(justSaved);
+                          if (isGuestBrowser) {
+                            saveGuestSavedInpostData(justSaved);
+                          }
+                        }
 
                         if (isGuestBrowser && createdOrder) {
                           addGuestOrder(createdOrder);

@@ -1,5 +1,6 @@
 import { bindApiGlobals } from "./bindApiGlobals.js";
 import { loadSmartPricingSettings } from "../../lib/crm/smartPricingSettings.js";
+import { resolveSavedInpostData } from "../../lib/inpostSavedProfile.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -68,9 +69,16 @@ app.get("/cart", async (req, res) => {
       reason = eligibility?.reason || null;
     }
 
+    const savedInpostData = await resolveSavedInpostData({
+      User,
+      Order,
+      telegramId,
+    });
+
     return res.json({
       ok: true,
       cart: safeCart,
+      savedInpostData,
       referralFirstOrderDiscount: {
         eligible: applied
           ? true

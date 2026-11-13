@@ -59,6 +59,16 @@ const userSchema = new mongoose.Schema(
 
     favoriteProductKeys: { type: [String], default: [] },
 
+    /** Останні дані InPost (ім'я, телефон…) — для швидкого повторного замовлення. */
+    savedInpostData: {
+      fullName: { type: String, default: null },
+      phone: { type: String, default: null },
+      email: { type: String, default: null },
+      city: { type: String, default: null },
+      lockerAddress: { type: String, default: null },
+      updatedAt: { type: Date, default: null },
+    },
+
     referral: {
       code: { type: String, default: "" },
       usedCode: { type: String, default: "" },
