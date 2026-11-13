@@ -23,7 +23,11 @@ import logo from "../assets/logo3.webp";
 import zlotyIcon from "../assets/zlotyIcon.webp";
 import telegramIcon from "../assets/telegramIcon.webp";
 import supportIcon from "../assets/supportIcon.webp";
-import { isReferralBanner } from "../utils/homeBanners";
+import {
+  isMerryMiNewBanner,
+  isReferralBanner,
+  MERRY_MI_NEW_CATALOG_SEARCH,
+} from "../utils/homeBanners";
 import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import pickupIcon from "../assets/pickupIcon.webp";
 import deliveryIcon from "../assets/deliveryIcon.webp";
@@ -839,6 +843,16 @@ const ManagersPage = () => {
                     if (isReferralBanner(bannerSources[i])) {
                       navigate("/referral");
                       return;
+                    }
+
+                    if (isMerryMiNewBanner(bannerSources[i])) {
+                      navigate("/", {
+                        state: {
+                          openCatalogView: "all",
+                          catalogSearch: MERRY_MI_NEW_CATALOG_SEARCH,
+                          scrollToCatalog: true,
+                        },
+                      });
                     }
                   }}
                 >

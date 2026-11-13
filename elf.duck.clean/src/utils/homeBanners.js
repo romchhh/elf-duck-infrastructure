@@ -34,3 +34,9 @@ export function isReferralBanner(src) {
 export function isMerryMiNewBanner(src) {
   return src === merryMiNewBannerRu || src === merryMiNewBannerPl;
 }
+
+/** productKey новинок з банера Merry Mi (Blade + Liquid). */
+export const MERRY_MI_NEW_PRODUCT_KEYS = ["merry-mi-blade-30k", "merry-mi"];
+
+/** Пошуковий запит, щоб у каталозі лишились лише ці новинки. */
+export const MERRY_MI_NEW_CATALOG_SEARCH = "merry mi";

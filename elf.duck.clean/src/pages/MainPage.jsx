@@ -63,7 +63,11 @@ import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
 import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
-import { isReferralBanner } from "../utils/homeBanners";
+import {
+  isMerryMiNewBanner,
+  isReferralBanner,
+  MERRY_MI_NEW_CATALOG_SEARCH,
+} from "../utils/homeBanners";
 import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
 import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
@@ -1781,6 +1785,17 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
     }, 100);
   }, []);
 
+  const openMerryMiNovelties = useCallback(() => {
+    setActiveCategoryFilter(null);
+    setCatalogSearchQuery(MERRY_MI_NEW_CATALOG_SEARCH);
+    setCatalogView("all");
+    window.setTimeout(() => {
+      document
+        .getElementById("giveaway-catalog-target")
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 100);
+  }, []);
+
   /* ================= NAVIGATION ================= */
 
   const navigate = useNavigate();
@@ -1799,7 +1814,14 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
       setActiveCategoryFilter(nextFilter?.key ? nextFilter : null);
     }
 
-    if (!location.state?.scrollToCatalog) return undefined;
+    const pendingSearch = String(location.state?.catalogSearch || "").trim();
+    if (pendingSearch) {
+      setActiveCategoryFilter(null);
+      setCatalogSearchQuery(pendingSearch);
+      setCatalogView("all");
+    }
+
+    if (!location.state?.scrollToCatalog && !pendingSearch) return undefined;
 
     const timer = window.setTimeout(() => {
       document.getElementById("giveaway-catalog-target")?.scrollIntoView({
@@ -4006,6 +4028,10 @@ navigate("/cart");
                       if (isReferralBanner(bannerSources[i])) {
                         navigate("/referral");
                         return;
+                      }
+
+                      if (isMerryMiNewBanner(bannerSources[i])) {
+                        openMerryMiNovelties();
                       }
                     }}
                   >

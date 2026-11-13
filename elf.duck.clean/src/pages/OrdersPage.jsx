@@ -31,7 +31,11 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   "https://elfduck-api.telebots.site";
 
-import { isReferralBanner } from "../utils/homeBanners";
+import {
+  isMerryMiNewBanner,
+  isReferralBanner,
+  MERRY_MI_NEW_CATALOG_SEARCH,
+} from "../utils/homeBanners";
 import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import { appPath } from "../utils/appMode";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
@@ -3464,6 +3468,16 @@ useEffect(() => {
                                     if (isReferralBanner(bannerSources[i])) {
                                         navigate("/referral");
                                         return;
+                                    }
+
+                                    if (isMerryMiNewBanner(bannerSources[i])) {
+                                      navigate("/", {
+                                        state: {
+                                          openCatalogView: "all",
+                                          catalogSearch: MERRY_MI_NEW_CATALOG_SEARCH,
+                                          scrollToCatalog: true,
+                                        },
+                                      });
                                     }
                                 }}
                                 >

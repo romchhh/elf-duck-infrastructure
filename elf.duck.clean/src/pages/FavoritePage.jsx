@@ -33,7 +33,11 @@ import {
 
 } from "../utils/i18n";
 
-import { isReferralBanner } from "../utils/homeBanners";
+import {
+  isMerryMiNewBanner,
+  isReferralBanner,
+  MERRY_MI_NEW_CATALOG_SEARCH,
+} from "../utils/homeBanners";
 import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
@@ -727,6 +731,16 @@ const FavoritePage = () => {
                     if (isReferralBanner(bannerSources[i])) {
                         navigate("/referral");
                         return;
+                    }
+
+                    if (isMerryMiNewBanner(bannerSources[i])) {
+                      navigate("/", {
+                        state: {
+                          openCatalogView: "all",
+                          catalogSearch: MERRY_MI_NEW_CATALOG_SEARCH,
+                          scrollToCatalog: true,
+                        },
+                      });
                     }
                   }}
                 >
