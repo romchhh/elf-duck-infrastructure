@@ -1,4 +1,4 @@
-/** BLIK-замовлення не дають кешбек і запис у розіграш. */
+/** BLIK-замовлення не дають запис у розіграш (кешбек нараховується як для інших методів). */
 export function isBlikOrderPayment(order) {
   const method = String(order?.payment?.method || "")
     .trim()

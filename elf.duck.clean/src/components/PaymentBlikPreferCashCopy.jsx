@@ -60,8 +60,8 @@ export default function PaymentBlikPreferCashCopy({ mapsHref = "#" }) {
       >
         <p className="paymentBlikCopyNotice">
           {t(
-            "Обратите внимание: при оплате через BLIK кэшбэк за заказ не начисляется, а заказ не участвует в ежемесячном розыгрыше 2 000 zł.",
-            "Uwaga: przy płatności BLIK nie naliczamy cashbacku, a zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł."
+            "Обратите внимание: при оплате через BLIK заказ не участвует в ежемесячном розыгрыше 2 000 zł.",
+            "Uwaga: przy płatności BLIK zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł."
           )}
         </p>
       </CopyRow>

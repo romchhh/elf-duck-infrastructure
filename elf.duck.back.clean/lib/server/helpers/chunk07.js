@@ -321,11 +321,6 @@ export async function applyOrderCashback(order) {
     freshOrder
   );
 
-  const { isBlikOrderPayment } = await import("../../giveaway/payment.js");
-  if (isBlikOrderPayment(freshOrder)) {
-    return { applied: false, cashbackZl: 0, percent: 0, skippedReason: "BLIK" };
-  }
-
   // защита от повторного начисления
   if (freshOrder.cashbackAppliedAt) {
     return {

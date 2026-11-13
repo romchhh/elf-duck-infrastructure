@@ -32,10 +32,10 @@ export function resolveZabkaMapsUrl(pointKey = "", address = "") {
 }
 
 export const BLIK_GIVEAWAY_NOTICE_RU =
-  "Обратите внимание: при оплате через BLIK кэшбэк за заказ не начисляется, а заказ не участвует в ежемесячном розыгрыше 2 000 zł.";
+  "Обратите внимание: при оплате через BLIK заказ не участвует в ежемесячном розыгрыше 2 000 zł.";
 
 export const BLIK_GIVEAWAY_NOTICE_PL =
-  "Uwaga: przy płatności BLIK nie naliczamy cashbacku, a zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł.";
+  "Uwaga: przy płatności BLIK zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł.";
 
 export const BLIK_CASH_PREFERENCE_RU = `Будем вам очень благодарны, если вы выберете оплату наличными 🙏
 
