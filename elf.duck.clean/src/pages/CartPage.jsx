@@ -1261,21 +1261,13 @@ const selectedPickupPoint = checkoutPickupPointId
 
   const showReferralFirstOrderDiscountAlert = () => {
     const percent = referralFirstOrderDiscountPercent || 10;
-    const text = `Скидка на первый заказ в размере ${percent}% была применена`;
-
-    try {
-      const tg = window?.Telegram?.WebApp;
-      if (tg && typeof tg.showPopup === "function") {
-        tg.showPopup({
-          title: "🎁 Реферальная скидка",
-          message: text,
-          buttons: [{ type: "ok" }],
-        });
-        return;
-      }
-    } catch {}
-
-    window.alert(text);
+    showTelegramWarning(
+      t("Реферальная скидка", "Zniżka referralowa"),
+      t(
+        `Скидка на первый заказ ${percent}% уже применена к сумме корзины.`,
+        `Zniżka na pierwsze zamówienie ${percent}% jest już zastosowana do kwoty koszyka.`
+      )
+    );
   };
 
   const todayPickupSchedule =
@@ -4082,26 +4074,33 @@ if (pointBlob.includes("srodmiescie")) {
             </div>
 
               {showReferralFirstOrderDiscountHeader ? (
-                <div
+                <button
+                  type="button"
                   className={`cartDiscountHeader ${isReferralFirstOrderDiscountApplied ? "applied" : "pending"}`}
-                  onClick={isReferralFirstOrderDiscountApplied ? showReferralFirstOrderDiscountAlert : undefined}
-                  role={isReferralFirstOrderDiscountApplied ? "button" : undefined}
-                  tabIndex={isReferralFirstOrderDiscountApplied ? 0 : undefined}
-                  onKeyDown={
-                    isReferralFirstOrderDiscountApplied
-                      ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            showReferralFirstOrderDiscountAlert();
-                          }
-                        }
-                      : undefined
-                  }
+                  onClick={() => {
+                    haptic.light();
+                    if (isReferralFirstOrderDiscountApplied) {
+                      showReferralFirstOrderDiscountAlert();
+                    }
+                  }}
                 >
-                  {isReferralFirstOrderDiscountApplied
-                    ? t(`Скидка ${referralFirstOrderDiscountPercent}% применена`, `Zniżka ${referralFirstOrderDiscountPercent}% została zastosowana`)
-                    : t("Собрав корзину на сумму 65 zł будет применена скидка 10%", "Po zebraniu koszyka na kwotę 65 zł zostanie zastosowana zniżka 10%")}
-                </div>
+                  <img
+                    src={CartSaleIcon}
+                    alt=""
+                    className="cartDiscountHeaderIcon"
+                  />
+                  <span className="cartDiscountHeaderText">
+                    {isReferralFirstOrderDiscountApplied
+                      ? t(
+                          `Скидка ${referralFirstOrderDiscountPercent}% применена`,
+                          `Zniżka ${referralFirstOrderDiscountPercent}% zastosowana`
+                        )
+                      : t(
+                          "Собери корзину от 65 zł — скидка 10%",
+                          "Zbierz koszyk od 65 zł — zniżka 10%"
+                        )}
+                  </span>
+                </button>
               ) : null}
 
               {!isOrderDetailsMode && !cartHydrated && !isGuestBrowser && renderItems.length === 0 ? (
