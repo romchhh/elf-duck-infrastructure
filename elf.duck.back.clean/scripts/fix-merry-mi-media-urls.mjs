@@ -17,7 +17,7 @@ dotenv.config();
 dotenv.config({ path: path.join(scriptDir, "..", "..", ".env") });
 
 const dryRun = process.argv.includes("--dry-run");
-const VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "15");
+const VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "16");
 const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||
