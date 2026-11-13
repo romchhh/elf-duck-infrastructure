@@ -257,15 +257,7 @@ async def _resolve_mentions(
             )
             continue
         resolved.append(entity)
-    if not resolved:
-        hint = "; ".join(
-            f"@{item['username']}: {item['error']}" for item in skipped[:8]
-        )
-        if len(skipped) > 8:
-            hint += f" …ещё {len(skipped) - 8}"
-        raise ValueError(
-            hint or "Нужен хотя бы один валидный username для отметки"
-        )
+    # Невалідні @username просто пропускаємо — не валимо всю публікацію.
     return resolved, skipped
 
 
@@ -498,9 +490,37 @@ async def publish_custom_story(
     await emit()
     published: list[str] = []
     failed: list[dict] = []
+    stories: list[dict] = []
     resolved, skipped_resolve = await _resolve_mentions(client, usernames)
     failed.extend(skipped_resolve)
     await emit(failed=list(failed))
+
+    # Усі @username невалідні / не користувачі — просто done зі списком skipped.
+    if not resolved:
+        await emit(
+            phase="done",
+            currentGroup=[],
+            mentioned=[],
+            stories=[],
+            failed=list(failed),
+            pending=0,
+            waitUntil=None,
+            total=0,
+        )
+        return {
+            "mentions": [],
+            "failed": [f"@{item['username']}: {item['error']}" for item in failed],
+            "caption": cap_ru,
+            "captionPl": cap_pl,
+            "buttonUrl": link,
+            "buttonText": label_ru,
+            "buttonTextPl": label_pl,
+            "buttonColor": color if link else "",
+            "resultType": "",
+            "stories": 0,
+            "languages": {"pl": 0, "ru": 0},
+        }
+
     lang_by_id = await asyncio.to_thread(
         languages_for_entities,
         resolved,
@@ -514,7 +534,6 @@ async def publish_custom_story(
         languages={"pl": len(buckets["pl"]), "ru": len(buckets["ru"])},
     )
 
-    stories: list[dict] = []
     last_type = ""
     me = await client.get_input_entity("me")
 
@@ -585,11 +604,8 @@ async def publish_custom_story(
                 stories=stories,
             )
 
-        if not published:
-            detail = "; ".join(
-                f"@{item['username']}: {item['error']}" for item in failed
-            ) or "Telegram не принял отметки"
-            raise RuntimeError(detail)
+        # Навіть якщо нічого не опублікували (усі впали на interaction) —
+        # не валимо джобу: skipped лишаються в failed.
         await emit(
             phase="done",
             currentGroup=[],
