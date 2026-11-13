@@ -19,10 +19,9 @@ import {
   resolveProductActionsClass,
 } from "../lib/productCardLayout.js";
 import {
-  getBakedCardImageUrl,
   getProductHeroUrl,
-  hasBakedCardImage,
 } from "../lib/cardMedia.js";
+import CatalogCardMedia from "../components/CatalogCardMedia.jsx";
 
 import {
 
@@ -810,39 +809,7 @@ const FavoritePage = () => {
                   >
                     <div className="cardBg" />
 
-                    {hasBakedCardImage(product) ? (
-                      <img
-                        src={getBakedCardImageUrl(product)}
-                        className="cardImageFull cardImageFull--baked"
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        fetchpriority="low"
-                      />
-                    ) : (
-                      <>
-                        {product.cardBgUrl ? (
-                          <img
-                            src={product.cardBgUrl}
-                            className={product.classCardBg || "cardImageFull"}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            fetchpriority="low"
-                          />
-                        ) : null}
-                        {product.cardDuckUrl ? (
-                          <img
-                            src={product.cardDuckUrl}
-                            className={product.classCardDuck || "cardImageLeft"}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            fetchpriority="low"
-                          />
-                        ) : null}
-                      </>
-                    )}
+                    <CatalogCardMedia item={product} />
 
                     <div className="productTop">
                     <div className="productTitle">

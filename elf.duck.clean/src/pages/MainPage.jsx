@@ -112,10 +112,9 @@ import {
 
 } from "../utils/i18n";
 import {
-  getBakedCardImageUrl,
   getProductHeroUrl,
-  hasBakedCardImage,
 } from "../lib/cardMedia.js";
+import CatalogCardMedia from "../components/CatalogCardMedia.jsx";
 
 const MainPageProductCard = React.memo(function MainPageProductCard({
   product,
@@ -130,8 +129,6 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 }) {
   const compactDuck = isCompactCatalogDuck(product);
   const cartridgeDuck = isCartridgesCategory(product);
-  const bakedUrl = getBakedCardImageUrl(product);
-  const useBaked = hasBakedCardImage(product);
 
   return (
     <div
@@ -144,40 +141,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
     >
       <div className="cardBg" />
 
-      {useBaked ? (
-        <img
-          src={bakedUrl}
-          className="cardImageFull cardImageFull--baked"
-          alt=""
-          loading={eager ? "eager" : "lazy"}
-          decoding="async"
-          fetchpriority={eager ? "high" : "low"}
-        />
-      ) : (
-        <>
-          {product.cardBgUrl ? (
-            <img
-              src={product.cardBgUrl}
-              className={product.classCardBg || "cardImageFull"}
-              alt=""
-              loading={eager ? "eager" : "lazy"}
-              decoding="async"
-              fetchpriority={eager ? "high" : "low"}
-            />
-          ) : null}
-
-          {product.cardDuckUrl ? (
-            <img
-              src={product.cardDuckUrl}
-              className={product.classCardDuck || "cardImageLeft"}
-              alt=""
-              loading={eager ? "eager" : "lazy"}
-              decoding="async"
-              fetchpriority={eager ? "high" : "low"}
-            />
-          ) : null}
-        </>
-      )}
+      <CatalogCardMedia item={product} eager={eager} />
 
       <div className="productTop">
         <div className="productTitle">
@@ -4254,40 +4218,7 @@ navigate("/cart");
                   >
                     <div className="cardBg" />
 
-                    {hasBakedCardImage(c) ? (
-                      <img
-                        src={getBakedCardImageUrl(c)}
-                        className="cardImageFull cardImageFull--baked"
-                        alt=""
-                        loading={idx < 4 ? "eager" : "lazy"}
-                        decoding="async"
-                        fetchpriority={idx < 4 ? "high" : "low"}
-                      />
-                    ) : (
-                      <>
-                        {c.cardBgUrl ? (
-                          <img
-                            src={c.cardBgUrl}
-                            className="cardImageFull"
-                            alt=""
-                            loading={idx < 4 ? "eager" : "lazy"}
-                            decoding="async"
-                            fetchpriority={idx < 4 ? "high" : "low"}
-                          />
-                        ) : null}
-                        {c.cardDuckUrl ? (
-                          <img
-                            src={c.cardDuckUrl}
-                            className={c.classCardDuck || "cardImageLeft"}
-                            alt=""
-                            loading={idx < 4 ? "eager" : "lazy"}
-                            decoding="async"
-                            fetchpriority={idx < 4 ? "high" : "low"}
-                          />
-                        ) : null}
-                        {c.showOverlay ? <div className="cardOverlay" /> : null}
-                      </>
-                    )}
+                    <CatalogCardMedia item={c} eager={idx < 4} />
 
                     <div className="cardContent">
                       {c.badgeText ? (

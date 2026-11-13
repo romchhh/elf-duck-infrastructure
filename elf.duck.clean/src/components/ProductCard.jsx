@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import likedIcon from "../assets/likedIcon.webp";
 import buyIcon from "../assets/buyIcon.webp";
 import { t } from "../utils/i18n";
@@ -10,7 +10,8 @@ const ProductCard = React.memo(function ProductCard({
   onToggleFavorite,
   onOpenCheckout,
 }) {
-  const baked = hasBakedCardImage(product);
+  const [bakedFailed, setBakedFailed] = useState(false);
+  const baked = hasBakedCardImage(product) && !bakedFailed;
 
   return (
     <div className="productCard">
@@ -21,6 +22,7 @@ const ProductCard = React.memo(function ProductCard({
           alt=""
           loading="lazy"
           decoding="async"
+          onError={() => setBakedFailed(true)}
         />
       ) : (
         <div

@@ -37,7 +37,7 @@ function dbNameFromUri(uri) {
     return "";
   }
 }
-const CARD_VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "14");
+const CARD_VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "15");
 const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||

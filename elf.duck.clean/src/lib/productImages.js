@@ -8,7 +8,7 @@ import {
 } from "./productCardLayout.js";
 
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
-export const PRODUCT_CARD_ASSET_VERSION = "13";
+export const PRODUCT_CARD_ASSET_VERSION = "15";
 
 /** Фони карток як у xros-5 / puffy (IPFS), без catalog-smoke. */
 const CARD_BG_REF = {
@@ -18,6 +18,12 @@ const CARD_BG_REF = {
     "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreidcqyy44a3zkf3ag2fnvopn5syqzct6notpayx5hpeokdhxe3nk34",
   "oxva-30-ml-20-mg":
     "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreig3wqn55dlr5uo4uvwng4xxzygh3proyxx553zsbeizk5tbotj3qa",
+  "merry-mi":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiavqxbdav3hk2rqcokp7iobnb462rjcyaxfg3ejrg5zindszv6ws4",
+  "merry-mi-blade-30k":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreihjucgk2vsq5x5u3y3joot5fp42nbgql32mjkivjkmryhtdxrerka",
+  "puffy-special":
+    "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiavqxbdav3hk2rqcokp7iobnb462rjcyaxfg3ejrg5zindszv6ws4",
 };
 
 /** Відтінок checkout-сторінки (sheet), як на order hero — не змінюється від смаку. */
@@ -25,12 +31,22 @@ const PAGE_ACCENT_HEX = {
   "xros-6-mini-pod": "#334D2D",
   "xros-6-pod": "#711C1E",
   "oxva-30-ml-20-mg": "#3F3E83",
+  "merry-mi": "#C45A1A",
+  "merry-mi-blade-30k": "#7A1F2B",
+  "puffy-special": "#2F6B4F",
 };
 
 const FLAVOR_GRADIENT_PRODUCT_KEYS = new Set([
   "xros-6-mini-pod",
   "xros-6-pod",
   "oxva-30-ml-20-mg",
+]);
+
+/** Локальні card+order у /public/products — завжди беремо з шопа (не stale catalog-media). */
+const FORCE_LOCAL_SHOP_MEDIA_KEYS = new Set([
+  "merry-mi",
+  "merry-mi-blade-30k",
+  "puffy-special",
 ]);
 
 function cardAsset(file) {
@@ -50,6 +66,9 @@ const LOCAL_PRODUCT_CARD_KEYS = new Set([
   "oxva-30-ml-20-mg",
   "xros-6-mini-pod",
   "xros-6-pod",
+  "merry-mi",
+  "merry-mi-blade-30k",
+  "puffy-special",
 ]);
 
 function resolveLocalProductCardDuckUrl(productKey) {
@@ -97,6 +116,42 @@ export const productVisualByKey = {
     title1: "OXVA",
     title2: "30 ML / 20 MG",
     titleModal: "OXVA 30 ML / 20 MG",
+  },
+  "merry-mi": {
+    cardBgUrl: CARD_BG_REF["merry-mi"],
+    cardDuckUrl: cardAsset("merry-mi-card.png"),
+    orderImgUrl: cardAsset("merry-mi-order.png"),
+    pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi"]),
+    classCardBg: "",
+    classCardDuck: "productCardImageRight",
+    classActions: "productActionsRight",
+    title1: "MERRY MI",
+    title2: "30 ML / 50 MG",
+    titleModal: "LIQUID MERRY MI",
+  },
+  "merry-mi-blade-30k": {
+    cardBgUrl: CARD_BG_REF["merry-mi-blade-30k"],
+    cardDuckUrl: cardAsset("merry-mi-blade-30k-card.png"),
+    orderImgUrl: cardAsset("merry-mi-blade-30k-order.png"),
+    pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi-blade-30k"]),
+    classCardBg: "",
+    classCardDuck: "productCardImageRight",
+    classActions: "productActionsRight",
+    title1: "MERRY MI",
+    title2: "BLADE 30K",
+    titleModal: "MERRY MI BLADE 30K",
+  },
+  "puffy-special": {
+    cardBgUrl: CARD_BG_REF["puffy-special"],
+    cardDuckUrl: cardAsset("puffy-special-card.png"),
+    orderImgUrl: cardAsset("puffy-special-order.png"),
+    pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["puffy-special"]),
+    classCardBg: "",
+    classCardDuck: "productCardImageRight",
+    classActions: "productActionsRight",
+    title1: "PUFFY",
+    title2: "SPECIAL",
+    titleModal: "PUFFY SPECIAL 30 ML / 50 MG",
   },
 };
 
@@ -170,6 +225,19 @@ export function enrichProductVisuals(product) {
   const localCardDuckUrl = resolveLocalProductCardDuckUrl(productKey);
   if (localCardDuckUrl && !hasCatalogVisual(next.cardDuckUrl)) {
     next = { ...next, cardDuckUrl: localCardDuckUrl };
+  }
+
+  // Merry Mi / Puffy Special: локальні card+wide order у шопі.
+  // Прибираємо stale cardImageUrl з /catalog-media (часто 404 на VPS).
+  if (FORCE_LOCAL_SHOP_MEDIA_KEYS.has(productKey)) {
+    const presetLocal = productVisualByKey[productKey] || {};
+    next = {
+      ...next,
+      cardBgUrl: next.cardBgUrl || presetLocal.cardBgUrl || "",
+      cardDuckUrl: cardAsset(`${productKey}-card.png`),
+      orderImgUrl: cardAsset(`${productKey}-order.png`),
+      cardImageUrl: "",
+    };
   }
 
   return next;
