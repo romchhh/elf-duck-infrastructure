@@ -2081,7 +2081,7 @@ useEffect(() => {
         haptic.light();
 
         const text = [
-        t("💰 КЭШБЕК ELF DUCK", "💰 CASHBACK ELF DUCK"),
+        t("КЭШБЕК ELF DUCK", "CASHBACK ELF DUCK"),
         "",
         t("до 100 zł — 3%", "do 100 zł — 3%"),
 
@@ -2091,7 +2091,7 @@ useEffect(() => {
 
         t("501+ zł — 8%", "501+ zł — 8%"),
         "",
-        t("❌ ВАЖНО:", "❌ WAŻNE:"),
+        t("ВАЖНО:", "WAŻNE:"),
         "",
         t("1. Процент зависит от суммы заказа", "1. Procent zależy od kwoty zamówienia"),
         t("2. Кэшбек начисляется на ваш баланс после покупки", "2. Cashback jest naliczany na saldo po zakupie"),

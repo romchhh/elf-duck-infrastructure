@@ -856,7 +856,9 @@ body {
   box-sizing: border-box;
 }
 
-.newDropBadge {
+.newDropBadge,
+.newDropBadge.sale,
+.newDropBadge.newdrop {
   position: absolute;
   top: 12px;
 
@@ -871,9 +873,13 @@ body {
   border-radius: 999px;
 
   font-family: Unbounded-Medium;
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.02em;
   color: #fff;
+  text-transform: uppercase;
 
+  transform: rotate(-12deg);
   white-space: nowrap;
 }
 

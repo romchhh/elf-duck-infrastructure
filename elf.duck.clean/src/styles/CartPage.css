@@ -1591,6 +1591,19 @@ body {
   transform: none !important;
 }
 
+.cartQtyBtnYellow {
+  background: #F39E09;
+  color: #FEEC9A;
+  cursor: default;
+  pointer-events: none;
+}
+
+.cartQtyBtnValue {
+  font-family: Unbounded-Medium;
+  font-size: 12px;
+  line-height: 1;
+}
+
 .cartQtyValue {
   min-width: 14px;
   font-family: Unbounded-Regular;
@@ -2188,6 +2201,36 @@ body {
   padding: 0 12px;
   margin-bottom: 10px;
   text-align: left;
+}
+
+.pickupCheckoutSelectReadonly,
+.pickupTimeControlReadonly,
+.pickupTimeBtnReadonly {
+  pointer-events: none;
+  cursor: default;
+}
+
+.pickupCheckoutSelectReadonly {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.pickupCheckoutSelectReadonly .pickupCheckoutCaret {
+  display: none;
+}
+
+.pickupTimeBtnReadonly {
+  opacity: 0.9;
+}
+
+.pickupCheckoutCurrencyText {
+  margin-left: 6px;
+  font-family: Unbounded-Medium;
+  font-size: 12px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.95);
+  text-transform: uppercase;
 }
 
 .inpostReuseOffer {

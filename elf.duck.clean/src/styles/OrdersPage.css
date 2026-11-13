@@ -1412,6 +1412,14 @@ body {
   object-fit: contain;
 }
 
+.orderCardPriceCurrency {
+  font-family: Unbounded-Medium;
+  font-size: 11px;
+  line-height: 1;
+  color: rgba(38, 51, 29, 1);
+  text-transform: uppercase;
+}
+
 /* PAY BUTTON */
 .orderCardActionBtn.pay {
   width: 100%;
