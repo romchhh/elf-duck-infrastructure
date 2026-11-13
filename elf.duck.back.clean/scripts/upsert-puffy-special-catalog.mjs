@@ -163,7 +163,7 @@ async function upsertProduct(spec) {
     classCardDuck: "productCardImageRight",
     classActions: "productActionsRight",
     newBadge: "NEW",
-    classNewBadge: "actionBadge",
+    classNewBadge: "actionBadge sale",
     accentColor: accent,
     flavors,
   };

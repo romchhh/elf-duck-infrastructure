@@ -1031,6 +1031,7 @@ body {
   z-index: 6;
 }
 
+.actionBadge,
 .actionBadge.sale {
   background: linear-gradient(
     180deg,
@@ -1038,16 +1039,20 @@ body {
     #FF2323 100%
   );
 
-  color: white;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 
   font-size: 10px;
   font-family: Unbounded-Medium;
+  line-height: 1;
 
   padding: 4px 8px;
   border-radius: 999px;
 
   transform: rotate(-12deg);
   align-self: flex-end;
+  white-space: nowrap;
 }
 
 .actionButton {
@@ -3857,6 +3862,7 @@ body {
     gap: 14px;
   }
 
+  .actionBadge,
   .actionBadge.sale {
     font-size: 7px;
   }
@@ -4144,6 +4150,7 @@ body {
     gap: 12px;
   }
 
+  .actionBadge,
   .actionBadge.sale {
     font-size: 7px;
   }

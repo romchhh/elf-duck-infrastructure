@@ -162,7 +162,11 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
       </div>
 
       <div className={resolveProductActionsClass(product)}>
-        <div className={product.classNewBadge}>{product.newBadge}</div>
+        {product.newBadge ? (
+          <div className={product.classNewBadge || "actionBadge"}>
+            {product.newBadge}
+          </div>
+        ) : null}
 
         <button
           className="actionButton cart"
