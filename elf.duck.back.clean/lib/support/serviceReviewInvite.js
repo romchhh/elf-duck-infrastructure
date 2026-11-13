@@ -667,6 +667,10 @@ export async function submitServiceReview({ telegramId, rating, details = "" }) 
       ? ratingLabel
       : `${ratingLabel}\n\n${body}`.trim();
 
+  // IMPORTANT: declare before CustomerReview.create — previously TDZ on
+  // `testMode` made create throw, invite still completed, CRM stayed empty.
+  const testMode = Boolean(invite?.testMode);
+
   let reviewDoc = null;
   try {
     reviewDoc = await CustomerReview.create({
@@ -693,8 +697,6 @@ export async function submitServiceReview({ telegramId, rating, details = "" }) 
   } catch (persistErr) {
     console.error("submitServiceReview persist error:", persistErr);
   }
-
-  const testMode = Boolean(invite?.testMode);
 
   const telegramResult = await notifyComplaintsChat({
     telegramId: id,
