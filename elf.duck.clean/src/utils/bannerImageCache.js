@@ -7,7 +7,7 @@ import {
 import { getCurrentLanguage } from "./i18n";
 import { preloadImage, preloadImages } from "./preloadImage.js";
 
-const CACHE_NAME = "elfduck-home-banners-v2";
+const CACHE_NAME = "elfduck-home-banners-v3";
 
 /** @type {Map<string, string>} src → blob: URL */
 const blobUrlBySrc = new Map();

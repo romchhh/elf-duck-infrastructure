@@ -1294,7 +1294,10 @@ const MainPage = () => {
       t("1. Процент зависит от суммы заказа", "1. Procent zależy od kwoty zamówienia"),
       t("2. Кэшбек начисляется на ваш баланс после покупки", "2. Cashback jest naliczany na saldo po zakupie"),
       t("3. Срок использования — 40 дней", "3. Okres wykorzystania — 40 dni"),
-      t("4. Списать можно без ограничений", "4. Można wykorzystać bez ograniczeń"),
+      t(
+        "4. Списать можно до 40% суммы заказа",
+        "4. Można wykorzystać do 40% wartości zamówienia"
+      ),
     ].join("\n");
 
     showTgAlert(text);

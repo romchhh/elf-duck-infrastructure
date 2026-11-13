@@ -6,6 +6,7 @@ import {
   getBlikRecipientFirstName,
   resolveZabkaMapsUrl,
   shouldHideBlikTransferHint,
+  shouldShowBlikRequisites,
 } from "./blikCheckoutHints.js";
 import { getBlikPreferCashBannerUrl } from "./blikPreferCashBannerMedia.js";
 import PickupPoint from "../../models/PickupPoint.js";
@@ -76,6 +77,10 @@ export function buildBlikPaymentClientCaption({
   const hideTransferHint = shouldHideBlikTransferHint(order, point);
   const imie = escapeHtml(getBlikRecipientFirstName(order, point));
 
+  const showRequisites = shouldShowBlikRequisites(order, point);
+  // InPost — лише картка/BLIK, без підказки «краще готівка» / Żabka.
+  const showPreferCash = !showRequisites;
+
   const lines = [
     isPl ? "📱 <b>PŁATNOŚĆ BLIK</b>" : "📱 <b>ОПЛАТА BLIK</b>",
     "",
@@ -85,12 +90,17 @@ export function buildBlikPaymentClientCaption({
     isPl
       ? `Do zapłaty: <b>${payable} zł</b>`
       : `К оплате: <b>${payable} zł</b>`,
-    "",
-    isPl ? `<b>Dane do przelewu:</b>` : `<b>Реквизиты:</b>`,
-    `<code>${requisites}</code>`,
   ];
 
-  if (!hideTransferHint) {
+  if (showRequisites) {
+    lines.push(
+      "",
+      isPl ? `<b>Dane do przelewu:</b>` : `<b>Реквизиты:</b>`,
+      `<code>${requisites}</code>`
+    );
+  }
+
+  if (showRequisites && !hideTransferHint) {
     lines.push(
       "",
       isPl ? "⚠️ <b>Ważne przy przelewie BLIK</b>" : "⚠️ <b>Важно при переводе BLIK</b>",
@@ -103,9 +113,14 @@ export function buildBlikPaymentClientCaption({
     );
   }
 
+  if (showPreferCash) {
+    lines.push(
+      "",
+      escapeHtml(isPl ? BLIK_CASH_PREFERENCE_PL : BLIK_CASH_PREFERENCE_RU)
+    );
+  }
+
   lines.push(
-    "",
-    escapeHtml(isPl ? BLIK_CASH_PREFERENCE_PL : BLIK_CASH_PREFERENCE_RU),
     "",
     escapeHtml(isPl ? BLIK_GIVEAWAY_NOTICE_PL : BLIK_GIVEAWAY_NOTICE_RU),
     "",
@@ -137,41 +152,58 @@ export async function sendClientBlikPaymentInstructions(order) {
     detailsValue,
   });
 
-  const bannerUrl = getBlikPreferCashBannerUrl(lang);
-  const zabkaUrl = resolveZabkaMapsUrl(point?.key, point?.address);
-
-  const replyMarkup = {
-    inline_keyboard: [
-      [
-        {
-          text: pickClientCopy(
-            lang,
-            "📍 Ближайшая Żabka на Google Maps",
-            "📍 Najbliższa Żabka w Google Maps"
-          ),
-          url: zabkaUrl,
-        },
-      ],
-    ],
+  const showPreferCash = !shouldShowBlikRequisites(order, point);
+  const preferredBotIndex = Number(order?.shopBotIndex);
+  const botOpts = {
+    preferredBotIndex: Number.isFinite(preferredBotIndex)
+      ? preferredBotIndex
+      : undefined,
   };
 
-  const preferredBotIndex = Number(order?.shopBotIndex);
+  if (showPreferCash) {
+    const bannerUrl = getBlikPreferCashBannerUrl(lang);
+    const zabkaUrl = resolveZabkaMapsUrl(point?.key, point?.address);
+    const replyMarkup = {
+      inline_keyboard: [
+        [
+          {
+            text: pickClientCopy(
+              lang,
+              "📍 Ближайшая Żabka на Google Maps",
+              "📍 Najbliższa Żabka w Google Maps"
+            ),
+            url: zabkaUrl,
+          },
+        ],
+      ],
+    };
 
-  await sendViaUserShopBot(
-    telegramId,
-    async (clientBot) => {
-      return clientBot.telegram.sendPhoto(telegramId, { url: bannerUrl }, {
-        caption,
-        parse_mode: "HTML",
-        reply_markup: replyMarkup,
-      });
-    },
-    {
-      preferredBotIndex: Number.isFinite(preferredBotIndex)
-        ? preferredBotIndex
-        : undefined,
-    }
-  );
+    await sendViaUserShopBot(
+      telegramId,
+      async (clientBot) => {
+        return clientBot.telegram.sendPhoto(
+          telegramId,
+          { url: bannerUrl },
+          {
+            caption,
+            parse_mode: "HTML",
+            reply_markup: replyMarkup,
+          }
+        );
+      },
+      botOpts
+    );
+  } else {
+    await sendViaUserShopBot(
+      telegramId,
+      async (clientBot) => {
+        return clientBot.telegram.sendMessage(telegramId, caption, {
+          parse_mode: "HTML",
+        });
+      },
+      botOpts
+    );
+  }
 
   return { ok: true };
 }

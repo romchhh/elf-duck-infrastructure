@@ -1,21 +1,36 @@
 import referralBannerRu from "../assets/referralBanner.webp";
 import referralBannerPl from "../assets/referralBannerPl.webp";
+import merryMiNewBannerRu from "../assets/merryMiNewBannerRu.webp";
+import merryMiNewBannerPl from "../assets/merryMiNewBannerPl.webp";
 import { getCurrentLanguage } from "./i18n";
 
 /**
- * Карусель головної: рефералка (+ розіграш окремим слайдом).
+ * Карусель головної після слайду розіграшу:
+ * новинки Merry Mi → рефералка.
  * assortmentRestock / delivery — тимчасово приховані.
  */
 export function getHomeBanners(language = getCurrentLanguage()) {
   const isPl = language === "pl";
-  return [isPl ? referralBannerPl : referralBannerRu];
+  return [
+    isPl ? merryMiNewBannerPl : merryMiNewBannerRu,
+    isPl ? referralBannerPl : referralBannerRu,
+  ];
 }
 
 /** Усі варіанти картинок каруселі (для Cache API / preload). */
 export function getAllHomeBannerAssetUrls() {
-  return [referralBannerRu, referralBannerPl];
+  return [
+    merryMiNewBannerRu,
+    merryMiNewBannerPl,
+    referralBannerRu,
+    referralBannerPl,
+  ];
 }
 
 export function isReferralBanner(src) {
   return src === referralBannerRu || src === referralBannerPl;
+}
+
+export function isMerryMiNewBanner(src) {
+  return src === merryMiNewBannerRu || src === merryMiNewBannerPl;
 }

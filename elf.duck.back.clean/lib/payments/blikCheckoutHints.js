@@ -45,13 +45,38 @@ export const BLIK_CASH_PREFERENCE_PL = `Będziemy bardzo wdzięczni, jeśli wybi
 
 💡 Gotówkę możesz wypłacić w sklepie Żabka obok punktu odbioru.`;
 
-/** Wola + курʼєр / InPost — без підказки Tytuł/Imię для BLIK (як у shop OrdersPage). */
-export function shouldHideBlikTransferHint(order = {}, point = null) {
+/** Реквізити BLIK показуємо лише для InPost; самовивіз / курʼєр — без номера рахунку. */
+export function shouldShowBlikRequisites(order = {}, point = null) {
+  const deliveryType = String(
+    order?.checkoutDeliveryType || order?.deliveryType || ""
+  )
+    .trim()
+    .toLowerCase();
+  const deliveryMethod = String(order?.deliveryMethod || "")
+    .trim()
+    .toLowerCase();
+  if (deliveryType === "delivery" && deliveryMethod === "inpost") return true;
+
   const pointKey = String(point?.key || order?.pickupPointKey || "")
     .trim()
     .toLowerCase()
     .replace(/,+$/, "");
+  if (pointKey === "delivery-2" || pointKey.includes("inpost")) return true;
 
+  return false;
+}
+
+/**
+ * Підказка Tytuł/Imię для BLIK.
+ * Зараз реквізити лише InPost, тож підказку ховаємо скрізь (як раніше для delivery).
+ */
+export function shouldHideBlikTransferHint(order = {}, point = null) {
+  if (!shouldShowBlikRequisites(order, point)) return true;
+
+  const pointKey = String(point?.key || order?.pickupPointKey || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
   if (pointKey.includes("wola")) return true;
 
   const deliveryType = String(order?.deliveryType || "").trim().toLowerCase();

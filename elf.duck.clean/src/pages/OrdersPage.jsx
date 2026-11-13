@@ -182,31 +182,38 @@ const isMokotowOrderPoint = (order = {}) => {
 /** Мінімальна сума замовлення для промокоду (sync з PROMO_MIN_ORDER_TOTAL_ZL на API). */
 const PROMO_MIN_ORDER_TOTAL_ZL = 100;
 
-/** Wola + доставка (курʼєр / InPost) — без підказки Tytuł/Imię для BLIK. */
-const shouldHideBlikTransferHint = (order = {}) => {
-  if (isWolaOrderPoint(order)) return true;
-
-  const deliveryType = String(order?.deliveryType || "").trim().toLowerCase();
-  const deliveryMethod = String(order?.deliveryMethod || "").trim().toLowerCase();
-  if (deliveryType === "delivery" || deliveryMethod === "courier" || deliveryMethod === "inpost") {
-    return true;
-  }
+/** Реквізити BLIK лише для InPost (самовивіз / курʼєр — без номера рахунку). */
+const shouldShowBlikRequisites = (order = {}) => {
+  const deliveryType = String(
+    order?.checkoutDeliveryType || order?.deliveryType || ""
+  )
+    .trim()
+    .toLowerCase();
+  const deliveryMethod = String(order?.deliveryMethod || "")
+    .trim()
+    .toLowerCase();
+  if (deliveryType === "delivery" && deliveryMethod === "inpost") return true;
 
   const point = getOrderPickupPoint(order);
   const key = String(point?.key || order?.pickupPointKey || order?.pickupPoint?.key || "")
     .trim()
     .toLowerCase();
-  if (
-    key === "delivery" ||
-    key === "delivery-2" ||
-    key.includes("wola-inpost") ||
-    key.includes("inpost")
-  ) {
-    return true;
-  }
+  if (key === "delivery-2" || key.includes("inpost")) return true;
 
   const blob = getOrderVisualBlob(order);
-  if (blob.includes("delivery") || blob.includes("inpost") || blob.includes("dostawa")) {
+  if (blob.includes("inpost")) return true;
+
+  return false;
+};
+
+/** Підказка Tytuł/Imię — ховаємо, якщо немає реквізитів або це доставка/InPost. */
+const shouldHideBlikTransferHint = (order = {}) => {
+  if (!shouldShowBlikRequisites(order)) return true;
+  if (isWolaOrderPoint(order)) return true;
+
+  const deliveryType = String(order?.deliveryType || "").trim().toLowerCase();
+  const deliveryMethod = String(order?.deliveryMethod || "").trim().toLowerCase();
+  if (deliveryType === "delivery" || deliveryMethod === "courier" || deliveryMethod === "inpost") {
     return true;
   }
 
@@ -904,6 +911,11 @@ useEffect(() => {
 
     const paymentBlikPreferCashBannerSrc =
         lang === "pl" ? paymentBlikPreferCashPl : paymentBlikPreferCashRu;
+
+    const blikRequisitesEnabled = shouldShowBlikRequisites(activePaymentOrder);
+    const showPaymentRequisitesUi =
+        paymentMethod !== "cash" &&
+        (paymentMethod !== "blik" || blikRequisitesEnabled);
 
     const paymentThemeImmediate =
     paymentMethod === "blik"
@@ -2080,7 +2092,10 @@ useEffect(() => {
         t("1. Процент зависит от суммы заказа", "1. Procent zależy od kwoty zamówienia"),
         t("2. Кэшбек начисляется на ваш баланс после покупки", "2. Cashback jest naliczany na saldo po zakupie"),
         t("3. Срок использования — 40 дней", "3. Okres wykorzystania — 40 dni"),
-        t("4. Списать можно без ограничений", "4. Można wykorzystać bez ograniczeń"),
+        t(
+          "4. Списать можно до 40% суммы заказа",
+          "4. Można wykorzystać do 40% wartości zamówienia"
+        ),
         ].join("\n");
 
         showTgAlert(text);
@@ -2540,7 +2555,7 @@ useEffect(() => {
                     </div>
                     )}
 
-                    {paymentMethod === "blik" ? (
+                    {paymentMethod === "blik" && !blikRequisitesEnabled ? (
                         <div className="paymentBlikGiveawaySheet" role="note">
                             <div className="paymentBlikPreferCashBannerWrap paymentBlikPreferCashBannerWrap--inSheet">
                                 <img
@@ -2570,10 +2585,13 @@ useEffect(() => {
                     >
                     {paymentMethod === "cash"
                         ? t("ВЫБРАТЬ", "WYBIERZ")
+                        : paymentMethod === "blik" && !blikRequisitesEnabled
+                        ? t("ДАЛЕЕ", "DALEJ")
                         : t("ПОЛУЧИТЬ РЕКВИЗИТЫ", "POBIERZ DANE")}
                     </button>
 
                     {paymentMethod === "blik" &&
+                      blikRequisitesEnabled &&
                       !shouldHideBlikTransferHint(activePaymentOrder) && (
                     <div className="paymentBlikNotice" role="note">
                         <div className="paymentBlikNoticeTitle">
@@ -2871,7 +2889,7 @@ useEffect(() => {
                         : t("У ВАС ПОКА НЕТ КЭШБЕКА ДЛЯ СКИДКИ", "NIE MASZ JESZCZE CASHBACKU NA ZNIŻKĘ")}
                     </button>
 
-                    {paymentDetailsVisible && paymentMethod !== "cash" && (
+                    {paymentDetailsVisible && showPaymentRequisitesUi && (
                     <>
                         <div className="paymentHintText">
                         {t("Вы можете быстро скопировать реквизиты", "Możesz szybko skopiować dane")}
@@ -2911,6 +2929,22 @@ useEffect(() => {
                         </div>
                     </>
         )}
+
+                    {paymentDetailsVisible &&
+                      paymentMethod === "blik" &&
+                      !blikRequisitesEnabled && (
+                        <div className="paymentHintText">
+                          {t(
+                            "Если мы не получим оплату в течение 10 минут",
+                            "Jeśli nie otrzymamy płatności w ciągu 10 minut"
+                          )}
+                          <br />
+                          {t(
+                            "после подтверждения - заказ будет отменен!",
+                            "po potwierdzeniu — zamówienie zostanie anulowane!"
+                          )}
+                        </div>
+                      )}
 
 
         {paymentDetailsVisible && paymentMethod === "cash" && (
