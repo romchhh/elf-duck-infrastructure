@@ -18,6 +18,24 @@ function CopyRow({ icon, iconWrapClass = "", className = "", children }) {
 export default function PaymentBlikPreferCashCopy({ mapsHref = "#" }) {
   return (
     <div className="paymentBlikGiveawayCopy">
+      <CopyRow
+        icon={percentIcon}
+        iconWrapClass="paymentBlikCopyIconWrap--accent"
+      >
+        <p className="paymentBlikCopyTitle">
+          {t(
+            "Сейчас BLIK принимаем только для доставки InPost",
+            "Teraz BLIK przyjmujemy tylko dla dostawy InPost"
+          )}
+        </p>
+        <p className="paymentBlikCopyText">
+          {t(
+            "Для самовывоза и курьера оплатите наличными или другим доступным способом.",
+            "Dla odbioru osobistego i kuriera zapłać gotówką lub inną dostępną metodą."
+          )}
+        </p>
+      </CopyRow>
+
       <CopyRow icon={cashIcon} iconWrapClass="paymentBlikCopyIconWrap--cash">
         <p className="paymentBlikCopyTitle">
           {t(
@@ -52,19 +70,6 @@ export default function PaymentBlikPreferCashCopy({ mapsHref = "#" }) {
           )}
         </span>
       </a>
-
-      <CopyRow
-        icon={percentIcon}
-        iconWrapClass="paymentBlikCopyIconWrap--accent"
-        className="paymentBlikCopyRow--notice"
-      >
-        <p className="paymentBlikCopyNotice">
-          {t(
-            "Обратите внимание: при оплате через BLIK заказ не участвует в ежемесячном розыгрыше 2 000 zł.",
-            "Uwaga: przy płatności BLIK zamówienie nie bierze udziału w comiesięcznym konkursie 2 000 zł."
-          )}
-        </p>
-      </CopyRow>
     </div>
   );
 }

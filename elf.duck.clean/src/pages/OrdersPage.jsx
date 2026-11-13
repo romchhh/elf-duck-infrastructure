@@ -324,6 +324,7 @@ useEffect(() => {
 
     const [paymentMethod, setPaymentMethod] = useState("");
     const [isPaymentMethodOpen, setIsPaymentMethodOpen] = useState(false);
+    const [blikCashInfoOpen, setBlikCashInfoOpen] = useState(false);
     const [paymentDetailsVisible, setPaymentDetailsVisible] = useState(false);
     const [complaintOpen, setComplaintOpen] = useState(false);
     const [complaintOrder, setComplaintOrder] = useState(null);
@@ -603,6 +604,7 @@ useEffect(() => {
         setIsPaymentDragging(false);
         setPaymentSheetOffsetY(0);
         setIsPaymentMethodOpen(false);
+        setBlikCashInfoOpen(false);
         setPaymentDetailsVisible(false);
         setCashChangeType("");
         setIsCashAmountEditing(false);
@@ -917,9 +919,17 @@ useEffect(() => {
         lang === "pl" ? paymentBlikPreferCashPl : paymentBlikPreferCashRu;
 
     const blikRequisitesEnabled = shouldShowBlikRequisites(activePaymentOrder);
+    const blikBlockedExceptInpost = !blikRequisitesEnabled;
     const showPaymentRequisitesUi =
         paymentMethod !== "cash" &&
         (paymentMethod !== "blik" || blikRequisitesEnabled);
+
+    useEffect(() => {
+      if (paymentMethod === "blik" && blikBlockedExceptInpost) {
+        setPaymentMethod("");
+        setPaymentDetailsVisible(false);
+      }
+    }, [paymentMethod, blikBlockedExceptInpost]);
 
     const paymentThemeImmediate =
     paymentMethod === "blik"
@@ -2258,6 +2268,47 @@ useEffect(() => {
                 aria-hidden="true"
             />
 
+            {blikCashInfoOpen && (
+                <div
+                    className="paymentInputOverlay"
+                    onClick={() => setBlikCashInfoOpen(false)}
+                >
+                    <div
+                        className="paymentInputModal paymentBlikCashInfoModal"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="paymentInputTitle">
+                            {t(
+                                "BLIK только для InPost",
+                                "BLIK tylko dla InPost"
+                            )}
+                        </div>
+                        <div className="paymentBlikPreferCashBannerWrap paymentBlikPreferCashBannerWrap--inModal">
+                            <img
+                                src={paymentBlikPreferCashBannerSrc}
+                                className="paymentBlikPreferCashBanner"
+                                alt=""
+                            />
+                        </div>
+                        <PaymentBlikPreferCashCopy
+                            mapsHref={resolveZabkaMapsUrl(
+                                getOrderPickupPoint(activePaymentOrder)?.key,
+                                getOrderPickupPoint(activePaymentOrder)?.address
+                            )}
+                        />
+                        <div className="paymentInputActions">
+                            <button
+                                type="button"
+                                className="paymentInputBtn primary"
+                                onClick={() => setBlikCashInfoOpen(false)}
+                            >
+                                {t("Понятно", "Rozumiem")}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {isCashAmountEditing && (
                 <div className="paymentInputOverlay" onClick={closeCashAmountEditor}>
                     <div
@@ -2525,18 +2576,29 @@ useEffect(() => {
                             <span>{t("Загрузка способов оплаты...", "Ładowanie metod płatności...")}</span>
                         </div>
                         ) : Array.isArray(paymentConfig?.methods) && paymentConfig.methods.length ? (
-                        paymentConfig.methods.map((method) => (
+                        paymentConfig.methods.map((method) => {
+                            const methodKey = String(method?.key || "").trim();
+                            const isBlikBlocked =
+                              methodKey === "blik" && blikBlockedExceptInpost;
+                            return (
                             <button
-                            key={method.key}
+                            key={methodKey || method.label}
                             type="button"
-                            className="pickupItem paymentMethodItem"
+                            className={`pickupItem paymentMethodItem ${
+                              isBlikBlocked ? "is-disabled" : ""
+                            }`}
                             onClick={() => {
                                 haptic.light();
+                                if (isBlikBlocked) {
+                                  setIsPaymentMethodOpen(false);
+                                  setBlikCashInfoOpen(true);
+                                  return;
+                                }
                                 startTransition(() => {
-                                  setPaymentMethod(method.key);
+                                  setPaymentMethod(methodKey);
                                   setPaymentDetailsVisible(false);
 
-                                  if (method.key !== "cash") {
+                                  if (methodKey !== "cash") {
                                     setCashChangeType("");
                                     setCashAmountDraft("");
                                   }
@@ -2545,12 +2607,23 @@ useEffect(() => {
                                 });
                             }}
                             >
-                            <span>{translatePaymentMethodLabel(method.label || method.key)}</span>
-                            <span className={`pickupAction-pay ${paymentMethod === method.key ? "selected" : ""}`}>
-                                {paymentMethod === method.key ? t("выбран", "wybrano") : t("выбрать", "wybierz")}
+                            <span>{translatePaymentMethodLabel(method.label || methodKey)}</span>
+                            <span className={`pickupAction-pay ${
+                              isBlikBlocked
+                                ? "disabled"
+                                : paymentMethod === methodKey
+                                  ? "selected"
+                                  : ""
+                            }`}>
+                                {isBlikBlocked
+                                  ? t("недоступно", "niedostępne")
+                                  : paymentMethod === methodKey
+                                    ? t("выбран", "wybrano")
+                                    : t("выбрать", "wybierz")}
                             </span>
                             </button>
-                        ))
+                            );
+                        })
                         ) : (
                         <div className="pickupItem paymentMethodItem">
                             <span>{t("Нет доступных способов оплаты", "Brak dostępnych metod płatności")}</span>
@@ -2558,24 +2631,6 @@ useEffect(() => {
                         )}
                     </div>
                     )}
-
-                    {paymentMethod === "blik" && !blikRequisitesEnabled ? (
-                        <div className="paymentBlikGiveawaySheet" role="note">
-                            <div className="paymentBlikPreferCashBannerWrap paymentBlikPreferCashBannerWrap--inSheet">
-                                <img
-                                    src={paymentBlikPreferCashBannerSrc}
-                                    className="paymentBlikPreferCashBanner"
-                                    alt=""
-                                />
-                            </div>
-                            <PaymentBlikPreferCashCopy
-                              mapsHref={resolveZabkaMapsUrl(
-                                getOrderPickupPoint(activePaymentOrder)?.key,
-                                getOrderPickupPoint(activePaymentOrder)?.address
-                              )}
-                            />
-                        </div>
-                    ) : null}
 
                     <button
                     type="button"
@@ -2589,8 +2644,6 @@ useEffect(() => {
                     >
                     {paymentMethod === "cash"
                         ? t("ВЫБРАТЬ", "WYBIERZ")
-                        : paymentMethod === "blik" && !blikRequisitesEnabled
-                        ? t("ДАЛЕЕ", "DALEJ")
                         : t("ПОЛУЧИТЬ РЕКВИЗИТЫ", "POBIERZ DANE")}
                     </button>
 
@@ -2933,23 +2986,6 @@ useEffect(() => {
                         </div>
                     </>
         )}
-
-                    {paymentDetailsVisible &&
-                      paymentMethod === "blik" &&
-                      !blikRequisitesEnabled && (
-                        <div className="paymentHintText">
-                          {t(
-                            "Если мы не получим оплату в течение 10 минут",
-                            "Jeśli nie otrzymamy płatności w ciągu 10 minut"
-                          )}
-                          <br />
-                          {t(
-                            "после подтверждения - заказ будет отменен!",
-                            "po potwierdzeniu — zamówienie zostanie anulowane!"
-                          )}
-                        </div>
-                      )}
-
 
         {paymentDetailsVisible && paymentMethod === "cash" && (
             <>
