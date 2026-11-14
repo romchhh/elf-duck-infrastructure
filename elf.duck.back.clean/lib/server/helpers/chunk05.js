@@ -309,12 +309,16 @@ export function getCartridgeSmartUnitPrice(
 
 export function isLiquidSmartPriceProduct(product) {
   const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
+  const productKey = String(product?.productKey || "").trim().toLowerCase();
+  if (productKey === "merry-mi") return true;
   return LIQUIDS_CATEGORY_KEYS.has(categoryKey);
 }
 
 export function isDisposableSmartPriceProduct(product) {
   const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
   const productKey = String(product?.productKey || "").trim().toLowerCase();
+
+  if (productKey === "merry-mi") return false;
 
   return (
     DISPOSABLES_CATEGORY_KEYS.has(categoryKey) &&

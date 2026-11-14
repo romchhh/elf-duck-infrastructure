@@ -234,11 +234,6 @@ export function reportModelMatches(cell, reportModelLabel) {
   if (wanted === "YAMI" && /^YAMI(\s+[57]%)?$/.test(norm)) return true;
   if (/^YAMI\s+[57]%$/.test(wanted) && norm === "YAMI") return true;
 
-  // MERRY MI ↔ MERRY MI 30K
-  if (/^MERRY\s+MI/.test(wanted) && /^MERRY\s+MI/.test(norm)) {
-    return true;
-  }
-
   return false;
 }
 

@@ -38,9 +38,9 @@ export function normalizeSheetModelName(value) {
     .replace(/\bLIQ\s+BLACK\b/g, "BLACK")
     .replace(/\bLIQ\s+FOR\s+PODS\b/g, "FOR PODS")
     .replace(/\bLIQ\s+VOZOL\s+PRIME\b/g, "VOZOL PRIME")
-    // Assortment «MERRY MI» vs report «MERRY MI 30K»
-    .replace(/\bMERRY\s+MI\s*30\s*K\b/g, "MERRY MI")
-    .replace(/\bMERRY\s+MI\s*30000\b/g, "MERRY MI")
+    .replace(/\bLIQUID\s+MERRY\s+MI\b/g, "MERRY MI")
+    .replace(/\bLIQ\s+MERRY\s+MI\b/g, "MERRY MI")
+    // MERRY MI 30K / BLADE — окремо від жижі «MERRY MI» (звіт + ассортимент).
     // YAMI 30ML already loses 30ML via generic rule; keep 5%/7% as distinct labels.
     .replace(/\bYAMI\s+5\s*%/g, "YAMI 5%")
     .replace(/\bYAMI\s+7\s*%/g, "YAMI 7%")
@@ -142,9 +142,10 @@ export function toReportModelLabel(normalizedModel) {
     "OXVA CATRIDGE": "OXVA CATRIDGE",
     "XROS CATRIDGE": "XROS CATRIDGE",
     "MERRY MI": "MERRY MI",
-    "MERRY MI BLADE 30K": "MERRY MI",
-    "MERRY MI BLADE": "MERRY MI",
-    "LIQ MERRY MI": "LIQ MERRY MI",
+    "MERRY MI 30K": "MERRY MI 30K",
+    "MERRY MI BLADE 30K": "MERRY MI 30K",
+    "MERRY MI BLADE": "MERRY MI 30K",
+    "LIQ MERRY MI": "MERRY MI",
     "YAMI 5%": "YAMI 5%",
     "YAMI 7%": "YAMI 7%",
   };
@@ -153,10 +154,11 @@ export function toReportModelLabel(normalizedModel) {
 
   if (m.includes("ELF BAR D3")) return "ELF D3 25K";
   if (m.includes("BC45K") || m.includes("BC 45")) return "ELF BC45K";
-  // Дудка Merry Mi Blade → рядок ОТЧЁТ «MERRY MI» / «MERRY MI 30K».
-  if (/^MERRY\s+MI\s+BLADE\b/.test(m)) return "MERRY MI";
-  // Жижа — окремий ключ, не змішувати з дудкою.
-  if (/^LIQ\s+MERRY\s+MI\b/.test(m)) return "LIQ MERRY MI";
+  if (/^MERRY\s+MI\s+BLADE\b/.test(m)) return "MERRY MI 30K";
+  if (/\bMERRY\s+MI\s*30\s*K\b/.test(m) || /\bMERRY\s+MI\s*30000\b/.test(m)) {
+    return "MERRY MI 30K";
+  }
+  if (/^LIQ\s+MERRY\s+MI\b/.test(m)) return "MERRY MI";
   if (/^MERRY\s+MI\b/.test(m)) return "MERRY MI";
   if (/^YAMI(\s+[57]%)?$/.test(m)) return m === "YAMI" ? "YAMI" : m;
 

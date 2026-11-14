@@ -13,6 +13,7 @@ const rows = [
   ["MODEL", "", "", "", "1шт.", "2шт.", "3-4", "5+"],
   ["YAMI 5%", "0", "0", "0", "0", "0", "0", "0"],
   ["YAMI 7%", "0", "0", "0", "0", "0", "0", "0"],
+  ["MERRY MI", "0", "0", "0", "0", "0", "0", "0"],
   ["MERRY MI 30K", "0", "0", "0", "0", "0", "0", "0"],
   ["ETHEREUM", "0", "0", "0", "0", "0", "0", "0"],
   ["SPECIAL", "0", "0", "0", "0", "0", "0", "0"],
@@ -35,7 +36,7 @@ assert.equal(yamiBare, 2, "bare YAMI finds first 5% row for writes");
 
 assert.equal(reportModelMatches("YAMI 5%", "YAMI 7%"), false);
 assert.equal(reportModelMatches("YAMI", "YAMI 5%"), true);
-assert.equal(reportModelMatches("MERRY MI", "MERRY MI 30K"), true);
+assert.equal(reportModelMatches("MERRY MI", "MERRY MI 30K"), false);
 
 assert.equal(sameSheetModel("YAMI 5%", "YAMI 30ML"), true);
 assert.equal(sameSheetModel("YAMI 7%", "LIQ YAMI"), true);
@@ -46,7 +47,8 @@ assert.equal(sameSheetModel("MERRY MI 30K", "MERRY MI"), true);
 assert.equal(sameSheetModel("LIQ ETHEREUM", "ETHEREUM"), true);
 assert.equal(sameSheetModel("LIQ SPECIAL", "SPECIAL"), true);
 assert.equal(sameSheetModel("OXVA", "LIQ OXVA"), true);
-assert.equal(normalizeSheetModelName("MERRY MI 30K"), "MERRY MI");
+assert.equal(normalizeSheetModelName("MERRY MI 30K"), "MERRY MI 30K");
+assert.equal(normalizeSheetModelName("LIQUID MERRY MI 30 ML"), "MERRY MI");
 
 const yamiFromProduct = getStatsSheetReportModelKey({
   productKey: "yami-30ml",
@@ -54,18 +56,21 @@ const yamiFromProduct = getStatsSheetReportModelKey({
 });
 assert.equal(yamiFromProduct, "YAMI 5%");
 
-const merryRow = findReportModelRowInDayBlock(rows, block, "MERRY MI");
-assert.equal(merryRow, 4);
+const merryLiquidRow = findReportModelRowInDayBlock(rows, block, "MERRY MI");
+assert.equal(merryLiquidRow, 4);
+
+const merryBladeRow = findReportModelRowInDayBlock(rows, block, "MERRY MI 30K");
+assert.equal(merryBladeRow, 5);
 
 assert.equal(
   getStatsSheetReportModelKey({ productKey: "merry-mi-blade-30k" }),
-  "MERRY MI"
+  "MERRY MI 30K"
 );
 assert.equal(
   getStatsSheetReportModelKey({ productKey: "merry-mi" }),
   "MERRY MI"
 );
-assert.equal(sameSheetModel("LIQ MERRY MI", "MERRY MI"), false);
-assert.equal(sameSheetModel("MERRY MI BLADE 30K", "MERRY MI"), true);
+assert.equal(sameSheetModel("LIQ MERRY MI", "MERRY MI"), true);
+assert.equal(sameSheetModel("MERRY MI BLADE 30K", "MERRY MI 30K"), true);
 
 console.log("reportModelMatch tests ok");

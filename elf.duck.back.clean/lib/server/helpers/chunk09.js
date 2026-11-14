@@ -135,6 +135,10 @@ const STATS_REPORT_MODEL_BY_PRODUCT_KEY = {
   "puffy-special": "PUFFY SPECIAL",
   /** На листах ОТЧЁТ (Mokotów тощо) — «YAMI 5%» / «YAMI 7%», не голий «YAMI». */
   "yami-30ml": "YAMI 5%",
+  /** Жижа → рядок «MERRY MI»; дудка → «MERRY MI 30K» (не змішувати в reportModelMatches). */
+  "merry-mi": "MERRY MI",
+  "merry-mi-30k": "MERRY MI 30K",
+  "merry-mi-blade-30k": "MERRY MI 30K",
 };
 
 /** Перший заголовок блоку на листі АССОРТИМЕНТ (LIQ …). */
@@ -163,8 +167,7 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
     "elf-duck-1500-2": "ELF BAR 1500",
     "elf-duck-3000": "ELF BAR RI 3000",
     "yami-30ml": "YAMI",
-    // На Ассортимент (Śródmieście тощо): жижа = «MERRY MI», дудка = «MERRY MI 30K».
-    // Окремого «LIQ MERRY MI» на листі немає — не використовувати для пошуку блоку.
+    // Ассортимент: жижа = «MERRY MI», дудка = «MERRY MI 30K» / BLADE.
     "merry-mi": "MERRY MI",
     "merry-mi-30k": "MERRY MI 30K",
     "merry-mi-blade-30k": "MERRY MI 30K",
@@ -173,6 +176,8 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
 const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([
   "puffy-30-ml",
   "puffy-30-ml-70-mg",
+  "puffy-special",
+  "merry-mi",
 ]);
 
 /** Назва для пошуку блоку на листі АССОРТИМЕНТ (разом із productKey у normalize). */
@@ -246,6 +251,7 @@ const STATS_SHEET_DISPOSABLE_NO_TIER_PRODUCT_KEYS = new Set([
 export function isStatsSheetDisposableByProductKey(productKey = "") {
   const pk = String(productKey || "").trim().toLowerCase();
   if (!pk) return false;
+  if (pk === "merry-mi") return false;
   if (STATS_SHEET_DISPOSABLE_NO_TIER_PRODUCT_KEYS.has(pk)) return false;
   if (pk.includes("30-ml") || pk.includes("cartridge") || pk.includes("catridge")) {
     return false;
