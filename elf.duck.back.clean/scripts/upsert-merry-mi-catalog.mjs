@@ -1,5 +1,5 @@
 /**
- * Upsert MERRY MI BLADE 30K + LIQUID MERRY MI у Mongo (isActive: false).
+ * Upsert MERRY MI BLADE 30K + LIQUID MERRY MI у Mongo (isActive: true).
  *
  *   cd elf.duck.back.clean
  *   node scripts/upsert-merry-mi-catalog.mjs --dry-run
@@ -220,7 +220,7 @@ async function upsertProduct(spec) {
     sortOrder: Number(
       existing?.sortOrder ?? spec.sortOrder ?? 50
     ),
-    isActive: false,
+    isActive: true,
     title1: spec.title1,
     title2: spec.title2,
     titleModal: spec.titleModal,
@@ -320,7 +320,7 @@ async function main() {
     console.log(
       dryRun
         ? "Dry-run done. Re-run without --dry-run to write."
-        : "Done. Both products saved with isActive=false — enable in CRM when stock is on points."
+        : "Done. Both products saved with isActive=true."
     );
   } finally {
     await mongoose.disconnect();

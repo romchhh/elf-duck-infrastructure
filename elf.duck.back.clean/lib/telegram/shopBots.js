@@ -24,7 +24,7 @@ import {
   getShopBotByIndex,
   sendViaUserShopBot,
 } from "./clientBotDelivery.js";
-import { setShopBotUsername, getShopBotUsername, getExplicitBotUsernamesFromEnv } from "./shopBotReferralLink.js";
+import { setShopBotUsername, getShopBotUsername, getExplicitBotUsernamesFromEnv, seedShopBotUsernamesFromEnv } from "./shopBotReferralLink.js";
 import { getStartBannerUrl } from "../config/rootConfig.js";
 import {
   botStartErrorText,
@@ -150,9 +150,15 @@ const START_BANNER_URL = getStartBannerUrl();
 if (TG_BOT_TOKENS.length) {
   const __botInstances = TG_BOT_TOKENS.map((token) => new Telegraf(token));
   setUserBots(__botInstances);
-  if (TG_BOT_TOKENS.length > 1 && !getExplicitBotUsernamesFromEnv()?.length) {
+  seedShopBotUsernamesFromEnv();
+  if (
+    TG_BOT_TOKENS.length > 1 &&
+    !getExplicitBotUsernamesFromEnv()?.length &&
+    !process.env.TELEGRAM_BOT_USERNAME_1 &&
+    !process.env.TELEGRAM_BOT_USERNAME
+  ) {
     console.warn(
-      "[bot] Два токени без TELEGRAM_BOT_USERNAMES — додайте в .env (порядок як токени): elfduck_store_bot,elfduck_shop_bot"
+      "[bot] Кілька токенів без username. Задайте TELEGRAM_BOT_USERNAME=elfduck_store_bot і TELEGRAM_BOT_USERNAME_1=elfduck_shop_bot"
     );
   }
   console.log(
@@ -3581,12 +3587,7 @@ return instructionMessage;
 
   };
 
-  const explicitBotUsernames = getExplicitBotUsernamesFromEnv();
-  if (explicitBotUsernames?.length) {
-    explicitBotUsernames.forEach((name, botIndex) => {
-      if (name) setShopBotUsername(botIndex, name);
-    });
-  }
+  seedShopBotUsernamesFromEnv();
 
   await Promise.all(
     userBots.map(async (activeBot, botIndex) => {

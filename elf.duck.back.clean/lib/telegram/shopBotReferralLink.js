@@ -1,4 +1,4 @@
-import { getTelegramBotTokens } from "./botTokens.js";
+import { getTelegramBotEntries, getTelegramBotTokens } from "./botTokens.js";
 
 const usernamesByIndex = [];
 
@@ -9,7 +9,7 @@ function splitUsernameList(raw) {
     .filter(Boolean);
 }
 
-/** Лише TELEGRAM_BOT_USERNAMES — порядок = порядок TELEGRAM_BOT_TOKEN / _2. */
+/** Кома-список, якщо заданий. Інакше username береться з пари TOKEN / USERNAME. */
 export function getExplicitBotUsernamesFromEnv() {
   const raw = process.env.TELEGRAM_BOT_USERNAMES;
   if (!String(raw || "").trim()) return null;
@@ -40,6 +40,15 @@ function primaryUsernameFromEnv() {
   return fromEnv;
 }
 
+/** Заповнити кеш username до getMe: USERNAME поруч із TOKEN, або TELEGRAM_BOT_USERNAMES. */
+export function seedShopBotUsernamesFromEnv() {
+  const explicit = getExplicitBotUsernamesFromEnv();
+  getTelegramBotEntries().forEach((entry, index) => {
+    const name = explicit?.[index] || entry.username;
+    if (name) setShopBotUsername(index, name);
+  });
+}
+
 export function setShopBotUsername(index, username) {
   const idx = Number(index);
   if (!Number.isFinite(idx) || idx < 0) return;
@@ -58,6 +67,9 @@ export function getShopBotUsername(index = 0) {
   if (explicit && Number.isFinite(idx) && idx >= 0 && explicit[idx]) {
     return explicit[idx];
   }
+
+  const paired = getTelegramBotEntries()[idx]?.username;
+  if (paired) return paired;
 
   const tokenCount = getTelegramBotTokens().length;
   const fromEnv = parseEnvUsernames();
