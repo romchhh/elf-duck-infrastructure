@@ -3167,6 +3167,9 @@ if (
 
       const orderKey = String(order._id || orderIdRaw || "").trim();
 
+      // Одразу знімаємо «годинник» на кнопці (інакше при 502/slow edit здається, що бот завис).
+      await answerManagerCallbackQuery(ctx);
+
       await editManagerCallbackKeyboard(ctx, [
         [
           {
@@ -3187,8 +3190,6 @@ if (
           },
         ],
       ]);
-
-      await answerManagerCallbackQuery(ctx);
     } catch (error) {
       console.error("mgr_change_status error:", {
         error: error?.response?.description || error?.message || error,
@@ -3223,11 +3224,11 @@ if (
           return;
         }
 
+        await answerManagerCallbackQuery(ctx);
+
         await refreshManagerOrderMessage(
           order
         );
-
-        await ctx.answerCbQuery();
       } catch (error) {
         console.error(
           "mgr_change_status_back error:",
@@ -3266,6 +3267,13 @@ if (
           return;
         }
 
+        await answerManagerCallbackQuery(
+          ctx,
+          nextStatus === "completed"
+            ? "Заказ отмечен как выполненный"
+            : "Заказ отмечен как отменённый"
+        );
+
         const changedOrder =
           await changePickupOrderStatusByManager(
             order,
@@ -3275,12 +3283,6 @@ if (
 
         await refreshManagerOrderMessage(
           changedOrder
-        );
-
-        await ctx.answerCbQuery(
-          nextStatus === "completed"
-            ? "Заказ отмечен как выполненный"
-            : "Заказ отмечен как отменённый"
         );
       } catch (error) {
       const errorCode = String(
