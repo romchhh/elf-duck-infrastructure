@@ -24,14 +24,14 @@ export default function PaymentBlikPreferCashCopy({ mapsHref = "#" }) {
       >
         <p className="paymentBlikCopyTitle">
           {t(
-            "Сейчас BLIK принимаем только для доставки InPost",
-            "Teraz BLIK przyjmujemy tylko dla dostawy InPost"
+            "Оплата BLIK временно недоступна",
+            "Płatność BLIK jest tymczasowo niedostępna"
           )}
         </p>
         <p className="paymentBlikCopyText">
           {t(
-            "Для самовывоза и курьера оплатите наличными или другим доступным способом.",
-            "Dla odbioru osobistego i kuriera zapłać gotówką lub inną dostępną metodą."
+            "Выберите наличные или другой доступный способ оплаты.",
+            "Wybierz gotówkę lub inną dostępną metodę płatności."
           )}
         </p>
       </CopyRow>

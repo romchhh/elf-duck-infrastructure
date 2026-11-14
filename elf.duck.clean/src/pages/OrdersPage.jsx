@@ -2279,8 +2279,8 @@ useEffect(() => {
                     >
                         <div className="paymentInputTitle">
                             {t(
-                                "BLIK только для InPost",
-                                "BLIK tylko dla InPost"
+                                "BLIK сейчас недоступен",
+                                "BLIK jest teraz niedostępny"
                             )}
                         </div>
                         <div className="paymentBlikPreferCashBannerWrap paymentBlikPreferCashBannerWrap--inModal">
