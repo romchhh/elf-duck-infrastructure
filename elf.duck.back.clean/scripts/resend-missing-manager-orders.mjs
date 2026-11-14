@@ -23,7 +23,10 @@ import PickupPoint from "../models/PickupPoint.js";
 import { bindApiGlobals } from "../routes/api/bindApiGlobals.js";
 import { setUserBots, refreshPrimaryShopBot } from "../lib/server/botRegistry.js";
 import { getTelegramBotTokens } from "../lib/telegram/botTokens.js";
-import { setShopBotUsername } from "../lib/telegram/shopBotReferralLink.js";
+import {
+  getExplicitBotUsernamesFromEnv,
+  setShopBotUsername,
+} from "../lib/telegram/shopBotReferralLink.js";
 import { getPrimaryShopBotIndex, getPrimaryShopBotUsername } from "../lib/telegram/shopBotPrimary.js";
 
 const args = process.argv.slice(2);
@@ -51,6 +54,12 @@ if (!tokens.length && !dryRun) {
 if (!dryRun) {
   const botInstances = tokens.map((token) => new Telegraf(token));
   setUserBots(botInstances);
+
+  const explicitUsernames = getExplicitBotUsernamesFromEnv() || [];
+  explicitUsernames.forEach((name, botIndex) => {
+    if (name) setShopBotUsername(botIndex, name);
+  });
+
   await Promise.all(
     botInstances.map(async (instance, botIndex) => {
       try {
@@ -63,6 +72,12 @@ if (!dryRun) {
   );
   refreshPrimaryShopBot();
   bindApiGlobals();
+
+  if (tokens.length > 1 && !explicitUsernames.length) {
+    console.warn(
+      "[resend-missing] Додай у кореневий .env: TELEGRAM_BOT_USERNAMES=elfduck_store_bot,elfduck_shop_bot (порядок = TOKEN, TOKEN_2)"
+    );
+  }
 }
 
 const { sendOrderCreatedNotification } = await import("../lib/server/helpers/chunk11.js");

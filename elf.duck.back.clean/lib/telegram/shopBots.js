@@ -111,6 +111,14 @@ async function answerManagerCallbackQuery(ctx, text, extra) {
   } catch (_) {}
 }
 
+/** Оновити картку тим ботом, який отримав callback (важливо для старих карток @elfduck_shop_bot). */
+async function refreshManagerOrderCard(order, ctx, extra = {}) {
+  return refreshManagerOrderMessage(order, {
+    ...extra,
+    telegramApi: ctx?.telegram,
+  });
+}
+
 function getCallbackMessageIds(ctx) {
   const msg = ctx?.callbackQuery?.message;
   const chatId = msg?.chat?.id;
@@ -1050,26 +1058,6 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
       }
     };
 
-    // Групи замовлень/статистики — лише @elfduck_store_bot; старі inline-кнопки → підказка.
-    activeBot.on("callback_query", async (ctx) => {
-      const chatType = String(
-        ctx.callbackQuery?.message?.chat?.type || ""
-      ).trim();
-      if (!chatType || chatType === "private") {
-        return;
-      }
-      const storeBot = getPrimaryShopBotUsername();
-      const legacyBot = LEGACY_SHOP_BOT_USERNAME;
-      try {
-        await ctx.answerCbQuery(
-          `Кнопки на этом сообщении от @${legacyBot} больше не работают. ` +
-            `Нажимайте кнопки на новых карточках от @${storeBot} ` +
-            `(добавление @${storeBot} в группу не переносит старые сообщения).`,
-          { show_alert: true }
-        );
-      } catch {}
-    });
-
     // Особисті чати старого бота → «переїхали».
     activeBot.use(async (ctx, next) => {
       const chatType = String(
@@ -1086,23 +1074,23 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
   };
 
   const registerUserBotHandlers = (activeBot, shopBotIndex = 0) => {
-  if (!isPrimaryShopBotIndex(shopBotIndex)) {
+  const isPrimary = isPrimaryShopBotIndex(shopBotIndex);
+
+  if (!isPrimary) {
     registerLegacyShopBotMovedHandlers(activeBot);
     console.log(
-      `[bot] Legacy shop bot index=${shopBotIndex} → private chats only (groups/orders/stats → @${getPrimaryShopBotUsername()})`
+      `[bot] Legacy shop bot index=${shopBotIndex} → private: «переїхали»; groups: mgr callbacks (старые карточки)`
     );
-    return;
-  }
+  } else {
+    activeBot.use(handleManagerClientMessageText);
 
-  activeBot.use(handleManagerClientMessageText);
+    console.log(
 
-  console.log(
+      "[MANAGER CLIENT MESSAGE] middleware registered"
 
-    "[MANAGER CLIENT MESSAGE] middleware registered"
+    );
 
-  );
-
-  activeBot.start(async (ctx) => {
+    activeBot.start(async (ctx) => {
     try {
       const payload = String(ctx.startPayload || "").trim();
       const tgId = String(ctx.from?.id || "").trim();
@@ -1276,8 +1264,9 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
     }
   });
 
-  activeBot.command(["testbotadmin", "test"], handleGiveawayTestAdminCommandSafe);
-  activeBot.command("testreview", handleServiceReviewTestCommandSafe);
+    activeBot.command(["testbotadmin", "test"], handleGiveawayTestAdminCommandSafe);
+    activeBot.command("testreview", handleServiceReviewTestCommandSafe);
+  }
 
   async function notifyPickupClientAfterManagerPaymentStatus(
     order,
@@ -1847,7 +1836,12 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
         throw new Error("ORDER_NOT_FOUND_AFTER_PAY");
       }
 
-      await refreshManagerOrderMessage(freshPaidOrder);
+      await answerManagerCallbackQuery(
+        ctx,
+        shouldMarkAwaiting ? "Клиент ожидается на точке" : "Оплата подтверждена"
+      );
+
+      await refreshManagerOrderCard(freshPaidOrder, ctx);
       stopPaymentReminder(order._id);
 
       const nextPaymentStatus =
@@ -1975,7 +1969,7 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
           if (order.comment) deliveryDetails.push(`💬 <b>Комментарий:</b> ${escapeHtml(order.comment)}`);
 
           if (managerChatId && managerMessageId) {
-            const sent = await bot.telegram.sendMessage(
+            const sent = await ctx.telegram.sendMessage(
               managerChatId,
               [
                 deliveryTitle,
@@ -2007,9 +2001,6 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
         }
       }
 
-      await ctx.answerCbQuery(
-        shouldMarkAwaiting ? "Клиент ожидается на точке" : "Оплата подтверждена"
-      );
     } catch (e) {
       console.error("mgr_pay_paid error:", e);
       try {
@@ -2090,11 +2081,14 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
         throw new Error("ORDER_NOT_FOUND_AFTER_UNPAID");
       }
 
-      await refreshManagerOrderMessage(freshUnpaidOrder);
+      await answerManagerCallbackQuery(
+        ctx,
+        "Оплата отклонена, кэшбек возвращён"
+      );
+
+      await refreshManagerOrderCard(freshUnpaidOrder, ctx);
 
       stopPaymentReminder(order._id);
-
-      await ctx.answerCbQuery("Оплата отклонена, кэшбек возвращён");
     } catch (e) {
       console.error("mgr_pay_unpaid error:", e);
       try {
@@ -3011,7 +3005,7 @@ if (
       for (const messageId of deliveryMessageIds) {
         try {
           if (deliveryChatId && messageId) {
-            await bot.telegram.deleteMessage(deliveryChatId, Number(messageId));
+            await ctx.telegram.deleteMessage(deliveryChatId, Number(messageId));
           }
         } catch (_) {}
       }
@@ -3026,14 +3020,16 @@ if (
         throw new Error("ORDER_NOT_FOUND_AFTER_DELIVERED");
       }
 
-      await refreshManagerOrderMessage(freshDeliveredOrder);
+      await answerManagerCallbackQuery(ctx, "Заказ доставлен");
+
+      await refreshManagerOrderCard(freshDeliveredOrder, ctx);
 
       try {
         const mainChatId = String(freshDeliveredOrder?.payment?.managerMessageChatId || "").trim();
         const mainMessageId = Number(freshDeliveredOrder?.payment?.managerMessageId || 0);
 
         if (mainChatId && mainMessageId) {
-          await bot.telegram.editMessageReplyMarkup(mainChatId, mainMessageId, undefined, {
+          await ctx.telegram.editMessageReplyMarkup(mainChatId, mainMessageId, undefined, {
             inline_keyboard: [
               [{ text: "🚚 Заказ доставлен", callback_data: `mgr_order_completed_done:${freshDeliveredOrder._id}` }],
             ],
@@ -3054,6 +3050,19 @@ if (
 
         const orderNo = escapeHtml(order?.orderNo || "—");
         const notifyPoint = await resolveOrderNotificationPoint(freshDeliveredOrder || order).catch(() => null);
+
+        const pointManagerTelegramId = String(
+          Array.isArray(notifyPoint?.allowedAdminTelegramIds)
+            ? notifyPoint.allowedAdminTelegramIds[0] || ""
+            : ""
+        ).trim();
+
+        const pointManagerUser = pointManagerTelegramId
+          ? await User.findOne(
+              { telegramId: pointManagerTelegramId },
+              { username: 1, firstName: 1, telegramId: 1 }
+            ).lean()
+          : null;
 
         const courierTelegramId = String(
           order?.courierTelegramId || ""
@@ -3087,12 +3096,6 @@ if (
               )
             : "—";
 
-        const courierUsername = courierUsernameRaw
-          ? (courierUsernameRaw.startsWith("@")
-              ? courierUsernameRaw
-              : `@${courierUsernameRaw}`)
-          : "—";
-
           const clientLang = await getClientAppLanguage(safeTelegramId);
           await sendClientTelegramMessage(
             safeTelegramId,
@@ -3123,8 +3126,6 @@ if (
           error: e?.response?.description || e?.message || String(e),
         });
       }
-
-      await ctx.answerCbQuery("Клиент уведомлен о прибытии курьера");
 
       try {
         await ctx.deleteMessage();
@@ -3226,9 +3227,7 @@ if (
 
         await answerManagerCallbackQuery(ctx);
 
-        await refreshManagerOrderMessage(
-          order
-        );
+        await refreshManagerOrderCard(order, ctx);
       } catch (error) {
         console.error(
           "mgr_change_status_back error:",
@@ -3281,9 +3280,7 @@ if (
             String(ctx.from?.id || "")
           );
 
-        await refreshManagerOrderMessage(
-          changedOrder
-        );
+        await refreshManagerOrderCard(changedOrder, ctx);
       } catch (error) {
       const errorCode = String(
 
@@ -3348,8 +3345,8 @@ if (
         String(ctx.from?.id || "")
       );
 
-      await refreshManagerOrderMessage(updated);
       await answerManagerCallbackQuery(ctx, "Заказ отмечен как доставленный");
+      await refreshManagerOrderCard(updated, ctx);
     } catch (e) {
       console.error("mgr_order_completed_done error:", e);
       await answerManagerCallbackQuery(
@@ -3392,7 +3389,7 @@ if (
       for (const messageId of arrivalMessageIds) {
         try {
           if (arrivalChatId && messageId) {
-            await bot.telegram.deleteMessage(arrivalChatId, Number(messageId));
+            await ctx.telegram.deleteMessage(arrivalChatId, Number(messageId));
           }
         } catch (_) {}
       }
@@ -3402,8 +3399,8 @@ if (
         await changedOrder.save();
       }
 
-      await refreshManagerOrderMessage(changedOrder);
       await ctx.answerCbQuery("Заказ отмечен как выполненный");
+      await refreshManagerOrderCard(changedOrder, ctx);
 
       try {
         const { onPickupOrderCompletedByManager } = await import(
@@ -3584,6 +3581,13 @@ return instructionMessage;
 
   };
 
+  const explicitBotUsernames = getExplicitBotUsernamesFromEnv();
+  if (explicitBotUsernames?.length) {
+    explicitBotUsernames.forEach((name, botIndex) => {
+      if (name) setShopBotUsername(botIndex, name);
+    });
+  }
+
   await Promise.all(
     userBots.map(async (activeBot, botIndex) => {
       try {
@@ -3626,7 +3630,7 @@ return instructionMessage;
         error: err?.response?.description || err?.message || err,
       });
 
-      if (ctx?.callbackQuery && isPrimaryShopBotIndex(botIndex)) {
+      if (ctx?.callbackQuery) {
         answerManagerCallbackQuery(
           ctx,
           "Внутренняя ошибка бота. Проверьте docker compose logs api",

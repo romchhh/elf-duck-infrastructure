@@ -1102,7 +1102,10 @@ if (!skipClientNotification) {
 
 export async function refreshManagerOrderMessage(order, options = {}) {
   try {
-    if (!bot || !order) return { ok: false, reason: "NO_BOT_OR_ORDER" };
+    const editTelegram = options?.telegramApi || bot?.telegram;
+    if (!editTelegram || !order) {
+      return { ok: false, reason: "NO_BOT_OR_ORDER" };
+    }
 
     const forceRepost = options?.forceRepost === true;
 
@@ -1742,7 +1745,7 @@ export async function refreshManagerOrderMessage(order, options = {}) {
       const editTextFallback = async (
         safeReplyMarkup
       ) => {
-        return bot.telegram.editMessageText(
+        return editTelegram.editMessageText(
           messageChatId,
           messageId,
           undefined,
@@ -1759,7 +1762,7 @@ export async function refreshManagerOrderMessage(order, options = {}) {
         safeReplyMarkup
       ) => {
         try {
-          await bot.telegram.editMessageCaption(
+          await editTelegram.editMessageCaption(
             messageChatId,
             messageId,
             undefined,
@@ -2028,7 +2031,7 @@ const editReplyMarkupWithContactFallback =
   async () => {
     try {
       // 1. Сначала кнопка по Telegram ID
-      await bot.telegram.editMessageReplyMarkup(
+      await editTelegram.editMessageReplyMarkup(
         messageChatId,
         messageId,
         undefined,
@@ -2059,7 +2062,7 @@ const editReplyMarkupWithContactFallback =
     if (clientUsername) {
       try {
         // 2. Затем ссылка по username
-        await bot.telegram.editMessageReplyMarkup(
+        await editTelegram.editMessageReplyMarkup(
           messageChatId,
           messageId,
           undefined,
@@ -2092,7 +2095,7 @@ const editReplyMarkupWithContactFallback =
     }
 
     // 3. В конце — кнопка отправки через бота
-    await bot.telegram.editMessageReplyMarkup(
+    await editTelegram.editMessageReplyMarkup(
       messageChatId,
       messageId,
       undefined,
@@ -2106,7 +2109,7 @@ try {
   const editManagerMessage = async (
     safeReplyMarkup
   ) => {
-    return bot.telegram.editMessageText(
+    return editTelegram.editMessageText(
       messageChatId,
       messageId,
       undefined,
