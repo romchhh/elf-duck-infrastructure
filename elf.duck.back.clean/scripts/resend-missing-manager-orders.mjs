@@ -3,6 +3,7 @@
  *
  * docker compose exec api node scripts/resend-missing-manager-orders.mjs --dry-run --point praga,r-dmie-cie --hours 24
  * docker compose exec api node scripts/resend-missing-manager-orders.mjs --point praga,r-dmie-cie --hours 24
+ * docker compose exec api node scripts/resend-missing-manager-orders.mjs --all --dry-run
  * docker compose exec api node scripts/resend-missing-manager-orders.mjs ED-U8SK8H ED-KURKMD
  */
 import dotenv from "dotenv";
@@ -36,12 +37,24 @@ function arg(name, fallback = "") {
 }
 
 const dryRun = args.includes("--dry-run");
+const allTime = args.includes("--all");
 const pointKeys = arg("--point", "")
   .split(/[,;]+/)
   .map((s) => s.trim())
   .filter(Boolean);
 const hours = Math.max(1, Number(arg("--hours", "48")) || 48);
-const explicitNos = args.filter((a) => !a.startsWith("--") && !a.includes("="));
+
+const flagValueIndices = new Set();
+for (const flag of ["--point", "--hours", "--db"]) {
+  const i = args.indexOf(flag);
+  if (i >= 0 && args[i + 1] != null && String(args[i + 1]).trim()) {
+    flagValueIndices.add(i + 1);
+  }
+}
+const explicitNos = args.filter(
+  (a, i) =>
+    !a.startsWith("--") && !a.includes("=") && !flagValueIndices.has(i)
+);
 
 const SENDABLE_PAYMENT = new Set(["checking", "awaiting", "paid"]);
 
@@ -105,12 +118,14 @@ if (explicitNos.length) {
     else console.warn("NOT_FOUND", orderNo);
   }
 } else {
-  const since = new Date(Date.now() - hours * 3600 * 1000);
   const filter = {
-    createdAt: { $gte: since },
     status: { $nin: ["canceled", "annulled"] },
     ...missingFilter,
   };
+  if (!allTime) {
+    const since = new Date(Date.now() - hours * 3600 * 1000);
+    filter.createdAt = { $gte: since };
+  }
 
   if (pointKeys.length) {
     const points = await PickupPoint.find({ key: { $in: pointKeys } })
@@ -129,8 +144,9 @@ if (explicitNos.length) {
 console.log({
   dryRun,
   count: orders.length,
-  hours,
+  hours: allTime ? "all" : hours,
   pointKeys,
+  allTime,
   primaryBot: dryRun ? "n/a" : `@${getPrimaryShopBotUsername()}`,
   primaryIndex: dryRun ? "n/a" : getPrimaryShopBotIndex(),
 });
