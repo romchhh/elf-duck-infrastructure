@@ -181,6 +181,67 @@ function puffyBlockTier(header, productKey) {
   return 0;
 }
 
+function merryMiRawHeader(rawHeader = "") {
+  return String(rawHeader || "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function merryMiHeaderFlags(rawHeader = "") {
+  const h = merryMiRawHeader(rawHeader);
+  return {
+    isMerry: /^MERRY\s+MI\b/.test(h),
+    has30k: /\b30\s*K\b/.test(h) || /\b30000\b/.test(h),
+    hasBlade: /\bBLADE\b/.test(h),
+    isLiquidBlock:
+      /^MERRY\s+MI\b/.test(h) && !/\b30\s*K\b/.test(h) && !/\bBLADE\b/.test(h),
+    isDeviceBlock:
+      /\b30\s*K\b/.test(h) ||
+      /\bBLADE\b/.test(h) ||
+      /\b30000\b/.test(h),
+  };
+}
+
+function merryMiBlockTier(header, productKey) {
+  const pk = String(productKey || "").trim().toLowerCase();
+  const flags = merryMiHeaderFlags(header);
+  if (!flags.isMerry) return 0;
+
+  if (pk === "merry-mi") {
+    if (flags.isLiquidBlock) return 3;
+    if (flags.isDeviceBlock) return 0;
+    return 1;
+  }
+  if (pk === "merry-mi-blade-30k" || pk === "merry-mi-30k") {
+    if (flags.isDeviceBlock) return 3;
+    if (flags.isLiquidBlock) return 0;
+    return 1;
+  }
+  return 0;
+}
+
+function assortmentModelBlockTier(header, productKey) {
+  return Math.max(
+    puffyBlockTier(header, productKey),
+    merryMiBlockTier(header, productKey)
+  );
+}
+
+function rawAssortmentHeaderMatchesModel(header, modelName, productKey = "") {
+  const pk = String(productKey || "").trim().toLowerCase();
+  if (pk !== "merry-mi" && pk !== "merry-mi-blade-30k" && pk !== "merry-mi-30k") {
+    return false;
+  }
+  const flags = merryMiHeaderFlags(header);
+  if (!flags.isMerry) return false;
+
+  if (pk === "merry-mi") {
+    return flags.isLiquidBlock;
+  }
+  return flags.isDeviceBlock;
+}
+
 function pickBestAssortmentBlock(rows, hits, productKey = "") {
   if (!hits.length) return null;
   if (hits.length === 1) return hits[0];
@@ -188,7 +249,7 @@ function pickBestAssortmentBlock(rows, hits, productKey = "") {
     .map((block) => ({
       block,
       n: listAssortmentFlavorsInBlock(rows, block).length,
-      tier: puffyBlockTier(block.header, productKey),
+      tier: assortmentModelBlockTier(block.header, productKey),
     }))
     .sort((a, b) => b.tier - a.tier || b.n - a.n)[0].block;
 }
@@ -208,6 +269,17 @@ export function findAssortmentBlockForModel(rows, modelName, productKey = "") {
       }
     }
   }
+
+  const pk = String(productKey || "").trim().toLowerCase();
+  if (pk === "merry-mi" || pk === "merry-mi-blade-30k" || pk === "merry-mi-30k") {
+  const merryRawHits = blocks.filter((block) =>
+    rawAssortmentHeaderMatchesModel(block.header, modelName, productKey)
+  );
+  if (merryRawHits.length) {
+    return pickBestAssortmentBlock(rows, merryRawHits, productKey);
+  }
+  }
+
   if (exactHits.length) {
     return pickBestAssortmentBlock(rows, exactHits, productKey);
   }

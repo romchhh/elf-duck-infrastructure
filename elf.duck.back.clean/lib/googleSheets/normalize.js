@@ -142,6 +142,9 @@ export function toReportModelLabel(normalizedModel) {
     "OXVA CATRIDGE": "OXVA CATRIDGE",
     "XROS CATRIDGE": "XROS CATRIDGE",
     "MERRY MI": "MERRY MI",
+    "MERRY MI BLADE 30K": "MERRY MI",
+    "MERRY MI BLADE": "MERRY MI",
+    "LIQ MERRY MI": "LIQ MERRY MI",
     "YAMI 5%": "YAMI 5%",
     "YAMI 7%": "YAMI 7%",
   };
@@ -150,7 +153,11 @@ export function toReportModelLabel(normalizedModel) {
 
   if (m.includes("ELF BAR D3")) return "ELF D3 25K";
   if (m.includes("BC45K") || m.includes("BC 45")) return "ELF BC45K";
-  if (/^MERRY\s+MI/.test(m)) return "MERRY MI";
+  // Дудка Merry Mi Blade → рядок ОТЧЁТ «MERRY MI» / «MERRY MI 30K».
+  if (/^MERRY\s+MI\s+BLADE\b/.test(m)) return "MERRY MI";
+  // Жижа — окремий ключ, не змішувати з дудкою.
+  if (/^LIQ\s+MERRY\s+MI\b/.test(m)) return "LIQ MERRY MI";
+  if (/^MERRY\s+MI\b/.test(m)) return "MERRY MI";
   if (/^YAMI(\s+[57]%)?$/.test(m)) return m === "YAMI" ? "YAMI" : m;
 
   return m;
@@ -195,13 +202,13 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "hqd-30-ml": ["LIQ HQD", "HQD"],
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
     "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI", "YAMI 5%", "YAMI 7%"],
+    // Жижа = блок «MERRY MI» (без 30K). Дудка = «MERRY MI 30K» / BLADE — без голого MERRY MI.
     "merry-mi": ["MERRY MI", "LIQ MERRY MI"],
-    "merry-mi-30k": ["MERRY MI", "MERRY MI 30K"],
+    "merry-mi-30k": ["MERRY MI 30K", "MERRY MI BLADE 30K"],
     "merry-mi-blade-30k": [
+      "MERRY MI 30K",
       "MERRY MI BLADE 30K",
       "MERRY MI BLADE",
-      "MERRY MI 30K",
-      "MERRY MI",
     ],
     // Голий «OXVA» — точний заголовок блоку на Ассортимент (не fuzzy на POD).
     "oxva-30-ml-20-mg": ["OXVA", "LIQ OXVA", "OXVA 20 MG", "OXVA 30 ML"],

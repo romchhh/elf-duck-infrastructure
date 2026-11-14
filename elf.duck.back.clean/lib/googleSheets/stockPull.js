@@ -283,6 +283,31 @@ async function pullOneSpreadsheet(
           modelName,
         });
       }
+      // Немає блоку на листі — знімаємо listedOnAssortment, щоб не світити
+      // чужі залишки (напр. liquid Merry Mi раніше тягнув сток дудки «MERRY MI»).
+      const meta = {
+        listedOnAssortment: false,
+        sheetLabel: "",
+        assortmentRowIndex: -1,
+      };
+      const pointKeysLabel = pointKeys.join("+");
+      for (const flavor of product.flavors || []) {
+        for (const pointId of pointIds) {
+          const existing = (flavor.stockByPickupPoint || []).find(
+            (s) => String(s.pickupPointId) === String(pointId)
+          );
+          if (!existing) continue;
+          queueAssortmentStockOp(ops, result, {
+            product,
+            flavor,
+            pointId,
+            pointKeysLabel,
+            existing,
+            sheetQty: 0,
+            meta,
+          });
+        }
+      }
       continue;
     }
 

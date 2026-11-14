@@ -163,10 +163,11 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
     "elf-duck-1500-2": "ELF BAR 1500",
     "elf-duck-3000": "ELF BAR RI 3000",
     "yami-30ml": "YAMI",
-    // Assortment header short name; report day uses «MERRY MI 30K».
+    // На Ассортимент (Śródmieście тощо): жижа = «MERRY MI», дудка = «MERRY MI 30K».
+    // Окремого «LIQ MERRY MI» на листі немає — не використовувати для пошуку блоку.
     "merry-mi": "MERRY MI",
-    "merry-mi-30k": "MERRY MI",
-    "merry-mi-blade-30k": "MERRY MI BLADE 30K",
+    "merry-mi-30k": "MERRY MI 30K",
+    "merry-mi-blade-30k": "MERRY MI 30K",
   };
 
 const STATS_SHEET_LIQUID_PRODUCT_KEYS = new Set([

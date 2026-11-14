@@ -57,4 +57,15 @@ assert.equal(yamiFromProduct, "YAMI 5%");
 const merryRow = findReportModelRowInDayBlock(rows, block, "MERRY MI");
 assert.equal(merryRow, 4);
 
+assert.equal(
+  getStatsSheetReportModelKey({ productKey: "merry-mi-blade-30k" }),
+  "MERRY MI"
+);
+assert.equal(
+  getStatsSheetReportModelKey({ productKey: "merry-mi" }),
+  "MERRY MI"
+);
+assert.equal(sameSheetModel("LIQ MERRY MI", "MERRY MI"), false);
+assert.equal(sameSheetModel("MERRY MI BLADE 30K", "MERRY MI"), true);
+
 console.log("reportModelMatch tests ok");
