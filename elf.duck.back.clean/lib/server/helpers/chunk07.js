@@ -23,6 +23,7 @@ import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import { getOrderStatsFulfillmentKind } from "./orderStatsDay.js";
+import { isOrderEligibleForEarnedCashback } from "../../cashback/eligibility.js";
 import crmRouter from "../../../routes/crm.js";
 
 const APP_URL = String(
@@ -311,15 +312,22 @@ export async function applyOrderCashback(order) {
     cashbackZl: 1,
     userTelegramId: 1,
     payment: 1,
+    deliveryType: 1,
+    deliveryMethod: 1,
     completedAt: 1,
     shippedAt: 1,
   });
 
   if (!freshOrder) return { applied: false, cashbackZl: 0, percent: 0 };
+
   await markReferralFirstOrderDoneIfNeeded(
     freshOrder.userTelegramId,
     freshOrder
   );
+
+  if (!isOrderEligibleForEarnedCashback(freshOrder)) {
+    return { applied: false, cashbackZl: 0, percent: 0, reason: "BLIK_CASHBACK_INPOST_ONLY" };
+  }
 
   // защита от повторного начисления
   if (freshOrder.cashbackAppliedAt) {
