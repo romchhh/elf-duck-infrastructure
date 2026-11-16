@@ -2645,6 +2645,9 @@ if (
     }
   );
 
+  // Ввод трекинга — только primary: в группе могут стоять store + legacy shop,
+  // иначе оба бота шлют «Проверьте трекинг-номер» на одно сообщение менеджера.
+  if (isPrimary) {
   activeBot.on("text", async (ctx, next) => {
 //       const managerTelegramId = String(
 //         ctx?.from?.id || ""
@@ -2988,6 +2991,7 @@ if (
       }
     }
   );
+  }
 
   activeBot.action(/mgr_order_delivered:(.+)/, async (ctx) => {
     try {
