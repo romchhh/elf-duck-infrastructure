@@ -126,8 +126,8 @@ export const productVisualByKey = {
     classCardDuck: "productCardImageRight",
     classActions: "productActionsRight",
     title1: "LIQUID MERRY MI",
-    title2: "30 ML / 50 MG",
-    titleModal: "LIQUID MERRY MI",
+    title2: "30 ML / 30 MG",
+    titleModal: "LIQUID MERRY MI 30 ML / 30 MG",
   },
   "merry-mi-blade-30k": {
     cardBgUrl: CARD_BG_REF["merry-mi-blade-30k"],

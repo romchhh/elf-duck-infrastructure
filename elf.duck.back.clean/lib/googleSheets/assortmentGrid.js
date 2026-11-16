@@ -275,7 +275,7 @@ export function findAssortmentBlockForModel(rows, modelName, productKey = "") {
     const merryRawHits = blocks.filter((block) =>
       rawAssortmentHeaderMatchesModel(block.header, modelName, productKey)
     );
-    // Жижа лише «MERRY MI», дудка лише «MERRY MI 30K» / BLADE. Без fuzzy, щоб не писати в чужий блок.
+    // Жижа лише «MERRY MI 3%», дудка лише «MERRY MI 30K» / BLADE. Без fuzzy, щоб не писати в чужий блок.
     if (!merryRawHits.length) return null;
     return pickBestAssortmentBlock(rows, merryRawHits, productKey);
   }

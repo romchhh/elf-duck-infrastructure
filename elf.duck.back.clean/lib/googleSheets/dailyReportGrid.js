@@ -234,6 +234,11 @@ export function reportModelMatches(cell, reportModelLabel) {
   if (wanted === "YAMI" && /^YAMI(\s+[57]%)?$/.test(norm)) return true;
   if (/^YAMI\s+[57]%$/.test(wanted) && norm === "YAMI") return true;
 
+  // Жижа Merry Mi: «MERRY MI» ↔ «MERRY MI 3%» (не плутати з 30K).
+  if (wanted === "MERRY MI 3%" && norm === "MERRY MI 3%") return true;
+  if (wanted === "MERRY MI 3%" && norm === "MERRY MI") return true;
+  if (norm === "MERRY MI 3%" && wanted === "MERRY MI") return true;
+
   return false;
 }
 

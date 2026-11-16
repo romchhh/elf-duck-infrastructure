@@ -182,8 +182,8 @@ async function main() {
 
     if (!dryRun) {
       liquid.title1 = "LIQUID MERRY MI";
-      liquid.title2 = "30 ML / 50 MG";
-      liquid.titleModal = "LIQUID MERRY MI";
+      liquid.title2 = "30 ML / 30 MG";
+      liquid.titleModal = "LIQUID MERRY MI 30 ML / 30 MG";
       liquid.flavors = nextFlavors;
       liquid.accentColor = accentColorFromGradient(nextFlavors[0]?.gradient);
       await liquid.save();

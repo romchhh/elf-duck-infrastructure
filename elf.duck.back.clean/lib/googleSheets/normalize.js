@@ -28,6 +28,16 @@ export function normalizeSheetModelName(value) {
     .replace(/\bPUFFY\s+50\s*MG\b/g, "PUFFY 5%")
     .replace(/\bPUFFY\s+70\b/g, "PUFFY 7%")
     .replace(/\bPUFFY\s+50\b/g, "PUFFY 5%")
+  // Merry Mi liquid (30 ml / 30 mg = 3%) — before stripping «30 ML».
+    .replace(
+      /\bLIQUID\s+MERRY\s+MI\s+30\s*ML\s*\/\s*30\s*MG\b/g,
+      "MERRY MI 3%"
+    )
+    .replace(
+      /\bLIQUID\s+MERRY\s+MI\s+30\s*ML\s*\/\s*50\s*MG\b/g,
+      "MERRY MI 3%"
+    )
+    .replace(/\bLIQUID\s+MERRY\s+MI\b/g, "MERRY MI 3%")
     .replace(/\s*30\s*ML/g, "")
     .replace(/^CHASER\s+/g, "")
     .replace(/\bLIQ\s+ELFLIQ\b/g, "ELFLIQ")
@@ -38,9 +48,11 @@ export function normalizeSheetModelName(value) {
     .replace(/\bLIQ\s+BLACK\b/g, "BLACK")
     .replace(/\bLIQ\s+FOR\s+PODS\b/g, "FOR PODS")
     .replace(/\bLIQ\s+VOZOL\s+PRIME\b/g, "VOZOL PRIME")
-    .replace(/\bLIQUID\s+MERRY\s+MI\b/g, "MERRY MI")
-    .replace(/\bLIQ\s+MERRY\s+MI\b/g, "MERRY MI")
-    // MERRY MI 30K / BLADE — окремо від жижі «MERRY MI» (звіт + ассортимент).
+    .replace(/\bLIQ\s+MERRY\s+MI\s+3\s*%/g, "MERRY MI 3%")
+    .replace(/\bLIQ\s+MERRY\s+MI\b/g, "MERRY MI 3%")
+    .replace(/\bMERRY\s+MI\s+3\s*%/g, "MERRY MI 3%")
+    .replace(/\bMERRY\s+MI\s*\/\s*30\s*MG\b/g, "MERRY MI 3%")
+    // MERRY MI 30K / BLADE — окремо від жижі «MERRY MI 3%» (звіт + ассортимент).
     // YAMI 30ML already loses 30ML via generic rule; keep 5%/7% as distinct labels.
     .replace(/\bYAMI\s+5\s*%/g, "YAMI 5%")
     .replace(/\bYAMI\s+7\s*%/g, "YAMI 7%")
@@ -77,13 +89,15 @@ export function normalizeSheetModelName(value) {
     .replace(/\bELF\s+DUCK\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
     .replace(/\bELF\s+BAR\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
     .replace(/\bELF\s+TRIO\s+40K\b/g, "ELF TRIO 40K")
+    .replace(/\bMERRY\s+MI\s+30\s*MG\b/g, "MERRY MI 3%")
     .replace(/\b70\s*MG\b/g, "7%")
     .replace(/\b50\s*MG\b/g, "5%")
     .replace(/\bOXVA\s*\/\s*\d+\s*MG\b/g, "OXVA")
     .replace(/\bOXVA\s+\d+\s*MG\b/g, "OXVA")
     .replace(/\bLIQ\s+OXVA\b/g, "OXVA")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(/^MERRY MI$/, "MERRY MI 3%");
 }
 
 /** Кирилічні літери, візуально ідентичні латинським («Bananа» з кирилічною а на листі). */
@@ -141,11 +155,13 @@ export function toReportModelLabel(normalizedModel) {
     "XROS 5 POD": "XROS 5 POD",
     "OXVA CATRIDGE": "OXVA CATRIDGE",
     "XROS CATRIDGE": "XROS CATRIDGE",
-    "MERRY MI": "MERRY MI",
+    "MERRY MI 3%": "MERRY MI 3%",
+    "MERRY MI": "MERRY MI 3%",
     "MERRY MI 30K": "MERRY MI 30K",
     "MERRY MI BLADE 30K": "MERRY MI 30K",
     "MERRY MI BLADE": "MERRY MI 30K",
-    "LIQ MERRY MI": "MERRY MI",
+    "LIQ MERRY MI 3%": "MERRY MI 3%",
+    "LIQ MERRY MI": "MERRY MI 3%",
     "YAMI 5%": "YAMI 5%",
     "YAMI 7%": "YAMI 7%",
   };
@@ -158,8 +174,11 @@ export function toReportModelLabel(normalizedModel) {
   if (/\bMERRY\s+MI\s*30\s*K\b/.test(m) || /\bMERRY\s+MI\s*30000\b/.test(m)) {
     return "MERRY MI 30K";
   }
-  if (/^LIQ\s+MERRY\s+MI\b/.test(m)) return "MERRY MI";
-  if (/^MERRY\s+MI\b/.test(m)) return "MERRY MI";
+  if (/^MERRY\s+MI\s+3%$/.test(m)) return "MERRY MI 3%";
+  if (/^LIQ\s+MERRY\s+MI\b/.test(m)) return "MERRY MI 3%";
+  if (/^MERRY\s+MI\b/.test(m) && !/\b(30\s*K|30000|BLADE)\b/.test(m)) {
+    return "MERRY MI 3%";
+  }
   if (/^YAMI(\s+[57]%)?$/.test(m)) return m === "YAMI" ? "YAMI" : m;
 
   return m;
@@ -204,8 +223,13 @@ export function toAssortmentHeaderCandidates(normalizedModel, productKey = "") {
     "hqd-30-ml": ["LIQ HQD", "HQD"],
     "vozol-prime-30-ml": ["LIQ VOZOL PRIME", "VOZOL PRIME"],
     "yami-30ml": ["YAMI", "YAMI 30ML", "LIQ YAMI", "YAMI 5%", "YAMI 7%"],
-    // Жижа = блок «MERRY MI» (без 30K). Дудка = «MERRY MI 30K» / BLADE — без голого MERRY MI.
-    "merry-mi": ["MERRY MI", "LIQ MERRY MI"],
+    // Жижа = «MERRY MI 3%» (30 ml / 30 mg). Дудка = «MERRY MI 30K» / BLADE.
+    "merry-mi": [
+      "LIQ MERRY MI 3%",
+      "MERRY MI 3%",
+      "LIQ MERRY MI",
+      "MERRY MI",
+    ],
     "merry-mi-30k": ["MERRY MI 30K", "MERRY MI BLADE 30K"],
     "merry-mi-blade-30k": [
       "MERRY MI 30K",

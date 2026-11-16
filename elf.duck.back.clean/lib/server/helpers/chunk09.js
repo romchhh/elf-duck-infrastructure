@@ -135,8 +135,8 @@ const STATS_REPORT_MODEL_BY_PRODUCT_KEY = {
   "puffy-special": "PUFFY SPECIAL",
   /** На листах ОТЧЁТ (Mokotów тощо) — «YAMI 5%» / «YAMI 7%», не голий «YAMI». */
   "yami-30ml": "YAMI 5%",
-  /** Жижа → рядок «MERRY MI»; дудка → «MERRY MI 30K» (не змішувати в reportModelMatches). */
-  "merry-mi": "MERRY MI",
+  /** Жижа (30 ml / 30 mg) → «MERRY MI 3%»; дудка → «MERRY MI 30K». */
+  "merry-mi": "MERRY MI 3%",
   "merry-mi-30k": "MERRY MI 30K",
   "merry-mi-blade-30k": "MERRY MI 30K",
 };
@@ -167,8 +167,8 @@ const ASSORTMENT_SHEET_MODEL_BY_PRODUCT_KEY = {
     "elf-duck-1500-2": "ELF BAR 1500",
     "elf-duck-3000": "ELF BAR RI 3000",
     "yami-30ml": "YAMI",
-    // Ассортимент: жижа = «MERRY MI», дудка = «MERRY MI 30K» / BLADE.
-    "merry-mi": "MERRY MI",
+    // Ассортимент: жижа = «LIQ MERRY MI 3%», дудка = «MERRY MI 30K» / BLADE.
+    "merry-mi": "LIQ MERRY MI 3%",
     "merry-mi-30k": "MERRY MI 30K",
     "merry-mi-blade-30k": "MERRY MI 30K",
   };

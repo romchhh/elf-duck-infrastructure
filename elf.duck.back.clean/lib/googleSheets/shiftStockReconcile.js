@@ -67,6 +67,8 @@ export function sheetModelMatchRank(left, right) {
   }
   if ((yamiGeneric(a) && yamiTier(b)) || (yamiTier(a) && yamiGeneric(b))) return 1;
   if (
+    (a === "MERRY MI 3%" && b === "MERRY MI 30K") ||
+    (a === "MERRY MI 30K" && b === "MERRY MI 3%") ||
     (a === "MERRY MI" && b === "MERRY MI 30K") ||
     (a === "MERRY MI 30K" && b === "MERRY MI")
   ) {
