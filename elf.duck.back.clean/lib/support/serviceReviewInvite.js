@@ -16,7 +16,10 @@ import {
 } from "../telegram/clientBotDelivery.js";
 import { getPrimaryShopBotIndex } from "../telegram/shopBotPrimary.js";
 import { recalcUserCashbackBalanceFromLedger } from "../cashback/manualAdmin.js";
-import { DEFAULT_COMPLAINTS_CHAT_ID } from "./complaintsTelegram.js";
+import {
+  DEFAULT_COMPLAINTS_CHAT_ID,
+  resolveOrderLocationForNotify,
+} from "./complaintsTelegram.js";
 
 export const SERVICE_REVIEW_INVITES_COLLECTION = "service_review_invites";
 const REWARD_ZL = 15;
@@ -473,9 +476,7 @@ export async function getServiceReviewContext(telegramId) {
     ratings,
     minDetailsChars: MIN_DETAILS_CHARS,
     orderNo: String(order?.orderNo || ""),
-    pointTitle: String(
-      pickupPoint?.title || order?.pickupPointTitle || ""
-    ).trim(),
+    pointTitle: resolveOrderLocationForNotify(order, pickupPoint).pointTitle,
     sentAt: invite.sentAt || null,
     completedAt: invite.completedAt || null,
   };
@@ -547,11 +548,8 @@ async function notifyComplaintsChat({
     .filter(Boolean)
     .join(" · ");
 
-  const pointTitle =
-    String(pickupPoint?.title || order?.pickupPointTitle || "").trim() || "—";
-  const pointAddress =
-    String(pickupPoint?.address || order?.pickupPointAddress || "").trim() ||
-    "—";
+  const { pointTitle, pointAddress, deliveryLabel } =
+    resolveOrderLocationForNotify(order, pickupPoint);
 
   const lines = [
     testMode
@@ -564,6 +562,7 @@ async function notifyComplaintsChat({
       : null,
     `<b>Точка:</b> ${escapeHtml(pointTitle)}`,
     `<b>Адрес:</b> ${escapeHtml(pointAddress)}`,
+    `<b>Доставка:</b> ${escapeHtml(deliveryLabel)}`,
     `<b>Оценка:</b> ${escapeHtml(ratingLabel)}`,
     "",
     `<b>Комментарий:</b>`,
@@ -657,10 +656,11 @@ export async function submitServiceReview({ telegramId, rating, details = "" }) 
     pickupPoint = await PickupPoint.findById(pointId).lean();
   }
 
-  const pointTitle =
-    String(pickupPoint?.title || order?.pickupPointTitle || "").trim() || "";
-  const pointAddress =
-    String(pickupPoint?.address || order?.pickupPointAddress || "").trim() || "";
+  const {
+    pointTitle,
+    pointAddress,
+    deliveryLabel,
+  } = resolveOrderLocationForNotify(order, pickupPoint);
 
   const reviewText =
     ratingKey === "great" && !body
@@ -682,9 +682,9 @@ export async function submitServiceReview({ telegramId, rating, details = "" }) 
       orderId: order?._id || null,
       orderNo: String(order?.orderNo || ""),
       pickupPointId: pickupPoint?._id || null,
-      pointTitle,
-      pointAddress,
-      deliveryLabel: "",
+      pointTitle: pointTitle === "—" ? "" : pointTitle,
+      pointAddress: pointAddress === "—" ? "" : pointAddress,
+      deliveryLabel,
       source: testMode
         ? "first_order_service_review_test"
         : "first_order_service_review",

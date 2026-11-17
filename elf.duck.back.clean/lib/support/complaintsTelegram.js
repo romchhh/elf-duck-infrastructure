@@ -63,6 +63,10 @@ function deliveryKindLabel(order, pickupPoint) {
     .toLowerCase()
     .replace(/,+$/, "");
 
+  if (deliveryMethod === "inpost" || pointKey === "delivery-2") {
+    return "Доставка — InPost";
+  }
+
   if (
     deliveryType === "delivery" ||
     deliveryMethod === "courier" ||
@@ -71,11 +75,63 @@ function deliveryKindLabel(order, pickupPoint) {
     return "Доставка — курьер";
   }
 
+  return "Самовывоз";
+}
+
+/**
+ * Точка / адрес для чата оценок и жалоб.
+ * У курьера и InPost нет pickupPoint — берём адрес доставки / пачкомата.
+ */
+export function resolveOrderLocationForNotify(order = null, pickupPoint = null) {
+  const deliveryLabel = deliveryKindLabel(order || {}, pickupPoint || {});
+  const methodLabel = String(order?.methodLabel || "").trim();
+  const pickupTitle = String(
+    pickupPoint?.title || order?.pickupPointTitle || ""
+  ).trim();
+  const pickupAddress = String(
+    pickupPoint?.address || order?.pickupPointAddress || ""
+  ).trim();
+
+  const deliveryMethod = String(order?.deliveryMethod || "")
+    .trim()
+    .toLowerCase();
+  const deliveryType = String(order?.deliveryType || "")
+    .trim()
+    .toLowerCase();
+  const pointKey = String(pickupPoint?.key || "")
+    .trim()
+    .toLowerCase()
+    .replace(/,+$/, "");
+
   if (deliveryMethod === "inpost" || pointKey === "delivery-2") {
-    return "Доставка — InPost";
+    const locker = String(order?.inpostData?.lockerAddress || "").trim();
+    const city = String(order?.inpostData?.city || "").trim();
+    return {
+      pointTitle: methodLabel || deliveryLabel,
+      pointAddress: [locker, city].filter(Boolean).join(", ") || "—",
+      deliveryLabel,
+    };
   }
 
-  return "Самовывоз";
+  if (
+    deliveryType === "delivery" ||
+    deliveryMethod === "courier" ||
+    pointKey === "delivery"
+  ) {
+    const addr = String(order?.courierAddress || "").trim();
+    const district = String(order?.courierDistrict || "").trim();
+    return {
+      pointTitle: methodLabel || deliveryLabel,
+      pointAddress: addr || district || "—",
+      deliveryLabel,
+    };
+  }
+
+  return {
+    pointTitle: pickupTitle || "—",
+    pointAddress: pickupAddress || "—",
+    deliveryLabel,
+  };
 }
 
 export async function submitCustomerComplaint({
@@ -144,15 +200,11 @@ export async function submitCustomerComplaint({
     .filter(Boolean)
     .join(" · ");
 
-  const pointTitle =
-    String(pickupPoint?.title || order?.pickupPointTitle || "").trim() ||
-    "—";
-  const pointAddress =
-    String(pickupPoint?.address || order?.pickupPointAddress || "").trim() ||
-    "—";
-  const deliveryLabel = order
-    ? deliveryKindLabel(order, pickupPoint)
-    : deliveryKindLabel({}, pickupPoint);
+  const {
+    pointTitle,
+    pointAddress,
+    deliveryLabel,
+  } = resolveOrderLocationForNotify(order, pickupPoint);
 
   const lines = [
     "<b>Жалоба от клиента</b>",
