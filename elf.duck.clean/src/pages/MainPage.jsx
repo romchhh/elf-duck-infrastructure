@@ -48,6 +48,7 @@ import {
   toggleGuestFavorite,
 } from "../utils/guestLocalStore";
 import { setPendingCart } from "../pendingCart";
+import { applyMerryOnePlusOne } from "../utils/merryOnePlusOne";
 import {
   isSalePromoProduct,
   isLiquidSmartPriceProduct,
@@ -2301,7 +2302,7 @@ const mergedWithSnapshots = merged.map((item) =>
 // Pre-seed CartPage via module buffer so the cart renders immediately
 // with the freshly merged items (no empty-cart flash, no loading delay).
 setPendingCart({
-  items: mergedWithSnapshots,
+  items: applyMerryOnePlusOne(mergedWithSnapshots),
   savePromise,
   checkoutPickupPointId: nextCheckoutPickupPointId,
   checkoutDeliveryType: nextCheckoutDeliveryType,

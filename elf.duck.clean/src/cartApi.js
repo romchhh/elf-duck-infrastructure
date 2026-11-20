@@ -6,6 +6,7 @@ import {
   getGuestSavedInpostData,
 } from "./utils/guestLocalStore";
 import { buildApiHeaders } from "./utils/shoppingSession";
+import { applyMerryOnePlusOne } from "./utils/merryOnePlusOne";
 import { API_URL } from "./api.js";
 
 function normalizeInpostData(raw) {
@@ -28,7 +29,7 @@ function buildLocalCartFromSave(
 ) {
   const current = loadGuestCart();
   return mergeGuestCartPatch({
-    items: Array.isArray(items) ? items : [],
+    items: applyMerryOnePlusOne(Array.isArray(items) ? items : []),
     checkoutPickupPointId:
       checkoutPickupPointId !== undefined
         ? checkoutPickupPointId
@@ -75,8 +76,16 @@ function buildLocalCartFromSave(
 export async function getCart() {
   if (isGuestShopping()) {
     const cart = loadGuestCart();
+    const items = applyMerryOnePlusOne(Array.isArray(cart?.items) ? cart.items : []);
+    if (
+      JSON.stringify(items.map((it) => it.giftQty || 0)) !==
+      JSON.stringify((cart?.items || []).map((it) => it.giftQty || 0))
+    ) {
+      mergeGuestCartPatch({ items });
+    }
     return {
       ...cart,
+      items,
       savedInpostData: getGuestSavedInpostData(),
     };
   }

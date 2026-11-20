@@ -29,7 +29,13 @@ app.get("/cart", async (req, res) => {
         arrivalTime: null,
       };
 
-    const safeItems = Array.isArray(safeCart.items) ? safeCart.items : [];
+    const { applyMerryOnePlusOne } = await import(
+      "../../lib/promos/merryOnePlusOne.js"
+    );
+    const safeItems = applyMerryOnePlusOne(
+      Array.isArray(safeCart.items) ? safeCart.items : []
+    );
+    safeCart.items = safeItems;
 
     const applied = safeItems.some(
       (it) => Number(it?.referralFirstOrderDiscountPercent || 0) > 0

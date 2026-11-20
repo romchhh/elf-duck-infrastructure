@@ -12,7 +12,11 @@ import {
   isLiquidSmartPriceProduct,
   isDisposableSmartPriceProduct,
 } from "../utils/smartPricing";
-import { lineChargeZl, merryGiftQtyOf } from "../utils/merryOnePlusOne";
+import {
+  applyMerryOnePlusOne,
+  lineChargeZl,
+  merryGiftQtyOf,
+} from "../utils/merryOnePlusOne";
 import {
   canAcceptOrdersToday,
   formatNextOpenLabel,
@@ -401,6 +405,7 @@ const CartPage = () => {
         productKey: String(it?.productKey || "").trim(),
         flavorKey: String(it?.flavorKey || "").trim(),
         qty: Math.max(1, Number(it?.qty || 1)),
+        giftQty: Math.max(0, Number(it?.giftQty || 0)),
         unitPrice: Number(it?.unitPrice || 0),
         flavorLabel: String(it?.flavorLabel || ""),
       }))
@@ -1528,7 +1533,9 @@ useEffect(() => {
     if (isGuestBrowser) {
       (async () => {
         const pending = peekPendingCart();
-        const seededItems = Array.isArray(pending?.items) ? pending.items : null;
+        const seededItems = Array.isArray(pending?.items)
+          ? applyMerryOnePlusOne(pending.items)
+          : null;
         if (seededItems) {
           setCartItems(seededItems);
           syncedCartQtyRef.current = sumCartQty(seededItems);
@@ -1548,7 +1555,9 @@ useEffect(() => {
               ? cartResponse.cart
               : cartResponse;
 
-          const loadedItems = Array.isArray(cart?.items) ? cart.items : [];
+          const loadedItems = applyMerryOnePlusOne(
+            Array.isArray(cart?.items) ? cart.items : []
+          );
           setCartItems(loadedItems);
           setCourierAddress(String(cart?.courierAddress || ""));
           setDeliveryTimeWindow(String(cart?.deliveryTimeWindow || ""));
@@ -1612,7 +1621,9 @@ useEffect(() => {
       // items snapshot + in-flight saveCart promise are waiting in the shared
       // module buffer. Seed the UI instantly so there's no empty-cart flash.
       const pending = peekPendingCart();
-      const seededItems = Array.isArray(pending?.items) ? pending.items : null;
+      const seededItems = Array.isArray(pending?.items)
+        ? applyMerryOnePlusOne(pending.items)
+        : null;
       if (seededItems) {
         setCartItems(seededItems);
         syncedCartQtyRef.current = sumCartQty(seededItems);
@@ -1700,7 +1711,9 @@ useEffect(() => {
           setSavedInpostData(nextSavedInpost);
         }
 
-        const loadedItems = Array.isArray(cart?.items) ? cart.items : [];
+        const loadedItems = applyMerryOnePlusOne(
+          Array.isArray(cart?.items) ? cart.items : []
+        );
         setCartItems(loadedItems);
         setReferralFirstOrderDiscount(referralDiscount);
         setArrivalTime(cart?.arrivalTime || "");
@@ -1708,7 +1721,7 @@ useEffect(() => {
         setCourierContactPhone(
           sanitizePhone(String(cart?.courierContactPhone || "")).slice(0, 40)
         );
-        syncedCartQtyRef.current = sumCartQty(Array.isArray(cart?.items) ? cart.items : []);
+        syncedCartQtyRef.current = sumCartQty(loadedItems);
 
         const lockedType =
           cart?.checkoutDeliveryType ||
@@ -1794,7 +1807,9 @@ useEffect(() => {
             setCourierPricingStatus("idle");
           }
 
-          const savedItems = Array.isArray(savedCart?.items) ? savedCart.items : itemsSnapshot;
+          const savedItems = applyMerryOnePlusOne(
+            Array.isArray(savedCart?.items) ? savedCart.items : itemsSnapshot
+          );
 
           if (savedReferralFirstOrderDiscount) {
             setReferralFirstOrderDiscount(savedReferralFirstOrderDiscount);
@@ -1803,8 +1818,9 @@ useEffect(() => {
           // ✅ теперь эти qty/цены точно уже такие, как их пересчитал бэк
           syncedCartQtyRef.current = sumCartQty(savedItems);
 
-          // если бэк пересчитал smart-price / qty / labels — сразу отражаем это в UI
-          if (!areCartItemsEqual(savedItems, cartItems)) {
+          // если бэк пересчитал smart-price / giftQty / qty — сразу отражаем это в UI
+          // сравниваем со snapshot отправки, а не со stale cartItems из замыкания
+          if (!areCartItemsEqual(savedItems, itemsSnapshot)) {
             setCartItems(savedItems);
           }
 
@@ -2002,8 +2018,8 @@ const incQty = (key) => {
       return prev;
     }
 
-    return prev.map((x) =>
-      cartItemKey(x) === key ? { ...x, qty: nextQty } : x
+    return applyMerryOnePlusOne(
+      prev.map((x) => (cartItemKey(x) === key ? { ...x, qty: nextQty } : x))
     );
   });
 };
@@ -2016,8 +2032,10 @@ const incQty = (key) => {
       const currentQty = Math.max(1, Number(it.qty || 1));
       if (currentQty <= 1) return prev;
 
-      return prev.map((x) =>
-        cartItemKey(x) === key ? { ...x, qty: currentQty - 1 } : x
+      return applyMerryOnePlusOne(
+        prev.map((x) =>
+          cartItemKey(x) === key ? { ...x, qty: currentQty - 1 } : x
+        )
       );
     });
   };
@@ -2030,11 +2048,17 @@ const incQty = (key) => {
 
     const telegramId = String(user?.telegramId || "").trim();
     if (!telegramId) {
-      setCartItems((prev) => prev.filter((it) => cartItemKey(it) !== safeKey));
+      setCartItems((prev) =>
+        applyMerryOnePlusOne(
+          prev.filter((it) => cartItemKey(it) !== safeKey)
+        )
+      );
       return;
     }
 
-    const nextItems = cartItems.filter((it) => cartItemKey(it) !== safeKey);
+    const nextItems = applyMerryOnePlusOne(
+      cartItems.filter((it) => cartItemKey(it) !== safeKey)
+    );
 
     // optimistic UI
     setCartItems(nextItems);
@@ -2525,7 +2549,9 @@ const saveAddress = async () => {
               const savedPickupPointId = savedCart?.checkoutPickupPointId || null;
               const savedDeliveryType = savedCart?.checkoutDeliveryType || null;
               const savedDeliveryMethod = savedCart?.checkoutDeliveryMethod || null;
-              const savedItems = Array.isArray(savedCart?.items) ? savedCart.items : cartItems;
+              const savedItems = applyMerryOnePlusOne(
+                Array.isArray(savedCart?.items) ? savedCart.items : cartItems
+              );
 
               syncedCartQtyRef.current = sumCartQty(savedItems);
 
