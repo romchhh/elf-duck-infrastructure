@@ -797,6 +797,30 @@ body {
   transform: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+  z-index: 1;
+}
+
+/* Merry Mi: червона назва поверх promo-фото, з обводкою для контрасту */
+.productCard--promoPhoto .productTop {
+  z-index: 6;
+  top: 10px;
+}
+
+.productCard--promoPhoto .productTitle,
+.productCard--promoPhoto .productTitleLine {
+  color: #e41b23;
+  font-weight: 700;
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.98),
+    0 1px 0 rgba(255, 255, 255, 0.92),
+    0 0 10px rgba(255, 255, 255, 0.75),
+    0 2px 6px rgba(0, 0, 0, 0.35);
+  -webkit-text-stroke: 0.35px rgba(255, 255, 255, 0.65);
+}
+
+.productCard--promoPhoto[data-product-key="merry-mi-blade-30k"] .productTitle,
+.productCard--promoPhoto[data-product-key="merry-mi-blade-30k"] .productTitleLine {
+  color: #c41230;
 }
 
 .cardImageLeft {

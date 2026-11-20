@@ -148,6 +148,7 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
       className={`productCard${compactDuck ? " productCard--compactDuck" : ""}${
         cartridgeDuck ? " productCard--cartridgeDuck" : ""
       }${promoOnlyCard ? " productCard--promoPhoto" : ""}`}
+      data-product-key={String(product?.productKey || "").trim()}
       onClick={() => {
         onOpenProduct(product);
       }}

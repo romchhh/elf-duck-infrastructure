@@ -805,6 +805,7 @@ const FavoritePage = () => {
                         ? " productCard--cartridgeDuck"
                         : ""
                     }${promoOnlyCard ? " productCard--promoPhoto" : ""}`}
+                    data-product-key={String(product?.productKey || "").trim()}
                     onClick={() => {
                       haptic.heavy();
                       const hero = getProductHeroUrl(product);

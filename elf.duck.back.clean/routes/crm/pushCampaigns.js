@@ -577,6 +577,31 @@ router.get(
                     0
                 ),
 
+              attributionProductKeys:
+                analyticsByCampaign.get(String(row?._id || ""))
+                  ?.attributionProductKeys || [],
+
+              metricHints: {
+                purchases: (() => {
+                  const keys =
+                    analyticsByCampaign.get(String(row?._id || ""))
+                      ?.attributionProductKeys || [];
+                  if (keys.length > 0) {
+                    return `Заказы с товарами (${keys.join(", ")}), 7 дн. после рассылки`;
+                  }
+                  return "Любые покупки получателей, 7 дн. (last-touch)";
+                })(),
+                conversion: (() => {
+                  const keys =
+                    analyticsByCampaign.get(String(row?._id || ""))
+                      ?.attributionProductKeys || [];
+                  if (keys.length > 0) {
+                    return "Доля получателей с заказом по товарам рассылки";
+                  }
+                  return "Конверсия в любую покупку";
+                })(),
+              },
+
               startedAt:
                 row?.startedAt ||
                 null,

@@ -16,6 +16,10 @@ import {
   loadCanceledOrders,
 } from "../sales.js";
 import { getPeriodRange, getWarsawDateKey } from "../datetime.js";
+import {
+  extractCampaignAttributionProductKeys,
+  orderHasPaidProductKeys,
+} from "./pushAttributionProducts.js";
 
 /** Промокоди з поля promo або з тексту «Промокод: CODE» / `CODE`. */
 export function extractCampaignPromoCodes(message = {}) {
@@ -79,23 +83,36 @@ export async function buildPushCampaignAnalytics(
    * Для last-touch ниже мы отдельно
    * загрузим соседние кампании из Mongo.
    */
-  const result = new Map(
+  const campaignsById = new Map(
     campaigns.map((campaign) => [
       String(campaign?._id || ""),
-      {
-        purchases: 0,
-        buyers: new Set(),
-        revenue: 0,
-        opened: Math.max(
-          Number(campaign?.opened || 0),
-          Array.isArray(campaign?.openedTelegramIds)
-            ? campaign.openedTelegramIds.length
-            : 0
-        ),
-        promoApplications: 0,
-        promoCodes: extractCampaignPromoCodes(campaign?.message),
-      },
+      campaign,
     ])
+  );
+
+  const result = new Map(
+    campaigns.map((campaign) => {
+      const id = String(campaign?._id || "");
+      const attributionProductKeys =
+        extractCampaignAttributionProductKeys(campaign);
+      return [
+        id,
+        {
+          purchases: 0,
+          buyers: new Set(),
+          revenue: 0,
+          opened: Math.max(
+            Number(campaign?.opened || 0),
+            Array.isArray(campaign?.openedTelegramIds)
+              ? campaign.openedTelegramIds.length
+              : 0
+          ),
+          promoApplications: 0,
+          promoCodes: extractCampaignPromoCodes(campaign?.message),
+          attributionProductKeys,
+        },
+      ];
+    })
   );
 
   /*
@@ -350,6 +367,7 @@ export async function buildPushCampaignAnalytics(
           userTelegramId: 1,
           totalZl: 1,
           crmSaleDate: 1,
+          items: 1,
         },
       },
 
@@ -468,6 +486,19 @@ export async function buildPushCampaignAnalytics(
       );
 
     if (!analytics) {
+      continue;
+    }
+
+    const attributionProductKeys =
+      analytics.attributionProductKeys ||
+      extractCampaignAttributionProductKeys(
+        campaignsById.get(attributedCampaign.id) || {}
+      );
+
+    if (
+      attributionProductKeys.length > 0 &&
+      !orderHasPaidProductKeys(sale?.items, attributionProductKeys)
+    ) {
       continue;
     }
 
