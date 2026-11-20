@@ -663,6 +663,34 @@ function teggerStatus(raw) {
   return "done";
 }
 
+/** Усі запуски розіграшу Tegger зводяться в один рядок історії CRM. */
+const TEGGER_RAZDAET_AGGREGATE_JOB_ID = "tegger-aggregated-elfduck-razdaet";
+
+function isTeggerRazdaetName(name) {
+  const text = String(name || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return (
+    /razda|rozdaje|разда|розда/.test(text) ||
+    (/elfduck/.test(text) && /2\s*000|2000/.test(text))
+  );
+}
+
+function resolveTeggerJobId(name, jobId) {
+  if (isTeggerRazdaetName(name)) return TEGGER_RAZDAET_AGGREGATE_JOB_ID;
+  return String(jobId || "").trim();
+}
+
+function normalizeTeggerUsername(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^@/, "")
+    .replace(/^https?:\/\/t\.me\//i, "")
+    .split(/[/?#]/)[0]
+    .trim();
+}
+
 router.post("/push/tegger-ingest", async (req, res) => {
   try {
     if (!teggerIngestTokenOk(req)) {
@@ -670,15 +698,20 @@ router.post("/push/tegger-ingest", async (req, res) => {
     }
 
     const body = req.body && typeof req.body === "object" ? req.body : {};
-    const jobId = String(body.jobId || "").trim();
-    if (!jobId) {
+    const rawJobId = String(body.jobId || "").trim();
+    if (!rawJobId) {
       return res.status(400).json({ ok: false, error: "TEGGER_JOB_ID_REQUIRED" });
     }
+
+    const nameRaw = String(body.name || "").trim().slice(0, 140) || "Тегер";
+    const jobId = resolveTeggerJobId(nameRaw, rawJobId);
+    const isAggregate = jobId === TEGGER_RAZDAET_AGGREGATE_JOB_ID;
+    const name = isAggregate ? "ELFDUCK РАЗДАЁТ ДЕНЬГИ 💸" : nameRaw;
 
     const mentioned = [
       ...new Set(
         (Array.isArray(body.mentioned) ? body.mentioned : [])
-          .map((name) => String(name || "").trim().replace(/^@/, ""))
+          .map((value) => normalizeTeggerUsername(value))
           .filter(Boolean)
       ),
     ];
@@ -694,33 +727,66 @@ router.post("/push/tegger-ingest", async (req, res) => {
             };
           }
           return {
-            username: text.replace(/^@/, ""),
+            username: normalizeTeggerUsername(text),
             error: "ошибка",
           };
         }
         return {
-          username: String(row?.username || "").trim().replace(/^@/, ""),
+          username: normalizeTeggerUsername(row?.username || ""),
           error: String(row?.error || "ошибка").trim().slice(0, 180),
         };
       })
       .filter((row) => row.username);
-    const mentionedSet = new Set(mentioned.map((name) => name.toLowerCase()));
-    const failed = failedRows.filter(
-      (row) => !mentionedSet.has(row.username.toLowerCase())
-    );
+
+    const existing = await BroadcastCampaign.findOne({ teggerJobId: jobId }).lean();
+    const prevOk = new Map();
+    const prevFail = new Map();
+    for (const entry of existing?.deliveryLog || []) {
+      const username = normalizeTeggerUsername(entry?.username || entry?.telegramId || "");
+      if (!username) continue;
+      if (entry?.ok) prevOk.set(username.toLowerCase(), username);
+      else prevFail.set(username.toLowerCase(), {
+        username,
+        error: String(entry?.error || "ошибка").slice(0, 180),
+      });
+    }
+    for (const username of existing?.sentTelegramIds || []) {
+      const safe = normalizeTeggerUsername(username);
+      if (safe) prevOk.set(safe.toLowerCase(), safe);
+    }
+
+    for (const username of mentioned) {
+      const key = username.toLowerCase();
+      prevOk.set(key, username);
+      prevFail.delete(key);
+    }
+    for (const row of failedRows) {
+      const key = row.username.toLowerCase();
+      if (prevOk.has(key)) continue;
+      prevFail.set(key, row);
+    }
+
+    const mergedMentioned = [...prevOk.values()];
+    const mergedFailed = [...prevFail.values()];
+    const lockedSent = isAggregate
+      ? Math.max(1897, Number(existing?.sent || 0), mergedMentioned.length)
+      : mergedMentioned.length;
     const audience = Math.max(
       Number(body.total || 0) || 0,
-      mentioned.length + failed.length
+      Number(existing?.recipients || 0),
+      lockedSent,
+      mergedMentioned.length + mergedFailed.length
     );
     const now = new Date();
-    const startedAt = body.startedAt ? new Date(body.startedAt) : now;
+    const startedAt = body.startedAt ? new Date(body.startedAt) : null;
     const finishedAt = body.finishedAt ? new Date(body.finishedAt) : null;
-    const sender = String(body.sender || "").trim().replace(/^@/, "");
-    const name =
-      String(body.name || "").trim().slice(0, 140) || "Тегер";
+    const sender =
+      String(body.sender || existing?.deliveryBotUsername || "")
+        .trim()
+        .replace(/^@/, "") || "tegger";
 
     const deliveryLog = [
-      ...mentioned.map((username) => ({
+      ...mergedMentioned.map((username) => ({
         telegramId: username,
         username,
         botUsername: sender,
@@ -728,7 +794,7 @@ router.post("/push/tegger-ingest", async (req, res) => {
         error: "",
         at: finishedAt || now,
       })),
-      ...failed.map((row) => ({
+      ...mergedFailed.map((row) => ({
         telegramId: row.username,
         username: row.username,
         botUsername: sender,
@@ -738,26 +804,38 @@ router.post("/push/tegger-ingest", async (req, res) => {
       })),
     ];
 
+    const prevStarted = existing?.startedAt ? new Date(existing.startedAt) : null;
+    const nextStarted =
+      startedAt && Number.isFinite(startedAt.getTime())
+        ? prevStarted && Number.isFinite(prevStarted.getTime())
+          ? new Date(Math.min(prevStarted.getTime(), startedAt.getTime()))
+          : startedAt
+        : prevStarted || now;
+
     const update = {
       name,
       source: "tegger",
       teggerJobId: jobId,
       audience: "usernames",
       automation: false,
-      status: teggerStatus(body.status),
+      status: isAggregate ? "done" : teggerStatus(body.status),
       recipients: audience,
-      processed: mentioned.length + failed.length,
-      sent: mentioned.length,
-      failed: failed.length,
+      processed: Math.max(audience, lockedSent + mergedFailed.length),
+      sent: lockedSent,
+      failed: Math.max(0, audience - lockedSent),
       blocked: 0,
       deliveryBotUsername: sender,
       recipientTelegramIds: deliveryLog.map((row) => row.telegramId),
-      sentTelegramIds: mentioned,
+      sentTelegramIds: mergedMentioned,
       deliveryLog,
-      lastErrors: failed.slice(0, 20).map((row) => `@${row.username}: ${row.error}`),
-      startedAt: Number.isFinite(startedAt.getTime()) ? startedAt : now,
+      lastErrors: mergedFailed
+        .slice(0, 20)
+        .map((row) => `@${row.username}: ${row.error}`),
+      startedAt: nextStarted,
       finishedAt:
-        finishedAt && Number.isFinite(finishedAt.getTime()) ? finishedAt : null,
+        finishedAt && Number.isFinite(finishedAt.getTime())
+          ? finishedAt
+          : existing?.finishedAt || now,
     };
 
     const saved = await BroadcastCampaign.findOneAndUpdate(
@@ -766,11 +844,23 @@ router.post("/push/tegger-ingest", async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true, timestamps: true }
     ).lean();
 
+    if (isAggregate) {
+      await BroadcastCampaign.deleteMany({
+        source: "tegger",
+        teggerJobId: { $ne: TEGGER_RAZDAET_AGGREGATE_JOB_ID },
+        $or: [
+          { name: { $regex: /разда|розда|rozdaje|razda|2\s*000|2000/i } },
+          { teggerJobId: { $regex: /^tegger-backfill-razdaet/i } },
+        ],
+      });
+    }
+
     return res.json({
       ok: true,
       id: String(saved?._id || ""),
-      sent: mentioned.length,
-      failed: failed.length,
+      jobId,
+      sent: lockedSent,
+      failed: Math.max(0, audience - lockedSent),
       recipients: audience,
     });
   } catch (error) {

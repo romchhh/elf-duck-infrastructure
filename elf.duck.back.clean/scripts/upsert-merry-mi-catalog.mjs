@@ -37,7 +37,8 @@ function dbNameFromUri(uri) {
     return "";
   }
 }
-const CARD_VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "16");const APP_URL = String(
+const CARD_VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "17");
+const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||
     "https://elfduck.telebots.site"
