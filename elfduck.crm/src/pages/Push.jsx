@@ -102,6 +102,8 @@ function CampaignMobileRow({
 }) {
   const isGroup = Boolean(r.isAutomationGroup);
   const isChild = Boolean(r.isAutomationChild);
+  const isReviewReward =
+    r.automationTrigger === 'service_review_reward' || r.synthetic;
   const runCount = Number(r.runCount || r.children?.length || 0);
   const displayName = String(r.name || '')
     .replace(/^Авто\s*·\s*/i, '')
@@ -114,15 +116,17 @@ function CampaignMobileRow({
         isChild && 'ml-3 border-dashed'
       )}
     >
-      <button
-        type="button"
-        title={isGroup ? 'Удалить все рассылки триггера' : 'Удалить из истории'}
-        disabled={deleting || r.status === 'running' || r.status === 'queued'}
-        onClick={() => onDelete?.(r)}
-        className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-[16px] leading-none text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        ×
-      </button>
+      {!r.synthetic ? (
+        <button
+          type="button"
+          title={isGroup ? 'Удалить все рассылки триггера' : 'Удалить из истории'}
+          disabled={deleting || r.status === 'running' || r.status === 'queued'}
+          onClick={() => onDelete?.(r)}
+          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded text-[16px] leading-none text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          ×
+        </button>
+      ) : null}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <button
@@ -130,7 +134,7 @@ function CampaignMobileRow({
             className="flex min-w-0 items-center gap-1.5 text-left"
             onClick={() => {
               if (isGroup) onToggleExpand?.(r.id);
-              else onShowDelivery?.(r);
+              else if (!r.synthetic) onShowDelivery?.(r);
             }}
           >
             {isGroup ? (
@@ -146,6 +150,10 @@ function CampaignMobileRow({
                 <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
                   Розыгрыш
                 </span>
+              ) : r.source === 'tegger' ? (
+                <span className="mr-1.5 rounded bg-[hsl(199_90%_48%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
+                  Тегер
+                </span>
               ) : r.automation || r.source === 'automation' ? (
                 <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
                   Авто
@@ -156,9 +164,15 @@ function CampaignMobileRow({
           </button>
 
           <div className="text-[11px] text-muted-2">
-            {isGroup
-              ? `${runCount} рассылок · суммарно`
-              : `Аудитория: ${r.audience}${r.promo ? ` · ${r.promo}` : ''}`}
+            {isReviewReward
+              ? isGroup
+                ? '15 zł за отзыв → 2+ покупки'
+                : `День ${r.automationDayKey || '—'}`
+              : isGroup
+                ? `${runCount} рассылок · суммарно`
+                : r.source === 'tegger'
+                  ? `Тегер · отметок ${num(r.sent)} / ${num(r.recipients)}`
+                  : `Аудитория: ${r.audience}${r.promo ? ` · ${r.promo}` : ''}`}
           </div>
         </div>
 
@@ -187,17 +201,22 @@ function CampaignMobileRow({
               })(),
             },
             {
-              label: 'Аудитория',
+              label: isReviewReward ? 'Приглашения' : 'Аудитория',
               value: num(r.recipients),
             },
             {
-              label: 'Доставлено',
+              label: isReviewReward ? 'Получили 15 zł' : 'Доставлено',
               value: num(r.sent),
             },
             {
-              label: 'Не доставлено',
+              label: isReviewReward ? 'Без 15 zł' : 'Не доставлено',
               value: (
-                <span title="Аудитория минус успешно доставленные в Telegram">
+                <span
+                  title={
+                    r.metricHints?.notDelivered ||
+                    'Аудитория минус успешно доставленные в Telegram'
+                  }
+                >
                   {num(r.notDelivered)}
                 </span>
               ),
@@ -217,7 +236,7 @@ function CampaignMobileRow({
           >
             {expanded ? 'Скрыть рассылки' : 'Показать рассылки'}
           </button>
-        ) : (
+        ) : !r.synthetic ? (
           <button
             type="button"
             className="mt-2 text-[11px] text-[hsl(255_100%_75%)] hover:underline"
@@ -226,19 +245,21 @@ function CampaignMobileRow({
             Лог доставки
             {r.deliveryBotUsername ? ` · @${r.deliveryBotUsername}` : ''}
           </button>
-        )}
+        ) : null}
 
         <div className="mt-2.5">
           <MetricGrid
             cols={3}
             items={[
               {
-                label: 'Открыто',
+                label: isReviewReward ? 'С 15 zł' : 'Открыто',
                 value: num(r.opened),
               },
               {
-                label: 'Промо',
-                value: num(r.promoApplications),
+                label: isReviewReward ? '2+ покупки' : 'Промо',
+                value: isReviewReward
+                  ? num(r.purchases)
+                  : num(r.promoApplications),
               },
               {
                 label: 'Конверсия',
@@ -1316,6 +1337,7 @@ if (error?.status === 401) {
   });
 
   const deleteCampaign = (campaign) => {
+    if (campaign?.synthetic) return;
     const campaignId = String(campaign?.id || '').trim();
     if (!campaignId || deleteCampaignMutation.isPending) return;
     if (!isAuthenticated) {
@@ -1924,25 +1946,28 @@ const confirmCreateTpl = () => {
       header: '',
       sortable: false,
       width: 36,
-      render: (r) => (
-        <button
-          type="button"
-          title={
-            r.isAutomationGroup
-              ? 'Удалить все рассылки триггера'
-              : 'Удалить из истории'
-          }
-          disabled={
-            deleteCampaignMutation.isPending ||
-            r.status === 'running' ||
-            r.status === 'queued'
-          }
-          onClick={() => deleteCampaign(r)}
-          className="flex h-6 w-6 items-center justify-center rounded text-[16px] leading-none text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          ×
-        </button>
-      ),
+      render: (r) =>
+        r.synthetic ? (
+          <span className="inline-block h-6 w-6" aria-hidden />
+        ) : (
+          <button
+            type="button"
+            title={
+              r.isAutomationGroup
+                ? 'Удалить все рассылки триггера'
+                : 'Удалить из истории'
+            }
+            disabled={
+              deleteCampaignMutation.isPending ||
+              r.status === 'running' ||
+              r.status === 'queued'
+            }
+            onClick={() => deleteCampaign(r)}
+            className="flex h-6 w-6 items-center justify-center rounded text-[16px] leading-none text-muted-2 transition-colors hover:bg-[hsl(0_72%_58%/0.12)] hover:text-[hsl(0_80%_68%)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ×
+          </button>
+        ),
     },
     {
       key: 'name',
@@ -1951,6 +1976,8 @@ const confirmCreateTpl = () => {
       render: (r) => {
         const isGroup = Boolean(r.isAutomationGroup);
         const isChild = Boolean(r.isAutomationChild);
+        const isReviewReward =
+          r.automationTrigger === 'service_review_reward' || r.synthetic;
         const expanded =
           isGroup && expandedAutomationGroups.has(String(r.id));
         const runCount = Number(r.runCount || r.children?.length || 0);
@@ -1988,12 +2015,17 @@ const confirmCreateTpl = () => {
                     toggleAutomationGroup(r.id);
                     return;
                   }
+                  if (r.synthetic) return;
                   openDeliveryLog(r);
                 }}
               >
                 {r.source === 'giveaway' ? (
                   <span className="mr-1.5 rounded bg-[hsl(36_90%_56%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-amber-100">
                     Розыгрыш
+                  </span>
+                ) : r.source === 'tegger' ? (
+                  <span className="mr-1.5 rounded bg-[hsl(199_90%_48%/0.16)] px-1.5 py-0.5 text-[10px] font-medium text-sky-200">
+                    Тегер
                   </span>
                 ) : r.automation || r.source === 'automation' ? (
                   <span className="mr-1.5 rounded bg-[hsl(142_55%_42%/0.18)] px-1.5 py-0.5 text-[10px] font-medium text-emerald-200">
@@ -2003,11 +2035,21 @@ const confirmCreateTpl = () => {
                 {isGroup || isChild ? displayName || r.name : r.name}
               </button>
             </div>
-            {isGroup ? (
+            {isReviewReward ? (
+              <div className="mt-0.5 truncate text-[11px] text-muted-2">
+                {isGroup
+                  ? 'Кто получил 15 zł за отзыв → сколько сделали 2+ покупки'
+                  : `День ${r.automationDayKey || '—'}`}
+              </div>
+            ) : isGroup ? (
               <div className="mt-0.5 truncate text-[11px] text-muted-2">
                 {runCount} рассыл
                 {runCount === 1 ? 'ка' : runCount >= 2 && runCount <= 4 ? 'ки' : 'ок'}
                 {' · суммарно'}
+              </div>
+            ) : r.source === 'tegger' ? (
+              <div className="mt-0.5 truncate text-[11px] text-muted-2">
+                отметок {num(r.sent)} / аудитория {num(r.recipients)}
               </div>
             ) : null}
             {!isGroup && r.promo ? (
@@ -2102,7 +2144,9 @@ const confirmCreateTpl = () => {
               ? 'text-emerald-300/90'
               : 'text-muted-foreground'
           }
-          title="Успешно доставлено в Telegram"
+          title={
+            r.metricHints?.sent || 'Успешно доставлено в Telegram'
+          }
         >
           {num(r.sent)}
         </span>
@@ -2120,7 +2164,10 @@ const confirmCreateTpl = () => {
               ? 'text-amber-200/90'
               : 'text-muted-foreground'
           }
-          title="Аудитория без успешной доставки (ещё не отправлено или без ответа от Telegram)"
+          title={
+            r.metricHints?.notDelivered ||
+            'Аудитория без успешной доставки (ещё не отправлено или без ответа от Telegram)'
+          }
         >
           {num(r.notDelivered)}
         </span>
@@ -2166,7 +2213,10 @@ const confirmCreateTpl = () => {
       render: (r) => (
         <span
           className="text-muted-foreground"
-          title="Уникальные открытия миниаппа с кнопки рассылки"
+          title={
+            r.metricHints?.opened ||
+            'Уникальные открытия миниаппа с кнопки рассылки'
+          }
         >
           {num(r.opened)}
         </span>
@@ -2192,7 +2242,15 @@ const confirmCreateTpl = () => {
       header: 'Покупки',
       align: 'right',
       render: (r) => (
-        <span className="text-muted-foreground">{num(r.purchases)}</span>
+        <span
+          className="text-muted-foreground"
+          title={
+            r.metricHints?.purchases ||
+            'Покупки получателей после рассылки'
+          }
+        >
+          {num(r.purchases)}
+        </span>
       ),
     },
 
@@ -2201,7 +2259,13 @@ const confirmCreateTpl = () => {
       header: 'Конв.',
       align: 'right',
       render: (r) => (
-        <span className="font-medium text-[hsl(255_100%_72%)]">
+        <span
+          className="font-medium text-[hsl(255_100%_72%)]"
+          title={
+            r.metricHints?.conversion ||
+            'Конверсия в покупку'
+          }
+        >
           {Number(r.conversion || 0)}%
         </span>
       ),
@@ -3011,6 +3075,7 @@ const confirmCreateTpl = () => {
               { key: 'manual', label: 'Ручные' },
               { key: 'automation', label: 'Авто' },
               { key: 'giveaway', label: 'Розыгрыш' },
+              { key: 'tegger', label: 'Тегер' },
             ].map((item) => (
               <button
                 key={item.key}
@@ -3123,9 +3188,9 @@ const confirmCreateTpl = () => {
               <p className="text-muted-2">
                 <span className="text-foreground">{deliveryDetail.name}</span>
                 {' · '}
-                бот{' '}
+                {deliveryDetail.source === 'tegger' ? 'тегер' : 'бот'}{' '}
                 <span className="font-mono text-[hsl(255_100%_75%)]">
-                  @{deliveryDetail.deliveryBotUsername || 'elfduck_store_bot'}
+                  @{deliveryDetail.deliveryBotUsername || (deliveryDetail.source === 'tegger' ? 'tegger' : 'elfduck_store_bot')}
                 </span>
                 {' · '}
                 доставлено {num(deliveryDetail.sent)} / аудитория{' '}

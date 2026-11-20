@@ -12,6 +12,7 @@ export function crmAuthMiddleware(req, res, next) {
     "/auth/login",
     "/auth/logout",
     "/auth/session",
+    "/push/tegger-ingest",
   ]);
 
   if (openPaths.has(req.path)) {

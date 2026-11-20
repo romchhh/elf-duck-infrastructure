@@ -79,12 +79,17 @@ export function collectProductSales(orders = []) {
           flavor?.qty || 0
         );
 
+        const gift = Math.min(
+          Math.max(0, qty),
+          Math.max(0, Number(flavor?.giftQty || 0))
+        );
+
         const unitPrice = Number(
           flavor?.unitPrice || 0
         );
 
         const revenue =
-          qty * unitPrice;
+          (qty - gift) * unitPrice;
 
         row.sold += qty;
         row.revenue += revenue;

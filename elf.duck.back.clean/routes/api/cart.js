@@ -55,9 +55,10 @@ app.get("/cart", async (req, res) => {
       safeItems
         .reduce((sum, it) => {
           const qty = Math.max(1, Number(it?.qty || 1));
+          const gift = Math.min(qty, Math.max(0, Number(it?.giftQty || 0)));
           const unitPrice = Number(it?.unitPrice || 0);
           const discountPerItem = Number(it?.referralFirstOrderDiscountPerItem || 0);
-          return sum + qty * (unitPrice + discountPerItem);
+          return sum + (qty - gift) * (unitPrice + discountPerItem);
         }, 0)
         .toFixed(2)
     );
@@ -301,12 +302,16 @@ app.put("/cart", async (req, res) => {
     }
 
   const smartPricingSettings = await loadSmartPricingSettings();
-  const { repricedItems: smartPricedItems, smartPricingMeta } =
+  const { repricedItems: smartPricedItemsRaw, smartPricingMeta } =
     repriceCartItemsWithSmartPricing(
       cleanItemsBase,
       pricingProducts,
       smartPricingSettings
     );
+  const { applyMerryOnePlusOne } = await import(
+    "../../lib/promos/merryOnePlusOne.js"
+  );
+  const smartPricedItems = applyMerryOnePlusOne(smartPricedItemsRaw);
 
   const referralFirstOrderDiscountEligibility =
     await getIsReferralFirstOrderDiscountEligible(telegramId, smartPricedItems);

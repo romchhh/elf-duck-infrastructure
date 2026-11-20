@@ -4,6 +4,7 @@ import MainPage from "./pages/MainPage";
 import CartPage from "./pages/CartPage";
 import OrdersPage from "./pages/OrdersPage";
 import DesktopShell from "./components/DesktopShell.jsx";
+import GiveawayJoinModal from "./components/GiveawayJoinModal.jsx";
 import { subscribeDesktopLayout } from "./utils/desktopLayout.js";
 
 const ReferralPage = React.lazy(() => import("./pages/ReferralPage"));
@@ -73,6 +74,7 @@ const App = () => {
 
   return (
     <DesktopShell>
+      <GiveawayJoinModal />
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<MainPage />} />

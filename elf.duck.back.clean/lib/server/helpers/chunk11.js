@@ -544,10 +544,17 @@ export async function sendOrderCreatedNotification(order, options = {}) {
         const flavorsText = (it.flavors || [])
           .map((f) => {
             const flavor = formatOrderFlavorCharacteristicLabel(it, f);
+            const giftQty = Math.min(
+              Math.max(0, Number(f.qty || 0)),
+              Math.max(0, Number(f.giftQty || 0))
+            );
             const priceText = Number(f.unitPrice || 0) > 0
               ? ` • ${Number(f.unitPrice || 0)} zł/шт.`
               : "";
-            return `• ${escapeHtml(flavor)} — ${Number(f.qty || 0)} шт.${priceText}`;
+            const giftText = giftQty > 0
+              ? ` • подарок ×${giftQty} (0 zł)`
+              : "";
+            return `• ${escapeHtml(flavor)} — ${Number(f.qty || 0)} шт.${priceText}${giftText}`;
           })
           .join("\n");
 
@@ -1151,10 +1158,17 @@ export async function refreshManagerOrderMessage(order, options = {}) {
         const flavorsText = (it.flavors || [])
           .map((f) => {
             const flavor = formatOrderFlavorCharacteristicLabel(it, f);
+            const giftQty = Math.min(
+              Math.max(0, Number(f.qty || 0)),
+              Math.max(0, Number(f.giftQty || 0))
+            );
             const priceText = Number(f.unitPrice || 0) > 0
               ? ` • ${Number(f.unitPrice || 0)} zł/шт.`
               : "";
-            return `• ${escapeHtml(flavor)} — ${Number(f.qty || 0)} шт.${priceText}`;
+            const giftText = giftQty > 0
+              ? ` • подарок ×${giftQty} (0 zł)`
+              : "";
+            return `• ${escapeHtml(flavor)} — ${Number(f.qty || 0)} шт.${priceText}${giftText}`;
           })
           .join("\n");
 

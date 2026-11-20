@@ -9,6 +9,8 @@ const cartItemSchema = new mongoose.Schema(
 
     // quantity
     qty: { type: Number, required: true, min: 1, default: 1 },
+    /** 1+1=3: скільки штук з qty йдуть у подарунок (0 zł). Склад списує весь qty. */
+    giftQty: { type: Number, default: 0, min: 0 },
 
     // IMPORTANT: price is stored per item (snapshot)
     unitPrice: { type: Number, default: 0, min: 0 },

@@ -8,6 +8,7 @@ import {
   requireCrmPushAdmin,
 } from "./deps.js";
 import { getWarsawDateKey, warsawLocalToUtc } from "../../lib/crm/datetime.js";
+import { buildServiceReviewPushHistoryRows } from "../../lib/support/serviceReviewInvite.js";
 
 function escapeRegex(value) {
   return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -15,7 +16,12 @@ function escapeRegex(value) {
 
 function campaignSource(row) {
   const explicit = String(row?.source || "").trim();
-  if (explicit === "automation" || explicit === "giveaway" || explicit === "manual") {
+  if (
+    explicit === "automation" ||
+    explicit === "giveaway" ||
+    explicit === "manual" ||
+    explicit === "tegger"
+  ) {
     return explicit;
   }
   const name = String(row?.name || "");
@@ -36,6 +42,7 @@ const AUTOMATION_TRIGGER_LABELS = {
   lead_followup: "Авто · лиды",
   cashback_expiring: "Авто · кэшбек сгорает",
   customer_sleeping: "Авто · спящий клиент",
+  service_review_reward: "Авто · отзыв +15 zł",
 };
 
 function automationTriggerKey(row) {
@@ -44,6 +51,7 @@ function automationTriggerKey(row) {
     return explicit;
   }
   const title = autoTitle(row?.name || explicit).toLowerCase();
+  if (title.includes("отзыв") || title.includes("+15")) return "service_review_reward";
   if (title.includes("кэшбек") || title.includes("кешбек")) return "cashback_expiring";
   if (title.includes("спящ")) return "customer_sleeping";
   if (title.includes("перв")) return "first_purchase";
@@ -471,21 +479,7 @@ router.get(
                 });
             }
 
-      return res.json({
-        ok: true,
-
-        period: {
-          key:
-            range.key,
-
-          from:
-            range.from,
-
-          to:
-            range.to,
-        },
-
-        campaigns: groupHistoryRows(
+      const historyRows = groupHistoryRows(
           rows.map((row) => {
             const recipients = Number(row?.recipients || 0);
             const sent = Number(row?.sent || 0);
@@ -606,7 +600,36 @@ router.get(
                 : 0,
             };
           })
-        ),
+        );
+
+      let serviceReviewRows = [];
+      try {
+        serviceReviewRows = await buildServiceReviewPushHistoryRows({
+          from: range.from,
+          to: range.to,
+        });
+      } catch (reviewStatsError) {
+        console.error(
+          "CRM service review reward history error:",
+          reviewStatsError
+        );
+      }
+
+      return res.json({
+        ok: true,
+
+        period: {
+          key:
+            range.key,
+
+          from:
+            range.from,
+
+          to:
+            range.to,
+        },
+
+        campaigns: [...serviceReviewRows, ...historyRows],
       });
     } catch (error) {
       console.error(
@@ -626,6 +649,135 @@ router.get(
     }
   }
 );
+
+function teggerIngestTokenOk(req) {
+  const expected = String(process.env.TEGGER_CRM_INGEST_TOKEN || "").trim();
+  const got = String(req.headers["x-tegger-ingest-token"] || "").trim();
+  return Boolean(expected) && got === expected;
+}
+
+function teggerStatus(raw) {
+  const status = String(raw || "").trim().toLowerCase();
+  if (status === "running" || status === "queued") return status;
+  if (status === "error" || status === "stopped") return "failed";
+  return "done";
+}
+
+router.post("/push/tegger-ingest", async (req, res) => {
+  try {
+    if (!teggerIngestTokenOk(req)) {
+      return res.status(401).json({ ok: false, error: "TEGGER_INGEST_FORBIDDEN" });
+    }
+
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const jobId = String(body.jobId || "").trim();
+    if (!jobId) {
+      return res.status(400).json({ ok: false, error: "TEGGER_JOB_ID_REQUIRED" });
+    }
+
+    const mentioned = [
+      ...new Set(
+        (Array.isArray(body.mentioned) ? body.mentioned : [])
+          .map((name) => String(name || "").trim().replace(/^@/, ""))
+          .filter(Boolean)
+      ),
+    ];
+    const failedRows = (Array.isArray(body.failed) ? body.failed : [])
+      .map((row) => {
+        if (typeof row === "string") {
+          const text = String(row || "").trim();
+          const match = text.match(/^@?([A-Za-z0-9_]{3,64})\s*:\s*(.+)$/);
+          if (match) {
+            return {
+              username: match[1],
+              error: String(match[2] || "ошибка").trim().slice(0, 180),
+            };
+          }
+          return {
+            username: text.replace(/^@/, ""),
+            error: "ошибка",
+          };
+        }
+        return {
+          username: String(row?.username || "").trim().replace(/^@/, ""),
+          error: String(row?.error || "ошибка").trim().slice(0, 180),
+        };
+      })
+      .filter((row) => row.username);
+    const mentionedSet = new Set(mentioned.map((name) => name.toLowerCase()));
+    const failed = failedRows.filter(
+      (row) => !mentionedSet.has(row.username.toLowerCase())
+    );
+    const audience = Math.max(
+      Number(body.total || 0) || 0,
+      mentioned.length + failed.length
+    );
+    const now = new Date();
+    const startedAt = body.startedAt ? new Date(body.startedAt) : now;
+    const finishedAt = body.finishedAt ? new Date(body.finishedAt) : null;
+    const sender = String(body.sender || "").trim().replace(/^@/, "");
+    const name =
+      String(body.name || "").trim().slice(0, 140) || "Тегер";
+
+    const deliveryLog = [
+      ...mentioned.map((username) => ({
+        telegramId: username,
+        username,
+        botUsername: sender,
+        ok: true,
+        error: "",
+        at: finishedAt || now,
+      })),
+      ...failed.map((row) => ({
+        telegramId: row.username,
+        username: row.username,
+        botUsername: sender,
+        ok: false,
+        error: row.error,
+        at: finishedAt || now,
+      })),
+    ];
+
+    const update = {
+      name,
+      source: "tegger",
+      teggerJobId: jobId,
+      audience: "usernames",
+      automation: false,
+      status: teggerStatus(body.status),
+      recipients: audience,
+      processed: mentioned.length + failed.length,
+      sent: mentioned.length,
+      failed: failed.length,
+      blocked: 0,
+      deliveryBotUsername: sender,
+      recipientTelegramIds: deliveryLog.map((row) => row.telegramId),
+      sentTelegramIds: mentioned,
+      deliveryLog,
+      lastErrors: failed.slice(0, 20).map((row) => `@${row.username}: ${row.error}`),
+      startedAt: Number.isFinite(startedAt.getTime()) ? startedAt : now,
+      finishedAt:
+        finishedAt && Number.isFinite(finishedAt.getTime()) ? finishedAt : null,
+    };
+
+    const saved = await BroadcastCampaign.findOneAndUpdate(
+      { teggerJobId: jobId },
+      { $set: update },
+      { upsert: true, new: true, setDefaultsOnInsert: true, timestamps: true }
+    ).lean();
+
+    return res.json({
+      ok: true,
+      id: String(saved?._id || ""),
+      sent: mentioned.length,
+      failed: failed.length,
+      recipients: audience,
+    });
+  } catch (error) {
+    console.error("POST /crm/push/tegger-ingest error:", error);
+    return res.status(500).json({ ok: false, error: "TEGGER_INGEST_FAILED" });
+  }
+});
 
 router.get(
   "/push/campaigns/:id",
@@ -797,10 +949,22 @@ router.get(
         }
       }
 
-      const rows = targetIds.map((telegramId) => ({
-        telegramId,
-        username: usernameById.get(telegramId) || "",
-      }));
+      const logUsernameById = new Map();
+      for (const entry of fullDeliveryLog) {
+        const tid = String(entry?.telegramId || "").trim();
+        const uname = String(entry?.username || "").trim();
+        if (tid && uname) logUsernameById.set(tid, uname);
+      }
+
+      const rows = targetIds.map((telegramId) => {
+        const fromUser = usernameById.get(telegramId) || "";
+        const fromLog = logUsernameById.get(telegramId) || "";
+        const username =
+          fromUser ||
+          fromLog ||
+          (campaignSource(row) === "tegger" ? telegramId : "");
+        return { telegramId, username };
+      });
 
       const safeName =
         String(row?.name || "campaign")

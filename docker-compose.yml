@@ -48,6 +48,7 @@ services:
       WEBAPP_URL: ${WEBAPP_URL:-http://localhost:3001}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:3001}
       CRM_ALLOWED_ORIGINS: ${CRM_ALLOWED_ORIGINS:-http://localhost:3002}
+      TEGGER_CRM_INGEST_TOKEN: ${TEGGER_CRM_INGEST_TOKEN:-}
     ports:
       - "3000:3000"
     depends_on:
@@ -116,10 +117,16 @@ services:
       LOG_BOT_TOKEN: ${TEGGER_LOG_BOT_TOKEN:-}
       LOG_CHAT_ID: ${TEGGER_LOG_CHAT_ID:-}
       MONGODB_URI: ${MONGODB_URI:-mongodb://mongo:27017/elfduck}
+      CRM_PUSH_INGEST_URL: ${CRM_PUSH_INGEST_URL:-http://api:3000/crm/push/tegger-ingest}
+      TEGGER_CRM_INGEST_TOKEN: ${TEGGER_CRM_INGEST_TOKEN:-}
     volumes:
       - tegger_data:/data
     ports:
       - "3006:8000"
+    depends_on:
+      api:
+        condition: service_healthy
+        required: false
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
       interval: 10s

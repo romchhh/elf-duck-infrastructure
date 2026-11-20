@@ -2,7 +2,22 @@ import referralBannerRu from "../assets/referralBanner.webp";
 import referralBannerPl from "../assets/referralBannerPl.webp";
 import merryMiNewBannerRu from "../assets/merryMiNewBannerRu.webp";
 import merryMiNewBannerPl from "../assets/merryMiNewBannerPl.webp";
+import merryOnePlusOneBannerRu from "../assets/merryOnePlusOneBannerRu.png";
+import merryOnePlusOneBannerPl from "../assets/merryOnePlusOneBannerPl.png";
 import { getCurrentLanguage } from "./i18n";
+
+function warsawDayKey(date = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Warsaw",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+export function isMerryOnePlusOneBannerActive(date = new Date()) {
+  return warsawDayKey(date) >= "2026-11-20";
+}
 
 /**
  * Карусель головної після слайду розіграшу:
@@ -11,20 +26,31 @@ import { getCurrentLanguage } from "./i18n";
  */
 export function getHomeBanners(language = getCurrentLanguage()) {
   const isPl = language === "pl";
-  return [
+  const banners = [];
+  if (isMerryOnePlusOneBannerActive()) {
+    banners.push(isPl ? merryOnePlusOneBannerPl : merryOnePlusOneBannerRu);
+  }
+  banners.push(
     isPl ? merryMiNewBannerPl : merryMiNewBannerRu,
-    isPl ? referralBannerPl : referralBannerRu,
-  ];
+    isPl ? referralBannerPl : referralBannerRu
+  );
+  return banners;
 }
 
 /** Усі варіанти картинок каруселі (для Cache API / preload). */
 export function getAllHomeBannerAssetUrls() {
   return [
+    merryOnePlusOneBannerRu,
+    merryOnePlusOneBannerPl,
     merryMiNewBannerRu,
     merryMiNewBannerPl,
     referralBannerRu,
     referralBannerPl,
   ];
+}
+
+export function isMerryOnePlusOneBanner(src) {
+  return src === merryOnePlusOneBannerRu || src === merryOnePlusOneBannerPl;
 }
 
 export function isReferralBanner(src) {

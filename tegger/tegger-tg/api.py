@@ -3426,6 +3426,64 @@ def _tegger_allowed_senders() -> set[str]:
     }
 
 
+def _tegger_crm_payload(item: dict) -> dict:
+    progress = item.get("progress") if isinstance(item.get("progress"), dict) else {}
+    caption = str(item.get("captionRu") or item.get("caption") or "").strip()
+    name = caption.splitlines()[0].strip() if caption else "Тегер"
+    return {
+        "jobId": str(item.get("id") or ""),
+        "name": name[:140] or "Тегер",
+        "sender": str(item.get("senderId") or ""),
+        "status": str(item.get("status") or "done"),
+        "total": max(
+            int(progress.get("total") or 0),
+            len(item.get("usernames") or []),
+            len(progress.get("mentioned") or []) + len(progress.get("failed") or []),
+        ),
+        "mentioned": list(progress.get("mentioned") or []),
+        "failed": list(progress.get("failed") or []),
+        "startedAt": item.get("startedAt"),
+        "finishedAt": item.get("finishedAt"),
+    }
+
+
+async def _tegger_report_crm(item: dict | None):
+    """Пише в CRM лише фактичний прогрес Tegger: кого відмітили і який текст помилки."""
+    if not isinstance(item, dict) or not item.get("id"):
+        return
+    url = str(os.environ.get("CRM_PUSH_INGEST_URL") or "").strip()
+    token = str(os.environ.get("TEGGER_CRM_INGEST_TOKEN") or "").strip()
+    if not url or not token:
+        return
+    payload = json.dumps(_tegger_crm_payload(item), ensure_ascii=False).encode()
+
+    def post():
+        import urllib.request
+
+        request = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-tegger-ingest-token": token,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=20) as response:
+            response.read()
+
+    try:
+        await asyncio.to_thread(post)
+    except Exception as exc:
+        _audit(
+            "WARNING",
+            "CRM не принял статистику тегера",
+            f"{type(exc).__name__}: {exc}"[:180],
+            item.get("senderId") or "system",
+            teggerId=item.get("id"),
+        )
+
+
 async def _tegger_update(job_id: str, **fields):
     async with _tegger_lock:
         items = _tegger_read()
@@ -3465,6 +3523,7 @@ async def _tegger_mark_stopped(job_id: str):
         )
         _tegger_write(items)
     _audit("WARNING", "Тегер остановлен", text, sender, teggerId=job_id)
+    await _tegger_report_crm(item)
     return item
 
 
@@ -3485,6 +3544,9 @@ async def _tegger_execute(job_id: str):
         dryRun=False,
         resultType="",
         progress=_tegger_blank_progress(len(item.get("usernames") or []), phase="connect"),
+    )
+    await _tegger_report_crm(
+        next((x for x in _tegger_read() if x.get("id") == job_id), None)
     )
     if cancel_event.is_set():
         await _tegger_mark_stopped(job_id)
@@ -3535,18 +3597,42 @@ async def _tegger_execute(job_id: str):
             await _tegger_mark_stopped(job_id)
             return
         failed = published.get("failed") or []
+        mentions = published.get("mentions") or []
+        stories_n = int(published.get("stories") or 0)
+        # Невалідні @username / skip — завжди status=done, не error.
+        # Довгий список skip лишаємо коротким попередженням.
+        if failed and mentions:
+            skip_hint = (
+                f"Готово: {stories_n} историй, {len(mentions)} отметок. "
+                f"Пропущено {len(failed)}: " + "; ".join(failed[:5])
+            )
+            if len(failed) > 5:
+                skip_hint += f" …ещё {len(failed) - 5}"
+        elif failed and not mentions:
+            skip_hint = (
+                f"Нет валидных отметок — пропущено {len(failed)}: "
+                + "; ".join(failed[:5])
+            )
+            if len(failed) > 5:
+                skip_hint += f" …ещё {len(failed) - 5}"
+        else:
+            skip_hint = ""
         await _tegger_update(
             job_id,
             status="done",
             dryRun=False,
             finishedAt=_dt.now(_tz.utc).isoformat(),
-            resultType=f"{published.get('stories') or 0} stories",
-            error=("Не опубликованы: " + "; ".join(failed)) if failed else "",
+            resultType=f"{stories_n} stories",
+            error=skip_hint,
+        )
+        await _tegger_report_crm(
+            next((x for x in _tegger_read() if x.get("id") == job_id), None)
         )
         _audit(
             "SUCCESS",
             "Тегер опубликован",
-            f"{published.get('stories') or 0} историй, {len(published.get('mentions') or [])} отметок",
+            f"{stories_n} историй, {len(mentions)} отметок"
+            + (f", пропущено {len(failed)}" if failed else ""),
             item.get("senderId") or "system",
             teggerId=job_id,
         )
@@ -3561,6 +3647,9 @@ async def _tegger_execute(job_id: str):
             status="error",
             finishedAt=_dt.now(_tz.utc).isoformat(),
             error=f"{type(exc).__name__}: {str(exc)[:240]}",
+        )
+        await _tegger_report_crm(
+            next((x for x in _tegger_read() if x.get("id") == job_id), None)
         )
         _audit(
             "ERROR",
@@ -4009,6 +4098,11 @@ async def _worker_foundation_start():
         _WORKER_STOP.clear()
         _WORKER_THREAD = _worker_threading.Thread(target=_worker_loop, name="tegger-worker-foundation", daemon=True)
         _WORKER_THREAD.start()
+    async def _sync_finished_teggers():
+        for item in _tegger_read():
+            if str(item.get("status") or "") in {"done", "stopped", "error"}:
+                await _tegger_report_crm(item)
+    asyncio.create_task(_sync_finished_teggers())
 
 @app.on_event("shutdown")
 async def _worker_foundation_stop():

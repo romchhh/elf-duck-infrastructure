@@ -6,11 +6,8 @@
  * - min order total to apply a promo on an order: PROMO_MIN_ORDER_TOTAL_ZL (default 100)
  */
 
-/** Мінімальна сума замовлення (zł), щоб застосувати промокод. */
-export const PROMO_MIN_ORDER_TOTAL_ZL = Math.max(
-  0,
-  Number(process.env.PROMO_MIN_ORDER_TOTAL_ZL || 100) || 100
-);
+/** Мінімальна сума замовлення (zł), щоб застосувати промокод. 0 = будь-яка сума. */
+export const PROMO_MIN_ORDER_TOTAL_ZL = 0;
 
 export function getPromoMinOrderTotalZl() {
   return PROMO_MIN_ORDER_TOTAL_ZL;

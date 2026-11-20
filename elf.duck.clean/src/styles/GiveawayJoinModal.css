@@ -1,0 +1,77 @@
+.giveawayJoinBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px 16px 28px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.giveawayJoinCard {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 10px 10px 14px;
+  border-radius: 28px;
+  background: #121212;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.giveawayJoinClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(20, 20, 22, 0.82);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.giveawayJoinArt {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 20px;
+  object-fit: cover;
+}
+
+.giveawayJoinCta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: calc(100% - 8px);
+  margin: 12px auto 0;
+  min-height: 58px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffe14a 0%, #ffc400 100%);
+  color: #111;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  box-shadow:
+    0 0 22px rgba(255, 196, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+}
+
+.giveawayJoinCta:disabled {
+  opacity: 0.7;
+}
+
+.giveawayJoinCtaArrow {
+  font-size: 28px;
+  line-height: 1;
+}

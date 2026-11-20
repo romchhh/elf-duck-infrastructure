@@ -29,10 +29,16 @@ const broadcastCampaignSchema =
         default: "",
       },
 
-      /** manual | automation | giveaway */
+      /** manual | automation | giveaway | tegger */
       source: {
         type: String,
         default: "manual",
+      },
+
+      /** Id завдання в Tegger. Один запуск = один рядок історії. */
+      teggerJobId: {
+        type: String,
+        default: "",
       },
 
       filters: {
@@ -302,6 +308,14 @@ const broadcastCampaignSchema =
 broadcastCampaignSchema.index({
   createdAt: -1,
 });
+
+broadcastCampaignSchema.index(
+  { teggerJobId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { teggerJobId: { $gt: "" } },
+  }
+);
 
 broadcastCampaignSchema.index(
   { automationTrigger: 1, automationDayKey: 1 },

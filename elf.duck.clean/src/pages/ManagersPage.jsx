@@ -25,6 +25,7 @@ import telegramIcon from "../assets/telegramIcon.webp";
 import supportIcon from "../assets/supportIcon.webp";
 import {
   isMerryMiNewBanner,
+  isMerryOnePlusOneBanner,
   isReferralBanner,
   MERRY_MI_NEW_CATALOG_SEARCH,
 } from "../utils/homeBanners";
@@ -845,7 +846,7 @@ const ManagersPage = () => {
                       return;
                     }
 
-                    if (isMerryMiNewBanner(bannerSources[i])) {
+                    if (isMerryMiNewBanner(bannerSources[i]) || isMerryOnePlusOneBanner(bannerSources[i])) {
                       navigate("/", {
                         state: {
                           openCatalogView: "all",

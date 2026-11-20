@@ -35,6 +35,7 @@ import {
 
 import {
   isMerryMiNewBanner,
+  isMerryOnePlusOneBanner,
   isReferralBanner,
   MERRY_MI_NEW_CATALOG_SEARCH,
 } from "../utils/homeBanners";
@@ -726,7 +727,7 @@ const FavoritePage = () => {
                         return;
                     }
 
-                    if (isMerryMiNewBanner(bannerSources[i])) {
+                    if (isMerryMiNewBanner(bannerSources[i]) || isMerryOnePlusOneBanner(bannerSources[i])) {
                       navigate("/", {
                         state: {
                           openCatalogView: "all",

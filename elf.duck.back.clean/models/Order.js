@@ -4,6 +4,8 @@ const orderItemFlavorSchema = new mongoose.Schema(
   {
     flavorKey: { type: String, required: true },
     qty: { type: Number, required: true, min: 1 },
+    /** 1+1=3: подарункові штуки всередині qty, ціна 0. */
+    giftQty: { type: Number, default: 0, min: 0 },
 
     // snapshot из корзины
     unitPrice: { type: Number, default: 0, min: 0 },

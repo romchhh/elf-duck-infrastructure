@@ -161,6 +161,21 @@ export function isGiveawayMonthLive(month, date = new Date()) {
   return isGiveawayParticipationWindow(date);
 }
 
+function orderFulfillmentAt(order) {
+  const raw = order?.completedAt || order?.deliveredAt || order?.shippedAt || null;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+/** Замовлення в розіграші лише якщо «Участвовать» було до «заказ выдан». */
+function joinedBeforeFulfillment(participant, order) {
+  const joinedAt = participant?.joinedAt ? new Date(participant.joinedAt) : null;
+  const fulfilledAt = orderFulfillmentAt(order);
+  if (!joinedAt || !Number.isFinite(joinedAt.getTime()) || !fulfilledAt) return false;
+  return joinedAt.getTime() <= fulfilledAt.getTime();
+}
+
 function orderCompletedInMonth(order, monthKey) {
   const at = order?.completedAt || order?.shippedAt || order?.paidAt;
   if (!at) return false;
@@ -208,9 +223,15 @@ export async function syncGiveawayEntriesForUser(monthKey, telegramId) {
   const tg = String(telegramId || "").trim();
   if (!tg) return { added: 0 };
 
-  if (!(await isParticipant(monthKey, tg))) return { added: 0 };
+  const participant = await participantsCol().findOne({
+    monthKey,
+    telegramId: tg,
+  });
+  if (!participant) return { added: 0 };
 
-  const orders = await listQualifyingOrdersForUser(monthKey, tg);
+  const orders = (await listQualifyingOrdersForUser(monthKey, tg)).filter((order) =>
+    joinedBeforeFulfillment(participant, order)
+  );
   const qualifyingIds = new Set(orders.map((order) => String(order._id)));
   const existing = await entriesCol()
     .find({ monthKey, telegramId: tg })
@@ -290,7 +311,12 @@ export async function tryAddGiveawayEntryForOrder(order) {
   if (!isGiveawayMonthLive(month)) return { added: false };
   if (String(month.status || "") !== "open") return { added: false };
 
-  if (!(await isParticipant(monthKey, tg))) return { added: false };
+  const participant = await participantsCol().findOne({
+    monthKey,
+    telegramId: tg,
+  });
+  if (!participant) return { added: false };
+  if (!joinedBeforeFulfillment(participant, order)) return { added: false };
 
   try {
     await entriesCol().insertOne({

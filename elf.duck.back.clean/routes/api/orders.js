@@ -109,6 +109,13 @@ app.post("/orders/confirm", async (req, res) => {
 
   console.timeEnd("orders/confirm load cart+user");
 
+    if (cart && Array.isArray(cart.items) && cart.items.length) {
+      const { priceCartItemsForCheckout } = await import(
+        "../../lib/promos/priceCartForCheckout.js"
+      );
+      cart.items = await priceCartItemsForCheckout(cart.items, telegramId);
+    }
+
     const referralDiscountMeta = {
       applied: Array.isArray(cart?.items)
         ? cart.items.some((it) => Number(it?.referralFirstOrderDiscountTotalZl || 0) > 0)
@@ -142,10 +149,9 @@ app.post("/orders/confirm", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Cart is empty" });
     }
 
+    const { lineChargeZl } = await import("../../lib/promos/merryOnePlusOne.js");
     const itemsTotalZl = cart.items.reduce((sum, it) => {
-      const qty = Math.max(1, Number(it.qty || 1));
-      const price = Number(it.unitPrice || 0);
-      return sum + qty * price;
+      return sum + lineChargeZl(it);
     }, 0);
 
     if (cart.checkoutDeliveryType === "delivery" && cart.checkoutDeliveryMethod === "courier") {
@@ -466,6 +472,7 @@ app.post("/orders/confirm", async (req, res) => {
       if (!pk || !fk) continue;
 
       const qty = Math.max(1, Number(it.qty || 1));
+      const giftQty = Math.min(qty, Math.max(0, Number(it.giftQty || 0)));
       const unitPrice = Number(it.unitPrice || 0);
       const flavorLabel = String(it.flavorLabel || "");
       const gradient = Array.isArray(it.gradient) ? it.gradient.slice(0, 2) : [];
@@ -491,8 +498,9 @@ app.post("/orders/confirm", async (req, res) => {
         Math.max(0, originalBaseUnitPrice - unitPrice - referralFirstOrderDiscountPerItem).toFixed(2)
       );
 
+      const paidQty = Math.max(0, qty - giftQty);
       const smartDiscountTotalZl = Number(
-        Math.max(0, smartDiscountPerItem * qty).toFixed(2)
+        Math.max(0, smartDiscountPerItem * paidQty).toFixed(2)
       );
 
       const baseUnitPrice = Number(prod?.price || unitPrice || 0);
@@ -517,6 +525,7 @@ app.post("/orders/confirm", async (req, res) => {
         row.flavorsMap.set(fk, {
           flavorKey: fk,
           qty,
+          giftQty,
           unitPrice,
           baseUnitPrice: Number(originalBaseUnitPrice || baseUnitPrice || unitPrice || 0),
           salePromo: isSalePromoProduct(prod),
@@ -530,6 +539,7 @@ app.post("/orders/confirm", async (req, res) => {
         });
       } else {
         prev.qty += qty;
+        prev.giftQty = Number(prev.giftQty || 0) + giftQty;
         if (unitPrice) prev.unitPrice = unitPrice;
         if (baseUnitPrice) prev.baseUnitPrice = Number(originalBaseUnitPrice || baseUnitPrice || unitPrice || 0);
 

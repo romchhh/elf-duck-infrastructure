@@ -33,12 +33,14 @@ const API_URL =
 
 import {
   isMerryMiNewBanner,
+  isMerryOnePlusOneBanner,
   isReferralBanner,
   MERRY_MI_NEW_CATALOG_SEARCH,
 } from "../utils/homeBanners";
 import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import { appPath } from "../utils/appMode";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
+import { GIVEAWAY_JOIN_PROMPT_EVENT } from "../components/GiveawayJoinModal.jsx";
 import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
 import PaymentBlikPreferCashCopy from "../components/PaymentBlikPreferCashCopy.jsx";
 import ComplaintSheet from "../components/ComplaintSheet.jsx";
@@ -183,8 +185,8 @@ const isMokotowOrderPoint = (order = {}) => {
   return getOrderVisualBlob(order).includes("mokot");
 };
 
-/** Мінімальна сума замовлення для промокоду (sync з PROMO_MIN_ORDER_TOTAL_ZL на API). */
-const PROMO_MIN_ORDER_TOTAL_ZL = 100;
+/** Промокод на будь-яку суму замовлення. */
+const PROMO_MIN_ORDER_TOTAL_ZL = 0;
 
 /** Реквізити BLIK лише для InPost (самовивіз / курʼєр — без номера рахунку). */
 const shouldShowBlikRequisites = (order = {}) => {
@@ -3506,7 +3508,7 @@ useEffect(() => {
                                         return;
                                     }
 
-                                    if (isMerryMiNewBanner(bannerSources[i])) {
+                                    if (isMerryMiNewBanner(bannerSources[i]) || isMerryOnePlusOneBanner(bannerSources[i])) {
                                       navigate("/", {
                                         state: {
                                           openCatalogView: "all",
@@ -3950,6 +3952,8 @@ useEffect(() => {
                                 )
                                 );
                             }
+
+                            window.dispatchEvent(new Event(GIVEAWAY_JOIN_PROMPT_EVENT));
 
                             const cooldownUntil = Date.now() + ARRIVAL_NOTIFY_COOLDOWN_MS;
 

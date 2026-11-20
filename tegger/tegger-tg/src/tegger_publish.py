@@ -15,6 +15,11 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 from telethon import functions, types
+from telethon.errors import (
+    FloodWaitError,
+    UsernameInvalidError,
+    UsernameNotOccupiedError,
+)
 
 from config import (
     INTERACTION_STORY_DELAY,
@@ -211,12 +216,35 @@ def link_media_area(url: str, area: dict | None):
 
 
 def _resolve_mention_error(username: str, exc: BaseException) -> str:
-    message = str(exc).strip()
-    if "No user has" in message:
+    if isinstance(exc, UsernameNotOccupiedError) or "No user has" in str(exc):
         return "Нет пользователя с таким @username в Telegram"
+    if isinstance(exc, UsernameInvalidError) or "username is unacceptable" in str(
+        exc
+    ).lower():
+        return "Некорректный @username"
+    message = str(exc).strip()
     if len(message) > 160:
         message = message[:160]
     return message or type(exc).__name__
+
+
+def _is_skipable_username_error(exc: BaseException) -> bool:
+    """Помилки «немає такого юзера» — пропускаємо; FloodWait / auth — ні."""
+    if isinstance(exc, (UsernameNotOccupiedError, UsernameInvalidError)):
+        return True
+    if isinstance(exc, FloodWaitError):
+        return False
+    message = str(exc)
+    lower = message.lower()
+    if "No user has" in message:
+        return True
+    if "username is unacceptable" in lower:
+        return True
+    if "nobody is using this username" in lower:
+        return True
+    if "could not find the input entity" in lower:
+        return True
+    return True  # інші resolve-помилки теж не валимо всю джобу
 
 
 async def _resolve_mentions(
@@ -231,8 +259,15 @@ async def _resolve_mentions(
             continue
         seen.add(username.lower())
         try:
-            entity = await client.get_entity(username)
+            while True:
+                try:
+                    entity = await client.get_entity(username)
+                    break
+                except FloodWaitError as wait_exc:
+                    await asyncio.sleep(int(getattr(wait_exc, "seconds", 0) or 0) + 1)
         except Exception as exc:
+            if not _is_skipable_username_error(exc):
+                raise
             skipped.append(
                 {
                     "username": username,
@@ -398,19 +433,51 @@ async def _publish_pending_queue(
             text, entities, names = _mention_caption(caption, ready)
             uploaded = await client.upload_file(str(composed))
             await _wait(0, cancel_event)
-            result = await client(
-                functions.stories.SendStoryRequest(
-                    peer=me,
-                    media=types.InputMediaUploadedPhoto(file=uploaded),
-                    privacy_rules=[types.InputPrivacyValueAllowAll()],
-                    random_id=random.randint(-(2**63), 2**63 - 1),
-                    media_areas=media_areas or None,
-                    caption=text,
-                    entities=entities,
-                    period=86400,
-                    pinned=False,
+            try:
+                result = await client(
+                    functions.stories.SendStoryRequest(
+                        peer=me,
+                        media=types.InputMediaUploadedPhoto(file=uploaded),
+                        privacy_rules=[types.InputPrivacyValueAllowAll()],
+                        random_id=random.randint(-(2**63), 2**63 - 1),
+                        media_areas=media_areas or None,
+                        caption=text,
+                        entities=entities,
+                        period=86400,
+                        pinned=False,
+                    )
                 )
-            )
+            except Exception as exc:
+                # Одна історія впала — пропускаємо групу, решту публікуємо далі.
+                for name in names:
+                    failed.append(
+                        {
+                            "username": name,
+                            "error": f"{type(exc).__name__}: {exc}"[:160],
+                        }
+                    )
+                await emit(
+                    phase="resolve",
+                    currentGroup=[],
+                    failed=list(failed),
+                    language=language,
+                )
+                if pending:
+                    delay = random.randint(int(interval_min), int(interval_max))
+                    next_at = (
+                        datetime.now(timezone.utc) + timedelta(seconds=delay)
+                    ).isoformat()
+                    await emit(
+                        phase="wait",
+                        currentGroup=[],
+                        mentioned=list(published),
+                        stories=list(stories),
+                        failed=list(failed),
+                        waitUntil=next_at,
+                        language=language,
+                    )
+                    await _wait(delay, cancel_event)
+                continue
             published.extend(names)
             stories.append({"usernames": list(names), "language": language})
             last_type = type(result).__name__

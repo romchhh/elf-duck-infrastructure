@@ -21,6 +21,10 @@ import Product from "../../../models/Product.js";
 import PickupPoint from "../../../models/PickupPoint.js"; 
 import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
+import {
+  lineChargeZl,
+  merryGiftSheetsDiscountZl,
+} from "../../promos/merryOnePlusOne.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
 import crmRouter from "../../../routes/crm.js";
 import {
@@ -1028,17 +1032,20 @@ export function getWarsawTimeMinutes(dateLike = new Date()) {
   return parseWarsawTimeToMinutes(getWarsawTimeHHMM(dateLike)) ?? 0;
 }
 
-/** Сума позицій замовлення (без доставки), для звірки з «касою». */
+/** Сума позицій замовлення (без доставки і без подарунків 1+1=3). */
 export function getOrderItemsSubtotalZl(order) {
   let sum = 0;
   for (const row of order?.items || []) {
     for (const flavor of row?.flavors || []) {
-      const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
-      if (!qty) continue;
-      sum += qty * Number(flavor?.unitPrice || 0);
+      sum += lineChargeZl(flavor);
     }
   }
   return Number(sum.toFixed(2));
+}
+
+/** Вартість подарунків 1+1=3 до реф-знижки — у колонку «Скидки». */
+export function getOrderMerryGiftDiscountZl(order) {
+  return merryGiftSheetsDiscountZl(order?.items || []);
 }
 
 export function getPointStatsSendTime(point, dateLike = new Date()) {
@@ -1159,6 +1166,8 @@ export function getOrderSalePromoDiscountTotalZl(order) {
             if (!isSalePromoFlavorForItem(item, flavor)) return flavorSum;
 
             const qty = Math.max(1, Number(flavor?.qty || 1));
+            const gift = Math.min(qty, Math.max(0, Number(flavor?.giftQty || 0)));
+            const paidQty = Math.max(0, qty - gift);
             const base = Number(flavor?.baseUnitPrice || 0);
             const unit = Number(flavor?.unitPrice || 0);
             const referral = Number(
@@ -1169,7 +1178,7 @@ export function getOrderSalePromoDiscountTotalZl(order) {
             if (explicit > 0) return flavorSum + explicit;
 
             if (base > 0 && unit > 0) {
-              const fromPrices = Math.max(0, (base - unit) * qty - referral);
+              const fromPrices = Math.max(0, (base - unit) * paidQty - referral);
               if (fromPrices > 0) return flavorSum + fromPrices;
             }
 
@@ -1178,7 +1187,7 @@ export function getOrderSalePromoDiscountTotalZl(order) {
               perItem > 0 &&
               !LIQUIDS_SMART_DISCOUNT_PER_ITEM.has(perItem)
             ) {
-              return flavorSum + Math.max(0, perItem * qty - referral);
+              return flavorSum + Math.max(0, perItem * paidQty - referral);
             }
 
             return flavorSum;
@@ -1199,7 +1208,8 @@ export function getOrderSheetsDiscountTotalZl(order) {
   const referral = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
   const promoCode = Math.max(0, Number(order?.payment?.promoDiscountZl || 0));
   const salePromo = getOrderSalePromoDiscountTotalZl(order);
-  return Number((cashback + referral + promoCode + salePromo).toFixed(2));
+  const merryGift = getOrderMerryGiftDiscountZl(order);
+  return Number((cashback + referral + promoCode + salePromo + merryGift).toFixed(2));
 }
 
 const KASA_PLN_SANITY_RATIO = 1.15;

@@ -8,6 +8,7 @@ import { haptic } from "../utils/haptics";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
 import { isSalePromoProduct } from "../utils/smartPricing";
+import { lineChargeZl, merryGiftQtyOf } from "../utils/merryOnePlusOne";
 import {
   canAcceptOrdersToday,
   formatNextOpenLabel,
@@ -171,6 +172,7 @@ const CartPage = () => {
           productKey: pk,
           flavorKey: fk,
           qty: Math.max(1, Number(f?.qty || 1)),
+          giftQty: Math.max(0, Number(f?.giftQty || 0)),
           unitPrice: Number(f?.unitPrice || 0),
           flavorLabel: String(f?.flavorLabel || ""),
           gradient: Array.isArray(f?.gradient) ? f.gradient.slice(0, 2) : [],
@@ -1234,9 +1236,7 @@ const selectedPickupPoint = checkoutPickupPointId
   const cashbackInfo = useMemo(() => {
     const total = Number(
       (Array.isArray(cartItems) ? cartItems : []).reduce((sum, item) => {
-        const qty = Math.max(1, Number(item?.qty || 1));
-        const unitPrice = Number(item?.unitPrice || 0);
-        return sum + qty * unitPrice;
+        return sum + lineChargeZl(item);
       }, 0).toFixed(2)
     );
 
@@ -1364,9 +1364,7 @@ const cartItemsSubtotalZl = useMemo(
   () =>
     Number(
       (Array.isArray(cartItems) ? cartItems : []).reduce((sum, item) => {
-        const qty = Math.max(1, Number(item?.qty || 1));
-        const unitPrice = Number(item?.unitPrice || 0);
-        return sum + qty * unitPrice;
+        return sum + lineChargeZl(item);
       }, 0).toFixed(2)
     ),
   [cartItems]
@@ -1377,11 +1375,10 @@ const editableDeliveryPricing = useMemo(() => {
     return { matched: false, districtLabel: null, deliveryFeeZl: 0 };
   }
 
-  const itemsSubtotalZl = (Array.isArray(cartItems) ? cartItems : []).reduce((sum, item) => {
-    const qty = Math.max(1, Number(item?.qty || 1));
-    const price = Number(item?.unitPrice || 0);
-    return sum + qty * price;
-  }, 0);
+  const itemsSubtotalZl = (Array.isArray(cartItems) ? cartItems : []).reduce(
+    (sum, item) => sum + lineChargeZl(item),
+    0
+  );
 
   const isFreeDelivery = itemsSubtotalZl >= 200;
 
@@ -1395,11 +1392,10 @@ const editableDeliveryPricing = useMemo(() => {
 const effectiveCourierDeliveryFeeZl = useMemo(() => {
   if (deliveryType !== "delivery" || deliveryMethod !== "courier") return 0;
 
-  const itemsSubtotalZl = (Array.isArray(cartItems) ? cartItems : []).reduce((sum, item) => {
-    const qty = Math.max(1, Number(item?.qty || 1));
-    const price = Number(item?.unitPrice || 0);
-    return sum + qty * price;
-  }, 0);
+  const itemsSubtotalZl = (Array.isArray(cartItems) ? cartItems : []).reduce(
+    (sum, item) => sum + lineChargeZl(item),
+    0
+  );
 
   return itemsSubtotalZl >= 200 ? 0 : Number(savedDeliveryFeeZl || 0);
 }, [deliveryType, deliveryMethod, cartItems, savedDeliveryFeeZl]);
@@ -1432,13 +1428,7 @@ const editableInpostDeliveryFeeZl = useMemo(() => {
     Number(
 
       (Array.isArray(cartItems) ? cartItems : []).reduce((sum, item) => {
-
-        const qty = Math.max(1, Number(item?.qty || 1));
-
-        const unitPrice = Number(item?.unitPrice || 0);
-
-        return sum + qty * unitPrice;
-
+        return sum + lineChargeZl(item);
       }, 0).toFixed(2)
 
     )
@@ -2473,11 +2463,7 @@ const saveAddress = async () => {
 
           const result = await resolveWarsawDeliveryPricing(
             nextValue,
-            cartItems.reduce((sum, item) => {
-              const qty = Math.max(1, Number(item?.qty || 1));
-              const price = Number(item?.unitPrice || 0);
-              return sum + qty * price;
-            }, 0)
+            cartItems.reduce((sum, item) => sum + lineChargeZl(item), 0)
           );
 
           if (result?.matched) {
@@ -2763,7 +2749,7 @@ const normalizedInpostFieldName = rawEditingFieldKey.startsWith("inpost.")
   // сумма всей корзины (с учетом qty)
   const cartTotal = cartItems.reduce((sum, item) => {
     const r = resolveProduct(item);
-    const line = Number(r.unitPrice || 0) * Number(item.qty || 0);
+    const line = lineChargeZl({ ...item, unitPrice: r.unitPrice });
     return sum + (Number.isFinite(line) ? line : 0);
   }, 0);
 
@@ -3561,6 +3547,7 @@ const trySwitchCheckout = ({ nextType, nextMethod, nextPickupPointId, targetLabe
           productKey: pk,
           flavorKey: fk,
           qty: Math.max(1, Number(f?.qty || 1)),
+          giftQty: Math.max(0, Number(f?.giftQty || 0)),
           unitPrice: Number(f?.unitPrice || 0),
           flavorLabel: String(f?.flavorLabel || ""),
           gradient: Array.isArray(f?.gradient) ? f.gradient.slice(0, 2) : [],
@@ -4206,9 +4193,17 @@ if (pointBlob.includes("srodmiescie")) {
                           <div className="cartCardMidRow">
                             <div className="cartPricePill">
                               <span className="cartPriceValue">
-                                {Number(r.unitPrice || 0) * Number(item.qty || 0)}
+                                {lineChargeZl({ ...item, unitPrice: r.unitPrice })}
                               </span>
                               <img className="cartPriceCoin" src={zlotyIcon} alt="" />
+                              {merryGiftQtyOf(item) > 0 ? (
+                                <span className="cartGiftNote">
+                                  {t(
+                                    `подарок ×${merryGiftQtyOf(item)}`,
+                                    `gratis ×${merryGiftQtyOf(item)}`
+                                  )}
+                                </span>
+                              ) : null}
                             </div>
 
                             <div className="cartQty">
@@ -5074,11 +5069,10 @@ if (pointBlob.includes("srodmiescie")) {
                           )}
 
                           {deliveryType === "delivery" && deliveryMethod === "courier" && courierAddress && (() => {
-                            const itemsSubtotalZl = (Array.isArray(cartItems) ? cartItems : []).reduce((sum, item) => {
-                              const qty = Math.max(1, Number(item?.qty || 1));
-                              const price = Number(item?.unitPrice || 0);
-                              return sum + qty * price;
-                            }, 0);
+                            const itemsSubtotalZl = (Array.isArray(cartItems) ? cartItems : []).reduce(
+                              (sum, item) => sum + lineChargeZl(item),
+                              0
+                            );
 
                             const isFreeDelivery = itemsSubtotalZl >= 200;
                             const visibleDeliveryFeeZl = isFreeDelivery
@@ -5843,11 +5837,10 @@ if (pointBlob.includes("srodmiescie")) {
                         return;
                       }
 
-                      const courierItemsSubtotalZl = cartItems.reduce((sum, it) => {
-                        const qty = Math.max(1, Number(it?.qty || 1));
-                        const price = Number(it?.unitPrice || 0);
-                        return sum + qty * price;
-                      }, 0);
+                      const courierItemsSubtotalZl = cartItems.reduce(
+                        (sum, it) => sum + lineChargeZl(it),
+                        0
+                      );
 
                       if (
                         deliveryType === "delivery" &&

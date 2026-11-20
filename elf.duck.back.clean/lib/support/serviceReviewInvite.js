@@ -743,3 +743,212 @@ export async function submitServiceReview({ telegramId, rating, details = "" }) 
     reviewId: reviewDoc?._id ? String(reviewDoc._id) : "",
   };
 }
+
+/**
+ * Авто-рядок для CRM «История рассылок»:
+ * когорта отримала +15 zł за відгук після 1-го замовлення → скільки зробили 2+ покупки.
+ */
+export async function buildServiceReviewPushHistoryRows({ from, to } = {}) {
+  await ensureServiceReviewIndexes();
+
+  const range = {};
+  if (from) range.$gte = from instanceof Date ? from : new Date(from);
+  if (to) range.$lt = to instanceof Date ? to : new Date(to);
+  const hasRange = Object.keys(range).length > 0;
+
+  const baseFilter = {
+    testMode: { $ne: true },
+  };
+
+  const sentFilter = {
+    ...baseFilter,
+    sentAt: { $type: "date", ...(hasRange ? range : {}) },
+  };
+
+  const rewardedFilter = {
+    ...baseFilter,
+    status: "completed",
+    rewardGrantedAt: { $type: "date", ...(hasRange ? range : {}) },
+  };
+
+  const [sentCount, rewardedInvites] = await Promise.all([
+    invitesCollection().countDocuments(sentFilter),
+    invitesCollection()
+      .find(rewardedFilter, {
+        projection: {
+          telegramId: 1,
+          rewardGrantedAt: 1,
+          completedAt: 1,
+          sentAt: 1,
+        },
+      })
+      .toArray(),
+  ]);
+
+  const telegramIds = [
+    ...new Set(
+      rewardedInvites
+        .map((row) => String(row?.telegramId || "").trim())
+        .filter((id) => id && !id.startsWith("guest_"))
+    ),
+  ];
+
+  const purchaseCountByUser = new Map();
+  if (telegramIds.length) {
+    const rows = await Order.aggregate([
+      {
+        $match: {
+          userTelegramId: { $in: telegramIds },
+          ...getCompletedOrderMatch(),
+        },
+      },
+      {
+        $group: {
+          _id: "$userTelegramId",
+          purchases: { $sum: 1 },
+        },
+      },
+    ]);
+    for (const row of rows) {
+      purchaseCountByUser.set(
+        String(row?._id || "").trim(),
+        Number(row?.purchases || 0)
+      );
+    }
+  }
+
+  const { getWarsawDateKey } = await import("../crm/datetime.js");
+
+  const byDay = new Map();
+  let secondPurchaseUsers = 0;
+
+  for (const invite of rewardedInvites) {
+    const telegramId = String(invite?.telegramId || "").trim();
+    const purchases = Number(purchaseCountByUser.get(telegramId) || 0);
+    const madeSecond = purchases >= 2;
+    if (madeSecond) secondPurchaseUsers += 1;
+
+    const dayKey = getWarsawDateKey(
+      invite.rewardGrantedAt || invite.completedAt || invite.sentAt || new Date()
+    );
+    const bucket = byDay.get(dayKey) || {
+      dayKey,
+      rewarded: 0,
+      secondPurchase: 0,
+      at: invite.rewardGrantedAt || invite.completedAt || invite.sentAt || null,
+    };
+    bucket.rewarded += 1;
+    if (madeSecond) bucket.secondPurchase += 1;
+    const atMs = new Date(bucket.at || 0).getTime();
+    const inviteMs = new Date(
+      invite.rewardGrantedAt || invite.completedAt || invite.sentAt || 0
+    ).getTime();
+    if (Number.isFinite(inviteMs) && inviteMs >= atMs) {
+      bucket.at = invite.rewardGrantedAt || invite.completedAt || invite.sentAt;
+    }
+    byDay.set(dayKey, bucket);
+  }
+
+  const rewarded = rewardedInvites.length;
+  const conversion = rewarded
+    ? Number(((secondPurchaseUsers / rewarded) * 100).toFixed(1))
+    : 0;
+
+  const children = [...byDay.values()]
+    .sort((a, b) => String(b.dayKey).localeCompare(String(a.dayKey)))
+    .map((day) => {
+      const dayConversion = day.rewarded
+        ? Number(((day.secondPurchase / day.rewarded) * 100).toFixed(1))
+        : 0;
+      return {
+        id: `service-review-reward:${day.dayKey}`,
+        name: "Авто · отзыв +15 zł",
+        source: "automation",
+        automation: true,
+        automationTrigger: "service_review_reward",
+        automationDayKey: day.dayKey,
+        isAutomationChild: true,
+        synthetic: true,
+        audience: "service_review_reward",
+        status: "completed",
+        recipients: day.rewarded,
+        processed: day.rewarded,
+        sent: day.rewarded,
+        failed: 0,
+        blocked: 0,
+        notDelivered: 0,
+        opened: day.rewarded,
+        promoApplications: 0,
+        purchases: day.secondPurchase,
+        buyers: day.secondPurchase,
+        revenue: 0,
+        conversion: dayConversion,
+        startedAt: day.at,
+        finishedAt: day.at,
+        createdAt: day.at,
+        deliveryBotUsername: "",
+        lastErrors: [],
+        deliveryLogCount: 0,
+        memberIds: [],
+        metricHints: {
+          sent: "Получили +15 zł за отзыв",
+          opened: "Отзывы с начислением",
+          purchases: "Сделали 2+ покупки",
+          conversion: "% получивших 15 zł, кто купил ещё раз",
+        },
+      };
+    });
+
+  if (!rewarded && !sentCount) {
+    return [];
+  }
+
+  const latestAt =
+    children[0]?.startedAt ||
+    rewardedInvites[0]?.rewardGrantedAt ||
+    null;
+
+  return [
+    {
+      id: "auto-group:service_review_reward",
+      name: "Авто · отзыв +15 zł",
+      source: "automation",
+      automation: true,
+      automationTrigger: "service_review_reward",
+      automationDayKey: "",
+      isAutomationGroup: true,
+      synthetic: true,
+      runCount: Math.max(children.length, 1),
+      audience: "service_review_reward",
+      status: "completed",
+      recipients: Math.max(sentCount, rewarded),
+      processed: Math.max(sentCount, rewarded),
+      sent: rewarded,
+      failed: 0,
+      blocked: 0,
+      notDelivered: Math.max(0, sentCount - rewarded),
+      opened: rewarded,
+      promoApplications: 0,
+      purchases: secondPurchaseUsers,
+      buyers: secondPurchaseUsers,
+      revenue: 0,
+      conversion,
+      startedAt: latestAt,
+      finishedAt: latestAt,
+      createdAt: latestAt,
+      deliveryBotUsername: "",
+      lastErrors: [],
+      deliveryLogCount: 0,
+      memberIds: [],
+      children,
+      metricHints: {
+        recipients: "Приглашения на отзыв (отправлено)",
+        sent: "Получили +15 zł",
+        notDelivered: "Приглашение ушло, 15 zł ещё не начислено",
+        opened: "Отзывы с начислением 15 zł",
+        purchases: "Из них сделали 2+ покупки",
+        conversion: "% получивших 15 zł, кто купил ещё раз",
+      },
+    },
+  ];
+}

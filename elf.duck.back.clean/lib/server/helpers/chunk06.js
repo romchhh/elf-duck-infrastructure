@@ -194,8 +194,9 @@ export function applyReferralFirstOrderDiscountToCartItems(items = [], percent =
         totalBeforeDiscount: Number(
           (Array.isArray(items) ? items : []).reduce((sum, it) => {
             const qty = Math.max(1, Number(it?.qty || 1));
+            const gift = Math.min(qty, Math.max(0, Number(it?.giftQty || 0)));
             const unitPrice = Number(it?.unitPrice || 0);
-            return sum + qty * unitPrice;
+            return sum + (qty - gift) * unitPrice;
           }, 0).toFixed(2)
         ),
         totalDiscountZl: 0,
@@ -209,30 +210,35 @@ export function applyReferralFirstOrderDiscountToCartItems(items = [], percent =
     const oldUnitPrice = Number(it?.unitPrice || 0);
     const newUnitPrice = Number((oldUnitPrice * factor).toFixed(2));
     const qty = Math.max(1, Number(it?.qty || 1));
+    const giftQty = Math.min(qty, Math.max(0, Number(it?.giftQty || 0)));
+    const paidQty = Math.max(0, qty - giftQty);
 
   return {
     ...it,
+    giftQty,
     baseUnitPrice: Number(it?.baseUnitPrice || oldUnitPrice || 0),
     unitPrice: newUnitPrice,
     referralFirstOrderDiscountPercent: safePercent,
     referralFirstOrderDiscountPerItem: Number((oldUnitPrice - newUnitPrice).toFixed(2)),
-    referralFirstOrderDiscountTotalZl: Number(((oldUnitPrice - newUnitPrice) * qty).toFixed(2)),
+    referralFirstOrderDiscountTotalZl: Number(((oldUnitPrice - newUnitPrice) * paidQty).toFixed(2)),
   };
   });
 
   const totalBeforeDiscount = Number(
     (Array.isArray(items) ? items : []).reduce((sum, it) => {
       const qty = Math.max(1, Number(it?.qty || 1));
+      const gift = Math.min(qty, Math.max(0, Number(it?.giftQty || 0)));
       const unitPrice = Number(it?.unitPrice || 0);
-      return sum + qty * unitPrice;
+      return sum + (qty - gift) * unitPrice;
     }, 0).toFixed(2)
   );
 
   const totalAfterDiscount = Number(
     nextItems.reduce((sum, it) => {
       const qty = Math.max(1, Number(it?.qty || 1));
+      const gift = Math.min(qty, Math.max(0, Number(it?.giftQty || 0)));
       const unitPrice = Number(it?.unitPrice || 0);
-      return sum + qty * unitPrice;
+      return sum + (qty - gift) * unitPrice;
     }, 0).toFixed(2)
   );
 

@@ -65,11 +65,13 @@ import coinIcon from "../assets/coinIcon.webp";
 import swapIcon from "../assets/swapIcon.webp";
 import {
   isMerryMiNewBanner,
+  isMerryOnePlusOneBanner,
   isReferralBanner,
   MERRY_MI_NEW_CATALOG_SEARCH,
 } from "../utils/homeBanners";
 import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
+import { GIVEAWAY_JOIN_PROMPT_EVENT } from "../components/GiveawayJoinModal.jsx";
 import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
 import categoriesIcon from "../assets/categoriesIcon.webp";
 import allItemsIcon from "../assets/allItemsIcon.webp";    
@@ -615,6 +617,8 @@ const MainPage = () => {
       if (data?.order?._id) {
         setActiveOrder(data.order);
       }
+
+      window.dispatchEvent(new Event(GIVEAWAY_JOIN_PROMPT_EVENT));
 
       const cooldownUntil =
         Date.now() + ARRIVAL_NOTIFY_COOLDOWN_MS;
@@ -4030,7 +4034,10 @@ navigate("/cart");
                         return;
                       }
 
-                      if (isMerryMiNewBanner(bannerSources[i])) {
+                      if (
+                        isMerryMiNewBanner(bannerSources[i]) ||
+                        isMerryOnePlusOneBanner(bannerSources[i])
+                      ) {
                         openMerryMiNovelties();
                       }
                     }}
