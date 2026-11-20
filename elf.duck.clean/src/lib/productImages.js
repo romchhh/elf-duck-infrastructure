@@ -123,7 +123,7 @@ export const productVisualByKey = {
     cardDuckUrl: "",
     orderImgUrl: cardAsset("merry-mi-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi"]),
-    classCardBg: "",
+    classCardBg: "cardImageFull cardImageFull--baked",
     classCardDuck: "productCardImageLeft",
     classActions: "productActionsRight",
     title1: "LIQUID MERRY MI",
@@ -136,7 +136,7 @@ export const productVisualByKey = {
     cardDuckUrl: "",
     orderImgUrl: cardAsset("merry-mi-blade-30k-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi-blade-30k"]),
-    classCardBg: "",
+    classCardBg: "cardImageFull cardImageFull--baked",
     classCardDuck: "productCardImageRight",
     classActions: "productActionsLeft",
     title1: "MERRY MI",
@@ -156,6 +156,17 @@ export const productVisualByKey = {
     titleModal: "PUFFY SPECIAL 30 ML / 50 MG",
   },
 };
+
+/** Каталог: одне готове promo-фото на всю картку (без утки, без затемнення 50%). */
+export function isPromoOnlyCatalogCard(product) {
+  const productKey = String(product?.productKey || "").trim();
+  if (productKey === "merry-mi" || productKey === "merry-mi-blade-30k") {
+    return true;
+  }
+  const duck = String(product?.cardDuckUrl || "").trim();
+  const bg = String(product?.cardBgUrl || "").trim();
+  return !duck && /promo-card/i.test(bg);
+}
 
 function hasCatalogVisual(value) {
   return Boolean(String(value || "").trim());
@@ -238,6 +249,8 @@ export function enrichProductVisuals(product) {
         ...next,
         cardBgUrl: presetLocal.cardBgUrl || cardAsset(`${productKey}-promo-card.png`),
         cardDuckUrl: "",
+        classCardBg:
+          presetLocal.classCardBg || "cardImageFull cardImageFull--baked",
         classCardDuck: presetLocal.classCardDuck || next.classCardDuck || "",
         classActions: presetLocal.classActions || next.classActions,
         orderImgUrl: cardAsset(`${productKey}-order.png`),

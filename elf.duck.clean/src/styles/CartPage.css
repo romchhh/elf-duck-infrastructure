@@ -1418,6 +1418,38 @@ body {
 } */
 
 .cartCardDuck { z-index: 2; }
+.cartCardOrderHero {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: min(46%, 168px);
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: 0;
+}
+
+.cartCard--orderHero .cartCardInner {
+  padding-left: clamp(132px, 38vw, 168px);
+}
+
+.cartCard--orderHero .cartCardInner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.08) 0%,
+    rgba(0, 0, 0, 0.42) 42%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
 .cartSaleBadge { z-index: 3; }
 .cartTrashBtn { z-index: 3; }
 
@@ -1527,16 +1559,21 @@ body {
   display: inline-flex;
   align-items: center;
   max-width: 100%;
-  padding: 3px 10px;
+  padding: 4px 11px;
   border-radius: 999px;
-  background: rgba(255, 214, 0, 0.92);
-  color: #111;
+  background: linear-gradient(135deg, #ffe566 0%, #ffc400 100%);
+  color: #141414;
   font-family: Unbounded-Medium, Muller, sans-serif;
   font-size: 11px;
   font-weight: 700;
   line-height: 1.2;
-  letter-spacing: 0;
+  letter-spacing: 0.02em;
   white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+}
+
+.cartCard--orderHero .cartGiftNote {
+  border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .cartPricePill {

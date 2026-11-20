@@ -92,6 +92,126 @@ async function downloadPushExport(campaignId, kind) {
   URL.revokeObjectURL(url);
 }
 
+const REVIEW_RATING_META = {
+  great: { emoji: '😍', label: 'Супер' },
+  good: { emoji: '😐', label: 'Норм' },
+  bad: { emoji: '😞', label: 'Плохо' },
+};
+
+function formatReviewAuthor(review) {
+  const username = String(review?.username || '').trim();
+  if (username) return `@${username.replace(/^@/, '')}`;
+  const firstName = String(review?.firstName || '').trim();
+  return firstName || 'Клиент';
+}
+
+function ReviewRatingPills({ summary }) {
+  const total = Number(summary?.total || 0);
+  if (!total) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-2">
+      {['great', 'good', 'bad'].map((key) => {
+        const count = Number(summary?.[key] || 0);
+        if (!count) return null;
+        const meta = REVIEW_RATING_META[key];
+        return (
+          <span
+            key={key}
+            className="rounded-md border border-border-soft bg-[hsl(232_26%_8%)] px-1.5 py-0.5"
+            title={meta.label}
+          >
+            {meta.emoji} {count}
+          </span>
+        );
+      })}
+      <span className="text-muted-2">· {total} отзыв{total === 1 ? '' : total < 5 ? 'а' : 'ов'}</span>
+    </div>
+  );
+}
+
+function ServiceReviewFeedbackPanel({
+  feedback,
+  expanded,
+  onToggle,
+  compact = false,
+}) {
+  const byPoint = Array.isArray(feedback?.byPoint) ? feedback.byPoint : [];
+  const summary = feedback?.ratingSummary || null;
+  if (!summary?.total && !byPoint.length) return null;
+
+  return (
+    <div className={cn('mt-2', compact ? 'max-w-xl' : '')}>
+      <div className="flex flex-wrap items-center gap-2">
+        <ReviewRatingPills summary={summary} />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="text-[11px] text-[hsl(255_100%_75%)] hover:underline"
+        >
+          {expanded ? 'Скрыть отзывы' : 'Оценки и отзывы по точкам'}
+        </button>
+      </div>
+
+      {expanded ? (
+        <div className="mt-2 space-y-2.5 rounded-lg border border-border-soft bg-[hsl(232_26%_5%)] p-2.5">
+          {byPoint.length ? (
+            byPoint.map((point) => (
+              <div
+                key={point.pointId || point.pointTitle}
+                className="rounded-md border border-border-soft/70 bg-[hsl(232_26%_7%)] p-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[12px] font-medium text-foreground">
+                    {point.pointTitle || 'Без точки'}
+                  </div>
+                  <ReviewRatingPills summary={point.ratings} />
+                </div>
+                <div className="mt-2 space-y-2">
+                  {(point.reviews || []).map((review) => {
+                    const meta =
+                      REVIEW_RATING_META[review.rating] ||
+                      REVIEW_RATING_META.good;
+                    const when = review.createdAt
+                      ? new Date(review.createdAt).toLocaleString('ru-RU', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : '';
+                    return (
+                      <div
+                        key={review.id || `${review.createdAt}-${review.text}`}
+                        className="rounded-md border border-border-soft/50 bg-[hsl(232_26%_6%)] px-2 py-1.5"
+                      >
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-2">
+                          <span>
+                            {meta.emoji}{' '}
+                            {review.ratingLabel || meta.label}
+                          </span>
+                          <span>· {formatReviewAuthor(review)}</span>
+                          {when ? <span>· {when}</span> : null}
+                        </div>
+                        {review.text ? (
+                          <div className="mt-1 whitespace-pre-wrap text-[12px] leading-snug text-foreground/90">
+                            {review.text}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="text-[11px] text-muted-2">Пока нет сохранённых отзывов.</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CampaignMobileRow({
   r,
   onDelete,
@@ -99,11 +219,13 @@ function CampaignMobileRow({
   onShowDelivery,
   expanded,
   onToggleExpand,
+  reviewFeedbackExpanded,
+  onToggleReviewFeedback,
 }) {
   const isGroup = Boolean(r.isAutomationGroup);
   const isChild = Boolean(r.isAutomationChild);
   const isReviewReward =
-    r.automationTrigger === 'service_review_reward' || r.synthetic;
+    r.automationTrigger === 'service_review_reward';
   const runCount = Number(r.runCount || r.children?.length || 0);
   const displayName = String(r.name || '')
     .replace(/^Авто\s*·\s*/i, '')
@@ -269,6 +391,14 @@ function CampaignMobileRow({
             ]}
           />
         </div>
+
+        {isReviewReward ? (
+          <ServiceReviewFeedbackPanel
+            feedback={r.reviewFeedback}
+            expanded={Boolean(reviewFeedbackExpanded)}
+            onToggle={() => onToggleReviewFeedback?.(r.id)}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -525,11 +655,25 @@ const [
   const [expandedAutomationGroups, setExpandedAutomationGroups] = useState(
     () => new Set()
   );
+  const [expandedReviewFeedback, setExpandedReviewFeedback] = useState(
+    () => new Set()
+  );
 
   const toggleAutomationGroup = (groupId) => {
     const id = String(groupId || '').trim();
     if (!id) return;
     setExpandedAutomationGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleReviewFeedback = (rowId) => {
+    const id = String(rowId || '').trim();
+    if (!id) return;
+    setExpandedReviewFeedback((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -1977,7 +2121,7 @@ const confirmCreateTpl = () => {
         const isGroup = Boolean(r.isAutomationGroup);
         const isChild = Boolean(r.isAutomationChild);
         const isReviewReward =
-          r.automationTrigger === 'service_review_reward' || r.synthetic;
+          r.automationTrigger === 'service_review_reward';
         const expanded =
           isGroup && expandedAutomationGroups.has(String(r.id));
         const runCount = Number(r.runCount || r.children?.length || 0);
@@ -2036,7 +2180,7 @@ const confirmCreateTpl = () => {
               </button>
             </div>
             {isReviewReward ? (
-              <div className="mt-0.5 truncate text-[11px] text-muted-2">
+              <div className="mt-0.5 text-[11px] text-muted-2">
                 {isGroup
                   ? 'Кто получил 15 zł за отзыв → сколько сделали 2+ покупки'
                   : `День ${r.automationDayKey || '—'}`}
@@ -2061,6 +2205,14 @@ const confirmCreateTpl = () => {
               <div className="truncate text-[10px] text-muted-2">
                 @{r.deliveryBotUsername}
               </div>
+            ) : null}
+            {isReviewReward ? (
+              <ServiceReviewFeedbackPanel
+                feedback={r.reviewFeedback}
+                expanded={expandedReviewFeedback.has(String(r.id))}
+                onToggle={() => toggleReviewFeedback(r.id)}
+                compact
+              />
             ) : null}
           </div>
         );
@@ -3144,6 +3296,8 @@ const confirmCreateTpl = () => {
                 onShowDelivery={openDeliveryLog}
                 expanded={expandedAutomationGroups.has(String(r.id))}
                 onToggleExpand={toggleAutomationGroup}
+                reviewFeedbackExpanded={expandedReviewFeedback.has(String(r.id))}
+                onToggleReviewFeedback={toggleReviewFeedback}
               />
             )
           )}

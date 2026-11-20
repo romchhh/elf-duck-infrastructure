@@ -19,7 +19,7 @@ import { getPeriodRange, getWarsawDateKey } from "../datetime.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Запас после периодичности, после которого клиент становится спящим. */
-export const SLEEPING_GRACE_DAYS = 7;
+export const SLEEPING_GRACE_DAYS = 12;
 
 function finiteDayCount(value) {
   if (value == null || value === "") {

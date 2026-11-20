@@ -18,6 +18,10 @@ import {
   merryGiftQtyOf,
 } from "../utils/merryOnePlusOne";
 import {
+  enrichProductVisuals,
+  isPromoOnlyCatalogCard,
+} from "../lib/productImages";
+import {
   canAcceptOrdersToday,
   formatNextOpenLabel,
   getNextDayOpenInfo,
@@ -2187,12 +2191,27 @@ const incQty = (key) => {
 
     const title1 = (p?.title1 ?? snap?.title1 ?? "") || "";
     const title2 = (p?.title2 ?? snap?.title2 ?? "") || "";
-    const cardBgUrl = (p?.cardBgUrl ?? snap?.cardBgUrl ?? "") || "";
+    const cardImageUrl = (p?.cardImageUrl ?? snap?.cardImageUrl ?? "") || "";
+
+    const visualBase = enrichProductVisuals({
+      productKey: pk,
+      ...(p || {}),
+      cardBgUrl: (p?.cardBgUrl ?? snap?.cardBgUrl ?? "") || "",
+      cardDuckUrl: (p?.cardDuckUrl ?? snap?.cardDuckUrl ?? "") || "",
+      orderImgUrl: (p?.orderImgUrl ?? snap?.orderImgUrl ?? "") || "",
+    });
+    const orderImgUrl = String(visualBase.orderImgUrl || "").trim();
+    const useOrderHero =
+      isPromoOnlyCatalogCard(visualBase) && Boolean(orderImgUrl);
 
     // в деталях заказа у тебе може не бути качки в snapshot — тоді беремо з productsByKey,
     // а якщо товару вже немає — fallback на orderImgUrl
-    const cardDuckUrl = (p?.cardDuckUrl ?? snap?.orderImgUrl ?? "") || "";
-    const cardImageUrl = (p?.cardImageUrl ?? snap?.cardImageUrl ?? "") || "";
+    const cardDuckUrl = useOrderHero
+      ? ""
+      : (p?.cardDuckUrl ?? snap?.orderImgUrl ?? "") || "";
+    const cardBgUrl = useOrderHero
+      ? ""
+      : String(visualBase.cardBgUrl || (p?.cardBgUrl ?? snap?.cardBgUrl ?? "") || "");
 
     return {
       product: p,
@@ -2201,6 +2220,8 @@ const incQty = (key) => {
       cardBgUrl,
       cardDuckUrl,
       cardImageUrl,
+      orderImgUrl,
+      useOrderHero,
       classCardDuck: p?.classCardDuck || "",
       newBadge: p?.newBadge || "",
       unitPrice,
@@ -4144,41 +4165,58 @@ if (pointBlob.includes("srodmiescie")) {
               <div className={`cartGrid reveal delay-4 ${mounted ? "visible" : ""}`}>
                 {renderItems.map((item, cartVisualIndex) => {
                   const r = resolveProduct(item);
-                  const isRight = String(r.classCardDuck || "").includes("Right");
+                  const isRight =
+                    !r.useOrderHero &&
+                    String(r.classCardDuck || "").includes("Right");
                   const priorityVisuals = cartVisualIndex < 4;
 
                   return (
                     <div
                       key={cartItemKey(item)}
-                      className={`cartCard ${isRight ? "is-right" : ""}`}
+                      className={`cartCard ${isRight ? "is-right" : ""} ${
+                        r.useOrderHero ? "cartCard--orderHero" : ""
+                      }`}
                       data-side={isRight ? "right" : "left"}
                     >
                       <div
                         className="cartCardInner"
                         data-side={isRight ? "right" : "left"}
                       >
-                        {/* Корзина: окремо фон + PNG (не cardImageUrl — інші пропорції/layout) */}
-                        {r.cardBgUrl ? (
+                        {r.useOrderHero && r.orderImgUrl ? (
                           <img
-                            className="cartCardBg"
-                            src={r.cardBgUrl}
+                            className="cartCardOrderHero"
+                            src={r.orderImgUrl}
                             alt=""
                             loading={priorityVisuals ? "eager" : "lazy"}
                             fetchpriority={priorityVisuals ? "high" : "low"}
                             decoding="async"
                           />
-                        ) : null}
-                        {r.cardDuckUrl ? (
-                          <img
-                            className="cartCardDuck"
-                            data-side={isRight ? "right" : "left"}
-                            src={r.cardDuckUrl}
-                            alt=""
-                            loading={priorityVisuals ? "eager" : "lazy"}
-                            fetchpriority={priorityVisuals ? "high" : "low"}
-                            decoding="async"
-                          />
-                        ) : null}
+                        ) : (
+                          <>
+                            {/* Корзина: окремо фон + PNG (не cardImageUrl — інші пропорції/layout) */}
+                            {r.cardBgUrl ? (
+                              <img
+                                className="cartCardBg"
+                                src={r.cardBgUrl}
+                                alt=""
+                                loading={priorityVisuals ? "eager" : "lazy"}
+                                fetchpriority={priorityVisuals ? "high" : "low"}
+                                decoding="async"
+                              />
+                            ) : null}
+                            {r.cardDuckUrl ? (
+                              <img
+                                className="cartCardDuck"
+                                data-side={isRight ? "right" : "left"}
+                                src={r.cardDuckUrl}
+                                alt=""
+                                loading={priorityVisuals ? "eager" : "lazy"}
+                                fetchpriority={priorityVisuals ? "high" : "low"}
+                                decoding="async"
+                              />
+                            ) : null}
+                          </>
+                        )}
 
                         <div className="cartCardContent">
                           <div className="cartCardTopRow">

@@ -744,6 +744,72 @@ export async function submitServiceReview({ telegramId, rating, details = "" }) 
   };
 }
 
+function emptyRatingSummary() {
+  return { great: 0, good: 0, bad: 0, total: 0 };
+}
+
+function bumpRatingSummary(summary, rating) {
+  const key = String(rating || "").trim();
+  if (RATING_KEYS.includes(key)) summary[key] += 1;
+  summary.total += 1;
+}
+
+/** Оцінки + тексти відгуків, згруповані по точках. */
+function buildServiceReviewFeedback(reviews = []) {
+  const ratingSummary = emptyRatingSummary();
+  const byPointMap = new Map();
+
+  for (const review of Array.isArray(reviews) ? reviews : []) {
+    const rating = String(review?.rating || "").trim();
+    bumpRatingSummary(ratingSummary, rating);
+
+    const pointId = String(review?.pickupPointId || "").trim();
+    const pointTitle =
+      String(review?.pointTitle || "").trim() ||
+      String(review?.deliveryLabel || "").trim() ||
+      "Без точки";
+    const mapKey = pointId || `title:${pointTitle.toLowerCase()}`;
+
+    if (!byPointMap.has(mapKey)) {
+      byPointMap.set(mapKey, {
+        pointId,
+        pointTitle,
+        ratings: emptyRatingSummary(),
+        reviews: [],
+      });
+    }
+
+    const bucket = byPointMap.get(mapKey);
+    bumpRatingSummary(bucket.ratings, rating);
+    bucket.reviews.push({
+      id: String(review?._id || ""),
+      rating,
+      ratingLabel: String(review?.ratingLabel || "").trim(),
+      text: String(review?.text || "").trim(),
+      createdAt: review?.createdAt || null,
+      username: String(review?.username || "").trim(),
+      firstName: String(review?.firstName || "").trim(),
+    });
+  }
+
+  const byPoint = [...byPointMap.values()]
+    .map((point) => ({
+      ...point,
+      reviews: point.reviews.sort(
+        (a, b) =>
+          new Date(b.createdAt || 0).getTime() -
+          new Date(a.createdAt || 0).getTime()
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.ratings.total || 0) - Number(a.ratings.total || 0) ||
+        String(a.pointTitle).localeCompare(String(b.pointTitle), "ru")
+    );
+
+  return { ratingSummary, byPoint };
+}
+
 /**
  * Авто-рядок для CRM «История рассылок»:
  * когорта отримала +15 zł за відгук після 1-го замовлення → скільки зробили 2+ покупки.
@@ -771,7 +837,12 @@ export async function buildServiceReviewPushHistoryRows({ from, to } = {}) {
     rewardGrantedAt: { $type: "date", ...(hasRange ? range : {}) },
   };
 
-  const [sentCount, rewardedInvites] = await Promise.all([
+  const reviewFilter = {
+    source: "first_order_service_review",
+    ...(hasRange ? { createdAt: range } : {}),
+  };
+
+  const [sentCount, rewardedInvites, customerReviews] = await Promise.all([
     invitesCollection().countDocuments(sentFilter),
     invitesCollection()
       .find(rewardedFilter, {
@@ -783,6 +854,21 @@ export async function buildServiceReviewPushHistoryRows({ from, to } = {}) {
         },
       })
       .toArray(),
+    CustomerReview.find(reviewFilter)
+      .select({
+        rating: 1,
+        ratingLabel: 1,
+        text: 1,
+        pointTitle: 1,
+        pointAddress: 1,
+        pickupPointId: 1,
+        deliveryLabel: 1,
+        createdAt: 1,
+        username: 1,
+        firstName: 1,
+      })
+      .sort({ createdAt: -1 })
+      .lean(),
   ]);
 
   const telegramIds = [
@@ -854,12 +940,23 @@ export async function buildServiceReviewPushHistoryRows({ from, to } = {}) {
     ? Number(((secondPurchaseUsers / rewarded) * 100).toFixed(1))
     : 0;
 
+  const reviewFeedbackAll = buildServiceReviewFeedback(customerReviews);
+  const reviewsByDay = new Map();
+  for (const review of customerReviews) {
+    const dayKey = getWarsawDateKey(review?.createdAt || new Date());
+    if (!reviewsByDay.has(dayKey)) reviewsByDay.set(dayKey, []);
+    reviewsByDay.get(dayKey).push(review);
+  }
+
   const children = [...byDay.values()]
     .sort((a, b) => String(b.dayKey).localeCompare(String(a.dayKey)))
     .map((day) => {
       const dayConversion = day.rewarded
         ? Number(((day.secondPurchase / day.rewarded) * 100).toFixed(1))
         : 0;
+      const reviewFeedback = buildServiceReviewFeedback(
+        reviewsByDay.get(day.dayKey) || []
+      );
       return {
         id: `service-review-reward:${day.dayKey}`,
         name: "Авто · отзыв +15 zł",
@@ -890,6 +987,7 @@ export async function buildServiceReviewPushHistoryRows({ from, to } = {}) {
         lastErrors: [],
         deliveryLogCount: 0,
         memberIds: [],
+        reviewFeedback,
         metricHints: {
           sent: "Получили +15 zł за отзыв",
           opened: "Отзывы с начислением",
@@ -941,6 +1039,7 @@ export async function buildServiceReviewPushHistoryRows({ from, to } = {}) {
       deliveryLogCount: 0,
       memberIds: [],
       children,
+      reviewFeedback: reviewFeedbackAll,
       metricHints: {
         recipients: "Приглашения на отзыв (отправлено)",
         sent: "Получили +15 zł",

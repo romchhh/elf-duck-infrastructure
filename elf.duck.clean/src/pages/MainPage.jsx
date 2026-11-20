@@ -125,6 +125,7 @@ import {
 import {
   getProductHeroUrl,
 } from "../lib/cardMedia.js";
+import { isPromoOnlyCatalogCard } from "../lib/productImages.js";
 import CatalogCardMedia from "../components/CatalogCardMedia.jsx";
 
 const MainPageProductCard = React.memo(function MainPageProductCard({

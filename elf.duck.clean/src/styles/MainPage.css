@@ -785,6 +785,13 @@ body {
   z-index: 2;
 }
 
+/* Merry Mi promo-картка: одне чітке фото, без сірого шару й 50% opacity */
+.productCard--promoPhoto .cardImageFull,
+.productCard--promoPhoto .cardImageFull--baked {
+  opacity: 1;
+  filter: none;
+}
+
 .cardImageLeft {
   position: absolute;
   bottom: 0;

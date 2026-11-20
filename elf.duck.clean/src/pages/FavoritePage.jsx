@@ -21,6 +21,7 @@ import {
 import {
   getProductHeroUrl,
 } from "../lib/cardMedia.js";
+import { isPromoOnlyCatalogCard } from "../lib/productImages.js";
 import CatalogCardMedia from "../components/CatalogCardMedia.jsx";
 
 import {
@@ -792,7 +793,9 @@ const FavoritePage = () => {
                 </div>
                 </button>
 
-                {favoriteProducts.map((product) => (
+                {favoriteProducts.map((product) => {
+                  const promoOnlyCard = isPromoOnlyCatalogCard(product);
+                  return (
                 <div
                     key={product._id}
                     className={`productCard${
@@ -801,7 +804,7 @@ const FavoritePage = () => {
                       isCartridgesCategory(product)
                         ? " productCard--cartridgeDuck"
                         : ""
-                    }`}
+                    }${promoOnlyCard ? " productCard--promoPhoto" : ""}`}
                     onClick={() => {
                       haptic.heavy();
                       const hero = getProductHeroUrl(product);
@@ -815,7 +818,7 @@ const FavoritePage = () => {
                       });
                     }}
                   >
-                    <div className="cardBg" />
+                    {!promoOnlyCard ? <div className="cardBg" /> : null}
 
                     <CatalogCardMedia item={product} />
 
@@ -883,7 +886,8 @@ const FavoritePage = () => {
                     </button>
                     </div>
                 </div>
-                ))}
+                  );
+                })}
             </div>
             )}
             </div>
