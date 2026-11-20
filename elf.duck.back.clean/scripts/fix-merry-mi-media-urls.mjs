@@ -17,7 +17,7 @@ dotenv.config();
 dotenv.config({ path: path.join(scriptDir, "..", "..", ".env") });
 
 const dryRun = process.argv.includes("--dry-run");
-const VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "17");
+const VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "18");
 const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||
@@ -25,6 +25,11 @@ const APP_URL = String(
 ).replace(/\/$/, "");
 
 const KEYS = ["merry-mi", "merry-mi-blade-30k", "puffy-special"];
+
+const MERRY_PROMO_CARD = {
+  "merry-mi": "merry-mi-promo-card.png",
+  "merry-mi-blade-30k": "merry-mi-blade-30k-promo-card.png",
+};
 
 function shopUrl(file) {
   return `${APP_URL}/products/${file}?v=${VERSION}`;
@@ -76,11 +81,20 @@ async function main() {
         continue;
       }
 
-      const patch = {
-        cardDuckUrl: shopUrl(`${productKey}-card.png`),
-        orderImgUrl: shopUrl(`${productKey}-order.png`),
-        cardImageUrl: "",
-      };
+      const promoCard = MERRY_PROMO_CARD[productKey];
+      const patch = promoCard
+        ? {
+            cardBgUrl: shopUrl(promoCard),
+            cardDuckUrl: "",
+            classCardDuck: "",
+            orderImgUrl: shopUrl(`${productKey}-order.png`),
+            cardImageUrl: "",
+          }
+        : {
+            cardDuckUrl: shopUrl(`${productKey}-card.png`),
+            orderImgUrl: shopUrl(`${productKey}-order.png`),
+            cardImageUrl: "",
+          };
 
       console.log(
         `${dryRun ? "[dry-run] " : ""}update ${productKey}`,

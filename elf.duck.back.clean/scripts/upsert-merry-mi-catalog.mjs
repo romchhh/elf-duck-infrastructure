@@ -37,7 +37,7 @@ function dbNameFromUri(uri) {
     return "";
   }
 }
-const CARD_VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "17");
+const CARD_VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "18");
 const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||
@@ -228,11 +228,14 @@ async function upsertProduct(spec) {
     price: Number(existing?.price > 0 ? existing.price : spec.price),
     listPriceZl: Number(existing?.listPriceZl || 0),
     cardBgUrl: String(
-      existing?.cardBgUrl || spec.cardBgUrl || ""
+      spec.cardBgUrl || existing?.cardBgUrl || ""
     ).trim(),
-    cardDuckUrl: cardUrl(spec.cardFile),
+    cardDuckUrl: spec.cardDuckUrl === ""
+      ? ""
+      : cardUrl(spec.cardFile),
     orderImgUrl: cardUrl(spec.orderFile || spec.cardFile),
-    classCardDuck: "productCardImageRight",
+    cardImageUrl: "",
+    classCardDuck: spec.classCardDuck ?? "productCardImageRight",
     classActions: "productActionsRight",
     newBadge: "NEW",
     classNewBadge: "actionBadge sale",
@@ -280,12 +283,6 @@ async function main() {
   await mongoose.connect(uri, { dbName });
 
   try {
-    // Ті самі фони карток, що в каталозі (як у GH 33K / YAMI).
-    const DISPOSABLE_BG =
-      "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafkreihjucgk2vsq5x5u3y3joot5fp42nbgql32mjkivjkmryhtdxrerka";
-    const LIQUID_BG =
-      "https://blush-impressive-moth-462.mypinata.cloud/ipfs/bafybeiavqxbdav3hk2rqcokp7iobnb462rjcyaxfg3ejrg5zindszv6ws4";
-
     await upsertProduct({
       productKey: "merry-mi-blade-30k",
       categoryKey: "disposables",
@@ -294,7 +291,9 @@ async function main() {
       titleModal: "MERRY MI BLADE 30K",
       price: 110,
       sortOrder: 28,
-      cardBgUrl: DISPOSABLE_BG,
+      cardBgUrl: cardUrl("merry-mi-blade-30k-promo-card.png"),
+      cardDuckUrl: "",
+      classCardDuck: "",
       cardFile: "merry-mi-blade-30k-card.png",
       orderFile: "merry-mi-blade-30k-order.png",
       flavorLabels: BLADE_FLAVORS,
@@ -308,7 +307,9 @@ async function main() {
       titleModal: "LIQUID MERRY MI 30 ML / 30 MG",
       price: 55,
       sortOrder: 35,
-      cardBgUrl: LIQUID_BG,
+      cardBgUrl: cardUrl("merry-mi-promo-card.png"),
+      cardDuckUrl: "",
+      classCardDuck: "",
       cardFile: "merry-mi-card.png",
       orderFile: "merry-mi-order.png",
       flavorLabels: LIQUID_FLAVORS,

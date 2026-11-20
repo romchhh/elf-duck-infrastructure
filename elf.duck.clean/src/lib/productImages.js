@@ -8,7 +8,7 @@ import {
 } from "./productCardLayout.js";
 
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
-export const PRODUCT_CARD_ASSET_VERSION = "17";
+export const PRODUCT_CARD_ASSET_VERSION = "18";
 
 /** Фони карток як у xros-5 / puffy (IPFS), без catalog-smoke. */
 const CARD_BG_REF = {
@@ -118,24 +118,26 @@ export const productVisualByKey = {
     titleModal: "OXVA 30 ML / 20 MG",
   },
   "merry-mi": {
-    cardBgUrl: CARD_BG_REF["merry-mi"],
-    cardDuckUrl: cardAsset("merry-mi-card.png"),
+    // Картка: лише promo-фон 1+1=3, без качки.
+    cardBgUrl: cardAsset("merry-mi-promo-card.png"),
+    cardDuckUrl: "",
     orderImgUrl: cardAsset("merry-mi-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi"]),
     classCardBg: "",
-    classCardDuck: "productCardImageRight",
+    classCardDuck: "",
     classActions: "productActionsRight",
     title1: "LIQUID MERRY MI",
     title2: "30 ML / 30 MG",
     titleModal: "LIQUID MERRY MI 30 ML / 30 MG",
   },
   "merry-mi-blade-30k": {
-    cardBgUrl: CARD_BG_REF["merry-mi-blade-30k"],
-    cardDuckUrl: cardAsset("merry-mi-blade-30k-card.png"),
+    // Картка: лише promo-фон 1+1=3, без качки.
+    cardBgUrl: cardAsset("merry-mi-blade-30k-promo-card.png"),
+    cardDuckUrl: "",
     orderImgUrl: cardAsset("merry-mi-blade-30k-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi-blade-30k"]),
     classCardBg: "",
-    classCardDuck: "productCardImageRight",
+    classCardDuck: "",
     classActions: "productActionsRight",
     title1: "MERRY MI",
     title2: "BLADE 30K",
@@ -227,17 +229,28 @@ export function enrichProductVisuals(product) {
     next = { ...next, cardDuckUrl: localCardDuckUrl };
   }
 
-  // Merry Mi / Puffy Special: локальні card+wide order у шопі.
-  // Прибираємо stale cardImageUrl з /catalog-media (часто 404 на VPS).
+  // Merry Mi / Puffy Special: локальні media у шопі.
+  // Merry Mi картка — лише promo-фон; сторінка товару — старий wide order.
   if (FORCE_LOCAL_SHOP_MEDIA_KEYS.has(productKey)) {
     const presetLocal = productVisualByKey[productKey] || {};
-    next = {
-      ...next,
-      cardBgUrl: next.cardBgUrl || presetLocal.cardBgUrl || "",
-      cardDuckUrl: cardAsset(`${productKey}-card.png`),
-      orderImgUrl: cardAsset(`${productKey}-order.png`),
-      cardImageUrl: "",
-    };
+    if (productKey === "merry-mi" || productKey === "merry-mi-blade-30k") {
+      next = {
+        ...next,
+        cardBgUrl: presetLocal.cardBgUrl || cardAsset(`${productKey}-promo-card.png`),
+        cardDuckUrl: "",
+        classCardDuck: "",
+        orderImgUrl: cardAsset(`${productKey}-order.png`),
+        cardImageUrl: "",
+      };
+    } else {
+      next = {
+        ...next,
+        cardBgUrl: next.cardBgUrl || presetLocal.cardBgUrl || "",
+        cardDuckUrl: cardAsset(`${productKey}-card.png`),
+        orderImgUrl: cardAsset(`${productKey}-order.png`),
+        cardImageUrl: "",
+      };
+    }
   }
 
   return next;
