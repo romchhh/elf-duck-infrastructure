@@ -357,6 +357,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   }
 
   let soldPositionsQty = 0;
+  let brakPositionsQty = 0;
 
   const uniqueCustomersCount = new Set(
     (Array.isArray(orders) ? orders : [])
@@ -513,6 +514,7 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
         bucket = {
           title: formatDailyStatsDisplayTitle(row),
           totalQty: 0,
+          brakQty: 0,
           tierBuckets: new Map(),
           flavors: new Map(),
           variants: new Map(),
@@ -521,23 +523,25 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
       }
 
       const flavors = Array.isArray(row?.flavors) ? row.flavors : [];
-      const rowQty = flavors.reduce(
-        (sum, flavor) => sum + Math.max(0, Number(flavor?.qty || flavor?.quantity || 0)),
-        0
-      );
-      if (rowQty <= 0) continue;
+      const paidQty = __chunk09.getStatsSheetPaidQty(row);
+      const giftQty = __chunk09.getStatsSheetGiftQty(row);
+      if (paidQty <= 0 && giftQty <= 0) continue;
 
-      soldPositionsQty += rowQty;
+      soldPositionsQty += paidQty;
+      brakPositionsQty += giftQty;
 
       const tierLabel = __chunk09.getStatsSheetTierBracketLabelFromQty(
         __chunk09.getStatsSheetTierQty(order, row)
       );
 
-      bucket.tierBuckets.set(
-        tierLabel,
-        (bucket.tierBuckets.get(tierLabel) || 0) + rowQty
-      );
-      bucket.totalQty += rowQty;
+      if (paidQty > 0) {
+        bucket.tierBuckets.set(
+          tierLabel,
+          (bucket.tierBuckets.get(tierLabel) || 0) + paidQty
+        );
+      }
+      bucket.totalQty += paidQty;
+      bucket.brakQty += giftQty;
 
       const rowTitle = formatDailyStatsDisplayTitle(row);
       if (rowTitle.length > bucket.title.length) {
@@ -546,13 +550,15 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
       for (const flavor of flavors) {
         const qty = Math.max(0, Number(flavor?.qty || flavor?.quantity || 0));
-        if (!qty) continue;
+        const gift = Math.min(qty, Math.max(0, Number(flavor?.giftQty || 0)));
+        const paid = Math.max(0, qty - gift);
+        if (paid <= 0) continue;
 
         const flavorLabel = formatOrderFlavorCharacteristicLabel(row, flavor);
 
         bucket.flavors.set(
           flavorLabel,
-          (bucket.flavors.get(flavorLabel) || 0) + qty
+          (bucket.flavors.get(flavorLabel) || 0) + paid
         );
       }
     }
@@ -584,6 +590,9 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
 
       const tierLine = formatDailyStatsProductTierLine(product.tierBuckets);
       if (tierLine) lines.push(tierLine);
+      if (product.brakQty > 0) {
+        lines.push(`Брак: <b>${product.brakQty}</b> шт.`);
+      }
       lines.push(``);
 
       if (product.variants.size > 0) {
@@ -675,6 +684,9 @@ export function buildDailyStatsMessage(point, orders, dayKey, extra = {}) {
   }
   lines.push(`👤Кол-во клиентов: <b>${uniqueCustomersCount}</b>`);
   lines.push(`⚙️Продано штук: <b>${soldPositionsQty}</b>`);
+  if (brakPositionsQty > 0) {
+    lines.push(`🗑Брак (0 zł): <b>${brakPositionsQty}</b> шт.`);
+  }
   lines.push(DAILY_STATS_SEP);
   lines.push(`<b>🦆 ELF DUCK &lt;&gt; СТАТИСТИКА</b>`);
 

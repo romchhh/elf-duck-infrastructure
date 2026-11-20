@@ -1,7 +1,5 @@
 import referralBannerRu from "../assets/referralBanner.webp";
 import referralBannerPl from "../assets/referralBannerPl.webp";
-import merryMiNewBannerRu from "../assets/merryMiNewBannerRu.webp";
-import merryMiNewBannerPl from "../assets/merryMiNewBannerPl.webp";
 import merryOnePlusOneBannerRu from "../assets/merryOnePlusOneBannerRu.png";
 import merryOnePlusOneBannerPl from "../assets/merryOnePlusOneBannerPl.png";
 import { getCurrentLanguage } from "./i18n";
@@ -21,8 +19,8 @@ export function isMerryOnePlusOneBannerActive(date = new Date()) {
 
 /**
  * Карусель головної після слайду розіграшу:
- * новинки Merry Mi → рефералка.
- * assortmentRestock / delivery — тимчасово приховані.
+ * 1+1=3 Merry Mi → рефералка.
+ * Баннер «новинки Merry Mi» прибрано — уже неактуальний.
  */
 export function getHomeBanners(language = getCurrentLanguage()) {
   const isPl = language === "pl";
@@ -30,10 +28,7 @@ export function getHomeBanners(language = getCurrentLanguage()) {
   if (isMerryOnePlusOneBannerActive()) {
     banners.push(isPl ? merryOnePlusOneBannerPl : merryOnePlusOneBannerRu);
   }
-  banners.push(
-    isPl ? merryMiNewBannerPl : merryMiNewBannerRu,
-    isPl ? referralBannerPl : referralBannerRu
-  );
+  banners.push(isPl ? referralBannerPl : referralBannerRu);
   return banners;
 }
 
@@ -42,8 +37,6 @@ export function getAllHomeBannerAssetUrls() {
   return [
     merryOnePlusOneBannerRu,
     merryOnePlusOneBannerPl,
-    merryMiNewBannerRu,
-    merryMiNewBannerPl,
     referralBannerRu,
     referralBannerPl,
   ];
@@ -57,12 +50,12 @@ export function isReferralBanner(src) {
   return src === referralBannerRu || src === referralBannerPl;
 }
 
-export function isMerryMiNewBanner(src) {
-  return src === merryMiNewBannerRu || src === merryMiNewBannerPl;
+export function isMerryMiNewBanner(_src) {
+  return false;
 }
 
-/** productKey новинок з банера Merry Mi (Blade + Liquid). */
+/** productKey Merry Mi (Blade + Liquid) — для кліку по банеру 1+1=3. */
 export const MERRY_MI_NEW_PRODUCT_KEYS = ["merry-mi-blade-30k", "merry-mi"];
 
-/** Пошуковий запит, щоб у каталозі лишились лише ці новинки. */
+/** Пошуковий запит, щоб у каталозі лишились лише Merry Mi. */
 export const MERRY_MI_NEW_CATALOG_SEARCH = "merry mi";

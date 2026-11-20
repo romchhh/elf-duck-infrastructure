@@ -244,7 +244,7 @@ export function resetReportStatsInGrid(
         clearCell(out, r, blockStart + 1);
         clearCell(out, r, blockStart + 2);
         clearCell(out, r, blockStart + 3);
-        for (let c = blockStart + 4; c <= blockStart + 8; c += 1) {
+        for (let c = blockStart + 4; c <= blockStart + 9; c += 1) {
           clearCell(out, r, c);
         }
       }

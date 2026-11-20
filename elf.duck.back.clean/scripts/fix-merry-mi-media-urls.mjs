@@ -17,7 +17,7 @@ dotenv.config();
 dotenv.config({ path: path.join(scriptDir, "..", "..", ".env") });
 
 const dryRun = process.argv.includes("--dry-run");
-const VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "18");
+const VERSION = String(process.env.PRODUCT_IMAGE_CACHE_VERSION || "19");
 const APP_URL = String(
   process.env.APP_URL ||
     process.env.WEBAPP_URL ||
@@ -82,13 +82,19 @@ async function main() {
       }
 
       const promoCard = MERRY_PROMO_CARD[productKey];
+      const merryLayout =
+        productKey === "merry-mi"
+          ? { sortOrder: 1, classCardDuck: "productCardImageLeft" }
+          : productKey === "merry-mi-blade-30k"
+            ? { sortOrder: 2, classCardDuck: "productCardImageRight" }
+            : {};
       const patch = promoCard
         ? {
             cardBgUrl: shopUrl(promoCard),
             cardDuckUrl: "",
-            classCardDuck: "",
             orderImgUrl: shopUrl(`${productKey}-order.png`),
             cardImageUrl: "",
+            ...merryLayout,
           }
         : {
             cardDuckUrl: shopUrl(`${productKey}-card.png`),

@@ -7,6 +7,7 @@ import {
 import {
   applyDayBlockTotalsDelta,
   applyMonthItogoDelta,
+  applyReportBrakDelta,
   applyReportModelDelta,
   reportTabTitleForDayKey,
 } from "./dailyReportGrid.js";
@@ -17,7 +18,8 @@ import {
 import { getOrderSheetsDiscountTotalZl } from "../server/helpers/chunk08.js";
 import { getOrderStatsDayKey } from "../server/helpers/orderStatsDay.js";
 import {
-  getStatsSheetProductQty,
+  getStatsSheetGiftQty,
+  getStatsSheetPaidQty,
   getStatsSheetReportModelKey,
   getStatsSheetTierQty,
 } from "../server/helpers/chunk09.js";
@@ -63,23 +65,51 @@ async function syncOrderReportItems(order, { direction, dryRun = false }) {
 
   for (const row of order?.items || []) {
     const reportModelLabel = getStatsSheetReportModelKey(row);
-    const soldQty = getStatsSheetProductQty(row);
-    if (!reportModelLabel || soldQty <= 0) continue;
+    if (!reportModelLabel) continue;
+
+    // Покупки = лише оплачені шт.; подарунки 0 zł → колонка БРАК.
+    const soldQty = getStatsSheetPaidQty(row);
+    const giftQty = getStatsSheetGiftQty(row);
+    if (soldQty <= 0 && giftQty <= 0) continue;
 
     const tierKey = tierKeyFromTierQty(getStatsSheetTierQty(order, row));
-    tierDeltas[tierKey] = Number(tierDeltas[tierKey] || 0) + soldQty;
+    if (soldQty > 0) {
+      tierDeltas[tierKey] = Number(tierDeltas[tierKey] || 0) + soldQty;
+    }
 
-    const modelResult = await applyReportModelDelta({
-      spreadsheetId,
-      tabTitle,
-      dayKey,
+    let modelResult = { ok: true, skipped: true, reason: "NO_PAID_QTY" };
+    if (soldQty > 0) {
+      modelResult = await applyReportModelDelta({
+        spreadsheetId,
+        tabTitle,
+        dayKey,
+        reportModelLabel,
+        soldQty: sign * soldQty,
+        tierKey,
+        dryRun,
+      });
+    }
+
+    let brakResult = { ok: true, skipped: true, reason: "NO_BRAK_QTY" };
+    if (giftQty > 0) {
+      brakResult = await applyReportBrakDelta({
+        spreadsheetId,
+        tabTitle,
+        dayKey,
+        reportModelLabel,
+        brakQty: sign * giftQty,
+        dryRun,
+      });
+    }
+
+    results.push({
       reportModelLabel,
-      soldQty: sign * soldQty,
+      soldQty,
+      giftQty,
       tierKey,
-      dryRun,
+      modelResult,
+      brakResult,
     });
-
-    results.push({ reportModelLabel, soldQty, tierKey, modelResult });
 
     if (!modelResult?.ok) {
       return {
@@ -89,6 +119,16 @@ async function syncOrderReportItems(order, { direction, dryRun = false }) {
         tabTitle,
         results,
         failed: modelResult,
+      };
+    }
+    if (!brakResult?.ok) {
+      return {
+        ok: false,
+        pointKey,
+        dayKey,
+        tabTitle,
+        results,
+        failed: brakResult,
       };
     }
   }

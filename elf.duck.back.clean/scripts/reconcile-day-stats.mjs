@@ -39,7 +39,7 @@ import {
   resolveStatsScriptPointMeta,
 } from "../lib/googleSheets/statsScriptPoints.js";
 import {
-  getStatsSheetProductQty,
+  getStatsSheetPaidQty,
   getStatsSheetTierQty,
 } from "../lib/server/helpers/chunk09.js";
 
@@ -124,7 +124,8 @@ for (const order of dayOrders) {
       0
     );
     if (!qty) continue;
-    const soldQty = getStatsSheetProductQty(row);
+    const soldQty = getStatsSheetPaidQty(row);
+    if (soldQty <= 0) continue;
     const n = Math.max(0, Number(getStatsSheetTierQty(order, row) || 0));
     let tierKey = "tier1";
     if (n >= 5) tierKey = "tier5";

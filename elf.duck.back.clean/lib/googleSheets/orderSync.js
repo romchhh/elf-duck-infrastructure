@@ -53,7 +53,8 @@ export async function runGoogleSheetsOrderSync(order, options = {}) {
 
 /**
  * Per-order Google Sheets: only АССОРТИМЕНТ (склад).
- * ОТЧЁТ: лише продажі (1шт / 2шт / 3–4шт / 5шт) і СКИДКИ. Формули й нулі бот не пише.
+ * ОТЧЁТ: продажі (1шт / 2шт / 3–4шт / 5шт), БРАК (подарунки 0 zł) і СКИДКИ.
+ * Формули й нулі бот не пише.
  */
 function assortmentStepId(productKey, flavorKey) {
   return `${String(productKey || "").trim().toLowerCase()}|${String(flavorKey || "").trim().toLowerCase()}`;

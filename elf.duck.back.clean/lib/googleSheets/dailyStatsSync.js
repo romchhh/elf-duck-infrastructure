@@ -16,7 +16,8 @@ import {
   getOrderSheetsDiscountTotalZl,
 } from "../server/helpers/chunk08.js";
 import {
-  getStatsSheetProductQty,
+  getStatsSheetGiftQty,
+  getStatsSheetPaidQty,
   getStatsSheetReportModelKey,
   getStatsSheetTierQty,
 } from "../server/helpers/chunk09.js";
@@ -40,6 +41,7 @@ export function buildProductAggregates(orders) {
         productMap.set(modelKey, {
           model: modelKey,
           sold: 0,
+          brak: 0,
           tier1: 0,
           tier2: 0,
           tier34: 0,
@@ -48,12 +50,16 @@ export function buildProductAggregates(orders) {
       }
 
       const item = productMap.get(modelKey);
-      const soldQty = getStatsSheetProductQty(row);
+      const soldQty = getStatsSheetPaidQty(row);
+      const giftQty = getStatsSheetGiftQty(row);
       const tierQty = getStatsSheetTierQty(order, row);
       const tierKey = getStatsSheetTierKeyFromQty(tierQty);
 
       item.sold += soldQty;
-      item[tierKey] = Number(item[tierKey] || 0) + soldQty;
+      item.brak += giftQty;
+      if (soldQty > 0) {
+        item[tierKey] = Number(item[tierKey] || 0) + soldQty;
+      }
     }
   }
 
@@ -115,7 +121,7 @@ export async function sendDailyPointStatsToGoogleSheetsApi(
 
   for (const order of Array.isArray(orders) ? orders : []) {
     for (const row of order?.items || []) {
-      const soldQty = getStatsSheetProductQty(row);
+      const soldQty = getStatsSheetPaidQty(row);
       if (soldQty <= 0) continue;
       soldUnitsTotal += soldQty;
       const tierKey = getStatsSheetTierKeyFromQty(

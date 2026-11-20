@@ -91,7 +91,7 @@ export function collectProductSales(orders = []) {
         const revenue =
           (qty - gift) * unitPrice;
 
-        row.sold += qty;
+        row.sold += Math.max(0, qty - gift);
         row.revenue += revenue;
 
         row.dailyRevenue.set(

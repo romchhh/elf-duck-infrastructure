@@ -99,6 +99,27 @@ export function getStatsSheetProductQty(row = {}) {
   return Math.max(0, Number(row?.qty || row?.quantity || 0));
 }
 
+/** Подарункові шт. (0 zł / 1+1=3) — у таблицях йдуть у БРАК, не в покупки. */
+export function getStatsSheetGiftQty(row = {}) {
+  const flavors = Array.isArray(row?.flavors) ? row.flavors : [];
+
+  if (flavors.length) {
+    return flavors.reduce((sum, fl) => {
+      const qty = Math.max(0, Number(fl?.qty || fl?.quantity || 0));
+      const gift = Math.min(qty, Math.max(0, Number(fl?.giftQty || 0)));
+      return sum + gift;
+    }, 0);
+  }
+
+  const qty = Math.max(0, Number(row?.qty || row?.quantity || 0));
+  return Math.min(qty, Math.max(0, Number(row?.giftQty || 0)));
+}
+
+/** Оплачені шт. для колонок 1шт / 2шт / … на ОТЧЁТ. */
+export function getStatsSheetPaidQty(row = {}) {
+  return Math.max(0, getStatsSheetProductQty(row) - getStatsSheetGiftQty(row));
+}
+
 export function getStatsSheetProductTitle(row = {}) {
   return (
     [row?.productTitle1, row?.productTitle2].filter(Boolean).join(" ").trim() ||
@@ -321,28 +342,28 @@ export function isStatsSheetDisposable(row = {}) {
 export function getStatsSheetOrderLiquidQty(order) {
   return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
     if (!isStatsSheetLiquid(row)) return sum;
-    return sum + getStatsSheetProductQty(row);
+    return sum + getStatsSheetPaidQty(row);
   }, 0);
 }
 
 export function getStatsSheetOrderPodQty(order) {
   return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
     if (!isStatsSheetPod(row)) return sum;
-    return sum + getStatsSheetProductQty(row);
+    return sum + getStatsSheetPaidQty(row);
   }, 0);
 }
 
 export function getStatsSheetOrderDisposableQty(order) {
   return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
     if (!isStatsSheetDisposable(row)) return sum;
-    return sum + getStatsSheetProductQty(row);
+    return sum + getStatsSheetPaidQty(row);
   }, 0);
 }
 
 export function getStatsSheetOrderCartridgeQty(order) {
   return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
     if (!isStatsSheetCartridge(row)) return sum;
-    return sum + getStatsSheetProductQty(row);
+    return sum + getStatsSheetPaidQty(row);
   }, 0);
 }
 
@@ -352,7 +373,7 @@ export function getStatsSheetTierQty(order, row) {
   if (isStatsSheetPod(row)) return getStatsSheetOrderPodQty(order);
   if (isStatsSheetDisposable(row)) return getStatsSheetOrderDisposableQty(order);
 
-  return getStatsSheetProductQty(row);
+  return getStatsSheetPaidQty(row);
 }
 
 export function getStatsSheetTierBucketLabelFromQty(qty) {

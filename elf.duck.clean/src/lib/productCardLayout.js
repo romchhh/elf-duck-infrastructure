@@ -54,6 +54,12 @@ export function catalogGridCellSide(gridIndex, columns = 2) {
   return col === 0 ? "left" : "right";
 }
 
+/** Акційні Merry Mi — завжди перший ряд каталогу (ліва / права клітинка). */
+export const CATALOG_PIN_TOP_PRODUCT_KEYS = [
+  "merry-mi",
+  "merry-mi-blade-30k",
+];
+
 /**
  * Не чіпаємо classCardDuck — лише порядок товарів у списку,
  * щоб лівий макет потрапляв у ліву колонку, правий — у праву (2 колонки).
@@ -63,12 +69,38 @@ export function orderProductsForTwoColumnGrid(
   columns = 2,
   leadingGridSlots = 0
 ) {
-  const list = [...(Array.isArray(products) ? products : [])].sort(
-    (a, b) => Number(a?.sortOrder || 0) - Number(b?.sortOrder || 0)
-  );
+  const source = Array.isArray(products) ? products : [];
+  const pinOrder = CATALOG_PIN_TOP_PRODUCT_KEYS;
+  const pinSet = new Set(pinOrder);
+  const byKey = new Map();
+
+  for (const product of source) {
+    const key = String(product?.productKey || "")
+      .trim()
+      .toLowerCase();
+    if (pinSet.has(key) && !byKey.has(key)) byKey.set(key, product);
+  }
+
+  const pinned = pinOrder
+    .map((key) => byKey.get(key))
+    .filter(Boolean);
+
+  const list = source
+    .filter((product) => {
+      const key = String(product?.productKey || "")
+        .trim()
+        .toLowerCase();
+      return !pinSet.has(key);
+    })
+    .sort(
+      (a, b) => Number(a?.sortOrder || 0) - Number(b?.sortOrder || 0)
+    );
 
   const cellSideAt = (listIndex) =>
-    catalogGridCellSide(listIndex + leadingGridSlots, columns);
+    catalogGridCellSide(
+      listIndex + leadingGridSlots + pinned.length,
+      columns
+    );
 
   for (let i = 0; i < list.length; i++) {
     if (catalogDuckDesignSide(list[i]) === cellSideAt(i)) {
@@ -96,7 +128,7 @@ export function orderProductsForTwoColumnGrid(
     }
   }
 
-  return list;
+  return [...pinned, ...list];
 }
 
 /**

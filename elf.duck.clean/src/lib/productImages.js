@@ -8,7 +8,7 @@ import {
 } from "./productCardLayout.js";
 
 /** Версія файлів у /public/products — збільшуй після заміни PNG (обхід кешу Telegram). */
-export const PRODUCT_CARD_ASSET_VERSION = "18";
+export const PRODUCT_CARD_ASSET_VERSION = "19";
 
 /** Фони карток як у xros-5 / puffy (IPFS), без catalog-smoke. */
 const CARD_BG_REF = {
@@ -124,7 +124,7 @@ export const productVisualByKey = {
     orderImgUrl: cardAsset("merry-mi-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi"]),
     classCardBg: "",
-    classCardDuck: "",
+    classCardDuck: "productCardImageLeft",
     classActions: "productActionsRight",
     title1: "LIQUID MERRY MI",
     title2: "30 ML / 30 MG",
@@ -137,8 +137,8 @@ export const productVisualByKey = {
     orderImgUrl: cardAsset("merry-mi-blade-30k-order.png"),
     pageAccentRgb: hexToRgbTriplet(PAGE_ACCENT_HEX["merry-mi-blade-30k"]),
     classCardBg: "",
-    classCardDuck: "",
-    classActions: "productActionsRight",
+    classCardDuck: "productCardImageRight",
+    classActions: "productActionsLeft",
     title1: "MERRY MI",
     title2: "BLADE 30K",
     titleModal: "MERRY MI BLADE 30K",
@@ -238,7 +238,8 @@ export function enrichProductVisuals(product) {
         ...next,
         cardBgUrl: presetLocal.cardBgUrl || cardAsset(`${productKey}-promo-card.png`),
         cardDuckUrl: "",
-        classCardDuck: "",
+        classCardDuck: presetLocal.classCardDuck || next.classCardDuck || "",
+        classActions: presetLocal.classActions || next.classActions,
         orderImgUrl: cardAsset(`${productKey}-order.png`),
         cardImageUrl: "",
       };

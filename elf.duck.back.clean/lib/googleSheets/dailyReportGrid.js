@@ -14,7 +14,7 @@ import {
 } from "./dayReportBotSnapshot.js";
 import { normalizeSheetModelName, toReportModelLabel } from "./normalize.js";
 
-/** Right monthly block: MODEL + КАССА + ЗАРПЛАТА + sales columns */
+/** Right monthly / day block: MODEL + sales columns + СКИДКИ + БРАК */
 export const MONTH_RIGHT_COL = {
   model: 0,
   sold: 3,
@@ -23,7 +23,11 @@ export const MONTH_RIGHT_COL = {
   tier34: 6,
   tier5: 7,
   discounts: 8,
+  brak: 9,
 };
+
+/** Денний блок: колонка БРАК (після СКИДКИ). */
+export const DAY_BRAK_COL_OFFSET = 9;
 
 /** Left month snapshot (last day): stock columns only */
 export const MONTH_LEFT_COL = {
@@ -421,6 +425,17 @@ export async function applyReportModelDelta({
     return { ok: false, reason: "REPORT_MODEL_ROW_NOT_FOUND", reportModelLabel };
   }
 
+  if (!soldQty) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: "NO_PAID_QTY",
+      dayHeader,
+      reportModelLabel,
+      tierKey,
+    };
+  }
+
   const tierCol = blockStart + (TIER_COL_OFFSET[tierKey] ?? 4);
   const prevTier = parseNumberCell(rows[modelRow]?.[tierCol]);
   const nextTier = Math.max(0, prevTier + soldQty);
@@ -460,8 +475,74 @@ export async function applyReportModelDelta({
 }
 
 /**
- * Вечірній sync дня: лише колонки продажів (1шт / 2шт / 3–4шт / 5шт)
- * і СКИДКИ в рядку КАССА. ПРОДАНО, БЫЛО, СТАЛО, КАССА zł — формули.
+ * Денна модель: колонка БРАК — подарункові / 0 zł шт. (1+1=3).
+ * Не пишеться в 1шт/2шт/… (покупки).
+ */
+export async function applyReportBrakDelta({
+  spreadsheetId,
+  tabTitle,
+  dayKey,
+  reportModelLabel,
+  brakQty,
+  dryRun = false,
+}) {
+  const qty = Number(brakQty || 0);
+  if (!qty) {
+    return { ok: true, skipped: true, reason: "NO_BRAK_QTY" };
+  }
+
+  const dayHeader = warsawDayKeyToReportHeader(dayKey);
+  const rows = await loadMonthlyReport(spreadsheetId, tabTitle);
+  if (!rows) return { ok: false, reason: "SHEETS_DISABLED" };
+
+  const block = findDayBlock(rows, dayHeader);
+  if (!block) {
+    return { ok: false, reason: "DAY_BLOCK_NOT_FOUND", dayHeader };
+  }
+
+  const blockStart = block.blockStart;
+  const modelRow = findReportModelRowInDayBlock(rows, block, reportModelLabel);
+  if (modelRow < 0) {
+    return { ok: false, reason: "REPORT_MODEL_ROW_NOT_FOUND", reportModelLabel };
+  }
+
+  const brakCol = blockStart + DAY_BRAK_COL_OFFSET;
+  const prevBrak = parseNumberCell(rows[modelRow]?.[brakCol]);
+  const nextBrak = Math.max(0, prevBrak + qty);
+  const range = `${escapeSheetTitle(tabTitle)}!${colToA1(brakCol)}${modelRow + 1}`;
+
+  if (dryRun) {
+    return {
+      ok: true,
+      dryRun: true,
+      dayHeader,
+      reportModelLabel,
+      prevBrak,
+      nextBrak,
+    };
+  }
+
+  await writeSalesOrDiscountCell(spreadsheetId, range, nextBrak);
+
+  await recordPerOrderBotSheetIncrement({
+    spreadsheetId,
+    dayKey,
+    snapshotKey: dayModelTierSnapshotKey(reportModelLabel, "brak"),
+    soldQty: qty,
+  });
+
+  return {
+    ok: true,
+    dayHeader,
+    reportModelLabel,
+    nextBrak,
+  };
+}
+
+/**
+ * Вечірній sync дня: колонки продажів (1шт / 2шт / 3–4шт / 5шт),
+ * БРАК (подарунки 0 zł) і СКИДКИ в рядку КАССА.
+ * ПРОДАНО, БЫЛО, СТАЛО, КАССА zł — формули.
  */
 export async function writeDayBlockFromAggregates({
   spreadsheetId,
@@ -543,6 +624,39 @@ export async function writeDayBlockFromAggregates({
           updates += 1;
         }
       }
+
+      const brakTotal = Math.max(0, Number(product?.brak || 0));
+      const brakRange = `${escapeSheetTitle(tabTitle)}!${colToA1(
+        blockStart + DAY_BRAK_COL_OFFSET
+      )}${modelRow + 1}`;
+      if (dryRun) {
+        if (brakTotal > 0) {
+          touched.push({
+            meta: {
+              tierKey: "brak",
+              cellLabel: toReportModelLabel(cellLabel) || cellLabel,
+              mongoTotal: brakTotal,
+            },
+          });
+          updates += 1;
+        }
+      } else {
+        const written = await writeSalesOrDiscountCell(
+          spreadsheetId,
+          brakRange,
+          brakTotal
+        );
+        if (written.wrote || written.cleared) {
+          touched.push({
+            meta: {
+              tierKey: "brak",
+              cellLabel: toReportModelLabel(cellLabel) || cellLabel,
+              mongoTotal: brakTotal,
+            },
+          });
+          updates += 1;
+        }
+      }
     }
 
     const kassaRow = findKassaRowInDayBlock(rows, block);
@@ -591,6 +705,16 @@ export async function writeDayBlockFromAggregates({
           totalQty: mongoTotal,
         });
       }
+
+      await setBotSheetSnapshotTotal({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: dayModelTierSnapshotKey(
+          toReportModelLabel(cellLabel) || cellLabel,
+          "brak"
+        ),
+        totalQty: Math.max(0, Number(product?.brak || 0)),
+      });
     }
 
     if (kassaRow >= 0) {
@@ -645,6 +769,29 @@ export async function writeDayBlockFromAggregates({
         range: `${escapeSheetTitle(tabTitle)}!${colToA1(blockStart + colOff)}${modelRow + 1}`,
         values: [[prev + delta]],
       });
+    }
+
+    const brakTotal = Math.max(0, Number(product.brak || 0));
+    if (brakTotal > 0) {
+      const prevBrak = parseNumberCell(
+        rows[modelRow]?.[blockStart + DAY_BRAK_COL_OFFSET]
+      );
+      const { delta: brakDelta } = await computeBotSheetDelta({
+        spreadsheetId,
+        dayKey,
+        snapshotKey: dayModelTierSnapshotKey(label, "brak"),
+        mongoTotalQty: brakTotal,
+        prevCellQty: prevBrak,
+        persist: !dryRun,
+      });
+      if (brakDelta > 0) {
+        data.push({
+          range: `${escapeSheetTitle(tabTitle)}!${colToA1(
+            blockStart + DAY_BRAK_COL_OFFSET
+          )}${modelRow + 1}`,
+          values: [[prevBrak + brakDelta]],
+        });
+      }
     }
   }
 
