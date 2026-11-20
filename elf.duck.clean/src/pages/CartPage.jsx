@@ -7,7 +7,11 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { haptic } from "../utils/haptics";
 import { fetchProductsCached } from "../utils/productsApiCache";
 import { getAggregatedStockForFlavor } from "../utils/stockByContext";
-import { isSalePromoProduct } from "../utils/smartPricing";
+import {
+  isSalePromoProduct,
+  isLiquidSmartPriceProduct,
+  isDisposableSmartPriceProduct,
+} from "../utils/smartPricing";
 import { lineChargeZl, merryGiftQtyOf } from "../utils/merryOnePlusOne";
 import {
   canAcceptOrdersToday,
@@ -497,13 +501,7 @@ const CartPage = () => {
     alert(`${title}\n\n${message}`);
   };
 
-  const LIQUIDS_CATEGORY_KEYS = new Set(["liquids"]);
-  const DISPOSABLES_CATEGORY_KEYS = new Set(["disposables"]);
   const CARTRIDGES_CATEGORY_KEYS = new Set(["cartridges"]);
-  const DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS = new Set([
-    "elf-duck-1500",
-    "elf-duck-1500-2",
-  ]);
 
   const getSmartDiscountPerItem = (unitsQty) => {
     const qty = Math.max(0, Number(unitsQty || 0));
@@ -1132,7 +1130,6 @@ const selectedPickupPoint = checkoutPickupPointId
       if (!product) continue;
 
       const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
-      const productKey = String(product?.productKey || "").trim().toLowerCase();
       const qty = Math.max(1, Number(item?.qty || 1));
       const basePrice = Number(product?.price || item?.unitPrice || 0);
       const currentUnitPrice = Number(item?.unitPrice || 0);
@@ -1141,14 +1138,10 @@ const selectedPickupPoint = checkoutPickupPointId
         ? 0
         : Math.max(0, (basePrice - currentUnitPrice) * qty);
 
-      if (LIQUIDS_CATEGORY_KEYS.has(categoryKey) && !saleFixedPrice) {
+      if (isLiquidSmartPriceProduct(product) && !saleFixedPrice) {
         bucket.liquids.qty += qty;
         bucket.liquids.currentSavings += currentItemSavings;
-      } else if (
-        DISPOSABLES_CATEGORY_KEYS.has(categoryKey) &&
-        !DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS.has(productKey) &&
-        !saleFixedPrice
-      ) {
+      } else if (isDisposableSmartPriceProduct(product) && !saleFixedPrice) {
         bucket.disposables.qty += qty;
         bucket.disposables.currentSavings += currentItemSavings;
       } else if (CARTRIDGES_CATEGORY_KEYS.has(categoryKey) && !saleFixedPrice) {

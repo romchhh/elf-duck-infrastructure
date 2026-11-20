@@ -28,6 +28,7 @@ import {
   discountFromTiers,
   unitPriceFromTiers,
 } from "../../crm/smartPricingSettings.js";
+import { isMerryOnePlusOneActive } from "../../promos/merryOnePlusOne.js";
 
 const APP_URL = String(
   process.env.APP_URL ||
@@ -278,6 +279,18 @@ const DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS = new Set([
   "elf-duck-1500-2",
 ]);
 
+/** Merry Mi на акції 1+1=3 — без smart price (лише каталожна ціна + подарунок). */
+const MERRY_MI_NO_SMART_PRICE_PRODUCT_KEYS = new Set([
+  "merry-mi",
+  "merry-mi-blade-30k",
+]);
+
+function isMerryMiSmartPricePaused(product, date = new Date()) {
+  const productKey = String(product?.productKey || "").trim().toLowerCase();
+  if (!MERRY_MI_NO_SMART_PRICE_PRODUCT_KEYS.has(productKey)) return false;
+  return isMerryOnePlusOneActive(date);
+}
+
 /** Товари з бейджем SALE — одна ціна з каталогу (напр. 30 zł), без smart price */
 export function isSalePromoProduct(product) {
   return String(product?.newBadge || "").trim().toUpperCase() === "SALE";
@@ -309,8 +322,7 @@ export function getCartridgeSmartUnitPrice(
 
 export function isLiquidSmartPriceProduct(product) {
   const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
-  const productKey = String(product?.productKey || "").trim().toLowerCase();
-  if (productKey === "merry-mi") return true;
+  if (isMerryMiSmartPricePaused(product)) return false;
   return LIQUIDS_CATEGORY_KEYS.has(categoryKey);
 }
 
@@ -318,7 +330,7 @@ export function isDisposableSmartPriceProduct(product) {
   const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
   const productKey = String(product?.productKey || "").trim().toLowerCase();
 
-  if (productKey === "merry-mi") return false;
+  if (isMerryMiSmartPricePaused(product)) return false;
 
   return (
     DISPOSABLES_CATEGORY_KEYS.has(categoryKey) &&

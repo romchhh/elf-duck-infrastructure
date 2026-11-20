@@ -48,7 +48,11 @@ import {
   toggleGuestFavorite,
 } from "../utils/guestLocalStore";
 import { setPendingCart } from "../pendingCart";
-import { isSalePromoProduct } from "../utils/smartPricing";
+import {
+  isSalePromoProduct,
+  isLiquidSmartPriceProduct,
+  isDisposableSmartPriceProduct as isDisposableSmartPriceProductFn,
+} from "../utils/smartPricing";
 import {
   canAcceptOrdersToday,
   formatNextOpenLabel,
@@ -2318,23 +2322,10 @@ navigate("/cart");
     };
 
 
-  const DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS = new Set([
-    "elf-duck-1500",
-    "elf-duck-1500-2",
-  ]);
+  const isLiquidProduct = (product) => isLiquidSmartPriceProduct(product);
 
-  const isLiquidProduct = (product) =>
-    String(product?.categoryKey || "").trim().toLowerCase() === "liquids";
-
-  const isDisposableSmartPriceProduct = (product) => {
-    const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
-    const productKey = String(product?.productKey || "").trim().toLowerCase();
-
-    return (
-      categoryKey === "disposables" &&
-      !DISPOSABLES_NO_SMART_PRICE_PRODUCT_KEYS.has(productKey)
-    );
-  };
+  const isDisposableSmartPriceProduct = (product) =>
+    isDisposableSmartPriceProductFn(product);
 
   const isCartridgeSmartPriceProduct = (product) =>
   String(product?.categoryKey || "").trim().toLowerCase() === "cartridges";
@@ -2363,8 +2354,7 @@ navigate("/cart");
         (p) => String(p?.productKey || "") === String(item?.productKey || "")
       );
 
-      const categoryKey = String(product?.categoryKey || "").trim().toLowerCase();
-      if (categoryKey !== "liquids") return sum;
+      if (!isLiquidSmartPriceProduct(product)) return sum;
       if (isSalePromoProduct(product)) return sum;
 
       return sum + Math.max(0, Number(item?.qty || 0));
