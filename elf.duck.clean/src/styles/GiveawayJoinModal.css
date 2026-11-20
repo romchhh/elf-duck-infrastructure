@@ -1,36 +1,40 @@
 .giveawayJoinBackdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 10050;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 22px 16px 28px;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(8px);
+  padding: max(12px, env(safe-area-inset-top)) 12px
+    max(16px, env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .giveawayJoinCard {
   position: relative;
   width: min(420px, 100%);
-  padding: 10px 10px 14px;
+  max-height: min(92vh, 760px);
+  padding: 8px 8px 12px;
   border-radius: 28px;
-  background: #121212;
+  background: #0f0f10;
   box-shadow:
     0 24px 60px rgba(0, 0, 0, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.06);
+  overflow: hidden;
 }
 
 .giveawayJoinClose {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 14px;
+  right: 14px;
   z-index: 2;
   width: 34px;
   height: 34px;
   border: 0;
   border-radius: 50%;
-  background: rgba(20, 20, 22, 0.82);
+  background: rgba(20, 20, 22, 0.86);
   color: #fff;
   font-size: 22px;
   line-height: 1;
@@ -41,8 +45,10 @@
   display: block;
   width: 100%;
   height: auto;
+  max-height: calc(92vh - 96px);
   border-radius: 20px;
   object-fit: cover;
+  object-position: center top;
 }
 
 .giveawayJoinCta {
@@ -51,8 +57,8 @@
   justify-content: center;
   gap: 10px;
   width: calc(100% - 8px);
-  margin: 12px auto 0;
-  min-height: 58px;
+  margin: 10px auto 0;
+  min-height: 56px;
   border: 0;
   border-radius: 999px;
   background: linear-gradient(180deg, #ffe14a 0%, #ffc400 100%);

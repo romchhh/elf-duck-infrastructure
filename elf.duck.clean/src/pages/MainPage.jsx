@@ -1650,6 +1650,13 @@ const [addToCartSubmitting, setAddToCartSubmitting] = useState(false);
   const { banners, sources: bannerSources } = useCachedHomeBanners();
   const { carouselSlides: giveawaySlides } = useGiveawayPublic();
   const bannerSlideCount = banners.length + giveawaySlides.length;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new Event(GIVEAWAY_JOIN_PROMPT_EVENT));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, []);
   
   const [activeBannerIndex, setActiveBannerIndex] = useState(0);
 

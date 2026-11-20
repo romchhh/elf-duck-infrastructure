@@ -13,12 +13,16 @@ import "../styles/GiveawayJoinModal.css";
 
 export const GIVEAWAY_JOIN_PROMPT_EVENT = "elfduck:giveaway-join-prompt";
 
+/** Показуємо модалку, поки клієнт не натиснув «Участвовать». */
 function shouldPrompt(data) {
   if (!data?.ok) return false;
-  if (data.phase && data.phase !== "active") return false;
-  if (data.participationOpen === false) return false;
   if (data.joined || data.participated) return false;
-  return true;
+  if (data.participationOpen === false) return false;
+  const phase = String(data.phase || "").trim();
+  if (phase && phase !== "active" && data.participationOpen !== true) {
+    return false;
+  }
+  return Boolean(data.participationOpen || phase === "active" || data.bannerVisible);
 }
 
 export default function GiveawayJoinModal() {
@@ -28,30 +32,76 @@ export default function GiveawayJoinModal() {
   const dismissedRef = useRef(false);
   const lang = getCurrentLanguage();
 
-  useEffect(() => {
-    return subscribeGiveaway((data) => {
-      setState(data);
-      if (!shouldPrompt(data)) setOpen(false);
-    });
+  const tryOpen = useCallback((data) => {
+    if (dismissedRef.current) return;
+    if (shouldPrompt(data)) setOpen(true);
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchGiveawayCurrent().then((data) => {
-      if (cancelled || !data?.ok) return;
+    return subscribeGiveaway((data) => {
       setState(data);
-      if (!dismissedRef.current && shouldPrompt(data)) setOpen(true);
+      if (!shouldPrompt(data)) {
+        setOpen(false);
+        return;
+      }
+      tryOpen(data);
     });
+  }, [tryOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let attempts = 0;
+
+    const load = async ({ force = false } = {}) => {
+      attempts += 1;
+      try {
+        const data = await fetchGiveawayCurrent(
+          force ? { force: true } : undefined
+        );
+        if (cancelled || !data?.ok) {
+          if (!cancelled && attempts < 3) {
+            window.setTimeout(() => load({ force: true }), 600 * attempts);
+          }
+          return;
+        }
+        setState(data);
+        tryOpen(data);
+      } catch (error) {
+        console.error("giveaway join modal load", error);
+        if (!cancelled && attempts < 3) {
+          window.setTimeout(() => load({ force: true }), 600 * attempts);
+        }
+      }
+    };
+
+    load();
+
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      dismissedRef.current = false;
+      load({ force: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [tryOpen]);
 
   useEffect(() => {
     const onPrompt = () => {
       dismissedRef.current = false;
       const current = getGiveawayCache();
-      if (shouldPrompt(current || state)) setOpen(true);
+      if (shouldPrompt(current || state)) {
+        setOpen(true);
+        return;
+      }
+      fetchGiveawayCurrent({ force: true }).then((data) => {
+        if (!data?.ok) return;
+        setState(data);
+        if (shouldPrompt(data)) setOpen(true);
+      });
     };
     window.addEventListener(GIVEAWAY_JOIN_PROMPT_EVENT, onPrompt);
     return () => window.removeEventListener(GIVEAWAY_JOIN_PROMPT_EVENT, onPrompt);
