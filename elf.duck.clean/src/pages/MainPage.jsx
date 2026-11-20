@@ -141,17 +141,18 @@ const MainPageProductCard = React.memo(function MainPageProductCard({
 }) {
   const compactDuck = isCompactCatalogDuck(product);
   const cartridgeDuck = isCartridgesCategory(product);
+  const promoOnlyCard = isPromoOnlyCatalogCard(product);
 
   return (
     <div
       className={`productCard${compactDuck ? " productCard--compactDuck" : ""}${
         cartridgeDuck ? " productCard--cartridgeDuck" : ""
-      }`}
+      }${promoOnlyCard ? " productCard--promoPhoto" : ""}`}
       onClick={() => {
         onOpenProduct(product);
       }}
     >
-      <div className="cardBg" />
+      {!promoOnlyCard ? <div className="cardBg" /> : null}
 
       <CatalogCardMedia item={product} eager={eager} />
 

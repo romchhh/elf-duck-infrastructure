@@ -786,10 +786,17 @@ body {
 }
 
 /* Merry Mi promo-картка: одне чітке фото, без сірого шару й 50% opacity */
+.productCard--promoPhoto .cardBg {
+  display: none;
+}
+
 .productCard--promoPhoto .cardImageFull,
 .productCard--promoPhoto .cardImageFull--baked {
   opacity: 1;
   filter: none;
+  transform: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .cardImageLeft {

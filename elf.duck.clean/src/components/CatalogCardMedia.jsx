@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { getBakedCardImageUrl, hasBakedCardImage } from "../lib/cardMedia.js";
+import { isPromoOnlyCatalogCard } from "../lib/productImages.js";
 
 /**
  * Картка каталогу: одне запечене фото, або фон+утка.
@@ -13,7 +14,9 @@ export default function CatalogCardMedia({
 }) {
   const bakedUrl = getBakedCardImageUrl(item);
   const [bakedFailed, setBakedFailed] = useState(false);
-  const useBaked = hasBakedCardImage(item) && !bakedFailed;
+  const promoOnlyCard = isPromoOnlyCatalogCard(item);
+  const useBaked =
+    hasBakedCardImage(item) && !bakedFailed && !promoOnlyCard;
   const loading = eager ? "eager" : "lazy";
   const fetchpriority = eager ? "high" : "low";
 
@@ -36,7 +39,11 @@ export default function CatalogCardMedia({
       {item?.cardBgUrl ? (
         <img
           src={item.cardBgUrl}
-          className={item.classCardBg || "cardImageFull"}
+          className={
+            promoOnlyCard
+              ? "cardImageFull cardImageFull--baked"
+              : item.classCardBg || "cardImageFull"
+          }
           alt=""
           loading={loading}
           decoding="async"
