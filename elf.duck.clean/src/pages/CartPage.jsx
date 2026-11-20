@@ -4191,11 +4191,13 @@ if (pointBlob.includes("srodmiescie")) {
                           </div>
 
                           <div className="cartCardMidRow">
-                            <div className="cartPricePill">
-                              <span className="cartPriceValue">
-                                {lineChargeZl({ ...item, unitPrice: r.unitPrice })}
-                              </span>
-                              <img className="cartPriceCoin" src={zlotyIcon} alt="" />
+                            <div className="cartPriceBlock">
+                              <div className="cartPricePill">
+                                <span className="cartPriceValue">
+                                  {lineChargeZl({ ...item, unitPrice: r.unitPrice })}
+                                </span>
+                                <img className="cartPriceCoin" src={zlotyIcon} alt="" />
+                              </div>
                               {merryGiftQtyOf(item) > 0 ? (
                                 <span className="cartGiftNote">
                                   {t(
