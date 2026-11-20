@@ -13,6 +13,24 @@ import "../styles/GiveawayJoinModal.css";
 
 export const GIVEAWAY_JOIN_PROMPT_EVENT = "elfduck:giveaway-join-prompt";
 
+const PROMPTED_SESSION_KEY = "elfduck_giveaway_join_prompted_v1";
+
+function wasPromptedThisSession() {
+  try {
+    return sessionStorage.getItem(PROMPTED_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markPromptedThisSession() {
+  try {
+    sessionStorage.setItem(PROMPTED_SESSION_KEY, "1");
+  } catch {
+    // ignore
+  }
+}
+
 /** Показуємо модалку, поки клієнт не натиснув «Участвовать». */
 function shouldPrompt(data) {
   if (!data?.ok) return false;
@@ -29,12 +47,16 @@ export default function GiveawayJoinModal() {
   const [state, setState] = useState(() => getGiveawayCache());
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const dismissedRef = useRef(false);
+  const dismissedRef = useRef(wasPromptedThisSession());
+  const entryPromptDoneRef = useRef(wasPromptedThisSession());
   const lang = getCurrentLanguage();
 
-  const tryOpen = useCallback((data) => {
-    if (dismissedRef.current) return;
-    if (shouldPrompt(data)) setOpen(true);
+  const tryOpenOnceOnEntry = useCallback((data) => {
+    if (entryPromptDoneRef.current || dismissedRef.current) return;
+    if (!shouldPrompt(data)) return;
+    entryPromptDoneRef.current = true;
+    markPromptedThisSession();
+    setOpen(true);
   }, []);
 
   useEffect(() => {
@@ -44,9 +66,11 @@ export default function GiveawayJoinModal() {
         setOpen(false);
         return;
       }
-      tryOpen(data);
+      // Не відкриваємо повторно при оновленні стану / поверненні на головну —
+      // лише перший вхід у сесію.
+      tryOpenOnceOnEntry(data);
     });
-  }, [tryOpen]);
+  }, [tryOpenOnceOnEntry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +89,7 @@ export default function GiveawayJoinModal() {
           return;
         }
         setState(data);
-        tryOpen(data);
+        tryOpenOnceOnEntry(data);
       } catch (error) {
         console.error("giveaway join modal load", error);
         if (!cancelled && attempts < 3) {
@@ -76,31 +100,34 @@ export default function GiveawayJoinModal() {
 
     load();
 
-    const onVisible = () => {
-      if (document.visibilityState !== "visible") return;
-      dismissedRef.current = false;
-      load({ force: true });
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
     return () => {
       cancelled = true;
-      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [tryOpen]);
+  }, [tryOpenOnceOnEntry]);
 
   useEffect(() => {
-    const onPrompt = () => {
+    const onPrompt = (event) => {
+      const force = Boolean(event?.detail?.force);
+      if (!force) {
+        // Авто-промпт з навігації ігноруємо — лише перший вхід сесії.
+        return;
+      }
       dismissedRef.current = false;
       const current = getGiveawayCache();
       if (shouldPrompt(current || state)) {
+        markPromptedThisSession();
+        entryPromptDoneRef.current = true;
         setOpen(true);
         return;
       }
       fetchGiveawayCurrent({ force: true }).then((data) => {
         if (!data?.ok) return;
         setState(data);
-        if (shouldPrompt(data)) setOpen(true);
+        if (shouldPrompt(data)) {
+          markPromptedThisSession();
+          entryPromptDoneRef.current = true;
+          setOpen(true);
+        }
       });
     };
     window.addEventListener(GIVEAWAY_JOIN_PROMPT_EVENT, onPrompt);
@@ -109,6 +136,8 @@ export default function GiveawayJoinModal() {
 
   const close = useCallback(() => {
     dismissedRef.current = true;
+    entryPromptDoneRef.current = true;
+    markPromptedThisSession();
     haptic.light();
     setOpen(false);
   }, []);
@@ -121,6 +150,9 @@ export default function GiveawayJoinModal() {
       if (data?.ok) {
         haptic.success();
         setState(data);
+        dismissedRef.current = true;
+        entryPromptDoneRef.current = true;
+        markPromptedThisSession();
         setOpen(false);
       } else {
         haptic.error();

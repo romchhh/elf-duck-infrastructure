@@ -40,7 +40,6 @@ import {
 import { useCachedHomeBanners } from "../hooks/useCachedHomeBanners.js";
 import { appPath } from "../utils/appMode";
 import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
-import { GIVEAWAY_JOIN_PROMPT_EVENT } from "../components/GiveawayJoinModal.jsx";
 import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
 import PaymentBlikPreferCashCopy from "../components/PaymentBlikPreferCashCopy.jsx";
 import ComplaintSheet from "../components/ComplaintSheet.jsx";
@@ -3952,8 +3951,6 @@ useEffect(() => {
                                 )
                                 );
                             }
-
-                            window.dispatchEvent(new Event(GIVEAWAY_JOIN_PROMPT_EVENT));
 
                             const cooldownUntil = Date.now() + ARRIVAL_NOTIFY_COOLDOWN_MS;
 
