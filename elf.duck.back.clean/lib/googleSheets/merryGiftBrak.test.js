@@ -31,13 +31,7 @@ assert.equal(aggregates.length, 1);
 assert.equal(aggregates[0].model, "MERRY MI 3%");
 assert.equal(aggregates[0].sold, 2, "оплачені — у покупки");
 assert.equal(aggregates[0].brak, 1, "подарунок — у БРАК");
-assert.equal(
-  aggregates[0].tier1 +
-    aggregates[0].tier2 +
-    aggregates[0].tier34 +
-    aggregates[0].tier5,
-  2,
-  "у tier лише оплачені шт."
-);
+assert.equal(aggregates[0].tier1, 2, "оплачені Merry Mi — колонка 1 шт.");
+assert.equal(aggregates[0].tier5, 0);
 
 console.log("merry gift → brak tests ok");

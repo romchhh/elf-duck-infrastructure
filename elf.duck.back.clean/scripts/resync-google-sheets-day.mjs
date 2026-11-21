@@ -7,6 +7,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 
 const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(backendRoot, "..");
+dotenv.config({ path: path.join(repoRoot, ".env") });
 dotenv.config({ path: path.join(backendRoot, ".env") });
 
 import mongoose from "mongoose";

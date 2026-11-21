@@ -69,16 +69,17 @@ assert.equal(lineChargeZl(row3.flavors[0]), 110);
 assert.equal(getStatsSheetProductQty(row3), 3, "зі складу йде 3 шт.");
 assert.equal(getStatsSheetPaidQty(row3), 2, "покупки — 2");
 assert.equal(getStatsSheetGiftQty(row3), 1, "брак — 1");
-assert.equal(getStatsSheetTierQty(three, row3), 2, "tier по оплачених, не по подарунку");
+assert.equal(getStatsSheetTierQty(three, row3), 1, "Merry Mi завжди колонка 1 шт.");
 assert.equal(getOrderItemsSubtotalZl(three), 110);
 assert.equal(getOrderMerryGiftDiscountZl(three), 55);
-assert.equal(getOrderSheetsDiscountTotalZl(three), 55);
+assert.equal(getOrderSheetsDiscountTotalZl(three), 0, "подарунок не в Скидки");
 
 const agg = buildProductAggregates([three]);
 assert.equal(agg[0].sold, 2);
 assert.equal(agg[0].brak, 1);
-assert.equal(agg[0].tier2, 2);
-assert.equal(agg[0].tier34, 0);
+assert.equal(agg[0].tier1, 2);
+assert.equal(agg[0].tier2, 0);
+assert.equal(agg[0].tier5, 0);
 
 const mixedPrices = applyMerryOnePlusOne([
   { productKey: "merry-mi", flavorKey: "dear", qty: 1, unitPrice: 60 },
@@ -101,7 +102,25 @@ const six = orderFromCart([
 assert.equal(getStatsSheetPaidQty(six.items[0]), 4);
 assert.equal(getStatsSheetGiftQty(six.items[0]), 2);
 assert.equal(getOrderItemsSubtotalZl(six), 440);
-assert.equal(getOrderSheetsDiscountTotalZl(six), 220);
+assert.equal(getOrderSheetsDiscountTotalZl(six), 0);
+assert.equal(getStatsSheetTierQty(six, six.items[0]), 1);
+
+const mixedOrder = orderFromCart([
+  { productKey: "merry-mi", qty: 6, unitPrice: 55 },
+  { productKey: "elfliq-30-ml", qty: 2, unitPrice: 50 },
+  { productKey: "chaser-for-pods-30-ml", qty: 2, unitPrice: 50 },
+]);
+const merryRow = mixedOrder.items.find((row) => row.productKey === "merry-mi");
+const elfRow = mixedOrder.items.find((row) => row.productKey === "elfliq-30-ml");
+const podsRow = mixedOrder.items.find(
+  (row) => row.productKey === "chaser-for-pods-30-ml"
+);
+assert.equal(getStatsSheetPaidQty(merryRow), 4);
+assert.equal(getStatsSheetGiftQty(merryRow), 2);
+assert.equal(getStatsSheetTierQty(mixedOrder, merryRow), 1);
+assert.equal(getStatsSheetTierQty(mixedOrder, elfRow), 4);
+assert.equal(getStatsSheetTierQty(mixedOrder, podsRow), 4);
+assert.equal(getOrderSheetsDiscountTotalZl(mixedOrder), 0);
 
 const products = [
   { productKey: "merry-mi", categoryKey: "liquids", price: 55 },

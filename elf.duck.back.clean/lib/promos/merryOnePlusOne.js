@@ -43,7 +43,7 @@ export function lineChargeZl(row) {
   );
 }
 
-/** Сума подарунків для колонки «Скидки»: до реф-знижки, по повній ціні рядка. */
+/** Номінал подарунків (0 zł). У колонку «Скидки» не пишеться — лише «Брак». */
 export function merryGiftSheetsDiscountZl(rows) {
   let sum = 0;
   for (const row of Array.isArray(rows) ? rows : []) {

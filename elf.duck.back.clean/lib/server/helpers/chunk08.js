@@ -1043,7 +1043,10 @@ export function getOrderItemsSubtotalZl(order) {
   return Number(sum.toFixed(2));
 }
 
-/** Вартість подарунків 1+1=3 до реф-знижки — у колонку «Скидки». */
+/**
+ * Номінал подарунків 1+1=3. У «Скидки» не йде: штуки вже в «Брак»,
+ * а каса рахує лише оплачені позиції за каталожною ціною.
+ */
 export function getOrderMerryGiftDiscountZl(order) {
   return merryGiftSheetsDiscountZl(order?.items || []);
 }
@@ -1200,7 +1203,8 @@ export function getOrderSalePromoDiscountTotalZl(order) {
 
 /**
  * Сумма для колонки «Скидки» в Google Sheets и Telegram-статистике.
- * Реф + кешбек + промокод + акція SALE (60→30). Смарт-сходинка [1]/[2]/[3-4]/[5] — не тут.
+ * Реф + кешбек + промокод + акція SALE (60→30).
+ * Смарт-сходинка [1]/[2]/[3-4]/[5] і подарунки Merry Mi (вони в «Брак») — не тут.
  * Окремі колонки кешбеку і промокоду — з наступного місяця, зараз усе в «Скидки».
  */
 export function getOrderSheetsDiscountTotalZl(order) {
@@ -1208,8 +1212,7 @@ export function getOrderSheetsDiscountTotalZl(order) {
   const referral = Number(order?.payment?.referralFirstOrderDiscountTotalZl || 0);
   const promoCode = Math.max(0, Number(order?.payment?.promoDiscountZl || 0));
   const salePromo = getOrderSalePromoDiscountTotalZl(order);
-  const merryGift = getOrderMerryGiftDiscountZl(order);
-  return Number((cashback + referral + promoCode + salePromo + merryGift).toFixed(2));
+  return Number((cashback + referral + promoCode + salePromo).toFixed(2));
 }
 
 const KASA_PLN_SANITY_RATIO = 1.15;

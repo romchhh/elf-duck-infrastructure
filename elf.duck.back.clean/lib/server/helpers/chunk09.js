@@ -75,6 +75,7 @@ import {
   normalizeSheetModelName,
   toReportModelLabel,
 } from "../../googleSheets/normalize.js";
+import { isMerryOnePlusOneActive } from "../../promos/merryOnePlusOne.js";
 
 import * as __chunk00 from "./chunk00.js";
 import * as __chunk01 from "./chunk01.js";
@@ -339,9 +340,32 @@ export function isStatsSheetDisposable(row = {}) {
   return isStatsSheetDisposableByTitle(title);
 }
 
+const MERRY_PROMO_SHEET_PRODUCT_KEYS = new Set([
+  "merry-mi",
+  "merry-mi-blade-30k",
+]);
+
+function statsSheetOrderDate(order) {
+  return (
+    order?.crmSaleDate ||
+    order?.completedAt ||
+    order?.shippedAt ||
+    order?.createdAt ||
+    new Date()
+  );
+}
+
+/** 1+1=3: Merry Mi не в smart-сходинці — у таблиці завжди колонка «1 шт.» за каталожною ціною. */
+export function isStatsSheetMerryPromoFullPrice(order, row) {
+  const pk = String(row?.productKey || "").trim().toLowerCase();
+  if (!MERRY_PROMO_SHEET_PRODUCT_KEYS.has(pk)) return false;
+  return isMerryOnePlusOneActive(statsSheetOrderDate(order));
+}
+
 export function getStatsSheetOrderLiquidQty(order) {
   return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
     if (!isStatsSheetLiquid(row)) return sum;
+    if (isStatsSheetMerryPromoFullPrice(order, row)) return sum;
     return sum + getStatsSheetPaidQty(row);
   }, 0);
 }
@@ -356,6 +380,7 @@ export function getStatsSheetOrderPodQty(order) {
 export function getStatsSheetOrderDisposableQty(order) {
   return (Array.isArray(order?.items) ? order.items : []).reduce((sum, row) => {
     if (!isStatsSheetDisposable(row)) return sum;
+    if (isStatsSheetMerryPromoFullPrice(order, row)) return sum;
     return sum + getStatsSheetPaidQty(row);
   }, 0);
 }
@@ -368,6 +393,7 @@ export function getStatsSheetOrderCartridgeQty(order) {
 }
 
 export function getStatsSheetTierQty(order, row) {
+  if (isStatsSheetMerryPromoFullPrice(order, row)) return 1;
   if (isStatsSheetLiquid(row)) return getStatsSheetOrderLiquidQty(order);
   if (isStatsSheetCartridge(row)) return getStatsSheetOrderCartridgeQty(order);
   if (isStatsSheetPod(row)) return getStatsSheetOrderPodQty(order);
