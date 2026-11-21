@@ -14,6 +14,7 @@ import "../styles/GiveawayJoinModal.css";
 export const GIVEAWAY_JOIN_PROMPT_EVENT = "elfduck:giveaway-join-prompt";
 
 const PROMPTED_SESSION_KEY = "elfduck_giveaway_join_prompted_v1";
+const CLOSE_LOCK_MS = 3000;
 
 function wasPromptedThisSession() {
   try {
@@ -47,6 +48,10 @@ export default function GiveawayJoinModal() {
   const [state, setState] = useState(() => getGiveawayCache());
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [closeLocked, setCloseLocked] = useState(true);
+  const [lockLeft, setLockLeft] = useState(3);
+  const [lockProgress, setLockProgress] = useState(0);
+  const closeLockedRef = useRef(true);
   const dismissedRef = useRef(wasPromptedThisSession());
   const entryPromptDoneRef = useRef(wasPromptedThisSession());
   const lang = getCurrentLanguage();
@@ -134,7 +139,37 @@ export default function GiveawayJoinModal() {
     return () => window.removeEventListener(GIVEAWAY_JOIN_PROMPT_EVENT, onPrompt);
   }, [state]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    closeLockedRef.current = true;
+    setCloseLocked(true);
+    setLockLeft(3);
+    setLockProgress(0);
+
+    const started = performance.now();
+    let frame = 0;
+
+    const tick = (now) => {
+      const elapsed = now - started;
+      const progress = Math.min(1, elapsed / CLOSE_LOCK_MS);
+      setLockProgress(progress);
+      setLockLeft(Math.max(1, Math.ceil((CLOSE_LOCK_MS - elapsed) / 1000)));
+      if (progress >= 1) {
+        closeLockedRef.current = false;
+        setCloseLocked(false);
+        setLockLeft(0);
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+
   const close = useCallback(() => {
+    if (closeLockedRef.current) return;
     dismissedRef.current = true;
     entryPromptDoneRef.current = true;
     markPromptedThisSession();
@@ -176,13 +211,29 @@ export default function GiveawayJoinModal() {
         aria-label={t("Розыгрыш", "Losowanie")}
         onClick={(event) => event.stopPropagation()}
       >
+        <div className="giveawayJoinProgress" aria-hidden>
+          <span
+            className="giveawayJoinProgressBar"
+            style={{ transform: `scaleX(${lockProgress})` }}
+          />
+        </div>
         <button
           type="button"
-          className="giveawayJoinClose"
-          aria-label={t("Закрыть", "Zamknij")}
+          className={`giveawayJoinClose${closeLocked ? " is-locked" : ""}`}
+          style={{ "--lock-progress": lockProgress }}
+          aria-label={
+            closeLocked
+              ? t(
+                  `Можно закрыть через ${lockLeft} с`,
+                  `Można zamknąć za ${lockLeft} s`
+                )
+              : t("Закрыть", "Zamknij")
+          }
+          aria-disabled={closeLocked}
+          disabled={closeLocked}
           onClick={close}
         >
-          ×
+          {closeLocked ? lockLeft : "×"}
         </button>
         <img
           className="giveawayJoinArt"
