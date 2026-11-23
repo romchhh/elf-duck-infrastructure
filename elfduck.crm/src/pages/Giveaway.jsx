@@ -1,6 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronRight, RefreshCw, Users } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  LayoutDashboard,
+  RefreshCw,
+  Settings2,
+  Users,
+} from "lucide-react";
 import { crmFetchJson, CRM_API_URL } from "@/lib/crmFetch";
 import { compressImageForUpload } from "@/lib/compressImage";
 import TelegramMessageEditor from "@/components/TelegramMessageEditor";
@@ -106,8 +113,7 @@ export default function Giveaway() {
   const [notifyPhrase, setNotifyPhrase] = useState("");
   const [clearPhrase, setClearPhrase] = useState("");
   const [settingsDraft, setSettingsDraft] = useState(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [winnerMessageOpen, setWinnerMessageOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState("overview");
   const [messageDraft, setMessageDraft] = useState(null);
   const [messageLang, setMessageLang] = useState("ru");
   const [rulesLang, setRulesLang] = useState("ru");
@@ -504,7 +510,7 @@ export default function Giveaway() {
                 type="button"
                 onClick={() => {
                   setParticipantQuery("");
-                  setSettingsOpen(false);
+                  setDetailTab("overview");
                   setSelectedMonthKey(row.monthKey);
                 }}
                 className="group flex w-full items-center gap-4 rounded-2xl border border-border bg-[hsl(232_26%_6%)] p-4 text-left transition-colors hover:border-[hsl(255_100%_68%/0.35)] hover:bg-[hsl(255_100%_68%/0.06)]"
@@ -699,6 +705,362 @@ export default function Giveaway() {
         <p className="text-[12px] text-muted-2">Загрузка…</p>
       ) : (
         <>
+          <div className="inline-flex rounded-xl border border-border bg-[hsl(232_26%_6%)] p-1">
+            <button
+              type="button"
+              onClick={() => setDetailTab("overview")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors",
+                detailTab === "overview"
+                  ? "bg-[hsl(255_100%_68%/0.16)] text-[hsl(255_100%_78%)]"
+                  : "text-muted-2 hover:text-foreground"
+              )}
+            >
+              <LayoutDashboard className="h-3.5 w-3.5" />
+              Обзор
+            </button>
+            <button
+              type="button"
+              onClick={() => setDetailTab("settings")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors",
+                detailTab === "settings"
+                  ? "bg-[hsl(255_100%_68%/0.16)] text-[hsl(255_100%_78%)]"
+                  : "text-muted-2 hover:text-foreground"
+              )}
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+              Настройки
+            </button>
+          </div>
+
+          {detailTab === "settings" ? (
+            <div className="space-y-4">
+              {settingsDraft ? (
+                <div className="rounded-2xl surface-card space-y-4 p-4">
+                  <div>
+                    <h3 className="text-[14px] font-semibold">
+                      Призы и правила
+                    </h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
+                      Количество победителей и суммы призов по местам. Менять
+                      можно только пока месяц в статусе «Приём участников».
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-[12px]">
+                      <span className="mb-1 block text-muted-2">
+                        Количество победителей
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        disabled={
+                          !settingsEditable || settingsMutation.isPending
+                        }
+                        value={draftWinnerCount}
+                        onChange={(e) =>
+                          setSettingsDraft((prev) => ({
+                            ...(prev || {}),
+                            winnerCount: Number(e.target.value || 1),
+                          }))
+                        }
+                        className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[13px]"
+                      />
+                    </label>
+                    <div className="rounded-xl border border-border/60 px-3 py-2">
+                      <p className="text-[11px] text-muted-2">Призовой фонд</p>
+                      <p className="mt-1 text-[16px] font-semibold">
+                        {formatZl(draftPrizePool)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[12px] text-muted-2">
+                        Призы по местам (диапазон → сумма zł)
+                      </span>
+                      {settingsEditable ? (
+                        <button
+                          type="button"
+                          className="text-[11px] text-[hsl(255_100%_75%)] hover:underline"
+                          onClick={() =>
+                            setSettingsDraft((prev) => ({
+                              ...(prev || {}),
+                              prizeTiers: [
+                                ...(prev?.prizeTiers || []),
+                                {
+                                  fromPlace: draftWinnerCount,
+                                  toPlace: draftWinnerCount,
+                                  amountZl: 50,
+                                },
+                              ],
+                            }))
+                          }
+                        >
+                          + диапазон
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <div className="space-y-2">
+                      {draftTiers.map((tier, index) => (
+                        <div
+                          key={`tier-${index}`}
+                          className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2"
+                        >
+                          <input
+                            type="number"
+                            min={1}
+                            disabled={
+                              !settingsEditable || settingsMutation.isPending
+                            }
+                            value={tier.fromPlace}
+                            onChange={(e) => {
+                              const value = Number(e.target.value || 1);
+                              setSettingsDraft((prev) => {
+                                const next = [...(prev?.prizeTiers || [])];
+                                next[index] = {
+                                  ...next[index],
+                                  fromPlace: value,
+                                };
+                                return { ...(prev || {}), prizeTiers: next };
+                              });
+                            }}
+                            className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                            placeholder="с"
+                          />
+                          <input
+                            type="number"
+                            min={1}
+                            disabled={
+                              !settingsEditable || settingsMutation.isPending
+                            }
+                            value={tier.toPlace}
+                            onChange={(e) => {
+                              const value = Number(e.target.value || 1);
+                              setSettingsDraft((prev) => {
+                                const next = [...(prev?.prizeTiers || [])];
+                                next[index] = {
+                                  ...next[index],
+                                  toPlace: value,
+                                };
+                                return { ...(prev || {}), prizeTiers: next };
+                              });
+                            }}
+                            className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                            placeholder="по"
+                          />
+                          <input
+                            type="number"
+                            min={0}
+                            step="1"
+                            disabled={
+                              !settingsEditable || settingsMutation.isPending
+                            }
+                            value={tier.amountZl}
+                            onChange={(e) => {
+                              const value = Number(e.target.value || 0);
+                              setSettingsDraft((prev) => {
+                                const next = [...(prev?.prizeTiers || [])];
+                                next[index] = {
+                                  ...next[index],
+                                  amountZl: value,
+                                };
+                                return { ...(prev || {}), prizeTiers: next };
+                              });
+                            }}
+                            className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                            placeholder="zł"
+                          />
+                          {settingsEditable && draftTiers.length > 1 ? (
+                            <button
+                              type="button"
+                              className="rounded-lg border border-border px-2 text-[11px] text-muted-2 hover:text-foreground"
+                              onClick={() =>
+                                setSettingsDraft((prev) => ({
+                                  ...(prev || {}),
+                                  prizeTiers: (prev?.prizeTiers || []).filter(
+                                    (_row, i) => i !== index
+                                  ),
+                                }))
+                              }
+                            >
+                              ×
+                            </button>
+                          ) : (
+                            <span />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-border/60 p-3">
+                    <p className="mb-2 text-[12px] font-medium">
+                      Правила в магазине (опционально)
+                    </p>
+                    <TelegramMessageEditor
+                      lang={rulesLang}
+                      onLangChange={setRulesLang}
+                      values={{
+                        ru: settingsDraft.rulesRu || "",
+                        pl: settingsDraft.rulesPl || "",
+                      }}
+                      onChange={(next) =>
+                        setSettingsDraft((prev) => ({
+                          ...(prev || {}),
+                          rulesRu: next.ru,
+                          rulesPl: next.pl,
+                        }))
+                      }
+                      disabled={
+                        !settingsEditable || settingsMutation.isPending
+                      }
+                      rows={5}
+                      hint="Пусто = стандартные правила в магазине."
+                      showFormatToolbar={false}
+                      showPreview={false}
+                      formatHint="Заполните RU и PL — клиент увидит язык своего профиля."
+                    />
+                  </div>
+
+                  {settingsEditable ? (
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={settingsMutation.isPending}
+                        onClick={() => settingsMutation.mutate()}
+                        className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
+                      >
+                        {settingsMutation.isPending
+                          ? "…"
+                          : "Сохранить призы и правила"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={settingsMutation.isPending}
+                        onClick={() =>
+                          setSettingsDraft({
+                            winnerCount: 25,
+                            prizeTiers: DEFAULT_TIERS.map((row) => ({
+                              ...row,
+                            })),
+                            rulesRu: "",
+                            rulesPl: "",
+                          })
+                        }
+                        className="rounded-lg border border-border px-4 py-2 text-[12px] text-muted-foreground hover:text-foreground"
+                      >
+                        Сбросить к 25 / 2000 zł
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-2">
+                      После проведения розыгрыша призы и правила только для
+                      просмотра.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              {messageDraft ? (
+                <div className="rounded-2xl surface-card space-y-3 p-4">
+                  <div>
+                    <h3 className="text-[14px] font-semibold">
+                      Приветственное сообщение победителям
+                    </h3>
+                    <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
+                      Уже подставлен стандартный текст. Можно менять для этого
+                      месяца. {"{amount}"} → сумма приза. Фото отдельно для RU
+                      и PL.
+                    </p>
+                  </div>
+
+                  <TelegramMessageEditor
+                    lang={messageLang}
+                    onLangChange={setMessageLang}
+                    values={{
+                      ru: messageDraft.ru || "",
+                      pl: messageDraft.pl || "",
+                    }}
+                    onChange={(next) =>
+                      setMessageDraft((current) => ({
+                        ...(current || {}),
+                        ru: next.ru,
+                        pl: next.pl,
+                      }))
+                    }
+                    disabled={messageMutation.isPending}
+                    rows={5}
+                    hint="Сообщение победителям в Telegram после начисления приза."
+                    previewTransform={(text) =>
+                      String(text || "").replaceAll("{amount}", "150")
+                    }
+                    showPhoto
+                    photoUrl={
+                      (messageLang === "pl"
+                        ? messageDraft.photoUrlPl
+                        : messageDraft.photoUrlRu) || ""
+                    }
+                    defaultPhotoUrl={defaultWinnerBannerUrl(messageLang)}
+                    photoUploading={photoUploading}
+                    photoHint={`Своё фото для ${
+                      messageLang === "pl" ? "PL" : "RU"
+                    }. У другого языка — своё или стандартный баннер.`}
+                    onPhotoFile={uploadWinnerPhoto}
+                    onClearPhoto={() =>
+                      setMessageDraft((current) =>
+                        messageLang === "pl"
+                          ? {
+                              ...(current || {}),
+                              photoUrlPl: "",
+                              photoFileIdPl: "",
+                            }
+                          : {
+                              ...(current || {}),
+                              photoUrlRu: "",
+                              photoFileIdRu: "",
+                            }
+                      )
+                    }
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={messageMutation.isPending}
+                      onClick={() => messageMutation.mutate()}
+                      className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
+                    >
+                      {messageMutation.isPending
+                        ? "…"
+                        : "Сохранить сообщение"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={messageMutation.isPending}
+                      onClick={() =>
+                        setMessageDraft((current) => ({
+                          ...(current || {}),
+                          ru: DEFAULT_WINNER_MESSAGE_RU,
+                          pl: DEFAULT_WINNER_MESSAGE_PL,
+                        }))
+                      }
+                      className="rounded-lg border border-border px-4 py-2 text-[12px] text-muted-foreground hover:text-foreground"
+                    >
+                      Вернуть стандартный текст
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {detailTab === "overview" ? (
+            <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Metric label="Участников" value={data?.participantsCount ?? 0} />
             <Metric label="Записей (покупок)" value={data?.entriesCount ?? 0} />
@@ -712,225 +1074,6 @@ export default function Giveaway() {
               small
             />
           </div>
-
-          {settingsDraft ? (
-            <div className="rounded-2xl surface-card p-4 space-y-4">
-              <button
-                type="button"
-                className="flex w-full items-start justify-between gap-3 text-left"
-                onClick={() => setSettingsOpen((open) => !open)}
-                aria-expanded={settingsOpen}
-              >
-                <div>
-                  <h3 className="text-[14px] font-semibold">
-                    Настройки розыгрыша
-                  </h3>
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
-                    {settingsOpen
-                      ? "Количество победителей и суммы призов по местам. Менять можно только пока месяц в статусе «Приём участников»."
-                      : `Призовой фонд ${formatZl(draftPrizePool)} · победителей ${draftWinnerCount}`}
-                  </p>
-                </div>
-                <ChevronRight
-                  className={cn(
-                    "mt-0.5 h-4 w-4 shrink-0 text-muted-2 transition-transform",
-                    settingsOpen && "rotate-90"
-                  )}
-                />
-              </button>
-
-              {settingsOpen ? (
-              <>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-[12px]">
-                  <span className="mb-1 block text-muted-2">
-                    Количество победителей
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={200}
-                    disabled={!settingsEditable || settingsMutation.isPending}
-                    value={draftWinnerCount}
-                    onChange={(e) =>
-                      setSettingsDraft((prev) => ({
-                        ...(prev || {}),
-                        winnerCount: Number(e.target.value || 1),
-                      }))
-                    }
-                    className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[13px]"
-                  />
-                </label>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[12px] text-muted-2">
-                    Призы по местам (диапазон → сумма zł)
-                  </span>
-                  {settingsEditable ? (
-                    <button
-                      type="button"
-                      className="text-[11px] text-[hsl(255_100%_75%)] hover:underline"
-                      onClick={() =>
-                        setSettingsDraft((prev) => ({
-                          ...(prev || {}),
-                          prizeTiers: [
-                            ...(prev?.prizeTiers || []),
-                            {
-                              fromPlace: draftWinnerCount,
-                              toPlace: draftWinnerCount,
-                              amountZl: 50,
-                            },
-                          ],
-                        }))
-                      }
-                    >
-                      + диапазон
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="space-y-2">
-                  {draftTiers.map((tier, index) => (
-                    <div
-                      key={`tier-${index}`}
-                      className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2"
-                    >
-                      <input
-                        type="number"
-                        min={1}
-                        disabled={!settingsEditable || settingsMutation.isPending}
-                        value={tier.fromPlace}
-                        onChange={(e) => {
-                          const value = Number(e.target.value || 1);
-                          setSettingsDraft((prev) => {
-                            const next = [...(prev?.prizeTiers || [])];
-                            next[index] = { ...next[index], fromPlace: value };
-                            return { ...(prev || {}), prizeTiers: next };
-                          });
-                        }}
-                        className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
-                        placeholder="с"
-                      />
-                      <input
-                        type="number"
-                        min={1}
-                        disabled={!settingsEditable || settingsMutation.isPending}
-                        value={tier.toPlace}
-                        onChange={(e) => {
-                          const value = Number(e.target.value || 1);
-                          setSettingsDraft((prev) => {
-                            const next = [...(prev?.prizeTiers || [])];
-                            next[index] = { ...next[index], toPlace: value };
-                            return { ...(prev || {}), prizeTiers: next };
-                          });
-                        }}
-                        className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
-                        placeholder="по"
-                      />
-                      <input
-                        type="number"
-                        min={0}
-                        step="1"
-                        disabled={!settingsEditable || settingsMutation.isPending}
-                        value={tier.amountZl}
-                        onChange={(e) => {
-                          const value = Number(e.target.value || 0);
-                          setSettingsDraft((prev) => {
-                            const next = [...(prev?.prizeTiers || [])];
-                            next[index] = { ...next[index], amountZl: value };
-                            return { ...(prev || {}), prizeTiers: next };
-                          });
-                        }}
-                        className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
-                        placeholder="zł"
-                      />
-                      {settingsEditable && draftTiers.length > 1 ? (
-                        <button
-                          type="button"
-                          className="rounded-lg border border-border px-2 text-[11px] text-muted-2 hover:text-foreground"
-                          onClick={() =>
-                            setSettingsDraft((prev) => ({
-                              ...(prev || {}),
-                              prizeTiers: (prev?.prizeTiers || []).filter(
-                                (_row, i) => i !== index
-                              ),
-                            }))
-                          }
-                        >
-                          ×
-                        </button>
-                      ) : (
-                        <span />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-border/60 p-3">
-                <p className="mb-2 text-[12px] font-medium">
-                  Правила в магазине (опционально)
-                </p>
-                <TelegramMessageEditor
-                  lang={rulesLang}
-                  onLangChange={setRulesLang}
-                  values={{
-                    ru: settingsDraft.rulesRu || "",
-                    pl: settingsDraft.rulesPl || "",
-                  }}
-                  onChange={(next) =>
-                    setSettingsDraft((prev) => ({
-                      ...(prev || {}),
-                      rulesRu: next.ru,
-                      rulesPl: next.pl,
-                    }))
-                  }
-                  disabled={!settingsEditable || settingsMutation.isPending}
-                  rows={5}
-                  hint="Пусто = стандартные правила в магазине."
-                  showFormatToolbar={false}
-                  showPreview={false}
-                  formatHint="Заполните RU и PL — клиент увидит язык своего профиля."
-                />
-              </div>
-
-              {settingsEditable ? (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={settingsMutation.isPending}
-                    onClick={() => settingsMutation.mutate()}
-                    className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
-                  >
-                    {settingsMutation.isPending ? "…" : "Сохранить настройки"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={settingsMutation.isPending}
-                    onClick={() =>
-                      setSettingsDraft({
-                        winnerCount: 25,
-                        prizeTiers: DEFAULT_TIERS.map((row) => ({ ...row })),
-                        rulesRu: "",
-                        rulesPl: "",
-                      })
-                    }
-                    className="rounded-lg border border-border px-4 py-2 text-[12px] text-muted-foreground hover:text-foreground"
-                  >
-                    Сбросить к 25 / 2000 zł
-                  </button>
-                </div>
-              ) : (
-                <p className="text-[11px] text-muted-2">
-                  После проведения розыгрыша настройки только для просмотра.
-                </p>
-              )}
-              </>
-              ) : null}
-            </div>
-          ) : null}
 
           <div className="rounded-2xl surface-card p-4">
             <h3 className="text-[14px] font-semibold">
@@ -962,97 +1105,6 @@ export default function Giveaway() {
               />
             </div>
           </div>
-
-          {messageDraft ? (
-            <div className="rounded-2xl surface-card p-4 space-y-3">
-              <button
-                type="button"
-                className="flex w-full items-start justify-between gap-3 text-left"
-                onClick={() => setWinnerMessageOpen((open) => !open)}
-                aria-expanded={winnerMessageOpen}
-              >
-                <div>
-                  <h3 className="text-[14px] font-semibold">
-                    Настройки приветственного сообщения
-                  </h3>
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
-                    {winnerMessageOpen
-                      ? "{amount} подставится суммой приза. Форматирование как в рассылке. Фото отдельно для RU и PL."
-                      : `${
-                          messageDraft.photoUrlRu || messageDraft.photoUrlPl
-                            ? "Своё фото · "
-                            : "Стандартный баннер · "
-                        }${(messageDraft.ru || DEFAULT_WINNER_MESSAGE_RU).slice(0, 72)}…`}
-                  </p>
-                </div>
-                <ChevronRight
-                  className={cn(
-                    "mt-0.5 h-4 w-4 shrink-0 text-muted-2 transition-transform",
-                    winnerMessageOpen && "rotate-90"
-                  )}
-                />
-              </button>
-
-              {winnerMessageOpen ? (
-                <div className="space-y-3 border-t border-border/60 pt-3">
-                  <TelegramMessageEditor
-                    lang={messageLang}
-                    onLangChange={setMessageLang}
-                    values={{
-                      ru: messageDraft.ru || "",
-                      pl: messageDraft.pl || "",
-                    }}
-                    onChange={(next) =>
-                      setMessageDraft((current) => ({
-                        ...(current || {}),
-                        ru: next.ru,
-                        pl: next.pl,
-                      }))
-                    }
-                    disabled={messageMutation.isPending}
-                    rows={5}
-                    hint="Сообщение победителям в Telegram после начисления приза. {amount} → сумма приза."
-                    previewTransform={(text) =>
-                      String(text || "").replaceAll("{amount}", "150")
-                    }
-                    showPhoto
-                    photoUrl={
-                      (messageLang === "pl"
-                        ? messageDraft.photoUrlPl
-                        : messageDraft.photoUrlRu) || ""
-                    }
-                    defaultPhotoUrl={defaultWinnerBannerUrl(messageLang)}
-                    photoUploading={photoUploading}
-                    photoHint={`Своё фото для ${messageLang === "pl" ? "PL" : "RU"}. У другой языка — своё или стандартный баннер.`}
-                    onPhotoFile={uploadWinnerPhoto}
-                    onClearPhoto={() =>
-                      setMessageDraft((current) =>
-                        messageLang === "pl"
-                          ? {
-                              ...(current || {}),
-                              photoUrlPl: "",
-                              photoFileIdPl: "",
-                            }
-                          : {
-                              ...(current || {}),
-                              photoUrlRu: "",
-                              photoFileIdRu: "",
-                            }
-                      )
-                    }
-                  />
-                  <button
-                    type="button"
-                    disabled={messageMutation.isPending}
-                    onClick={() => messageMutation.mutate()}
-                    className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
-                  >
-                    {messageMutation.isPending ? "…" : "Сохранить сообщение"}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
 
           <div className="grid gap-4 lg:grid-cols-3">
             <ActionCard
@@ -1293,6 +1345,8 @@ export default function Giveaway() {
               </div>
             )}
           </div>
+            </>
+          ) : null}
         </>
       )}
     </div>
