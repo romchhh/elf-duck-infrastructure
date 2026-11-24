@@ -5,6 +5,7 @@ import CustomerReview from "../../models/CustomerReview.js";
 import { getCompletedOrderMatch } from "../crm/sales.js";
 import { normalizeAppLanguage } from "../crm/userLanguage.js";
 import { getActiveGiveawayMonthKey } from "../giveaway/schedule.js";
+import { getWebAppBaseUrl } from "../crm/pushMessageFormat.js";
 import {
   getClientDeliveryBots,
   getShopBotByIndex,
@@ -51,6 +52,73 @@ function resolveUserLanguage(user) {
 export function ratingLabelForGiveawayReview(language, rating) {
   const lang = language === "pl" ? "pl" : "ru";
   return String(RATING_LABELS[lang]?.[rating] || RATING_LABELS.ru[rating] || "");
+}
+
+export function buildGiveawayReviewWebAppUrl() {
+  const base = getWebAppBaseUrl();
+  if (!base) return "";
+  return `${base}/giveaway-review`;
+}
+
+export async function getGiveawayReviewContext(telegramId, monthKey = "") {
+  const id = String(telegramId || "").trim();
+  if (!id || id.startsWith("guest_")) {
+    return { ok: false, reason: "NO_TELEGRAM" };
+  }
+
+  const key =
+    String(monthKey || "").trim() || getActiveGiveawayMonthKey() || "";
+  if (!/^\d{4}-\d{2}$/.test(key)) {
+    return { ok: false, reason: "MONTH_KEY_REQUIRED" };
+  }
+
+  const user = await User.findOne({ telegramId: id })
+    .select({ language: 1, username: 1, firstName: 1 })
+    .lean();
+  if (!user) {
+    return { ok: false, reason: "USER_NOT_FOUND" };
+  }
+
+  const language = resolveUserLanguage(user);
+  const existing = await CustomerReview.findOne({
+    telegramId: id,
+    source: GIVEAWAY_REVIEW_SOURCE,
+    orderNo: `giveaway:${key}`,
+  })
+    .select({ _id: 1, createdAt: 1 })
+    .lean();
+
+  const ratings = RATING_KEYS.map((ratingKey) => ({
+    key: ratingKey,
+    label: ratingLabelForGiveawayReview(language, ratingKey),
+    emoji: ratingKey === "great" ? "😍" : ratingKey === "good" ? "😐" : "😞",
+    needsDetails: ratingKey !== "great",
+  }));
+
+  const [y, m] = key.split("-");
+  const monthDate = new Date(Number(y), Number(m) - 1, 1);
+  const monthLabel = Number.isNaN(monthDate.getTime())
+    ? key
+    : monthDate.toLocaleDateString(language === "pl" ? "pl-PL" : "ru-RU", {
+        month: "long",
+        year: "numeric",
+      });
+
+  return {
+    ok: true,
+    eligible: true,
+    canSubmit: !existing,
+    completed: Boolean(existing),
+    rewardZl: 0,
+    language,
+    monthKey: key,
+    monthLabel,
+    prizePoolZl: 2000,
+    winnerCount: 25,
+    ratings,
+    minDetailsChars: MIN_DETAILS_CHARS,
+    completedAt: existing?.createdAt || null,
+  };
 }
 
 export function validateGiveawayReviewInput({ rating, details = "" } = {}) {

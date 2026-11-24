@@ -3,9 +3,11 @@ import {
   ratingLabelForGiveawayReview,
   validateGiveawayReviewInput,
   GIVEAWAY_REVIEW_SOURCE,
+  buildGiveawayReviewWebAppUrl,
 } from "./giveawayReview.js";
 
 assert.equal(GIVEAWAY_REVIEW_SOURCE, "giveaway_promo");
+assert.equal(typeof buildGiveawayReviewWebAppUrl(), "string");
 
 assert.equal(validateGiveawayReviewInput({ rating: "great" }).ok, true);
 assert.equal(validateGiveawayReviewInput({ rating: "GREAT" }).ratingKey, "great");

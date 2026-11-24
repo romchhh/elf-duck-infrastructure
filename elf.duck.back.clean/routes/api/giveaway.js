@@ -5,7 +5,10 @@ import {
   getActiveGiveawayMonthKey,
   joinGiveaway,
 } from "../../lib/giveaway/service.js";
-import { submitGiveawayPromoReview } from "../../lib/support/giveawayReview.js";
+import {
+  getGiveawayReviewContext,
+  submitGiveawayPromoReview,
+} from "../../lib/support/giveawayReview.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -45,6 +48,28 @@ export function registerRoutes(app) {
       }
       console.error("POST /giveaway/participate error:", error);
       return res.status(500).json({ ok: false, error: "GIVEAWAY_JOIN_FAILED" });
+    }
+  });
+
+  app.get("/giveaway/review/context", async (req, res) => {
+    try {
+      const telegramId = requireTrustedTelegramId(req, res);
+      if (!telegramId) return;
+
+      const result = await getGiveawayReviewContext(
+        telegramId,
+        String(req.query?.monthKey || "").trim() || getActiveGiveawayMonthKey()
+      );
+      if (!result.ok) {
+        const status = result.reason === "NO_TELEGRAM" ? 401 : 400;
+        return res.status(status).json({ ok: false, error: result.reason });
+      }
+      return res.json(result);
+    } catch (error) {
+      console.error("GET /giveaway/review/context error:", error);
+      return res
+        .status(500)
+        .json({ ok: false, error: "GIVEAWAY_REVIEW_CONTEXT_FAILED" });
     }
   });
 
