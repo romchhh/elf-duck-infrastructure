@@ -134,3 +134,24 @@ export async function participateGiveaway() {
   }
   return data;
 }
+
+/** Відгук після участі в розіграші → CRM + Telegram-група відгуків. */
+export async function submitGiveawayReview({
+  rating,
+  details = "",
+  monthKey = "",
+} = {}) {
+  const response = await fetch(`${API_URL}/giveaway/review`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...telegramHeaders(),
+    },
+    body: JSON.stringify({
+      rating,
+      details,
+      monthKey: monthKey || cache.data?.monthKey || "",
+    }),
+  });
+  return response.json();
+}

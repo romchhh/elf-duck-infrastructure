@@ -57,6 +57,14 @@ function formatDateOnly(date) {
   return `${year}-${month}-${day}`;
 }
 
+function formatReviewSource(source) {
+  const key = String(source || '').trim();
+  if (key === 'giveaway_promo') return 'Розыгрыш';
+  if (key === 'first_order_service_review') return 'После 1-го заказа';
+  if (key === 'first_order_service_review_test') return 'Тест · 1-й заказ';
+  return key || '';
+}
+
 function ClientCell({ row }) {
   const name = [row?.firstName, row?.lastName].filter(Boolean).join(' ').trim();
   const username = String(row?.username || '').trim();
@@ -202,7 +210,12 @@ export default function Reviews() {
                   )}
                   {row.deliveryLabel ? <span>{row.deliveryLabel}</span> : null}
                   {row.pointTitle ? <span>{row.pointTitle}</span> : null}
-                  {row.source ? <span>Источник: {row.source}</span> : null}
+                  {row.source ? (
+                    <span>Источник: {formatReviewSource(row.source)}</span>
+                  ) : null}
+                  {row.ratingLabel ? (
+                    <span className="text-foreground">{row.ratingLabel}</span>
+                  ) : null}
                 </div>
 
                 <p

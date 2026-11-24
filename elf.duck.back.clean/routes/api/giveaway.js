@@ -5,6 +5,7 @@ import {
   getActiveGiveawayMonthKey,
   joinGiveaway,
 } from "../../lib/giveaway/service.js";
+import { submitGiveawayPromoReview } from "../../lib/support/giveawayReview.js";
 
 export function registerRoutes(app) {
   bindApiGlobals();
@@ -44,6 +45,40 @@ export function registerRoutes(app) {
       }
       console.error("POST /giveaway/participate error:", error);
       return res.status(500).json({ ok: false, error: "GIVEAWAY_JOIN_FAILED" });
+    }
+  });
+
+  /** Відгук після участі в розіграші → CRM + група відгуків. */
+  app.post("/giveaway/review", async (req, res) => {
+    try {
+      const telegramId = requireTrustedTelegramId(req, res);
+      if (!telegramId) return;
+
+      const result = await submitGiveawayPromoReview({
+        telegramId,
+        rating: req.body?.rating,
+        details: req.body?.details,
+        monthKey:
+          String(req.body?.monthKey || "").trim() ||
+          getActiveGiveawayMonthKey(),
+      });
+
+      if (!result.ok) {
+        const status =
+          result.reason === "ALREADY_SUBMITTED"
+            ? 409
+            : result.reason === "DETAILS_TOO_SHORT" ||
+                result.reason === "INVALID_RATING" ||
+                result.reason === "MONTH_KEY_REQUIRED"
+              ? 400
+              : 400;
+        return res.status(status).json({ ok: false, error: result.reason });
+      }
+
+      return res.json(result);
+    } catch (error) {
+      console.error("POST /giveaway/review error:", error);
+      return res.status(500).json({ ok: false, error: "GIVEAWAY_REVIEW_FAILED" });
     }
   });
 }

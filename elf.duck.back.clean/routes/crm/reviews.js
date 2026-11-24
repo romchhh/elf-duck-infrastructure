@@ -98,6 +98,8 @@ router.get("/reviews", async (req, res) => {
         pointAddress: String(row.pointAddress || ""),
         deliveryLabel: String(row.deliveryLabel || ""),
         source: String(row.source || ""),
+        rating: String(row.rating || ""),
+        ratingLabel: String(row.ratingLabel || ""),
         imageUrls: Array.isArray(row.imageUrls) ? row.imageUrls : [],
         imageCount: Number(row.imageCount || 0),
         telegramSent: Boolean(row.telegramSent),

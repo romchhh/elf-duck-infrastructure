@@ -118,3 +118,109 @@
   font-size: 28px;
   line-height: 1;
 }
+
+.giveawayReviewPanel {
+  position: relative;
+  padding: 18px 14px 8px;
+}
+
+.giveawayReviewBadge {
+  margin: 0 0 10px;
+  color: #ffe14a;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.giveawayReviewTitle {
+  margin: 0;
+  color: #fff;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.giveawayReviewHint {
+  margin: 8px 0 16px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.giveawayReviewRatings {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.giveawayReviewRating {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-family: Unbounded-Medium, Muller, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.giveawayReviewRating.is-active {
+  border-color: rgba(255, 196, 0, 0.7);
+  background: rgba(255, 196, 0, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255, 196, 0, 0.25);
+}
+
+.giveawayReviewRatingEmoji {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.giveawayReviewDetails {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.giveawayReviewDetails::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.giveawayReviewError {
+  margin: 0 0 10px;
+  color: #ff8f8f;
+  font-size: 12px;
+}
+
+.giveawayReviewSkip {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.giveawayReviewSkip:disabled {
+  opacity: 0.5;
+}
