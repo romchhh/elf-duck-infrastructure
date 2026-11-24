@@ -1841,6 +1841,16 @@ app.post("/orders/:id/arrived-at-pickup", async (req, res) => {
       });
     }
 
+    const { isPickupArrivalNotifyStale } = await import(
+      "../../lib/server/helpers/orderStatsDay.js"
+    );
+    if (isPickupArrivalNotifyStale(order)) {
+      return res.status(409).json({
+        ok: false,
+        error: "ARRIVAL_NOTIFY_ORDER_TOO_OLD",
+      });
+    }
+
     const notifyResult = await notifyManagerClientArrived(order);
 
     if (!notifyResult?.ok) {

@@ -22,7 +22,11 @@ import PickupPoint from "../../../models/PickupPoint.js";
 import Cart from "../../../models/Cart.js";
 import Order from "../../../models/Order.js";
 import BroadcastCampaign from "../../../models/BroadcastCampaign.js";
-import { getOrderStatsFulfillmentKind } from "./orderStatsDay.js";
+import {
+  getOrderStatsFulfillmentKind,
+  getWarsawDayKey,
+  isPickupArrivalNotifyStale,
+} from "./orderStatsDay.js";
 import { isOrderEligibleForEarnedCashback } from "../../cashback/eligibility.js";
 import crmRouter from "../../../routes/crm.js";
 
@@ -1475,7 +1479,23 @@ export async function changePickupOrderStatusByManager(
 
   fresh.status = "completed";
 
-  fresh.completedAt = new Date();
+  const priorPayment = fresh.payment?.toObject
+    ? fresh.payment.toObject()
+    : fresh.payment || {};
+  const priorPaymentStatus = String(priorPayment?.status || "")
+    .trim()
+    .toLowerCase();
+  const priorPaidAt = priorPayment?.paidAt
+    ? new Date(priorPayment.paidAt)
+    : null;
+  const stalePickupComplete = isPickupArrivalNotifyStale(fresh);
+  const now = new Date();
+
+  // Months-old assembled → «выполнен» must not invent today's stats day.
+  fresh.completedAt =
+    stalePickupComplete && fresh.stockCommittedAt
+      ? new Date(fresh.stockCommittedAt)
+      : now;
 
   if (
     getOrderStatsFulfillmentKind(fresh) === "courier" &&
@@ -1499,15 +1519,18 @@ export async function changePickupOrderStatusByManager(
     );
 
   fresh.payment = {
-    ...(fresh.payment?.toObject
-      ? fresh.payment.toObject()
-      : fresh.payment || {}),
+    ...priorPayment,
 
     status: "paid",
 
-    paidAt: new Date(),
+    paidAt:
+      priorPaymentStatus === "paid" && priorPaidAt
+        ? priorPaidAt
+        : stalePickupComplete && fresh.stockCommittedAt
+          ? new Date(fresh.stockCommittedAt)
+          : now,
 
-    checkedAt: new Date(),
+    checkedAt: now,
 
     checkedByTelegramId:
       String(
@@ -1517,63 +1540,82 @@ export async function changePickupOrderStatusByManager(
 
   await fresh.save();
 
-  await applyOrderCashback(fresh);
+  const skipTodaySideEffects =
+    stalePickupComplete ||
+    getWarsawDayKey(fresh.completedAt) !== getWarsawDayKey(now);
+
+  if (!skipTodaySideEffects) {
+    await applyOrderCashback(fresh);
+  }
 
   const completedOrder = await Order.findById(fresh._id);
 
-  try {
-    const { tryAddGiveawayEntryForOrder } = await import(
-      "../../giveaway/service.js"
+  if (!skipTodaySideEffects) {
+    try {
+      const { tryAddGiveawayEntryForOrder } = await import(
+        "../../giveaway/service.js"
+      );
+      await tryAddGiveawayEntryForOrder(completedOrder);
+    } catch (giveawayErr) {
+      console.error("giveaway entry (pickup complete) error:", giveawayErr);
+    }
+
+    try {
+      const { ensureGoogleSheetAssortmentForFulfilledOrder } = await import(
+        "../../googleSheets/orderSync.js"
+      );
+      ensureGoogleSheetAssortmentForFulfilledOrder(completedOrder);
+
+      const { ensureGoogleSheetReportForFulfilledOrder } = await import(
+        "../../googleSheets/reportOrderSync.js"
+      );
+      ensureGoogleSheetReportForFulfilledOrder(completedOrder);
+    } catch (e) {
+      console.error(
+        "changePickupOrderStatusByManager googleSheets hook error:",
+        e
+      );
+    }
+  } else {
+    console.warn(
+      "[pickup-complete] skipped today stats/sheets for stale order",
+      {
+        orderNo: String(completedOrder?.orderNo || ""),
+        completedAt: completedOrder?.completedAt,
+        stockCommittedAt: completedOrder?.stockCommittedAt,
+      }
     );
-    await tryAddGiveawayEntryForOrder(completedOrder);
-  } catch (giveawayErr) {
-    console.error("giveaway entry (pickup complete) error:", giveawayErr);
   }
 
-  try {
-    const { ensureGoogleSheetAssortmentForFulfilledOrder } = await import(
-      "../../googleSheets/orderSync.js"
-    );
-    ensureGoogleSheetAssortmentForFulfilledOrder(completedOrder);
+  if (!skipTodaySideEffects) {
+    try {
+      const { commitOrderPromoUse } = await import("../../crm/promoOrderUse.js");
+      await commitOrderPromoUse(completedOrder);
+    } catch (promoErr) {
+      console.error("complete commitOrderPromoUse error:", promoErr);
+    }
 
-    const { ensureGoogleSheetReportForFulfilledOrder } = await import(
-      "../../googleSheets/reportOrderSync.js"
-    );
-    ensureGoogleSheetReportForFulfilledOrder(completedOrder);
-  } catch (e) {
-    console.error(
-      "changePickupOrderStatusByManager googleSheets hook error:",
-      e
-    );
-  }
+    try {
+      const { maybeTriggerFirstPurchaseAutomation } = await import(
+        "../../crm/pushAutomations.js"
+      );
+      maybeTriggerFirstPurchaseAutomation(completedOrder).catch((err) => {
+        console.error("first purchase automation hook error:", err);
+      });
+    } catch (e) {
+      console.error("first purchase automation import error:", e);
+    }
 
-  try {
-    const { commitOrderPromoUse } = await import("../../crm/promoOrderUse.js");
-    await commitOrderPromoUse(completedOrder);
-  } catch (promoErr) {
-    console.error("complete commitOrderPromoUse error:", promoErr);
-  }
-
-  try {
-    const { maybeTriggerFirstPurchaseAutomation } = await import(
-      "../../crm/pushAutomations.js"
-    );
-    maybeTriggerFirstPurchaseAutomation(completedOrder).catch((err) => {
-      console.error("first purchase automation hook error:", err);
-    });
-  } catch (e) {
-    console.error("first purchase automation import error:", e);
-  }
-
-  try {
-    const { maybeScheduleFirstOrderServiceReview } = await import(
-      "../../support/serviceReviewInvite.js"
-    );
-    maybeScheduleFirstOrderServiceReview(completedOrder).catch((err) => {
-      console.error("first order service review hook error:", err);
-    });
-  } catch (e) {
-    console.error("first order service review import error:", e);
+    try {
+      const { maybeScheduleFirstOrderServiceReview } = await import(
+        "../../support/serviceReviewInvite.js"
+      );
+      maybeScheduleFirstOrderServiceReview(completedOrder).catch((err) => {
+        console.error("first order service review hook error:", err);
+      });
+    } catch (e) {
+      console.error("first order service review import error:", e);
+    }
   }
 
   return completedOrder;

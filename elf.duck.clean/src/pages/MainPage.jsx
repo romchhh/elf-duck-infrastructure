@@ -1194,12 +1194,25 @@ const MainPage = () => {
 
       .includes("odbiór");
 
-  // «Я на месте» — тільки після підтвердження менеджером (status assembled)
+  // «Я на месте» — тільки після підтвердження менеджером (status assembled),
+  // і не для застарілих assembled (інакше потрапляють у статистику дня).
+  const ARRIVAL_NOTIFY_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+  const activeOrderArrivalAnchor =
+    activeOrder?.stockCommittedAt || activeOrder?.createdAt || null;
+  const activeOrderArrivalIsStale =
+    activeOrderArrivalAnchor &&
+    Number.isFinite(
+      Date.now() - new Date(activeOrderArrivalAnchor).getTime()
+    ) &&
+    Date.now() - new Date(activeOrderArrivalAnchor).getTime() >
+      ARRIVAL_NOTIFY_MAX_AGE_MS;
+
   const showActiveOrderArrivalBlock =
     activeOrderIsPickup &&
     String(activeOrder?.status || "")
       .trim()
-      .toLowerCase() === "assembled";
+      .toLowerCase() === "assembled" &&
+    !activeOrderArrivalIsStale;
 
   const activeOrderArrivalCooldownLeftMs =
 

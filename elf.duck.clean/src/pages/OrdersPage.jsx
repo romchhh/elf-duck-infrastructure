@@ -1432,6 +1432,8 @@ useEffect(() => {
         return true;
     };
 
+    const ARRIVAL_NOTIFY_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+
     const canShowArrivalNotify = (order) => {
         const status = String(order?.status || "").toLowerCase();
         const deliveryType = String(
@@ -1445,7 +1447,18 @@ useEffect(() => {
 
         // Кнопка «Я на месте» — тільки після підтвердження менеджером
         // (mgr_pay_paid → status assembled).
-        return status === "assembled";
+        if (status !== "assembled") return false;
+
+        const anchor =
+            order?.stockCommittedAt || order?.createdAt || null;
+        if (anchor) {
+            const ageMs = Date.now() - new Date(anchor).getTime();
+            if (Number.isFinite(ageMs) && ageMs > ARRIVAL_NOTIFY_MAX_AGE_MS) {
+                return false;
+            }
+        }
+
+        return true;
     };
 
     const handleCancelOrder = async (order) => {

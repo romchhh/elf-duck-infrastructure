@@ -114,13 +114,18 @@ async function syncOrderItems(order, { direction, dryRun = false }) {
       const revQty = -Number(step.deltaQty || 0);
       if (!revQty) continue;
 
+      const itemRow =
+        (order?.items || []).find(
+          (row) =>
+            String(row?.productKey || "").trim().toLowerCase() ===
+            String(step.productKey || "").trim().toLowerCase()
+        ) || { productKey: step.productKey };
+
       const assortmentResult = await applyAssortmentDelta({
         spreadsheetId,
         pointLabel,
         dayKey,
-        modelName: getAssortmentSheetModelName({
-          productKey: step.productKey,
-        }),
+        modelName: getAssortmentSheetModelName(itemRow),
         productKey: step.productKey,
         flavorLabel: step.matchedFlavorLabel,
         deltaQty: revQty,

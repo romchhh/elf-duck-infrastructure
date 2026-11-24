@@ -2,6 +2,26 @@
 
 export const STATS_ORDERS_LOOKBACK_MS = 10 * 24 * 60 * 60 * 1000;
 
+/** «Я на месте» — не пізніше ніж через 3 доби після збірки замовлення. */
+export const PICKUP_ARRIVAL_NOTIFY_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
+
+export function getPickupOrderFulfillmentAnchor(order) {
+  if (!order) return null;
+  return order.stockCommittedAt || order.createdAt || null;
+}
+
+/** Assembled pickup older than max age — arrival notify + today-stats complete blocked. */
+export function isPickupArrivalNotifyStale(
+  order,
+  now = new Date(),
+  maxAgeMs = PICKUP_ARRIVAL_NOTIFY_MAX_AGE_MS
+) {
+  const anchor = getPickupOrderFulfillmentAnchor(order);
+  if (!anchor) return false;
+  const ageMs = new Date(now).getTime() - new Date(anchor).getTime();
+  return Number.isFinite(ageMs) && ageMs > maxAgeMs;
+}
+
 export function getWarsawDayKey(dateLike = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Warsaw",
