@@ -104,6 +104,126 @@ function tiersPrizeSum(winnerCount, tiers) {
   return Number(total.toFixed(2));
 }
 
+function tierPlaceCount(tier) {
+  const from = Math.round(Number(tier?.fromPlace || 0));
+  const to = Math.round(Number(tier?.toPlace || from));
+  if (from < 1 || to < from) return 0;
+  return to - from + 1;
+}
+
+function tierSubtotalZl(tier) {
+  return Number((tierPlaceCount(tier) * Number(tier?.amountZl || 0)).toFixed(2));
+}
+
+function analyzeGiveawayTiers(winnerCount, tiers) {
+  const totalWinners = Math.max(
+    1,
+    Math.min(200, Math.round(Number(winnerCount || 1)))
+  );
+  const rows = Array.isArray(tiers) ? tiers : [];
+  const placeToTierIndex = new Map();
+  const warnings = [];
+
+  rows.forEach((tier, index) => {
+    const from = Math.round(Number(tier?.fromPlace || 0));
+    const to = Math.round(Number(tier?.toPlace || 0));
+    if (from < 1 || to < from) {
+      warnings.push({
+        id: `bad-range-${index}`,
+        text: `Строка ${index + 1}: «с места» должно быть не больше «по место».`,
+      });
+      return;
+    }
+    if (to > totalWinners) {
+      warnings.push({
+        id: `over-${index}`,
+        text: `Строка ${index + 1}: указаны места до ${to}, а победителей только ${totalWinners}.`,
+      });
+    }
+    const top = Math.min(to, totalWinners);
+    for (let p = from; p <= top; p += 1) {
+      if (placeToTierIndex.has(p)) {
+        warnings.push({
+          id: `dup-${p}-${index}`,
+          text: `Место ${p} попадает в несколько строк — оставьте одну.`,
+        });
+      } else {
+        placeToTierIndex.set(p, index);
+      }
+    }
+  });
+
+  const missing = [];
+  for (let p = 1; p <= totalWinners; p += 1) {
+    if (!placeToTierIndex.has(p)) missing.push(p);
+  }
+  if (missing.length) {
+    const preview =
+      missing.length <= 6
+        ? missing.join(", ")
+        : `${missing.slice(0, 4).join(", ")}… (всего ${missing.length})`;
+    warnings.push({
+      id: "missing",
+      text: `Для мест ${preview} не задана сумма приза.`,
+    });
+  }
+
+  const breakdown = rows.map((tier, index) => ({
+    index,
+    from: Math.round(Number(tier?.fromPlace || 0)),
+    to: Math.round(Number(tier?.toPlace || 0)),
+    amountZl: Number(tier?.amountZl || 0),
+    people: tierPlaceCount(tier),
+    subtotal: tierSubtotalZl(tier),
+  }));
+
+  const pool = tiersPrizeSum(totalWinners, rows);
+  const uniqueWarnings = warnings.filter(
+    (w, i, arr) => arr.findIndex((x) => x.text === w.text) === i
+  );
+
+  return {
+    totalWinners,
+    pool,
+    breakdown,
+    warnings: uniqueWarnings,
+    ok: uniqueWarnings.length === 0 && missing.length === 0,
+    missingPlaces: missing,
+  };
+}
+
+function suggestNextPrizeGroup(winnerCount, tiers) {
+  const analysis = analyzeGiveawayTiers(winnerCount, tiers);
+  const missing = analysis.missingPlaces || [];
+  if (missing.length) {
+    const from = missing[0];
+    let to = from;
+    while (missing.includes(to + 1) && to < analysis.totalWinners) to += 1;
+    const ref =
+      (tiers || []).find((t) => Number(t?.amountZl) > 0) ||
+      DEFAULT_TIERS[DEFAULT_TIERS.length - 1];
+    return {
+      fromPlace: from,
+      toPlace: to,
+      amountZl: Number(ref?.amountZl || 50),
+    };
+  }
+  const count = analysis.totalWinners;
+  const maxTo = (tiers || []).reduce(
+    (m, t) => Math.max(m, Number(t?.toPlace || 0)),
+    0
+  );
+  const from = Math.min(count, maxTo + 1);
+  return { fromPlace: from, toPlace: count, amountZl: 50 };
+}
+
+function formatPlaceRange(from, to) {
+  const a = Math.round(Number(from || 0));
+  const b = Math.round(Number(to || a));
+  if (a === b) return `${a}-е место`;
+  return `места ${a}–${b}`;
+}
+
 export default function Giveaway() {
   const queryClient = useQueryClient();
   const [selectedMonthKey, setSelectedMonthKey] = useState(null);
@@ -441,6 +561,10 @@ export default function Giveaway() {
   const draftWinnerCount = Number(settingsDraft?.winnerCount || 25);
   const draftTiers = settingsDraft?.prizeTiers || DEFAULT_TIERS;
   const draftPrizePool = tiersPrizeSum(draftWinnerCount, draftTiers);
+  const tierAnalysis = useMemo(
+    () => analyzeGiveawayTiers(draftWinnerCount, draftTiers),
+    [draftWinnerCount, draftTiers]
+  );
 
   const filteredParticipants = useMemo(() => {
     const q = participantQuery.trim().toLowerCase();
@@ -743,15 +867,44 @@ export default function Giveaway() {
                       Призы и правила
                     </h3>
                     <p className="mt-1 text-[11px] leading-relaxed text-muted-2">
-                      Количество победителей и суммы призов по местам. Менять
-                      можно только пока месяц в статусе «Приём участников».
+                      Настройка только пока статус месяца —{" "}
+                      <strong className="font-medium text-foreground/90">
+                        «Приём участников»
+                      </strong>
+                      . После розыгрыша таблица только для просмотра.
                     </p>
+                  </div>
+
+                  <div className="rounded-xl border border-[hsl(214_84%_60%/0.25)] bg-[hsl(214_84%_60%/0.08)] p-3 text-[11px] leading-relaxed text-muted-foreground">
+                    <p className="font-medium text-foreground/90">
+                      Как читать таблицу
+                    </p>
+                    <ul className="mt-2 list-disc space-y-1 pl-4">
+                      <li>
+                        В конце месяца случайно выбирается{" "}
+                        <strong>N победителей</strong> (места 1, 2, 3… N).
+                      </li>
+                      <li>
+                        В каждой строке —{" "}
+                        <strong>диапазон мест</strong> и{" "}
+                        <strong>сколько zł получит один человек</strong> на
+                        своём месте.
+                      </li>
+                      <li>
+                        Пример: места 1–5 по 150 zł → 5 человек × 150 = 750 zł.
+                      </li>
+                      <li>
+                        <strong>Итого к выплате</strong> считается автоматически
+                        (сумма по всем местам 1…N). Отдельно «бюджет 2000» не
+                        задаётся — только строки таблицы.
+                      </li>
+                    </ul>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="block text-[12px]">
                       <span className="mb-1 block text-muted-2">
-                        Количество победителей
+                        Сколько будет победителей (мест 1…N)
                       </span>
                       <input
                         type="number"
@@ -761,142 +914,216 @@ export default function Giveaway() {
                           !settingsEditable || settingsMutation.isPending
                         }
                         value={draftWinnerCount}
-                        onChange={(e) =>
-                          setSettingsDraft((prev) => ({
-                            ...(prev || {}),
-                            winnerCount: Number(e.target.value || 1),
-                          }))
-                        }
+                        onChange={(e) => {
+                          const nextCount = Math.min(
+                            200,
+                            Math.max(1, Number(e.target.value || 1))
+                          );
+                          setSettingsDraft((prev) => {
+                            const prevCount = Number(prev?.winnerCount || 25);
+                            const tiers = [...(prev?.prizeTiers || [])];
+                            if (tiers.length && nextCount > prevCount) {
+                              const last = tiers[tiers.length - 1];
+                              if (Number(last.toPlace) === prevCount) {
+                                tiers[tiers.length - 1] = {
+                                  ...last,
+                                  toPlace: nextCount,
+                                };
+                              }
+                            }
+                            return {
+                              ...(prev || {}),
+                              winnerCount: nextCount,
+                              prizeTiers: tiers,
+                            };
+                          });
+                        }}
                         className="w-full rounded-lg border border-border bg-transparent px-3 py-2 text-[13px]"
                       />
                     </label>
                     <div className="rounded-xl border border-border/60 px-3 py-2">
-                      <p className="text-[11px] text-muted-2">Призовой фонд</p>
+                      <p className="text-[11px] text-muted-2">
+                        Итого к выплате ({draftWinnerCount} победителей)
+                      </p>
                       <p className="mt-1 text-[16px] font-semibold">
                         {formatZl(draftPrizePool)}
                       </p>
+                      {tierAnalysis.ok ? (
+                        <p className="mt-1 text-[10px] text-emerald-400/90">
+                          Все места 1–{draftWinnerCount} покрыты
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[10px] text-amber-300/90">
+                          Есть пропуски или пересечения — см. ниже
+                        </p>
+                      )}
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[12px] text-muted-2">
-                        Призы по местам (диапазон → сумма zł)
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[12px] font-medium text-foreground/90">
+                        Сумма приза по группам мест
                       </span>
                       {settingsEditable ? (
                         <button
                           type="button"
-                          className="text-[11px] text-[hsl(255_100%_75%)] hover:underline"
+                          className="rounded-lg border border-border px-2.5 py-1 text-[11px] text-[hsl(255_100%_75%)] hover:bg-[hsl(255_100%_68%/0.1)]"
                           onClick={() =>
                             setSettingsDraft((prev) => ({
                               ...(prev || {}),
                               prizeTiers: [
                                 ...(prev?.prizeTiers || []),
-                                {
-                                  fromPlace: draftWinnerCount,
-                                  toPlace: draftWinnerCount,
-                                  amountZl: 50,
-                                },
+                                suggestNextPrizeGroup(
+                                  prev?.winnerCount,
+                                  prev?.prizeTiers
+                                ),
                               ],
                             }))
                           }
                         >
-                          + диапазон
+                          + добавить группу мест
                         </button>
                       ) : null}
                     </div>
 
-                    <div className="space-y-2">
-                      {draftTiers.map((tier, index) => (
-                        <div
-                          key={`tier-${index}`}
-                          className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2"
-                        >
-                          <input
-                            type="number"
-                            min={1}
-                            disabled={
-                              !settingsEditable || settingsMutation.isPending
-                            }
-                            value={tier.fromPlace}
-                            onChange={(e) => {
-                              const value = Number(e.target.value || 1);
-                              setSettingsDraft((prev) => {
-                                const next = [...(prev?.prizeTiers || [])];
-                                next[index] = {
-                                  ...next[index],
-                                  fromPlace: value,
-                                };
-                                return { ...(prev || {}), prizeTiers: next };
-                              });
-                            }}
-                            className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
-                            placeholder="с"
-                          />
-                          <input
-                            type="number"
-                            min={1}
-                            disabled={
-                              !settingsEditable || settingsMutation.isPending
-                            }
-                            value={tier.toPlace}
-                            onChange={(e) => {
-                              const value = Number(e.target.value || 1);
-                              setSettingsDraft((prev) => {
-                                const next = [...(prev?.prizeTiers || [])];
-                                next[index] = {
-                                  ...next[index],
-                                  toPlace: value,
-                                };
-                                return { ...(prev || {}), prizeTiers: next };
-                              });
-                            }}
-                            className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
-                            placeholder="по"
-                          />
-                          <input
-                            type="number"
-                            min={0}
-                            step="1"
-                            disabled={
-                              !settingsEditable || settingsMutation.isPending
-                            }
-                            value={tier.amountZl}
-                            onChange={(e) => {
-                              const value = Number(e.target.value || 0);
-                              setSettingsDraft((prev) => {
-                                const next = [...(prev?.prizeTiers || [])];
-                                next[index] = {
-                                  ...next[index],
-                                  amountZl: value,
-                                };
-                                return { ...(prev || {}), prizeTiers: next };
-                              });
-                            }}
-                            className="rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
-                            placeholder="zł"
-                          />
-                          {settingsEditable && draftTiers.length > 1 ? (
-                            <button
-                              type="button"
-                              className="rounded-lg border border-border px-2 text-[11px] text-muted-2 hover:text-foreground"
-                              onClick={() =>
-                                setSettingsDraft((prev) => ({
-                                  ...(prev || {}),
-                                  prizeTiers: (prev?.prizeTiers || []).filter(
-                                    (_row, i) => i !== index
-                                  ),
-                                }))
-                              }
-                            >
-                              ×
-                            </button>
-                          ) : (
-                            <span />
-                          )}
+                    <div className="overflow-x-auto rounded-xl border border-border/60">
+                      <div className="min-w-[520px]">
+                        <div className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.55fr)_minmax(0,0.55fr)_minmax(0,0.7fr)_2rem] gap-2 border-b border-border/60 bg-[hsl(232_26%_8%)] px-2 py-2 text-[10px] font-medium uppercase tracking-wide text-muted-2">
+                          <span>Места (с — по)</span>
+                          <span>Приз 1 чел.</span>
+                          <span className="text-center">Людей</span>
+                          <span className="text-right">Сумма</span>
+                          <span />
                         </div>
-                      ))}
+                        {draftTiers.map((tier, index) => (
+                          <div
+                            key={`tier-${index}`}
+                            className="grid grid-cols-[minmax(0,1.1fr)_minmax(0,0.55fr)_minmax(0,0.55fr)_minmax(0,0.7fr)_2rem] items-center gap-2 border-b border-border/40 px-2 py-2 last:border-b-0"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min={1}
+                                max={draftWinnerCount}
+                                disabled={
+                                  !settingsEditable ||
+                                  settingsMutation.isPending
+                                }
+                                value={tier.fromPlace}
+                                onChange={(e) => {
+                                  const value = Number(e.target.value || 1);
+                                  setSettingsDraft((prev) => {
+                                    const next = [...(prev?.prizeTiers || [])];
+                                    next[index] = {
+                                      ...next[index],
+                                      fromPlace: value,
+                                    };
+                                    return { ...(prev || {}), prizeTiers: next };
+                                  });
+                                }}
+                                className="w-14 rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                                aria-label="Место с"
+                              />
+                              <span className="text-[11px] text-muted-2">—</span>
+                              <input
+                                type="number"
+                                min={1}
+                                max={draftWinnerCount}
+                                disabled={
+                                  !settingsEditable ||
+                                  settingsMutation.isPending
+                                }
+                                value={tier.toPlace}
+                                onChange={(e) => {
+                                  const value = Number(e.target.value || 1);
+                                  setSettingsDraft((prev) => {
+                                    const next = [...(prev?.prizeTiers || [])];
+                                    next[index] = {
+                                      ...next[index],
+                                      toPlace: value,
+                                    };
+                                    return { ...(prev || {}), prizeTiers: next };
+                                  });
+                                }}
+                                className="w-14 rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                                aria-label="Место по"
+                              />
+                              <span className="hidden text-[10px] text-muted-2 sm:inline">
+                                {formatPlaceRange(
+                                  tier.fromPlace,
+                                  tier.toPlace
+                                )}
+                              </span>
+                            </div>
+                            <input
+                              type="number"
+                              min={0}
+                              step="1"
+                              disabled={
+                                !settingsEditable || settingsMutation.isPending
+                              }
+                              value={tier.amountZl}
+                              onChange={(e) => {
+                                const value = Number(e.target.value || 0);
+                                setSettingsDraft((prev) => {
+                                  const next = [...(prev?.prizeTiers || [])];
+                                  next[index] = {
+                                    ...next[index],
+                                    amountZl: value,
+                                  };
+                                  return { ...(prev || {}), prizeTiers: next };
+                                });
+                              }}
+                              className="w-full rounded-lg border border-border bg-transparent px-2 py-1.5 text-[12px]"
+                              aria-label="Приз zł"
+                            />
+                            <p className="text-center text-[12px] tabular-nums text-muted-foreground">
+                              {tierPlaceCount(tier)}
+                            </p>
+                            <p className="text-right text-[12px] font-medium tabular-nums">
+                              {formatZl(tierSubtotalZl(tier))}
+                            </p>
+                            {settingsEditable && draftTiers.length > 1 ? (
+                              <button
+                                type="button"
+                                className="rounded-lg border border-border px-1 text-[11px] text-muted-2 hover:text-foreground"
+                                aria-label="Удалить строку"
+                                onClick={() =>
+                                  setSettingsDraft((prev) => ({
+                                    ...(prev || {}),
+                                    prizeTiers: (prev?.prizeTiers || []).filter(
+                                      (_row, i) => i !== index
+                                    ),
+                                  }))
+                                }
+                              >
+                                ×
+                              </button>
+                            ) : (
+                              <span />
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
+
+                    {tierAnalysis.warnings.length ? (
+                      <div className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-[11px] leading-relaxed text-amber-100/95">
+                        <p className="font-medium">Проверьте настройки</p>
+                        <ul className="mt-1.5 list-disc space-y-1 pl-4">
+                          {tierAnalysis.warnings.map((w) => (
+                            <li key={w.id}>{w.text}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    <p className="text-[10px] leading-relaxed text-muted-2">
+                      Шаблон по умолчанию: 25 победителей, 150/100/50 zł →{" "}
+                      {formatZl(tiersPrizeSum(25, DEFAULT_TIERS))}. Эти суммы
+                      можно менять; клиенты увидят итог в правилах магазина.
+                    </p>
                   </div>
 
                   <div className="rounded-xl border border-border/60 p-3">
@@ -932,8 +1159,22 @@ export default function Giveaway() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={settingsMutation.isPending}
-                        onClick={() => settingsMutation.mutate()}
+                        disabled={
+                          settingsMutation.isPending || !tierAnalysis.ok
+                        }
+                        onClick={() => {
+                          if (!tierAnalysis.ok) {
+                            toast({
+                              title: "Исправьте таблицу призов",
+                              description: tierAnalysis.warnings
+                                .map((w) => w.text)
+                                .join(" "),
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          settingsMutation.mutate();
+                        }}
                         className="rounded-lg bg-[hsl(255_100%_68%)] px-4 py-2 text-[12px] font-semibold text-[hsl(232_40%_10%)] disabled:opacity-50"
                       >
                         {settingsMutation.isPending
@@ -955,7 +1196,7 @@ export default function Giveaway() {
                         }
                         className="rounded-lg border border-border px-4 py-2 text-[12px] text-muted-foreground hover:text-foreground"
                       >
-                        Сбросить к 25 / 2000 zł
+                        Шаблон: 25 мест, 2000 zł
                       </button>
                     </div>
                   ) : (
