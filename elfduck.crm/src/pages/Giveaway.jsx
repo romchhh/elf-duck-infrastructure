@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   RefreshCw,
   Settings2,
+  Trophy,
   Users,
 } from "lucide-react";
 import { crmFetchJson, CRM_API_URL } from "@/lib/crmFetch";
@@ -228,6 +229,7 @@ export default function Giveaway() {
   const queryClient = useQueryClient();
   const [selectedMonthKey, setSelectedMonthKey] = useState(null);
   const [participantQuery, setParticipantQuery] = useState("");
+  const [winnerQuery, setWinnerQuery] = useState("");
   const [drawPhrase, setDrawPhrase] = useState("");
   const [creditPhrase, setCreditPhrase] = useState("");
   const [notifyPhrase, setNotifyPhrase] = useState("");
@@ -272,6 +274,11 @@ export default function Giveaway() {
   const settingsSyncKey = data?.settings
     ? `${selectedMonthKey}:${String(data?.month?.updatedAt || "ready")}`
     : "";
+
+  React.useEffect(() => {
+    setWinnerQuery("");
+    setParticipantQuery("");
+  }, [selectedMonthKey]);
 
   React.useEffect(() => {
     if (!settingsSyncKey || !data?.settings) return;
@@ -582,6 +589,33 @@ export default function Giveaway() {
     });
   }, [participants, participantQuery]);
 
+  const filteredWinners = useMemo(() => {
+    const q = winnerQuery.trim().toLowerCase();
+    if (!q) return winners;
+    return winners.filter((row) => {
+      const hay = [
+        row.place,
+        row.telegramId,
+        row.username,
+        row.firstName,
+        row.lastName,
+        row.winningOrderId,
+      ]
+        .map((v) => String(v || "").toLowerCase())
+        .join(" ");
+      return hay.includes(q);
+    });
+  }, [winners, winnerQuery]);
+
+  const winnersCreditedCount = useMemo(
+    () => winners.filter((row) => row.creditedAt).length,
+    [winners]
+  );
+  const winnersNotifiedCount = useMemo(
+    () => winners.filter((row) => row.notifiedAt).length,
+    [winners]
+  );
+
   const canDraw = status === "open" && (data?.entriesCount ?? 0) > 0;
   const canCredit =
     status === "drawn" ||
@@ -842,6 +876,24 @@ export default function Giveaway() {
             >
               <LayoutDashboard className="h-3.5 w-3.5" />
               Обзор
+            </button>
+            <button
+              type="button"
+              onClick={() => setDetailTab("winners")}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors",
+                detailTab === "winners"
+                  ? "bg-[hsl(255_100%_68%/0.16)] text-[hsl(255_100%_78%)]"
+                  : "text-muted-2 hover:text-foreground"
+              )}
+            >
+              <Trophy className="h-3.5 w-3.5" />
+              Победители
+              {winners.length ? (
+                <span className="rounded-full bg-[hsl(255_100%_68%/0.2)] px-1.5 text-[10px] font-semibold tabular-nums text-[hsl(255_100%_78%)]">
+                  {winners.length}
+                </span>
+              ) : null}
             </button>
             <button
               type="button"
@@ -1512,81 +1564,163 @@ export default function Giveaway() {
             )}
           </div>
 
-          <div className="rounded-2xl surface-card p-4">
-            <h3 className="text-[14px] font-semibold">
-              Победители ({winners.length})
-            </h3>
-            {!winners.length ? (
-              <p className="mt-2 text-[12px] text-muted-2">
-                Список появится после розыгрыша.
-              </p>
-            ) : (
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-[12px]">
-                  <thead>
-                    <tr className="text-muted-2">
-                      <th className="py-1 pr-3">Место</th>
-                      <th className="py-1 pr-3">Клиент</th>
-                      <th className="py-1 pr-3">Покупок</th>
-                      <th className="py-1 pr-3">Выручка</th>
-                      <th className="py-1 pr-3">Участие</th>
-                      <th className="py-1 pr-3">Сумма</th>
-                      <th className="py-1 pr-3">Начислено</th>
-                      <th className="py-1">Уведомление</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {winners.map((row) => (
-                      <tr
-                        key={row.place}
-                        className="border-t border-border/60"
-                      >
-                        <td className="py-2 pr-3 font-semibold">{row.place}</td>
-                        <td className="py-2 pr-3">
-                          <div>{formatClientLabel(row)}</div>
-                          <div className="font-mono text-[10px] text-muted-2">
-                            {row.telegramId}
-                          </div>
-                        </td>
-                        <td className="py-2 pr-3">
-                          <span className="font-semibold">
-                            {row.entriesCount ?? 0}
-                          </span>
-                          {(row.testEntriesCount ?? 0) > 0 ? (
-                            <span className="ml-1 text-[10px] text-amber-200/80">
-                              ({row.testEntriesCount} тест)
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="py-2 pr-3 font-medium">
-                          {formatZl(row.netEarnedZl)}
-                          {(row.ordersCount ?? 0) > 0 ? (
-                            <span className="ml-1 text-[10px] font-normal text-muted-2">
-                              ({row.ordersCount} зак.)
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="py-2 pr-3 text-[11px] text-muted-foreground">
-                          {formatDateTime(row.joinedAt)}
-                          {row.testSeed ? (
-                            <span className="ml-1 text-amber-200/80">тест</span>
-                          ) : null}
-                        </td>
-                        <td className="py-2 pr-3">{row.amountZl} zł</td>
-                        <td className="py-2 pr-3">
-                          {row.creditedAt ? "✓" : "—"}
-                        </td>
-                        <td className="py-2">
-                          {row.notifiedAt ? "✓" : "—"}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          {winners.length ? (
+            <div className="rounded-2xl surface-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[12px] text-muted-2">
+                  Список победителей — на вкладке{" "}
+                  <button
+                    type="button"
+                    className="font-medium text-[hsl(255_100%_75%)] hover:underline"
+                    onClick={() => setDetailTab("winners")}
+                  >
+                    «Победители»
+                  </button>
+                  .
+                </p>
+                <button
+                  type="button"
+                  className="rounded-lg border border-border px-3 py-1.5 text-[11px] text-foreground hover:bg-[hsl(232_26%_10%)]"
+                  onClick={() => setDetailTab("winners")}
+                >
+                  Открыть {winners.length} победителей
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          ) : null}
             </>
+          ) : null}
+
+          {detailTab === "winners" ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <Metric label="Победителей" value={winners.length} />
+                <Metric
+                  label="Призы начислены"
+                  value={`${winnersCreditedCount} / ${winners.length || "—"}`}
+                />
+                <Metric
+                  label="Уведомления в Telegram"
+                  value={`${winnersNotifiedCount} / ${winners.length || "—"}`}
+                />
+                <Metric
+                  label="Сумма призов"
+                  value={formatZl(prizeSum || draftPrizePool || 0)}
+                />
+              </div>
+
+              <div className="rounded-2xl surface-card p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-[14px] font-semibold">Победители</h3>
+                  <input
+                    className="input-base max-w-xs text-[12px]"
+                    placeholder="Поиск: место, id, @username"
+                    value={winnerQuery}
+                    onChange={(e) => setWinnerQuery(e.target.value)}
+                  />
+                </div>
+                {!winners.length ? (
+                  <p className="mt-3 text-[12px] leading-relaxed text-muted-2">
+                    Список появится после шага «Провести розыгрыш». Сначала
+                    закройте приём участников и убедитесь, что в розыгрыше
+                    только завершённые заказы.
+                  </p>
+                ) : (
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="w-full text-left text-[12px]">
+                      <thead>
+                        <tr className="text-muted-2">
+                          <th className="py-1 pr-3">Место</th>
+                          <th className="py-1 pr-3">Клиент</th>
+                          <th className="py-1 pr-3">Покупок</th>
+                          <th className="py-1 pr-3">Выручка</th>
+                          <th className="py-1 pr-3">Вступил</th>
+                          <th className="py-1 pr-3">Приз</th>
+                          <th className="py-1 pr-3">Начислено</th>
+                          <th className="py-1">Уведомл.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredWinners.map((row) => (
+                          <tr
+                            key={row.place}
+                            className="border-t border-border/60"
+                          >
+                            <td className="py-2 pr-3 font-semibold">
+                              {row.place}
+                            </td>
+                            <td className="py-2 pr-3">
+                              <div>{formatClientLabel(row)}</div>
+                              <div className="font-mono text-[10px] text-muted-2">
+                                {row.telegramId}
+                              </div>
+                            </td>
+                            <td className="py-2 pr-3">
+                              <span className="font-semibold">
+                                {row.entriesCount ?? 0}
+                              </span>
+                              {(row.testEntriesCount ?? 0) > 0 ? (
+                                <span className="ml-1 text-[10px] text-amber-200/80">
+                                  ({row.testEntriesCount} тест)
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="py-2 pr-3 font-medium">
+                              {formatZl(row.netEarnedZl)}
+                              {(row.ordersCount ?? 0) > 0 ? (
+                                <span className="ml-1 text-[10px] font-normal text-muted-2">
+                                  ({row.ordersCount} зак.)
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="py-2 pr-3 text-[11px] text-muted-foreground">
+                              {formatDateTime(row.joinedAt)}
+                              {row.testSeed ? (
+                                <span className="ml-1 text-amber-200/80">
+                                  тест
+                                </span>
+                              ) : null}
+                            </td>
+                            <td className="py-2 pr-3 font-semibold">
+                              {formatZl(row.amountZl)}
+                            </td>
+                            <td className="py-2 pr-3">
+                              {row.creditedAt ? (
+                                <span
+                                  className="text-emerald-400/90"
+                                  title={formatDateTime(row.creditedAt)}
+                                >
+                                  ✓
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="py-2">
+                              {row.notifiedAt ? (
+                                <span
+                                  className="text-emerald-400/90"
+                                  title={formatDateTime(row.notifiedAt)}
+                                >
+                                  ✓
+                                </span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {filteredWinners.length === 0 ? (
+                      <p className="mt-2 text-[12px] text-muted-2">
+                        Ничего не найдено по запросу.
+                      </p>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
           ) : null}
         </>
       )}
