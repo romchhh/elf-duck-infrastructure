@@ -43,6 +43,11 @@ import GiveawayBannerSlide from "../components/GiveawayBannerSlide.jsx";
 import { useGiveawayPublic } from "../hooks/useGiveawayPublic.js";
 import PaymentBlikPreferCashCopy from "../components/PaymentBlikPreferCashCopy.jsx";
 import ComplaintSheet from "../components/ComplaintSheet.jsx";
+import OrderClosedModal from "../components/OrderClosedModal.jsx";
+import {
+  isOrderClosedApiError,
+  orderClosedKindFromError,
+} from "../utils/orderClosedFeedback.js";
 import { resolveZabkaMapsUrl } from "../utils/blikCheckoutHints.js";
 import menuIcon from "../assets/menuIcon.webp";
 import logo from "../assets/logo3.webp"; 
@@ -281,6 +286,7 @@ useEffect(() => {
     };
 
     const [cancelConfirmOrder, setCancelConfirmOrder] = useState(null);
+    const [orderClosedDialog, setOrderClosedDialog] = useState(null);
 
     const ARRIVAL_NOTIFY_COOLDOWN_MS = 5 * 60 * 1000;
     const ARRIVAL_NOTIFY_STORAGE_KEY = "orders_arrival_notify_cooldowns";
@@ -621,6 +627,41 @@ useEffect(() => {
             setActivePaymentOrder(null);
         }, 220);
     };
+
+    const handleOrderClosedApiResponse = useCallback(
+        (data, orderRef) => {
+            const code = String(data?.error || "");
+            if (!isOrderClosedApiError(code)) return false;
+
+            const kind = orderClosedKindFromError(code);
+            const orderId = String(orderRef?._id || "").trim();
+
+            if (Number.isFinite(Number(data?.cashbackBalance))) {
+                const nextBalance = Number(data.cashbackBalance);
+                setUser((prev) =>
+                    prev ? { ...prev, cashbackBalance: nextBalance } : prev
+                );
+            }
+
+            if (orderId) {
+                setOrders((prev) =>
+                    prev.map((o) =>
+                        String(o._id) === orderId ? { ...o, status: kind } : o
+                    )
+                );
+            }
+
+            setActivePaymentOrder(null);
+            closePaymentRoll();
+            haptic.heavy();
+            setOrderClosedDialog({
+                kind,
+                orderNo: String(orderRef?.orderNo || "").trim(),
+            });
+            return true;
+        },
+        [setUser]
+    );
 
     const activatePaymentPromoCode = async () => {
         const code = String(paymentPromoCode || "")
@@ -1262,14 +1303,10 @@ useEffect(() => {
 
             const data = await r.json().catch(() => ({}));
             if (!r.ok || data?.ok === false) {
-                if (Number.isFinite(Number(data?.cashbackBalance))) {
-                    const nextBalance = roundMoney(data.cashbackBalance);
-                    setUser((prev) =>
-                        prev ? { ...prev, cashbackBalance: nextBalance } : prev
-                    );
-                }
-                if (data?.error === "ORDER_ANNULLED" || data?.error === "ORDER_CANCELED") {
-                    setActivePaymentOrder(null);
+                if (
+                    handleOrderClosedApiResponse(data, activePaymentOrder)
+                ) {
+                    return false;
                 }
                 throw new Error(data?.error || t("Не удалось применить кэшбек", "Nie udało się zastosować cashbacku"));
             }
@@ -1294,7 +1331,16 @@ useEffect(() => {
             return true;
         } catch (e) {
             console.error("applyCashbackToOrder error", e);
-            alert(e?.message || t("Не удалось применить кэшбек", "Nie udało się zastosować cashbacku"));
+            const msg = String(e?.message || "");
+            if (!isOrderClosedApiError(msg)) {
+                alert(
+                    msg ||
+                        t(
+                            "Не удалось применить кэшбек",
+                            "Nie udało się zastosować cashbacku"
+                        )
+                );
+            }
             return false;
         } finally {
             setPaymentSubmitting(false);
@@ -1362,6 +1408,11 @@ useEffect(() => {
             const data = await r.json().catch(() => ({}));
 
             if (!r.ok || data?.ok === false) {
+                if (
+                    handleOrderClosedApiResponse(data, activePaymentOrder)
+                ) {
+                    return;
+                }
                 throw new Error(
                     data?.error || t("Не удалось отправить оплату на проверку", "Nie udało się wysłać płatności do weryfikacji")
                 );
@@ -1380,7 +1431,16 @@ useEffect(() => {
             closePaymentRoll();
         } catch (e) {
             console.error("submitPaymentForCheck error", e);
-            alert(e?.message || t("Не удалось отправить оплату на проверку", "Nie udało się wysłać płatności do weryfikacji"));
+            const msg = String(e?.message || "");
+            if (!isOrderClosedApiError(msg)) {
+                alert(
+                    msg ||
+                        t(
+                            "Не удалось отправить оплату на проверку",
+                            "Nie udało się wysłać płatności do weryfikacji"
+                        )
+                );
+            }
         } finally {
             setPaymentSubmitting(false);
         }
@@ -2134,6 +2194,13 @@ useEffect(() => {
     return (
 
     <>
+    <OrderClosedModal
+      open={Boolean(orderClosedDialog)}
+      kind={orderClosedDialog?.kind}
+      orderNo={orderClosedDialog?.orderNo}
+      onClose={() => setOrderClosedDialog(null)}
+    />
+
     <div className={`App reveal delay-5 ${mounted ? "visible" : ""}`}>
 
     {cancelConfirmOrder && (

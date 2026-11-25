@@ -2697,6 +2697,40 @@ button.paymentCashbackField {
   background: rgba(var(--accent-color, 137, 117, 201), 0.9);
 }
 
+.orderClosedModal {
+  max-width: min(100%, 380px);
+}
+
+.orderClosedModalOrderNo {
+  text-align: center;
+  font-family: Unbounded-Regular;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: -6px 0 12px;
+}
+
+.orderClosedModalBody {
+  font-family: Unbounded-Regular;
+  font-size: 11px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.88);
+  text-align: left;
+  white-space: pre-line;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  box-sizing: border-box;
+}
+
+.orderClosedModal .paymentInputActions {
+  margin-top: 16px;
+}
+
+.orderClosedModal .paymentInputBtn.primary {
+  flex: 1;
+}
+
 .cartEmptyState {
   width: 100%;
   min-height: 87%;
