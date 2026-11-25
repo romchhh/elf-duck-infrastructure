@@ -4,7 +4,14 @@ import User from "../../models/User.js";
 import CustomerReview from "../../models/CustomerReview.js";
 import { getCompletedOrderMatch } from "../crm/sales.js";
 import { normalizeAppLanguage } from "../crm/userLanguage.js";
-import { getActiveGiveawayMonthKey } from "../giveaway/schedule.js";
+import {
+  getActiveGiveawayMonthKey,
+  resolveGiveawayUiPhase,
+} from "../giveaway/schedule.js";
+import {
+  ensureGiveawayMonth,
+  isGiveawayMonthLive,
+} from "../giveaway/service.js";
 import { getWebAppBaseUrl } from "../crm/pushMessageFormat.js";
 import {
   getClientDeliveryBots,
@@ -60,6 +67,19 @@ export function buildGiveawayReviewWebAppUrl() {
   return `${base}/giveaway-review`;
 }
 
+/** Під час активного місяця розіграшу відгуки ще не збираємо (CRM / лінк після проголошення). */
+export async function isGiveawayPromoReviewCollectionOpen(monthKey) {
+  if (String(process.env.GIVEAWAY_PROMO_REVIEW_ENABLED || "").trim() === "1") {
+    return true;
+  }
+  const key = String(monthKey || "").trim();
+  if (!/^\d{4}-\d{2}$/.test(key)) return false;
+  const month = await ensureGiveawayMonth(key);
+  if (isGiveawayMonthLive(month)) return false;
+  const phase = resolveGiveawayUiPhase(month);
+  return phase === "awaiting_draw" || phase === "results";
+}
+
 export async function getGiveawayReviewContext(telegramId, monthKey = "") {
   const id = String(telegramId || "").trim();
   if (!id || id.startsWith("guest_")) {
@@ -70,6 +90,19 @@ export async function getGiveawayReviewContext(telegramId, monthKey = "") {
     String(monthKey || "").trim() || getActiveGiveawayMonthKey() || "";
   if (!/^\d{4}-\d{2}$/.test(key)) {
     return { ok: false, reason: "MONTH_KEY_REQUIRED" };
+  }
+
+  const collectionOpen = await isGiveawayPromoReviewCollectionOpen(key);
+  if (!collectionOpen) {
+    return {
+      ok: true,
+      eligible: false,
+      canSubmit: false,
+      completed: false,
+      reason: "GIVEAWAY_REVIEW_NOT_OPEN",
+      language: "ru",
+      monthKey: key,
+    };
   }
 
   const user = await User.findOne({ telegramId: id })
@@ -226,6 +259,10 @@ export async function submitGiveawayPromoReview({
     String(monthKey || "").trim() || getActiveGiveawayMonthKey() || "";
   if (!/^\d{4}-\d{2}$/.test(key)) {
     return { ok: false, reason: "MONTH_KEY_REQUIRED" };
+  }
+
+  if (!(await isGiveawayPromoReviewCollectionOpen(key))) {
+    return { ok: false, reason: "GIVEAWAY_REVIEW_NOT_OPEN" };
   }
 
   const existing = await CustomerReview.findOne({

@@ -465,6 +465,10 @@ export const ASSORTMENT_FLAVOR_ALIASES_BY_PRODUCT = {
   "puffy-30-ml": {
     "kiwi-berry": ["Berri kiwi", "Berry kiwi", "Kiwi Berry"],
     "grape-raspberry-plum": ["Grape Raspberry Black Plum"],
+    "apple-grape-blueberry": [
+      "Apple grape blueberry",
+      "Apple Grape Blueberry",
+    ],
   },
   "chaser-black-30-ml": {
     "strawberry-raspberry-cherry-ice": [

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
 import { getCurrentLanguage, t } from "../utils/i18n";
 import { haptic } from "../utils/haptics";
 import { getCachedGiveawayBannerSrc } from "../utils/bannerImageCache.js";
@@ -46,7 +45,6 @@ function shouldPrompt(data) {
 }
 
 export default function GiveawayJoinModal() {
-  const navigate = useNavigate();
   const [state, setState] = useState(() => getGiveawayCache());
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -186,7 +184,6 @@ export default function GiveawayJoinModal() {
         entryPromptDoneRef.current = true;
         markPromptedThisSession();
         setOpen(false);
-        navigate("/giveaway-review");
       } else {
         haptic.error();
       }
@@ -196,7 +193,7 @@ export default function GiveawayJoinModal() {
     } finally {
       setLoading(false);
     }
-  }, [loading, navigate]);
+  }, [loading]);
 
   if (!open || typeof document === "undefined") return null;
 
