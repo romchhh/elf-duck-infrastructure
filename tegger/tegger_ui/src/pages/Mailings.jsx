@@ -133,7 +133,14 @@ export default function Mailings() {
         return rows[0]?.id || null;
       });
     } catch (err) {
-      setError(err.message || "Не удалось загрузить розсилки");
+      const raw = err.message || "";
+      if (err.status === 404 || /^not found$/i.test(raw.trim())) {
+        setError(
+          "API «Розсилки» ще немає на сервері (404). Перезбери й перезапусти контейнер tegger-api з актуальним кодом, потім онови сторінку."
+        );
+      } else {
+        setError(raw || "Не удалось загрузить розсилки");
+      }
     } finally {
       setLoading(false);
     }
