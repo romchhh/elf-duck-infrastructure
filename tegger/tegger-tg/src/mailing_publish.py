@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import random
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -68,6 +70,71 @@ def _skipable_resolve(exc: BaseException) -> bool:
     if "chat write forbidden" in lower or "can't write" in lower:
         return False
     return False
+
+
+def _normalize_bot_chat_id(raw: str) -> int:
+    """Bot API id супергруппы: -100XXXXXXXXXX."""
+    s = str(raw or "").strip()
+    if re.fullmatch(r"-100\d+", s):
+        return int(s)
+    if re.fullmatch(r"-\d+", s):
+        return int(s)
+    if re.fullmatch(r"\d+", s):
+        return int(f"-100{s}")
+    raise ValueError(f"Некорректный chat id: {raw!r}")
+
+
+def _channel_id_variants(marked: int) -> set[int]:
+    """Все распространённые представления одного и того же чата."""
+    out = {int(marked)}
+    s = str(abs(marked))
+    if s.startswith("100") and len(s) > 3:
+        tail = int(s[3:])
+        out.add(tail)
+        out.add(int(f"-100{tail}"))
+    return out
+
+
+async def _resolve_relay_chat(client, chat_id: str):
+    """Peer чата шаблонов: только если сендер участник (есть в диалогах)."""
+    marked = _normalize_bot_chat_id(chat_id)
+    variants = _channel_id_variants(marked)
+    username = str(os.environ.get("COMPLAINTS_CHAT_USERNAME") or "").strip().lstrip("@")
+    if username:
+        try:
+            entity = await client.get_entity(username)
+            return await client.get_input_entity(entity)
+        except Exception:
+            pass
+    last_err: BaseException | None = None
+    s_abs = str(abs(marked))
+    tail = int(s_abs[3:]) if s_abs.startswith("100") and len(s_abs) > 3 else abs(marked)
+    private_link = f"https://t.me/c/{tail}/1" if tail else ""
+    else:
+        private_link = ""
+    tries = [marked, chat_id.strip()]
+    if private_link:
+        tries.append(private_link)
+    for value in tries:
+        try:
+            entity = await client.get_entity(value)
+            return await client.get_input_entity(entity)
+        except Exception as exc:
+            last_err = exc
+    async for dialog in client.iter_dialogs(limit=None):
+        if int(dialog.id) in variants:
+            return dialog.input_entity
+        ent = dialog.entity
+        eid = getattr(ent, "id", None)
+        if eid is not None and int(eid) in variants:
+            return await client.get_input_entity(ent)
+    detail = str(last_err or "нет в списке чатов")
+    raise ValueError(
+        "Сендер не видит чат шаблонов "
+        f"({chat_id}). Добавь аккаунт в группу оценок/жалоб, "
+        "открой её в Telegram с этого аккаунта (чтобы peer попал в кэш) и запусти снова. "
+        f"({detail[:120]})"
+    )
 
 
 async def _resolve_target(client, row: dict):
@@ -184,7 +251,12 @@ async def publish_mailing(
             await asyncio.wait_for(client.connect(), timeout=25)
             if not await client.is_user_authorized():
                 raise RuntimeError(f"Сессия не авторизована: {sender_id}")
-            from_peer = await client.get_input_entity(int(chat_id) if str(chat_id).lstrip("-").isdigit() else chat_id)
+            try:
+                from_peer = await _resolve_relay_chat(client, str(chat_id))
+            except ValueError as exc:
+                failed.append({"username": sender_id, "error": str(exc)[:220]})
+                await emit(failed=list(failed), phase="resolve", current=sender_id)
+                continue
 
             for index, row in enumerate(rows):
                 await _wait(0, cancel_event)
