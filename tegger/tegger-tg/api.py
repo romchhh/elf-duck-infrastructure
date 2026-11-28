@@ -2847,6 +2847,8 @@ class TelegramConfigUpdate(BaseModel):
     api_id: str | None = None
     api_hash: str | None = None
     bot_token: str | None = None
+    template_bot_token: str | None = None
+    template_relay_chat_id: str | None = None
     chat_id: str | None = None
 
 
@@ -2886,6 +2888,18 @@ async def get_telegram_config():
         "api_hash_set": bool(str(data.get("api_hash") or "").strip()),
         "api_configured": _credentials_configured(),
         "bot_token_set": bool(data.get("bot_token") or os.getenv("LOG_BOT_TOKEN")),
+        "template_bot_token_set": bool(
+            data.get("template_bot_token")
+            or data.get("bot_token")
+            or os.getenv("TEMPLATE_BOT_TOKEN")
+            or os.getenv("LOG_BOT_TOKEN")
+        ),
+        "template_relay_chat_id": str(
+            data.get("template_relay_chat_id")
+            or os.getenv("TEMPLATE_RELAY_CHAT_ID")
+            or os.getenv("COMPLAINTS_TELEGRAM_CHAT_ID")
+            or "-1003968794671"
+        ),
         "chat_id": data.get("chat_id", os.getenv("LOG_CHAT_ID", "")),
         "pending_restart": False,
         "note": "API ID и API Hash применяются сразу для логина сессий и Telegram-клиентов. Аккаунты добавляются в разделе «Аккаунты».",
@@ -2912,6 +2926,14 @@ async def save_telegram_config(payload: TelegramConfigUpdate):
         value = payload.bot_token.strip()
         if value and value != "<REDACTED>":
             data["bot_token"] = value
+    if payload.template_bot_token is not None:
+        value = payload.template_bot_token.strip()
+        if value and value != "<REDACTED>":
+            data["template_bot_token"] = value
+    if payload.template_relay_chat_id is not None:
+        value = payload.template_relay_chat_id.strip()
+        if value and value != "<REDACTED>":
+            data["template_relay_chat_id"] = value
     if payload.chat_id is not None:
         data["chat_id"] = payload.chat_id.strip()
     _store_private_config(data)
@@ -3986,6 +4008,9 @@ async def stop_tegger(tegger_id: str):
 
 # ===== END TEGGER ONE-SHOT STORIES =====
 
+from src.mailing_api import register_mailing_routes
+
+register_mailing_routes(app, get_current_user=get_current_user)
 
 # ==========================================
 # OFFLINE CAMPAIGN QUEUE — NO TELEGRAM CALLS

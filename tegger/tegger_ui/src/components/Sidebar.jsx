@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import { Home, Megaphone, Users, ScrollText, Settings, Asterisk, Radar, AtSign } from "lucide-react";
+import { Home, Megaphone, Users, ScrollText, Settings, Asterisk, Radar, AtSign, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { services, SYSTEM_STATUS } from "@/lib/mockData";
 import ModeBadge from "@/components/ModeBadge";
@@ -8,6 +8,7 @@ import ModeBadge from "@/components/ModeBadge";
 const NAV = [
   { to: "/", label: "Главная", icon: Home, exact: true },
   { to: "/tegger", label: "Тегер", icon: AtSign },
+  { to: "/mailings", label: "Розсилки", icon: Send },
   { to: "/campaigns", label: "Кампании", icon: Megaphone },
   { to: "/accounts", label: "Аккаунты", icon: Users },
   { to: "/logs", label: "Логи", icon: ScrollText },

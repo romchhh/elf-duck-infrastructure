@@ -87,6 +87,61 @@ export const teggerClient = {
     run: (config) => request("/api/parser/run", { method: "POST", body: JSON.stringify(config) }),
   },
 
+  mailings: {
+    accounts: () => request("/api/mailings/accounts"),
+    list: () => request("/api/mailings"),
+    get: (id) => request(`/api/mailings/${encodeURIComponent(id)}`),
+    start: (id) => request(`/api/mailings/${encodeURIComponent(id)}/start`, { method: "POST" }),
+    stop: (id) => request(`/api/mailings/${encodeURIComponent(id)}/stop`, { method: "POST" }),
+    languagePreview: async (targets, senderIds) => {
+      const body = new FormData();
+      body.append("usernames", targets || "");
+      body.append("senderIds", senderIds || "");
+      const response = await fetch(`${API_URL}/api/mailings/language-preview`, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(errorMessageFromDetail(data.detail, `HTTP ${response.status}`));
+      }
+      return data;
+    },
+    create: async ({
+      senderIds,
+      targets,
+      captionRu,
+      captionPl,
+      buttonUrl,
+      buttonTextRu,
+      buttonTextPl,
+      file,
+      filePl,
+    }) => {
+      const body = new FormData();
+      body.append("senderIds", (senderIds || []).join(","));
+      body.append("targets", targets || "");
+      body.append("captionRu", captionRu || "");
+      body.append("captionPl", captionPl || "");
+      body.append("buttonUrl", buttonUrl || "");
+      body.append("buttonTextRu", buttonTextRu || "");
+      body.append("buttonTextPl", buttonTextPl || "");
+      if (file) body.append("file", file);
+      if (filePl) body.append("filePl", filePl);
+      const response = await fetch(`${API_URL}/api/mailings`, {
+        method: "POST",
+        credentials: "include",
+        body,
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(errorMessageFromDetail(data.detail, `HTTP ${response.status}`));
+      }
+      return data;
+    },
+  },
+
   teggers: {
     accounts: () => request("/api/teggers/accounts"),
     list: () => request("/api/teggers"),

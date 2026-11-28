@@ -21,7 +21,7 @@ export default function Settings() {
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [telegram, setTelegram] = useState(null);
-  const [secrets, setSecrets] = useState({ api_hash: "", bot_token: "" });
+  const [secrets, setSecrets] = useState({ api_hash: "", bot_token: "", template_bot_token: "" });
   const [testing, setTesting] = useState(false);
 
   useEffect(() => {
@@ -43,12 +43,14 @@ export default function Settings() {
       const payload = {
         requested_mode: "PRODUCTION",
         chat_id: telegram.chat_id || "",
+        template_relay_chat_id: telegram.template_relay_chat_id || "",
       };
       if (telegram.api_id) payload.api_id = String(telegram.api_id).trim();
       if (secrets.api_hash.trim()) payload.api_hash = secrets.api_hash.trim();
       if (secrets.bot_token.trim()) payload.bot_token = secrets.bot_token.trim();
+      if (secrets.template_bot_token.trim()) payload.template_bot_token = secrets.template_bot_token.trim();
       const result = await teggerClient.settings.saveTelegram(payload);
-      setTelegram(result); setSecrets({ api_hash: "", bot_token: "" });
+      setTelegram(result); setSecrets({ api_hash: "", bot_token: "", template_bot_token: "" });
       setMessage(
         result.api_configured
           ? "API-ключи сохранены. Можно добавлять аккаунты через логин Telegram в разделе «Аккаунты»."
@@ -114,6 +116,28 @@ export default function Settings() {
             <Field label="Telegram API ID"><TextInput type="number" value={telegram.api_id || ""} onChange={(e) => setTelegram((s) => ({ ...s, api_id: e.target.value }))} placeholder="12345678" /></Field>
             <Field label={`Telegram API Hash ${telegram.api_hash_set ? "(установлен)" : "(не задан)"}`}><TextInput type="password" autoComplete="new-password" placeholder="Оставьте пустым, чтобы не менять" value={secrets.api_hash} onChange={(e) => setSecrets((s) => ({ ...s, api_hash: e.target.value }))} /></Field>
             <Field label={`Bot Token для логов ${telegram.bot_token_set ? "(установлен)" : "(не задан)"}`}><TextInput type="password" autoComplete="new-password" placeholder="Оставьте пустым, чтобы не менять" value={secrets.bot_token} onChange={(e) => setSecrets((s) => ({ ...s, bot_token: e.target.value }))} /></Field>
+            <Field
+              label={`Бот для шаблонов розсилки ${telegram.template_bot_token_set ? "(установлен)" : "(не задан — будет token логов)"}`}
+              hint="Публікує шаблони в чат нижче (має бути учасником/адміном групи)."
+            >
+              <TextInput
+                type="password"
+                autoComplete="new-password"
+                placeholder="Оставьте пустым, чтобы не менять"
+                value={secrets.template_bot_token}
+                onChange={(e) => setSecrets((s) => ({ ...s, template_bot_token: e.target.value }))}
+              />
+            </Field>
+            <Field
+              label="Чат для шаблонов розсилки (Chat ID)"
+              hint="Група, напр. чат для оцінок. RU/PL постять сюди; сендери — учасники."
+            >
+              <TextInput
+                value={telegram.template_relay_chat_id || ""}
+                onChange={(e) => setTelegram((s) => ({ ...s, template_relay_chat_id: e.target.value }))}
+                placeholder="-1001234567890"
+              />
+            </Field>
             <Field label="Chat ID для логов"><TextInput value={telegram.chat_id || ""} onChange={(e) => setTelegram((s) => ({ ...s, chat_id: e.target.value }))} /></Field>
           </div>
           <div className="flex flex-wrap gap-2">

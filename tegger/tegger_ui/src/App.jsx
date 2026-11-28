@@ -31,6 +31,7 @@ import AccountDetail from "@/pages/AccountDetail";
 import Logs from "@/pages/Logs";
 import Parser from "@/pages/Parser";
 import Tegger from "@/pages/Tegger";
+import Mailings from "@/pages/Mailings";
 import Settings from "@/pages/Settings";
 
 function AppRoutes() {
@@ -78,6 +79,8 @@ function AppRoutes() {
           <Route path="/parser" element={<Parser />} />
 
           <Route path="/tegger" element={<Tegger />} />
+
+          <Route path="/mailings" element={<Mailings />} />
 
           <Route
             path="/settings"
