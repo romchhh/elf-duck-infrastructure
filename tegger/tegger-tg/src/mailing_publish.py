@@ -110,8 +110,6 @@ async def _resolve_relay_chat(client, chat_id: str):
     s_abs = str(abs(marked))
     tail = int(s_abs[3:]) if s_abs.startswith("100") and len(s_abs) > 3 else abs(marked)
     private_link = f"https://t.me/c/{tail}/1" if tail else ""
-    else:
-        private_link = ""
     tries = [marked, chat_id.strip()]
     if private_link:
         tries.append(private_link)
