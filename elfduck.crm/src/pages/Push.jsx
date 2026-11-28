@@ -3227,7 +3227,7 @@ const confirmCreateTpl = () => {
               { key: 'manual', label: 'Ручные' },
               { key: 'automation', label: 'Авто' },
               { key: 'giveaway', label: 'Розыгрыш' },
-              { key: 'tegger', label: 'Тегер' },
+              { key: 'tegger', label: 'Тегер / ЛС' },
             ].map((item) => (
               <button
                 key={item.key}

@@ -13,6 +13,7 @@ import {
   loadFirstSalesForUsers,
   loadCanceledCount,
   loadCanceledOrders,
+  BroadcastCampaign,
 } from "./deps.js";
 
 const router = express.Router();
@@ -757,6 +758,25 @@ router.get(
             : null,
         },
         businessDynamics,
+        pushOpens: await (async () => {
+          const rows = await BroadcastCampaign.find({
+            startedAt: { $gte: range.from, $lt: range.to },
+          })
+            .select({ opened: 1, openedTelegramIds: 1, purchases: 1 })
+            .lean();
+          let opens = 0;
+          let purchases = 0;
+          for (const row of rows) {
+            opens += Math.max(
+              Number(row?.opened || 0),
+              Array.isArray(row?.openedTelegramIds)
+                ? row.openedTelegramIds.length
+                : 0
+            );
+            purchases += Number(row?.purchases || 0);
+          }
+          return { value: opens, purchases };
+        })(),
         retention,
         products: productPerformance,
         locations: locationPerformance,

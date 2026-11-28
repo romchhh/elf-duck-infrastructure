@@ -135,7 +135,7 @@ export default function Settings() {
               <TextInput
                 value={telegram.template_relay_chat_id || ""}
                 onChange={(e) => setTelegram((s) => ({ ...s, template_relay_chat_id: e.target.value }))}
-                placeholder="-1001234567890"
+                placeholder="-1005728531495"
               />
             </Field>
             <Field label="Chat ID для логов"><TextInput value={telegram.chat_id || ""} onChange={(e) => setTelegram((s) => ({ ...s, chat_id: e.target.value }))} /></Field>

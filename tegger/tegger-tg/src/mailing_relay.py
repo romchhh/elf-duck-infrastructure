@@ -45,25 +45,28 @@ def template_bot_token() -> str:
     return token
 
 
+MAILING_RELAY_CHAT_ID = "-1005728531495"
+_STALE_RELAY_CHATS = {"-1003968794671"}
+
+
 def template_relay_chat_id() -> str:
-    """Група/супергрупа, куди бот публікує RU/PL шаблон; сендери забирають звідти."""
+    """Група, куди бот кладе RU/PL шаблон. Сендери самі вступають за інвайтом."""
+    env_chat = str(
+        os.environ.get("TEMPLATE_RELAY_CHAT_ID")
+        or os.environ.get("MAILING_RELAY_CHAT_ID")
+        or ""
+    ).strip()
+    if env_chat:
+        return env_chat
     data = _telegram_ui_config()
-    chat = str(
+    stored = str(
         data.get("template_relay_chat_id")
         or data.get("mailing_relay_chat_id")
         or ""
     ).strip()
-    if not chat:
-        chat = str(
-            os.environ.get("TEMPLATE_RELAY_CHAT_ID")
-            or os.environ.get("MAILING_RELAY_CHAT_ID")
-            or os.environ.get("COMPLAINTS_TELEGRAM_CHAT_ID")
-            or ""
-        ).strip()
-    if not chat:
-        # Як elf.duck.back.clean/lib/support/complaintsTelegram.js DEFAULT_COMPLAINTS_CHAT_ID
-        chat = "-1003968794671"
-    return chat
+    if stored and stored not in _STALE_RELAY_CHATS:
+        return stored
+    return MAILING_RELAY_CHAT_ID
 
 
 def _api_json(method: str, token: str, payload: dict | None = None) -> dict:
@@ -149,6 +152,38 @@ def _build_reply_markup(button_text: str, button_url: str) -> str | None:
     )
 
 
+def stamp_bot_start(url: str, start_param: str) -> str:
+    """Додає ?start= до посилання t.me/<bot>, щоб CRM бачила перехід з цієї розсилки."""
+    from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+    raw = str(url or "").strip()
+    param = str(start_param or "").strip()
+    if not raw or not param:
+        return raw
+    parsed = urlparse(raw)
+    host = (parsed.netloc or "").lower()
+    if host not in {"t.me", "telegram.me"}:
+        return raw
+    path = parsed.path.strip("/")
+    if not path or "/" in path or path.startswith("+") or not path.lower().endswith("bot"):
+        return raw
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query["start"] = param[:64]
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
+def create_sender_invite(token: str, chat_id: str) -> str:
+    data = _api_json(
+        "createChatInviteLink",
+        token,
+        {"chat_id": str(chat_id), "name": "tegger-mail"},
+    )
+    link = str((data.get("result") or {}).get("invite_link") or "").strip()
+    if not link:
+        raise RuntimeError("Telegram не вернул ссылку приглашения в чат шаблонов")
+    return link
+
+
 def send_template_photo(
     *,
     token: str,
@@ -157,6 +192,7 @@ def send_template_photo(
     caption: str,
     button_text: str = "",
     button_url: str = "",
+    start_param: str = "",
 ) -> int:
     if not photo_path.is_file():
         raise FileNotFoundError(f"Фото не найдено: {photo_path}")
@@ -168,7 +204,7 @@ def send_template_photo(
         "caption": cap,
         "parse_mode": "HTML",
     }
-    markup = _build_reply_markup(button_text, button_url)
+    markup = _build_reply_markup(button_text, stamp_bot_start(button_url, start_param))
     if markup:
         fields["reply_markup"] = markup
     result = _multipart_send(token, "sendPhoto", fields, "photo", photo_path)
@@ -189,6 +225,7 @@ def post_locale_templates(
     button_url: str,
     button_text_ru: str,
     button_text_pl: str,
+    start_param: str = "",
 ) -> dict[str, int]:
     """Два повідомлення в спільний чат — одна пара на всю розсилку."""
     ru_id = send_template_photo(
@@ -198,6 +235,7 @@ def post_locale_templates(
         caption=caption_ru,
         button_text=button_text_ru,
         button_url=button_url,
+        start_param=start_param,
     )
     pl_path = photo_pl if photo_pl.is_file() else photo_ru
     pl_cap = str(caption_pl or "").strip() or caption_ru
@@ -209,6 +247,7 @@ def post_locale_templates(
         caption=pl_cap,
         button_text=btn_pl,
         button_url=button_url,
+        start_param=start_param,
     )
     return {"ru": ru_id, "pl": pl_id}
 

@@ -20,6 +20,7 @@ from telethon.errors import (
 
 from src.mailing_relay import (
     bot_get_me,
+    create_sender_invite,
     post_locale_templates,
     template_bot_token,
     template_relay_chat_id,
@@ -150,6 +151,27 @@ async def _resolve_target(client, row: dict):
     return entity
 
 
+async def _ensure_sender_in_relay(client, chat_id: str, invite_link: str):
+    """Якщо сендера немає в групі шаблонів — вступає за інвайтом бота."""
+    try:
+        return await _resolve_relay_chat(client, chat_id)
+    except ValueError:
+        pass
+    code = str(invite_link or "").strip().split("+")[-1].split("?")[0].strip("/")
+    if code.startswith("joinchat/"):
+        code = code.split("/", 1)[-1]
+    if not code:
+        raise ValueError("Нет ссылки, чтобы добавить сендера в чат шаблонов")
+    from telethon.errors import UserAlreadyParticipantError
+    from telethon.tl.functions.messages import ImportChatInviteRequest
+
+    try:
+        await client(ImportChatInviteRequest(code))
+    except UserAlreadyParticipantError:
+        pass
+    return await _resolve_relay_chat(client, chat_id)
+
+
 async def publish_mailing(
     *,
     targets: list[dict],
@@ -161,6 +183,7 @@ async def publish_mailing(
     button_url: str,
     button_text_ru: str,
     button_text_pl: str,
+    start_param: str = "",
     default_language: str = DEFAULT_LANGUAGE,
     interval_min: int = 3,
     interval_max: int = 8,
@@ -211,6 +234,7 @@ async def publish_mailing(
             button_url=button_url,
             button_text_ru=button_text_ru,
             button_text_pl=button_text_pl,
+            start_param=start_param,
         )
         await emit(relayChatId=str(chat_id), phase="ready")
     except Exception as exc:
@@ -238,6 +262,29 @@ async def publish_mailing(
         else:
             failed.append({"username": _target_label(row).lstrip("@"), "error": "Неизвестный сендер"})
 
+    invite_link = ""
+    try:
+        invite_link = await asyncio.to_thread(create_sender_invite, token, str(chat_id))
+    except Exception as exc:
+        failed.append(
+            {
+                "username": "invite",
+                "error": (
+                    "Бот не смог выдать ссылку в чат шаблонов "
+                    f"({chat_id}). Добавь @{bot_username or 'бота'} админом с правом приглашать. "
+                    f"{type(exc).__name__}: {str(exc)[:120]}"
+                ),
+            }
+        )
+        await emit(failed=list(failed), phase="done", pending=0)
+        return {
+            "sent": [],
+            "failed": failed,
+            "relay": relay,
+            "relayChatId": str(chat_id),
+            "botUsername": bot_username,
+        }
+
     sent: list[str] = []
     interval_min = max(1, int(interval_min))
     interval_max = max(interval_min, int(interval_max))
@@ -250,7 +297,7 @@ async def publish_mailing(
             if not await client.is_user_authorized():
                 raise RuntimeError(f"Сессия не авторизована: {sender_id}")
             try:
-                from_peer = await _resolve_relay_chat(client, str(chat_id))
+                from_peer = await _ensure_sender_in_relay(client, str(chat_id), invite_link)
             except ValueError as exc:
                 failed.append({"username": sender_id, "error": str(exc)[:220]})
                 await emit(failed=list(failed), phase="resolve", current=sender_id)

@@ -149,6 +149,8 @@ def _crm_payload(item: dict) -> dict:
     progress = item.get("progress") if isinstance(item.get("progress"), dict) else {}
     caption = str(item.get("captionRu") or "").strip()
     name = caption.splitlines()[0].strip() if caption else "Розсилка Tegger"
+    if not name.lower().startswith("лс"):
+        name = f"ЛС · {name}"
     sent = list(progress.get("sent") or [])
     failed = list(progress.get("failed") or [])
     return {
@@ -256,6 +258,7 @@ async def _mailing_execute(job_id: str, get_current_user=None):
             button_url=item.get("buttonUrl") or "",
             button_text_ru=item.get("buttonTextRu") or item.get("buttonText") or "",
             button_text_pl=item.get("buttonTextPl") or "",
+            start_param=f"m{job_id}",
             default_language=str(item.get("defaultLanguage") or "ru"),
             interval_min=max(2, int(limits.get("STORY_INTERVAL_MIN_SECONDS", 9)) // 3),
             interval_max=max(3, int(limits.get("STORY_INTERVAL_MAX_SECONDS", 15)) // 3),
@@ -432,8 +435,6 @@ def register_mailing_routes(app, *, get_current_user):
                 raise HTTPException(404, "Розсилка не найдена")
             if item.get("status") in ("running", "stopping"):
                 raise HTTPException(409, "Розсилка уже выполняется")
-            if item.get("status") == "done" and not item.get("dryRun"):
-                raise HTTPException(409, "Розсилка завершена — создай новую")
             if any(x.get("status") in ("running", "stopping") for x in items):
                 raise HTTPException(409, "Уже выполняется другая задача")
             item["status"] = "running"

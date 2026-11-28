@@ -685,7 +685,8 @@ function teggerStatus(raw) {
   const status = String(raw || "").trim().toLowerCase();
   if (status === "running" || status === "queued") return status;
   if (status === "error" || status === "stopped") return "failed";
-  return "done";
+  if (status === "completed" || status === "done") return "completed";
+  return "completed";
 }
 
 /** Усі запуски розіграшу Tegger зводяться в один рядок історії CRM. */

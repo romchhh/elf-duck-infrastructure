@@ -2897,8 +2897,7 @@ async def get_telegram_config():
         "template_relay_chat_id": str(
             data.get("template_relay_chat_id")
             or os.getenv("TEMPLATE_RELAY_CHAT_ID")
-            or os.getenv("COMPLAINTS_TELEGRAM_CHAT_ID")
-            or "-1003968794671"
+            or "-1005728531495"
         ),
         "chat_id": data.get("chat_id", os.getenv("LOG_CHAT_ID", "")),
         "pending_restart": False,

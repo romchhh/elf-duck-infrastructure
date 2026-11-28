@@ -1211,6 +1211,10 @@ const sendResult = await sendViaUserShopBot(telegramId, (clientBot) => {
       try {
         const u = new URL(openLink);
         if (myRefCode) u.searchParams.set("ref", myRefCode);
+        const mailingKey = String(payload || "").match(/^m([a-f0-9]{32})$/i);
+        const campaignKey = String(payload || "").match(/^c([a-f0-9]{24})$/i);
+        if (mailingKey) u.searchParams.set("pc", `mailing-${mailingKey[1]}`);
+        else if (campaignKey) u.searchParams.set("pc", campaignKey[1]);
         openLink = u.toString();
       } catch {
         const params = new URLSearchParams();

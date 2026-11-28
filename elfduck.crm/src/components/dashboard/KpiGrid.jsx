@@ -193,6 +193,16 @@ export default function KpiGrid({
     },
 
     {
+      key: 'pushOpens',
+      label: 'Переходы в апку',
+      value: data?.pushOpens?.value,
+      delta: null,
+      fmt: num,
+      spark: [],
+      color: 'hsl(255 100% 68%)',
+    },
+
+    {
       key: 'newCustomers',
       label:
         'Новые кл.',

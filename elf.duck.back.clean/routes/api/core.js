@@ -93,10 +93,17 @@ app.post("/register-user", async (req, res) => {
     }
 
     // Трекінг відкриття мініапу з кнопки CRM-розсилки (?pc=campaignId)
-    if (pushCampaignId && mongoose.Types.ObjectId.isValid(pushCampaignId)) {
+    const pushId = String(pushCampaignId || "").trim();
+    const pushFilter =
+      pushId && mongoose.Types.ObjectId.isValid(pushId) && pushId.length === 24
+        ? { _id: new mongoose.Types.ObjectId(pushId) }
+        : pushId
+          ? { teggerJobId: pushId }
+          : null;
+    if (pushFilter) {
       BroadcastCampaign.updateOne(
         {
-          _id: new mongoose.Types.ObjectId(pushCampaignId),
+          ...pushFilter,
           openedTelegramIds: { $ne: telegramId },
         },
         {

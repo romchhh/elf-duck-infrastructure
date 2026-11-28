@@ -65,7 +65,15 @@ function MailingProgress({ job }) {
         <div className="text-xs text-muted-foreground">Сейчас: {p.current}</div>
       )}
       {failed > 0 && (
-        <div className="text-xs text-destructive">Пропусков: {failed}</div>
+        <div className="text-xs text-destructive space-y-1">
+          <div>Пропусков: {failed}</div>
+          {(p.failed || []).slice(0, 8).map((row, index) => (
+            <div key={`${row.username || "x"}-${index}`}>
+              {row.username ? `${row.username}: ` : ""}
+              {row.error || "ошибка"}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -250,7 +258,6 @@ export default function Mailings() {
   const canStartSelected =
     Boolean(selected) &&
     !selectedIsLive &&
-    selected?.status !== "done" &&
     !(runningJob && runningJob.id !== selected.id);
 
   const handleStart = async () => {
@@ -406,6 +413,28 @@ export default function Mailings() {
 
           <div className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
             <h3 className="text-sm font-semibold">Inline-кнопка со ссылкой</h3>
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["Магазин", "Открыть магазин", "Otwórz sklep"],
+                ["Розыгрыш", "Участвовать", "Weź udział"],
+              ].map(([label, textRu, textPl]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => {
+                    setButtonUrl("https://t.me/elfduck_store_bot");
+                    setButtonTextRu(textRu);
+                    setButtonTextPl(textPl);
+                  }}
+                  className="rounded-full border border-border px-3 py-1 text-xs font-medium hover:bg-muted"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              К ссылке бота при отправке добавится start этой рассылки — переходы в апку и покупки попадут в CRM.
+            </p>
             <Field label="URL">
               <TextInput value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} placeholder="https://t.me/elfduck_store_bot" />
             </Field>
@@ -479,7 +508,13 @@ export default function Mailings() {
                 <div className="flex flex-wrap gap-2">
                   <BrandButton variant="primary" onClick={handleStart} disabled={starting || !canStartSelected}>
                     <Play className="h-4 w-4" />
-                    {selectedIsLive ? "Идёт…" : starting ? "Запуск…" : "Запустить"}
+                    {selectedIsLive
+                      ? "Идёт…"
+                      : starting
+                        ? "Запуск…"
+                        : selected?.status === "done" || selected?.status === "error" || selected?.status === "stopped"
+                          ? "Запустить снова"
+                          : "Запустить"}
                   </BrandButton>
                   {selectedIsLive && (
                     <BrandButton variant="danger" onClick={() => handleStop(selected.id)} disabled={stopping}>

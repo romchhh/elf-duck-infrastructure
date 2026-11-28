@@ -305,7 +305,21 @@ export function buildPushReplyMarkup(message = {}, options = {}) {
         if (!["http:", "https:", "tg:"].includes(parsed.protocol)) {
           continue;
         }
-        rows.push([{ text, url: parsed.toString() }]);
+        let href = parsed.toString();
+        const botStart = String(campaignId || "").trim();
+        const host = parsed.hostname.replace(/^www\./, "");
+        const botPath = parsed.pathname.replace(/^\//, "").split("/")[0];
+        if (
+          botStart &&
+          (host === "t.me" || host === "telegram.me") &&
+          botPath &&
+          /bot$/i.test(botPath) &&
+          !parsed.pathname.slice(1).includes("/")
+        ) {
+          parsed.searchParams.set("start", `c${botStart}`.slice(0, 64));
+          href = parsed.toString();
+        }
+        rows.push([{ text, url: href }]);
       } catch {
         // skip invalid
       }
@@ -337,6 +351,16 @@ export function buildPushReplyMarkup(message = {}, options = {}) {
         try {
           const parsed = new URL(buttonUrl);
           if (["http:", "https:", "tg:"].includes(parsed.protocol)) {
+            const host = parsed.hostname.replace(/^www\./, "");
+            const botPath = parsed.pathname.replace(/^\//, "").split("/")[0];
+            if (
+              campaignId &&
+              (host === "t.me" || host === "telegram.me") &&
+              /bot$/i.test(botPath) &&
+              !parsed.pathname.slice(1).includes("/")
+            ) {
+              parsed.searchParams.set("start", `c${campaignId}`.slice(0, 64));
+            }
             rows.push([{ text: buttonText, url: parsed.toString() }]);
           }
         } catch {

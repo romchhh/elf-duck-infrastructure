@@ -121,7 +121,7 @@ services:
       TEGGER_CRM_INGEST_TOKEN: ${TEGGER_CRM_INGEST_TOKEN:-}
       # Розсилки в ЛС: бот шаблонів + чат оцінок (complaintsTelegram.js)
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      COMPLAINTS_TELEGRAM_CHAT_ID: ${COMPLAINTS_TELEGRAM_CHAT_ID:--1003968794671}
+      TEMPLATE_RELAY_CHAT_ID: ${TEMPLATE_RELAY_CHAT_ID:--1005728531495}
     volumes:
       - tegger_data:/data
     ports:
